@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Check, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -70,7 +69,9 @@ export default function ClaimVerificationModal({
       return { 
         ...ticket, 
         score: matchedNumbers.length,
-        percentMatched: Math.round((matchedNumbers.length / ticket.numbers.length) * 100)
+        percentMatched: Math.round((matchedNumbers.length / ticket.numbers.length) * 100),
+        // Consistently use layoutMask
+        layoutMask: ticket.layout_mask || ticket.layoutMask
       };
     });
     
@@ -85,7 +86,8 @@ export default function ClaimVerificationModal({
     if (currentWinPattern === "oneLine") {
       // For one line, we need to check if any row is complete
       valid = sortedTickets.some(ticket => {
-        const layoutMask = ticket.layout_mask || 0;
+        // Use layoutMask consistently
+        const layoutMask = ticket.layoutMask || 0;
         const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
         const rows: number[][] = [[], [], []];
         let numIndex = 0;
@@ -107,7 +109,8 @@ export default function ClaimVerificationModal({
     } else if (currentWinPattern === "twoLines") {
       // For two lines, we need to check if any two rows are complete
       valid = sortedTickets.some(ticket => {
-        const layoutMask = ticket.layout_mask || 0;
+        // Use layoutMask consistently
+        const layoutMask = ticket.layoutMask || 0;
         const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
         const rows: number[][] = [[], [], []];
         let numIndex = 0;
@@ -192,11 +195,11 @@ export default function ClaimVerificationModal({
                     calledNumbers={calledNumbers}
                     lastCalledNumber={currentNumber}
                   />
-                  {ticket.layout_mask && (
+                  {ticket.layoutMask && (
                     <div className="mt-1 text-sm">
                       Win progress: <BingoWinProgress 
                         numbers={ticket.numbers}
-                        layoutMask={ticket.layout_mask}
+                        layoutMask={ticket.layoutMask}
                         calledNumbers={calledNumbers}
                         activeWinPatterns={currentWinPattern ? [currentWinPattern] : ["fullHouse"]}
                         currentWinPattern={currentWinPattern}
