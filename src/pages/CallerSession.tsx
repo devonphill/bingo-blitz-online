@@ -43,7 +43,9 @@ export default function CallerSession() {
     winPatterns,
     winPrizes,
     currentGameWinPattern,
-    progressWinPattern
+    progressWinPattern,
+    setWinPatterns,
+    setWinPrizes
   } = useWinPatternManagement(sessionId);
 
   const {

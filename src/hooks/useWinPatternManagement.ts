@@ -52,11 +52,11 @@ export function useWinPatternManagement(sessionId: string | undefined) {
         }
         if (data.two_lines_active) {
           activePatterns.push("twoLines");
-          prizes.two_lines_prize = data.two_lines_prize || "";
+          prizes.twoLines = data.two_lines_prize || "";
         }
         if (data.full_house_active) {
           activePatterns.push("fullHouse");
-          prizes.full_house_prize = data.full_house_prize || "";
+          prizes.fullHouse = data.full_house_prize || "";
         }
 
         setWinPatterns(activePatterns);
@@ -72,6 +72,8 @@ export function useWinPatternManagement(sessionId: string | undefined) {
     winPrizes,
     currentGameWinPattern,
     setCurrentGameWinPattern,
-    progressWinPattern
+    progressWinPattern,
+    setWinPatterns,
+    setWinPrizes
   };
 }
