@@ -141,12 +141,23 @@ export function useClaimManagement(sessionId: string | undefined) {
       )
       .subscribe();
 
-    // Clean up the subscription when the component unmounts
     return () => {
       console.log("Cleaning up bingo claims listener");
       supabase.removeChannel(claimsChannel);
     };
   }, [sessionId, toast, verifyPendingClaims]);
+
+  // Initial check for claims when the component mounts
+  useEffect(() => {
+    if (sessionId) {
+      console.log("INITIAL MOUNT - Checking for pending claims");
+      // Short delay to ensure everything is loaded properly
+      const timer = setTimeout(() => {
+        verifyPendingClaims();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [sessionId, verifyPendingClaims]);
 
   return {
     showClaimModal,

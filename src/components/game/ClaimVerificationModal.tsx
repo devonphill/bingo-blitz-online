@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import CallerTicketDisplay from './CallerTicketDisplay';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import BingoWinProgress from './BingoWinProgress';
 
 interface ClaimVerificationModalProps {
   isOpen: boolean;
@@ -25,6 +26,7 @@ interface ClaimVerificationModalProps {
   currentNumber: number | null;
   onValidClaim: () => void;
   onFalseClaim: () => void;
+  currentWinPattern?: string | null;
 }
 
 export default function ClaimVerificationModal({
@@ -35,14 +37,15 @@ export default function ClaimVerificationModal({
   calledNumbers,
   currentNumber,
   onValidClaim,
-  onFalseClaim
+  onFalseClaim,
+  currentWinPattern
 }: ClaimVerificationModalProps) {
   const [isClaimValid, setIsClaimValid] = useState(false);
   const [rankedTickets, setRankedTickets] = useState<any[]>([]);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [actionType, setActionType] = useState<'valid' | 'false' | null>(null);
   
-  console.log("ClaimVerificationModal rendered with isOpen:", isOpen, "playerName:", playerName);
+  console.log("ClaimVerificationModal rendered with isOpen:", isOpen, "playerName:", playerName, "currentWinPattern:", currentWinPattern);
   
   // Debug use useEffect to log when isOpen changes
   useEffect(() => {
@@ -51,8 +54,9 @@ export default function ClaimVerificationModal({
     if (isOpen) {
       console.log("MODAL IS OPEN NOW with player:", playerName);
       console.log("Ticket data:", tickets);
+      console.log("Current win pattern:", currentWinPattern);
     }
-  }, [isOpen, playerName, tickets]);
+  }, [isOpen, playerName, tickets, currentWinPattern]);
   
   // Recalculate claim validity and rank tickets when props change
   useEffect(() => {
@@ -74,14 +78,66 @@ export default function ClaimVerificationModal({
     const sortedTickets = [...ticketsWithScore].sort((a, b) => b.score - a.score);
     setRankedTickets(sortedTickets);
     
-    // A claim is valid if all numbers on any ticket have been called
-    const valid = tickets.some(ticket => 
-      ticket.numbers.every(number => calledNumbers.includes(number))
-    );
+    // Check claim validity based on the current win pattern
+    let valid = false;
     
+    // Convert each ticket to check against the current win pattern
+    if (currentWinPattern === "oneLine") {
+      // For one line, we need to check if any row is complete
+      valid = sortedTickets.some(ticket => {
+        const layoutMask = ticket.layout_mask || 0;
+        const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
+        const rows: number[][] = [[], [], []];
+        let numIndex = 0;
+        
+        // Reconstruct the ticket rows
+        for (let i = 0; i < 27; i++) {
+          const row = Math.floor(i / 9);
+          if (maskBits[i] === '1') {
+            rows[row].push(ticket.numbers[numIndex]);
+            numIndex++;
+          }
+        }
+        
+        // Check if any row is complete
+        return rows.some(row => 
+          row.length > 0 && row.every(num => calledNumbers.includes(num))
+        );
+      });
+    } else if (currentWinPattern === "twoLines") {
+      // For two lines, we need to check if any two rows are complete
+      valid = sortedTickets.some(ticket => {
+        const layoutMask = ticket.layout_mask || 0;
+        const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
+        const rows: number[][] = [[], [], []];
+        let numIndex = 0;
+        
+        // Reconstruct the ticket rows
+        for (let i = 0; i < 27; i++) {
+          const row = Math.floor(i / 9);
+          if (maskBits[i] === '1') {
+            rows[row].push(ticket.numbers[numIndex]);
+            numIndex++;
+          }
+        }
+        
+        // Count complete rows
+        const completeRows = rows.filter(row => 
+          row.length > 0 && row.every(num => calledNumbers.includes(num))
+        ).length;
+        
+        return completeRows >= 2;
+      });
+    } else {
+      // For full house or default, check if all numbers in any ticket have been called
+      valid = sortedTickets.some(ticket => 
+        ticket.numbers.every(number => calledNumbers.includes(number))
+      );
+    }
+    
+    console.log("Claim validity for pattern", currentWinPattern, ":", valid);
     setIsClaimValid(valid);
-    console.log("Claim validity:", valid, "with", tickets.length, "tickets");
-  }, [tickets, calledNumbers]);
+  }, [tickets, calledNumbers, currentWinPattern]);
 
   const handleValidClaim = () => {
     console.log("Valid claim button clicked");
@@ -116,6 +172,9 @@ export default function ClaimVerificationModal({
             <DialogTitle className={`text-2xl font-bold ${isClaimValid ? 'text-green-600' : 'text-red-600'}`}>
               {isClaimValid ? 'CLAIM VALID' : 'CLAIM INVALID'} - {playerName}
             </DialogTitle>
+            <div className="text-sm text-gray-500">
+              Current win pattern: <span className="font-semibold">{currentWinPattern || 'Full House'}</span>
+            </div>
           </DialogHeader>
 
           <ScrollArea className="mt-4 h-[50vh]">
@@ -133,6 +192,17 @@ export default function ClaimVerificationModal({
                     calledNumbers={calledNumbers}
                     lastCalledNumber={currentNumber}
                   />
+                  {ticket.layout_mask && (
+                    <div className="mt-1 text-sm">
+                      Win progress: <BingoWinProgress 
+                        numbers={ticket.numbers}
+                        layoutMask={ticket.layout_mask}
+                        calledNumbers={calledNumbers}
+                        activeWinPatterns={currentWinPattern ? [currentWinPattern] : ["fullHouse"]}
+                        currentWinPattern={currentWinPattern}
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

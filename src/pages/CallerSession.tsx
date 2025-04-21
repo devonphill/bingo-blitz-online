@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -48,7 +47,6 @@ export default function CallerSession() {
 
   const { progressToNextGame } = useGameProgression(session);
 
-  // Session initialization effect
   useEffect(() => {
     if (!session && sessionId) {
       const foundSession = sessions.find(s => s.id === sessionId);
@@ -61,19 +59,16 @@ export default function CallerSession() {
     }
   }, [sessionId, sessions, session]);
 
-  // Game type prompt effect
   useEffect(() => {
     setPromptGameType(!session?.gameType);
   }, [session]);
 
-  // Initialize remaining numbers effect
   useEffect(() => {
     if (gameType === "90-ball" && remainingNumbers.length === 0) {
       setRemainingNumbers(Array.from({ length: 90 }, (_, i) => i + 1));
     }
   }, [gameType, remainingNumbers.length]);
 
-  // Load called numbers effect
   useEffect(() => {
     if (sessionId) {
       const fetchCalledNumbers = async () => {
@@ -103,7 +98,6 @@ export default function CallerSession() {
     }
   }, [sessionId, gameType, remainingNumbers.length]);
 
-  // Load players and set up subscriptions effect
   useEffect(() => {
     if (!sessionId) return;
 
@@ -150,14 +144,11 @@ export default function CallerSession() {
       )
       .subscribe();
 
-    // Removed duplicated claims subscription as it's now in useClaimManagement hook
-
     return () => {
       supabase.removeChannel(playersChannel);
     };
   }, [sessionId]);
 
-  // Load win patterns effect
   useEffect(() => {
     if (sessionId) {
       const fetchWinPatterns = async () => {
@@ -180,7 +171,6 @@ export default function CallerSession() {
     }
   }, [sessionId, setWinPatterns]);
 
-  // Check for pending claims when component loads
   useEffect(() => {
     if (sessionId) {
       console.log("Initial check for pending claims");
@@ -258,6 +248,13 @@ export default function CallerSession() {
           total_calls: calledNumbers.length
         });
 
+      await supabase
+        .from('bingo_claims')
+        .update({ status: 'validated' })
+        .eq('player_id', currentClaim.playerId)
+        .eq('session_id', sessionId)
+        .eq('status', 'pending');
+
       if (!nextPattern) {
         await progressToNextGame();
       }
@@ -265,7 +262,6 @@ export default function CallerSession() {
       setShowClaimModal(false);
       setCurrentClaim(null);
       
-      // After successfully processing a claim, check if there are more claims waiting
       setTimeout(() => {
         verifyPendingClaims();
       }, 1000);
@@ -284,10 +280,16 @@ export default function CallerSession() {
     if (!currentClaim) return;
 
     try {
+      await supabase
+        .from('bingo_claims')
+        .update({ status: 'rejected' })
+        .eq('player_id', currentClaim.playerId)
+        .eq('session_id', sessionId)
+        .eq('status', 'pending');
+      
       setShowClaimModal(false);
       setCurrentClaim(null);
       
-      // After rejecting a claim, check if there are more claims waiting
       setTimeout(() => {
         verifyPendingClaims();
       }, 1000);
@@ -384,7 +386,6 @@ export default function CallerSession() {
         />
       </main>
       
-      {/* Explicitly render ClaimVerificationModal with debugging info */}
       <ClaimVerificationModal
         isOpen={showClaimModal}
         onClose={() => {
@@ -397,6 +398,7 @@ export default function CallerSession() {
         currentNumber={currentNumber}
         onValidClaim={handleValidClaim}
         onFalseClaim={handleFalseClaim}
+        currentWinPattern={currentGameWinPattern}
       />
     </div>
   );
