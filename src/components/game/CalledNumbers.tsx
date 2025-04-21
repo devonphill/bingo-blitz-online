@@ -1,5 +1,6 @@
 
 import React from 'react';
+import CurrentNumberDisplay from './CurrentNumberDisplay';
 
 interface CalledNumbersProps {
   calledNumbers: number[];
@@ -37,9 +38,7 @@ export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNu
       
       {currentNumber && (
         <div className="mb-6 flex justify-center">
-          <div className={`${getColor(currentNumber)} text-white bingo-number-ball text-2xl animate-number-pop`}>
-            {currentNumber}
-          </div>
+          <CurrentNumberDisplay number={currentNumber} sizePx={90} />
         </div>
       )}
       

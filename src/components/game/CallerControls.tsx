@@ -83,20 +83,6 @@ export default function CallerControls({
         throw sessionError;
       }
 
-      // Update win patterns to persist them
-      const { error: patternsError } = await supabase
-        .from('win_patterns')
-        .upsert({
-          session_id: sessionId,
-          one_line_active: winPatterns.includes('oneLine'),
-          two_lines_active: winPatterns.includes('twoLines'),
-          full_house_active: winPatterns.includes('fullHouse')
-        }, { onConflict: 'session_id' });
-
-      if (patternsError) {
-        throw patternsError;
-      }
-
       await onGoLive();
       
       toast({
@@ -113,6 +99,11 @@ export default function CallerControls({
     } finally {
       setIsGoingLive(false);
     }
+  };
+
+  const handleVerifyClaim = () => {
+    // Directly call the passed in function to verify claims
+    onVerifyClaim();
   };
 
   return (
@@ -137,7 +128,7 @@ export default function CallerControls({
           
           <Button 
             variant="outline"
-            onClick={onVerifyClaim}
+            onClick={handleVerifyClaim}
           >
             Verify Claim
           </Button>
