@@ -110,7 +110,14 @@ export function usePlayerGame(playerCode?: string | null) {
           return;
         }
 
-        setTickets(ticketData || []);
+        // Transform ticket data to ensure consistent property naming
+        const transformedTickets = ticketData?.map(ticket => ({
+          ...ticket,
+          // Map layout_mask to layoutMask for consistency in the UI components
+          layoutMask: ticket.layout_mask
+        })) || [];
+
+        setTickets(transformedTickets);
 
         // Fetch called numbers for the session
         const { data: numberData, error: numberError } = await supabase
@@ -309,7 +316,74 @@ export function usePlayerGame(playerCode?: string | null) {
     playerCode,
     winPrizes,
     activeWinPatterns,
-    handleClaimBingo,
+    handleClaimBingo: useCallback(async (): Promise<boolean> => {
+      if (!playerId || !sessionId || !playerName) {
+        toast({
+          title: "Error",
+          description: "Could not claim bingo. Player information is missing.",
+          variant: "destructive"
+        });
+        return false;
+      }
+
+      try {
+        setIsClaiming(true);
+        setClaimStatus('pending');
+        
+        console.log("Broadcasting bingo claim");
+        
+        // Create claim record in database to track history
+        const { data: claimData, error: claimError } = await supabase
+          .from('bingo_claims')
+          .insert({
+            player_id: playerId,
+            session_id: sessionId,
+            status: 'pending'
+          })
+          .select('id')
+          .single();
+        
+        if (claimError) {
+          console.error("Error creating claim record:", claimError);
+          throw new Error("Failed to save claim");
+        }
+        
+        // Broadcast the claim to all callers using Supabase broadcast
+        await supabase
+          .channel('caller-claims')
+          .send({
+            type: 'broadcast',
+            event: 'bingo-claim',
+            payload: { 
+              playerId, 
+              playerName,
+              sessionId,
+              claimId: claimData?.id,
+              timestamp: new Date().toISOString()
+            }
+          });
+        
+        toast({
+          title: "Claim Submitted",
+          description: "Your bingo claim is being verified by the caller.",
+          variant: "default"
+        });
+        
+        return true;
+      } catch (error) {
+        console.error("Error claiming bingo:", error);
+        setIsClaiming(false);
+        setClaimStatus(undefined);
+        
+        toast({
+          title: "Error",
+          description: "Failed to submit your bingo claim. Please try again.",
+          variant: "destructive"
+        });
+        
+        return false;
+      }
+    }, [playerId, sessionId, playerName, toast]),
     isLoading,
     errorMessage,
     isClaiming,
