@@ -133,7 +133,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     
     // Use custom RPC function for the assigned_tickets check
     const { data: existingTickets, error: checkError } = await supabase
-      .rpc<number, {}>('get_player_assigned_tickets_count', { 
+      .rpc('get_player_assigned_tickets_count', { 
         p_player_id: player.id, 
         p_session_id: player.sessionId 
       });
@@ -211,7 +211,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     try {
       // Use custom RPC function for assigned tickets
       const { data: assignedTicketsData, error: assignedError } = await supabase
-        .rpc<string[], {}>('get_assigned_ticket_serials_by_session', { 
+        .rpc('get_assigned_ticket_serials_by_session', { 
           p_session_id: sessionId 
         });
 
@@ -284,7 +284,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     try {
       // Check if player already has tickets using our RPC function
       const { data: existingTicketsCount, error: checkError } = await supabase
-        .rpc<number, {}>('get_player_assigned_tickets_count', { 
+        .rpc('get_player_assigned_tickets_count', { 
           p_player_id: playerId, 
           p_session_id: sessionId 
         });
@@ -320,7 +320,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }));
 
       const { error: insertError } = await supabase
-        .rpc<void, {}>('insert_assigned_tickets', { tickets: ticketsToInsert });
+        .rpc('insert_assigned_tickets', { tickets: ticketsToInsert });
 
       if (insertError) {
         console.error("Error assigning tickets:", insertError);
@@ -338,7 +338,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     try {
       // Use an RPC function to get the player's assigned tickets
       const { data, error } = await supabase
-        .rpc<AssignedTicket[], {}>('get_player_assigned_tickets', { 
+        .rpc('get_player_assigned_tickets', { 
           p_player_id: playerId, 
           p_session_id: sessionId 
         });
