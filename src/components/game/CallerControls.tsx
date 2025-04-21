@@ -1,7 +1,9 @@
+
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -10,6 +12,8 @@ interface CallerControlsProps {
   onGoLive: () => Promise<void>;
   remainingNumbers: number[];
   isClaimLightOn?: boolean;
+  sessionId: string;
+  winPatterns: string[];
 }
 
 export default function CallerControls({ 
@@ -18,7 +22,9 @@ export default function CallerControls({
   onEndGame,
   onGoLive,
   remainingNumbers,
-  isClaimLightOn = false
+  isClaimLightOn = false,
+  sessionId,
+  winPatterns
 }: CallerControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
@@ -56,9 +62,57 @@ export default function CallerControls({
   };
 
   const handleGoLiveClick = async () => {
+    if (winPatterns.length === 0) {
+      toast({
+        title: "Error",
+        description: "At least one win pattern must be selected before going live",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsGoingLive(true);
-    await onGoLive();
-    setIsGoingLive(false);
+    try {
+      // Update session status
+      const { error: sessionError } = await supabase
+        .from('game_sessions')
+        .update({ status: 'active' })
+        .eq('id', sessionId);
+
+      if (sessionError) {
+        throw sessionError;
+      }
+
+      // Update win patterns to persist them
+      const { error: patternsError } = await supabase
+        .from('win_patterns')
+        .upsert({
+          session_id: sessionId,
+          one_line_active: winPatterns.includes('oneLine'),
+          two_lines_active: winPatterns.includes('twoLines'),
+          full_house_active: winPatterns.includes('fullHouse')
+        }, { onConflict: 'session_id' });
+
+      if (patternsError) {
+        throw patternsError;
+      }
+
+      await onGoLive();
+      
+      toast({
+        title: "Success",
+        description: "Game is now live!",
+      });
+    } catch (error) {
+      console.error('Error going live:', error);
+      toast({
+        title: "Error",
+        description: "Failed to start the game. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsGoingLive(false);
+    }
   };
 
   return (
@@ -97,7 +151,7 @@ export default function CallerControls({
           
           <Button
             className="bg-green-600 hover:bg-green-700 text-white"
-            disabled={isGoingLive}
+            disabled={isGoingLive || winPatterns.length === 0}
             onClick={handleGoLiveClick}
           >
             {isGoingLive ? 'Going Live...' : 'Go Live'}

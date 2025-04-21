@@ -21,6 +21,7 @@ interface SessionMainContentProps {
   handleGoLive: () => Promise<void>;
   remainingNumbers: number[];
   isClaimLightOn: boolean;
+  sessionId: string;
 }
 
 export default function SessionMainContent({
@@ -38,6 +39,7 @@ export default function SessionMainContent({
   handleGoLive,
   remainingNumbers,
   isClaimLightOn,
+  sessionId,
 }: SessionMainContentProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -71,6 +73,8 @@ export default function SessionMainContent({
           onGoLive={handleGoLive}
           remainingNumbers={remainingNumbers}
           isClaimLightOn={isClaimLightOn}
+          sessionId={sessionId}
+          winPatterns={winPatterns}
         />
       </div>
     </div>

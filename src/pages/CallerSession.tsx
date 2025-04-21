@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { useSession } from '@/contexts/SessionContext';
 import { supabase } from '@/integrations/supabase/client';
-import { Button } from '@/components/ui/button'; // Add the missing import
+import { Button } from '@/components/ui/button';
 import GameHeader from '@/components/game/GameHeader';
 import GameTypeSelector from '@/components/game/GameTypeSelector';
 import SessionMainContent from '@/components/game/SessionMainContent';
@@ -175,6 +174,28 @@ export default function CallerSession() {
     };
   }, [sessionId, toast]);
 
+  useEffect(() => {
+    if (sessionId) {
+      const fetchWinPatterns = async () => {
+        const { data, error } = await supabase
+          .from('win_patterns')
+          .select('*')
+          .eq('session_id', sessionId)
+          .maybeSingle();
+
+        if (!error && data) {
+          const patterns: string[] = [];
+          if (data.one_line_active) patterns.push('oneLine');
+          if (data.two_lines_active) patterns.push('twoLines');
+          if (data.full_house_active) patterns.push('fullHouse');
+          setWinPatterns(patterns);
+        }
+      };
+
+      fetchWinPatterns();
+    }
+  }, [sessionId]);
+
   const handleGameTypeChange = (type: string) => {
     setGameType(type);
     setPromptGameType(false);
@@ -304,7 +325,26 @@ export default function CallerSession() {
   };
 
   const handleGoLive = async () => {
-    // Placeholder for go live logic
+    if (!session || !sessionId) return;
+    
+    try {
+      await supabase
+        .from('game_sessions')
+        .update({ status: 'active' })
+        .eq('id', sessionId);
+
+      toast({
+        title: "Success",
+        description: "Session is now live!",
+      });
+    } catch (error) {
+      console.error('Error going live:', error);
+      toast({
+        title: "Error",
+        description: "Failed to start the session",
+        variant: "destructive"
+      });
+    }
   };
 
   if (!sessionId) {
@@ -361,6 +401,7 @@ export default function CallerSession() {
           handleGoLive={handleGoLive}
           remainingNumbers={remainingNumbers}
           isClaimLightOn={isClaimLightOn}
+          sessionId={sessionId}
         />
       </main>
       <ClaimVerificationModal
