@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Bell } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -103,19 +103,29 @@ export default function CallerControls({
       <CardHeader className="pb-2">
         <CardTitle className="text-xl font-bold flex items-center justify-between">
           <span>Caller Controls</span>
-          <Button 
-            size="sm" 
-            variant="outline" 
-            className="relative"
-            onClick={handleCheckClaimsClick}
-          >
-            <Bell className={`h-4 w-4 ${claimCount > 0 ? 'text-amber-500' : 'text-gray-500'}`} />
-            {claimCount > 0 && (
+          {claimCount > 0 && (
+            <Button 
+              size="sm" 
+              variant="outline" 
+              className="relative"
+              onClick={handleCheckClaimsClick}
+            >
+              <Bell className="h-4 w-4 text-amber-500" />
               <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center bg-amber-500">
                 {claimCount}
               </Badge>
-            )}
-          </Button>
+            </Button>
+          )}
+          {claimCount === 0 && (
+            <Button 
+              size="sm" 
+              variant="outline" 
+              className="relative"
+              onClick={handleCheckClaimsClick}
+            >
+              <Bell className="h-4 w-4 text-gray-500" />
+            </Button>
+          )}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">

@@ -193,9 +193,8 @@ export default function PlayerGameLayout({
           )}
         </div>
         
-        {/* Fixed Call Number Display at bottom */}
-        <div className="bg-black text-white p-4 border-t border-gray-700 sticky bottom-0">
-          <CurrentNumberDisplay number={currentNumber} sizePx={80} />
+        <div className="bg-black text-white p-4 border-t border-gray-700 sticky bottom-0" style={{ height: '30vw', maxHeight: '400px' }}>
+          <CurrentNumberDisplay number={currentNumber} sizePx={Math.min(window.innerWidth * 0.25, 350)} />
           <div className="text-xs text-gray-400 mt-2 text-center">
             {calledNumbers.length} numbers called
           </div>
