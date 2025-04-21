@@ -1,5 +1,6 @@
 
 import React from "react";
+import GameHeader from "./GameHeader";
 import PlayerGameLayout from "./PlayerGameLayout";
 
 interface PlayerGameContentProps {
@@ -32,19 +33,24 @@ export default function PlayerGameContent({
   isLoading,
 }: PlayerGameContentProps) {
   return (
-    <PlayerGameLayout
-      tickets={tickets}
-      calledNumbers={calledNumbers}
-      currentNumber={currentNumber}
-      currentSession={currentSession}
-      autoMarking={autoMarking}
-      setAutoMarking={setAutoMarking}
-      playerCode={playerCode}
-      winPrizes={winPrizes}
-      activeWinPatterns={activeWinPatterns}
-      onClaimBingo={onClaimBingo}
-      errorMessage={errorMessage}
-      isLoading={isLoading}
-    />
+    <div className="flex flex-col min-h-screen">
+      <GameHeader sessionName={currentSession?.name || "Game"} accessCode={playerCode} />
+      <div className="flex-grow">
+        <PlayerGameLayout
+          tickets={tickets}
+          calledNumbers={calledNumbers}
+          currentNumber={currentNumber}
+          currentSession={currentSession}
+          autoMarking={autoMarking}
+          setAutoMarking={setAutoMarking}
+          playerCode={playerCode}
+          winPrizes={winPrizes}
+          activeWinPatterns={activeWinPatterns}
+          onClaimBingo={onClaimBingo}
+          errorMessage={errorMessage}
+          isLoading={isLoading}
+        />
+      </div>
+    </div>
   );
 }

@@ -64,15 +64,15 @@ export default function PlayerGameLayout({
     <div className="min-h-screen w-full flex bg-gray-50">
       {/* Side Panels */}
       <div className="flex flex-col" style={{width:'30%', minWidth:240, maxWidth:400}}>
-        <div className="flex-1 flex flex-col py-6 px-4">
+        {/* Black background top area */}
+        <div className="flex-1 bg-black text-white p-4">
           <div className="flex flex-col gap-2 mb-4">
-            <h1 className="text-xl font-bold text-bingo-primary">Bingo Blitz</h1>
-            <div className="text-sm text-gray-500">Game: {currentSession?.name}</div>
+            <h1 className="text-xl font-bold">Bingo Game Info</h1>
             {activeWinPatterns.length > 0 && (
               <div>
-                <span className="text-xs text-gray-500 font-medium">
+                <span className="text-xs text-gray-300 font-medium">
                   Win Pattern: {activeWinPatterns.map((key: string) => 
-                    <span key={key} className="inline-block mr-2 px-2 py-1 bg-blue-50 rounded text-bingo-primary">
+                    <span key={key} className="inline-block mr-2 px-2 py-1 bg-gray-800 rounded text-white">
                       {key}{winPrizes[key] ? `: ${winPrizes[key]}` : ""}
                     </span>
                   )}
@@ -83,17 +83,14 @@ export default function PlayerGameLayout({
               <Switch id="auto-marking" checked={autoMarking} onCheckedChange={setAutoMarking} />
               <label htmlFor="auto-marking" className="text-sm font-medium">Auto Marking</label>
             </div>
-            {playerCode && (
-              <div className="bg-gray-100 px-3 py-1 rounded-full text-sm">
-                Your Code: <span className="font-mono font-bold">{playerCode}</span>
-              </div>
-            )}
           </div>
-          {/* (Optionally more info here) */}
         </div>
-        {/* Current Number Visual, square panel */}
-        <div className="flex items-center justify-center pb-6 px-4" style={{height: 'min(30vw,240px)', minHeight:120, width:'100%'}}>
-          <CurrentNumberDisplay number={currentNumber} sizePx={Math.min(window.innerWidth*0.3, 180)} />
+        {/* Current Number Visual at bottom left corner, square panel */}
+        <div className="flex items-center justify-center p-4 bg-gray-900">
+          <CurrentNumberDisplay 
+            number={currentNumber} 
+            sizePx={Math.min(window.innerWidth * 0.3 * 0.8, 180)} 
+          />
         </div>
       </div>
       {/* Main display area */}
