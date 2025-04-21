@@ -7,6 +7,7 @@ export interface PlayerListProps {
     nickname: string;
     joinedAt: string;
     playerCode: string;
+    tickets?: number;
   }[];
 }
 
@@ -30,6 +31,11 @@ const PlayerList: React.FC<PlayerListProps> = ({ players }) => {
           <div className="text-xs font-mono mt-1">
             Code: {player.playerCode}
           </div>
+          {player.tickets && (
+            <div className="text-xs mt-1">
+              Tickets: {player.tickets}
+            </div>
+          )}
         </div>
       ))}
     </div>
