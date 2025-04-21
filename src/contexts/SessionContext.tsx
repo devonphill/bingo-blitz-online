@@ -49,7 +49,44 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     fetchSessions();
-  }, []);
+    
+    // Subscribe to realtime updates for game_sessions table
+    const channel = supabase
+      .channel('session-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'game_sessions'
+        },
+        (payload) => {
+          console.log('Session change received:', payload);
+          fetchSessions();
+          
+          // If this is an update to our current session, update it directly
+          if (currentSession && payload.new && payload.new.id === currentSession.id) {
+            const updatedSession = {
+              id: payload.new.id,
+              name: payload.new.name,
+              gameType: payload.new.game_type as GameType,
+              createdBy: payload.new.created_by,
+              accessCode: payload.new.access_code,
+              status: payload.new.status,
+              createdAt: payload.new.created_at,
+              sessionDate: payload.new.session_date,
+              numberOfGames: payload.new.number_of_games,
+            };
+            setCurrentSessionState(updatedSession);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentSession]);
 
   const generateAccessCode = (): string => {
     return Math.floor(100000 + Math.random() * 900000).toString();
