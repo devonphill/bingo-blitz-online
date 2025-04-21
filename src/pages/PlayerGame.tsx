@@ -33,6 +33,7 @@ export default function PlayerGame() {
   const [tickets, setTickets] = useState<BingoTicket[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [hasCheckedSession, setHasCheckedSession] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const { toast } = useToast();
   
   // Get player information from local storage if available
@@ -51,26 +52,44 @@ export default function PlayerGame() {
   // Function to check for active session and fetch tickets
   const checkForActiveSession = async (code: string) => {
     setIsLoading(true);
+    setErrorMessage(null);
     
     try {
+      console.log("Checking active session for player code:", code);
       // Get the player information first to get their ID
-      const { data: playerData } = await supabase
+      const { data: playerData, error: playerError } = await supabase
         .from('players')
         .select('id, session_id')
         .eq('player_code', code)
         .maybeSingle();
         
+      if (playerError) {
+        console.error("Error fetching player data:", playerError);
+        setErrorMessage("Unable to find your player information. Please try again or contact support.");
+        setIsLoading(false);
+        return;
+      }
+      
       if (playerData) {
+        console.log("Found player data:", playerData);
         setPlayerId(playerData.id);
         
         // Query sessions to find the player's session
-        const { data: sessionData } = await supabase
+        const { data: sessionData, error: sessionError } = await supabase
           .from('game_sessions')
           .select('*')
           .eq('id', playerData.session_id)
           .maybeSingle();
           
+        if (sessionError) {
+          console.error("Error fetching session data:", sessionError);
+          setErrorMessage("Unable to find your game session. Please try again or contact support.");
+          setIsLoading(false);
+          return;
+        }
+          
         if (sessionData && sessionData.status === 'active') {
+          console.log("Found active session:", sessionData);
           // Format and set as current session
           const formattedSession = {
             id: sessionData.id,
@@ -94,11 +113,21 @@ export default function PlayerGame() {
             description: `You have joined the ${sessionData.name} game session.`,
           });
         } else {
+          console.log("Session not active or not found");
           setCurrentSession(null);
+          if (sessionData) {
+            setErrorMessage(`Your game session "${sessionData.name}" is not currently active.`);
+          } else {
+            setErrorMessage("Could not find your game session.");
+          }
         }
+      } else {
+        console.log("Player not found with code:", code);
+        setErrorMessage(`No player found with code ${code}. Please check your code and try again.`);
       }
     } catch (error) {
       console.error("Error checking for active session:", error);
+      setErrorMessage("An unexpected error occurred. Please try again or contact support.");
     } finally {
       setIsLoading(false);
     }
@@ -107,9 +136,11 @@ export default function PlayerGame() {
   // Fetch player tickets from the assigned_tickets table
   const fetchPlayerTickets = async (playerId: string, sessionId: string) => {
     try {
+      console.log(`Fetching tickets for player ${playerId} in session ${sessionId}`);
       const assignedTickets = await getPlayerAssignedTickets(playerId, sessionId);
         
       if (assignedTickets && assignedTickets.length > 0) {
+        console.log(`Found ${assignedTickets.length} tickets:`, assignedTickets);
         // Format the ticket data
         const formattedTickets: BingoTicket[] = assignedTickets.map((ticket: any) => ({
           serial: ticket.serial,
@@ -121,9 +152,13 @@ export default function PlayerGame() {
         }));
         
         setTickets(formattedTickets);
+      } else {
+        console.log("No tickets found for player");
+        setErrorMessage("You don't have any tickets assigned. Please contact the game organizer.");
       }
     } catch (error) {
       console.error("Exception fetching tickets:", error);
+      setErrorMessage("Failed to load your tickets. The database may not be properly set up.");
     }
   };
 
@@ -170,6 +205,22 @@ export default function PlayerGame() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-2xl font-bold text-gray-900 mb-4">Loading game...</h2>
+        </div>
+      </div>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="bg-white shadow-lg rounded-lg p-6 max-w-md w-full">
+          <h2 className="text-2xl font-bold text-red-600 mb-4">Something went wrong</h2>
+          <p className="text-gray-700 mb-6">{errorMessage}</p>
+          <div className="flex justify-center">
+            <Button onClick={() => window.location.href = '/join'}>
+              Join a Different Game
+            </Button>
+          </div>
         </div>
       </div>
     );
