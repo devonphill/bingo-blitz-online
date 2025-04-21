@@ -10,6 +10,7 @@ import GameHeader from '@/components/game/GameHeader';
 import PlayerList from '@/components/game/PlayerList';
 import TicketsDebugDisplay from '@/components/game/TicketsDebugDisplay';
 import WinPatternSelector from "@/components/game/WinPatternSelector";
+import ClaimVerificationModal from '@/components/game/ClaimVerificationModal';
 
 export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -30,6 +31,12 @@ export default function CallerSession() {
   const [autoMarking, setAutoMarking] = useState(false);
   const [sessionPlayers, setSessionPlayers] = useState<any[]>([]);
   const [isClaimLightOn, setIsClaimLightOn] = useState(false);
+  const [showClaimModal, setShowClaimModal] = useState(false);
+  const [currentClaim, setCurrentClaim] = useState<{
+    playerName: string;
+    playerId: string;
+    tickets: any[];
+  } | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -275,7 +282,6 @@ export default function CallerSession() {
     }
 
     const latestClaim = data[data.length - 1];
-    
     setIsClaimLightOn(true);
 
     const { data: playerData, error: playerError } = await supabase
@@ -293,13 +299,13 @@ export default function CallerSession() {
       });
       return;
     }
-    
+
     const { data: ticketData, error: ticketError } = await supabase
       .from('assigned_tickets')
       .select('*')
       .eq('player_id', latestClaim.player_id)
       .eq('session_id', sessionId);
-      
+
     if (ticketError) {
       console.error("Error fetching ticket data:", ticketError);
       toast({
@@ -309,13 +315,70 @@ export default function CallerSession() {
       });
       return;
     }
-    
-    toast({
-      title: "Verifying Claim",
-      description: `Verifying claim from ${playerData?.nickname || 'Unknown Player'}`,
+
+    setCurrentClaim({
+      playerName: playerData.nickname,
+      playerId: playerData.id,
+      tickets: ticketData
     });
-    
-    console.log("Player tickets:", ticketData);
+    setShowClaimModal(true);
+  };
+
+  const handleValidClaim = async () => {
+    if (!currentClaim) return;
+
+    try {
+      const { error } = await supabase
+        .from('bingo_claims')
+        .update({ status: 'valid' })
+        .eq('player_id', currentClaim.playerId)
+        .eq('session_id', sessionId)
+        .eq('status', 'pending');
+
+      if (error) throw error;
+
+      toast({
+        title: "Claim Validated",
+        description: `${currentClaim.playerName}'s claim has been validated.`,
+      });
+      setIsClaimLightOn(false);
+    } catch (error) {
+      console.error("Error validating claim:", error);
+      toast({
+        title: "Error",
+        description: "Failed to validate the claim.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleFalseClaim = async () => {
+    if (!currentClaim) return;
+
+    try {
+      const { error } = await supabase
+        .from('bingo_claims')
+        .update({ status: 'invalid' })
+        .eq('player_id', currentClaim.playerId)
+        .eq('session_id', sessionId)
+        .eq('status', 'pending');
+
+      if (error) throw error;
+
+      toast({
+        title: "Claim Rejected",
+        description: `${currentClaim.playerName}'s claim has been rejected.`,
+        variant: "destructive"
+      });
+      setIsClaimLightOn(false);
+    } catch (error) {
+      console.error("Error rejecting claim:", error);
+      toast({
+        title: "Error",
+        description: "Failed to reject the claim.",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleEndGame = () => {
@@ -480,6 +543,16 @@ export default function CallerSession() {
           </div>
         </div>
       </main>
+      <ClaimVerificationModal
+        isOpen={showClaimModal}
+        onClose={() => setShowClaimModal(false)}
+        playerName={currentClaim?.playerName || ''}
+        tickets={currentClaim?.tickets || []}
+        calledNumbers={calledNumbers}
+        currentNumber={currentNumber}
+        onValidClaim={handleValidClaim}
+        onFalseClaim={handleFalseClaim}
+      />
     </div>
   );
 }
