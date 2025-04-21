@@ -30,54 +30,7 @@ export default function CallerControls({
 }: CallerControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
-  const [pendingClaims, setPendingClaims] = useState(0);
   const { toast } = useToast();
-
-  useEffect(() => {
-    setPendingClaims(claimCount);
-  }, [claimCount]);
-
-  useEffect(() => {
-    if (!sessionId) return;
-
-    const checkPendingClaims = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('bingo_claims')
-          .select('id')
-          .eq('session_id', sessionId)
-          .eq('status', 'pending');
-          
-        if (!error && data) {
-          setPendingClaims(data.length);
-        }
-      } catch (err) {
-        console.error("Error checking pending claims:", err);
-      }
-    };
-    
-    checkPendingClaims();
-    
-    const claimsChannel = supabase
-      .channel('caller-claims-counter')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'bingo_claims',
-          filter: `session_id=eq.${sessionId}`
-        },
-        () => {
-          checkPendingClaims();
-        }
-      )
-      .subscribe();
-      
-    return () => {
-      supabase.removeChannel(claimsChannel);
-    };
-  }, [sessionId]);
 
   const handleCallNumber = () => {
     if (remainingNumbers.length === 0) {
@@ -142,10 +95,6 @@ export default function CallerControls({
   const handleCheckClaimsClick = () => {
     if (onCheckClaims) {
       onCheckClaims();
-      toast({
-        title: "Checking Claims",
-        description: "Manually checking for player claims...",
-      });
     }
   };
 
@@ -154,30 +103,19 @@ export default function CallerControls({
       <CardHeader className="pb-2">
         <CardTitle className="text-xl font-bold flex items-center justify-between">
           <span>Caller Controls</span>
-          {pendingClaims > 0 && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button size="sm" variant="outline" className="relative">
-                  <Bell className="h-4 w-4 text-amber-500" />
-                  <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center bg-amber-500">
-                    {pendingClaims}
-                  </Badge>
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-60 p-4">
-                <div className="space-y-2">
-                  <h4 className="font-medium">Pending Claims</h4>
-                  <p className="text-sm">
-                    There {pendingClaims === 1 ? 'is' : 'are'} {pendingClaims} pending 
-                    claim{pendingClaims === 1 ? '' : 's'} awaiting verification.
-                  </p>
-                  <Button size="sm" onClick={handleCheckClaimsClick} className="w-full">
-                    Check Claims
-                  </Button>
-                </div>
-              </PopoverContent>
-            </Popover>
-          )}
+          <Button 
+            size="sm" 
+            variant="outline" 
+            className="relative"
+            onClick={handleCheckClaimsClick}
+          >
+            <Bell className={`h-4 w-4 ${claimCount > 0 ? 'text-amber-500' : 'text-gray-500'}`} />
+            {claimCount > 0 && (
+              <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center bg-amber-500">
+                {claimCount}
+              </Badge>
+            )}
+          </Button>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -194,17 +132,6 @@ export default function CallerControls({
           >
             {isCallingNumber ? 'Calling...' : 'Call Next Number'}
           </Button>
-          
-          {pendingClaims > 0 && (
-            <Button 
-              variant="outline"
-              className="border-amber-500 text-amber-700 hover:bg-amber-50"
-              onClick={handleCheckClaimsClick}
-            >
-              <Bell className="h-4 w-4 mr-2" />
-              Check Claims ({pendingClaims})
-            </Button>
-          )}
           
           <Button 
             variant="destructive"

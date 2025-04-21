@@ -60,8 +60,7 @@ export default function ClaimVerificationSheet({
   useEffect(() => {
     if (!tickets || tickets.length === 0) return;
     
-    console.log("Calculating ticket scores with called numbers:", calledNumbers.length);
-    console.log("Validating against current win pattern:", currentWinPattern);
+    console.log("Validating claim against pattern:", currentWinPattern);
     
     const ticketsWithScore = tickets.map(ticket => {
       const matchedNumbers = ticket.numbers.filter(num => calledNumbers.includes(num));
@@ -75,13 +74,15 @@ export default function ClaimVerificationSheet({
     const sortedTickets = [...ticketsWithScore].sort((a, b) => b.score - a.score);
     setRankedTickets(sortedTickets);
     
+    let valid = false;
     const validTicketsFound: any[] = [];
     
-    let valid = false;
-    
+    // Validate based on current win pattern
     if (currentWinPattern === "oneLine") {
       sortedTickets.forEach(ticket => {
-        const layoutMask = ticket.layoutMask || 0;
+        const layoutMask = ticket.layoutMask || ticket.layout_mask;
+        if (!layoutMask) return;
+        
         const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
         const rows: number[][] = [[], [], []];
         let numIndex = 0;
@@ -105,7 +106,9 @@ export default function ClaimVerificationSheet({
       });
     } else if (currentWinPattern === "twoLines") {
       sortedTickets.forEach(ticket => {
-        const layoutMask = ticket.layoutMask || 0;
+        const layoutMask = ticket.layoutMask || ticket.layout_mask;
+        if (!layoutMask) return;
+        
         const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
         const rows: number[][] = [[], [], []];
         let numIndex = 0;
@@ -135,19 +138,9 @@ export default function ClaimVerificationSheet({
           validTicketsFound.push({...ticket, validPattern: 'fullHouse'});
         }
       });
-    } else {
-      sortedTickets.forEach(ticket => {
-        const isValid = ticket.numbers.every(number => calledNumbers.includes(number));
-        if (isValid) {
-          valid = true;
-          validTicketsFound.push({...ticket, validPattern: 'fullHouse'});
-        }
-      });
     }
     
-    console.log("Claim validity for pattern", currentWinPattern, ":", valid);
-    console.log("Valid tickets found:", validTicketsFound.length);
-    
+    console.log("Claim validity:", valid, "for pattern:", currentWinPattern);
     setIsClaimValid(valid);
     setValidTickets(validTicketsFound);
     

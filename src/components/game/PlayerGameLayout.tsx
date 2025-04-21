@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader } from "lucide-react";
@@ -196,10 +195,7 @@ export default function PlayerGameLayout({
         
         {/* Fixed Call Number Display at bottom */}
         <div className="bg-black text-white p-4 border-t border-gray-700 sticky bottom-0">
-          <h2 className="text-lg font-semibold mb-2 text-center">Current Number</h2>
-          <div className="flex justify-center">
-            <CurrentNumberDisplay number={currentNumber} sizePx={80} />
-          </div>
+          <CurrentNumberDisplay number={currentNumber} sizePx={80} />
           <div className="text-xs text-gray-400 mt-2 text-center">
             {calledNumbers.length} numbers called
           </div>
