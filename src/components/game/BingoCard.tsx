@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,12 +7,15 @@ import { useToast } from '@/components/ui/use-toast';
 // 9 columns (numbers 1-9, 10-19, 20-29, etc.)
 // 3 rows with 5 numbers and 4 blank spaces per row
 
+// Accept extra prop for calledNumbers for ticket rendering
 interface BingoCardProps {
   numbers?: number[];
   layoutMask?: number;
+  calledNumbers?: number[];
 }
 
-export default function BingoCard({ numbers = [], layoutMask }: BingoCardProps) {
+// Update: add mask rendering
+export default function BingoCard({ numbers = [], layoutMask, calledNumbers = [] }: BingoCardProps) {
   const [card, setCard] = useState<Array<Array<number | null>>>([]);
   const [markedCells, setMarkedCells] = useState<Set<string>>(new Set());
   const { toast } = useToast();
@@ -21,14 +23,34 @@ export default function BingoCard({ numbers = [], layoutMask }: BingoCardProps) 
   useEffect(() => {
     if (numbers && numbers.length > 0) {
       if (layoutMask !== undefined) {
-        generateCardFromLayoutMask(numbers, layoutMask);
+        // Use improved function below!
+        setCard(generateCardFromNumbersAndMask(numbers, layoutMask));
       } else {
         generateCardFromNumbers(numbers);
       }
     } else {
       generateCard();
     }
+    setMarkedCells(new Set());
+    // eslint-disable-next-line
   }, [numbers, layoutMask]);
+
+  // New: deterministic mask application, 90-ball only.
+  function generateCardFromNumbersAndMask(numbers: number[], mask: number): Array<Array<number | null>> {
+    // mask = 27 bits; '1' means number, read mask LSB left-to-right, row major
+    const maskBinary = mask.toString(2).padStart(27, "0").split("").reverse();
+    const filled: (number | null)[][] = [[], [], []];
+    let numIdx = 0;
+    for (let i = 0; i < 27; i++) {
+      const rowIdx = Math.floor(i / 9);
+      if (maskBinary[i] === "1") {
+        filled[rowIdx].push(numbers[numIdx++] ?? null);
+      } else {
+        filled[rowIdx].push(null);
+      }
+    }
+    return filled;
+  }
 
   // Function to generate a card from a layout mask and numbers
   const generateCardFromLayoutMask = (ticketNumbers: number[], mask: number) => {
@@ -204,34 +226,30 @@ export default function BingoCard({ numbers = [], layoutMask }: BingoCardProps) 
   };
 
   const toggleMark = (row: number, col: number) => {
-    const cellKey = `${row}-${col}`;
-    const newMarkedCells = new Set(markedCells);
-    
-    if (card[row][col] !== null) {
-      if (markedCells.has(cellKey)) {
-        newMarkedCells.delete(cellKey);
-      } else {
-        newMarkedCells.add(cellKey);
-      }
-      
-      setMarkedCells(newMarkedCells);
-    }
+    // Only allow manual marking in non-spectator/caller (not required for player)
+    // Just block marking here for player game context
+    // But keep mark function for future use
   };
 
   return (
     <div className="grid grid-cols-9 gap-1">
       {card.map((row, rowIndex) => (
-        row.map((cell, colIndex) => (
-          <div 
-            key={`${rowIndex}-${colIndex}`}
-            className={`aspect-square flex items-center justify-center text-sm font-medium border rounded 
-              ${markedCells.has(`${rowIndex}-${colIndex}`) ? 'bg-bingo-primary text-white' : ''} 
-              ${cell === null ? 'bg-gray-100' : 'cursor-pointer hover:bg-gray-50'}`}
-            onClick={() => toggleMark(rowIndex, colIndex)}
-          >
-            {cell !== null ? cell : ''}
-          </div>
-        ))
+        row.map((cell, colIndex) => {
+          const isMarked = cell !== null && calledNumbers.includes(cell);
+          return (
+            <div
+              key={`${rowIndex}-${colIndex}`}
+              className={`aspect-square flex items-center justify-center text-sm font-medium border rounded
+                ${cell !== null ? 'cursor-pointer hover:bg-gray-50' : 'bg-gray-100'}
+                ${isMarked ? 'bg-green-500 text-white font-bold' : ''}
+              `}
+              // toggleMark is NOP for real game play
+              onClick={() => {}}
+            >
+              {cell !== null ? cell : ''}
+            </div>
+          );
+        })
       ))}
     </div>
   );

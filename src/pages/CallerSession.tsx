@@ -9,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import GameHeader from '@/components/game/GameHeader';
 import PlayerList from '@/components/game/PlayerList';
 import TicketsDebugDisplay from '@/components/game/TicketsDebugDisplay';
+import WinPatternSelector from "@/components/game/WinPatternSelector";
 
 export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -20,6 +21,12 @@ export default function CallerSession() {
   const [currentNumber, setCurrentNumber] = useState<number | null>(null);
   const [remainingNumbers, setRemainingNumbers] = useState<number[]>([]);
   const [bingoTickets, setBingoTickets] = useState<any[]>([]);
+  const [winPatterns, setWinPatterns] = useState<string[]>(["oneLine", "twoLines", "fullHouse"]);
+  const [winPrizes, setWinPrizes] = useState<{ [key: string]: string }>({
+    oneLine: "",
+    twoLines: "",
+    fullHouse: "",
+  });
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -203,6 +210,15 @@ export default function CallerSession() {
     });
   };
 
+  const handleTogglePattern = (pattern: string) => {
+    setWinPatterns(prev =>
+      prev.includes(pattern) ? prev.filter(p => p !== pattern) : [...prev, pattern]
+    );
+  };
+  const handlePrizeChange = (pattern: string, value: string) => {
+    setWinPrizes(prev => ({ ...prev, [pattern]: value }));
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <GameHeader sessionName={session.name} accessCode={session.accessCode} />
@@ -211,6 +227,14 @@ export default function CallerSession() {
           <div className="lg:col-span-2">
             <div className="bg-white shadow rounded-lg p-6 mb-6">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Game: {session.gameType}</h2>
+              <div className="mb-4">
+                <WinPatternSelector
+                  selectedPatterns={winPatterns}
+                  onTogglePattern={handleTogglePattern}
+                  prizeValues={winPrizes}
+                  onPrizeChange={handlePrizeChange}
+                />
+              </div>
               <CalledNumbers 
                 calledNumbers={calledNumbers}
                 currentNumber={currentNumber}

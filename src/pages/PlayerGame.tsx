@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { useSession } from '@/contexts/SessionContext';
 import BingoCard from '@/components/game/BingoCard';
@@ -15,6 +15,12 @@ interface BingoTicket {
   timestamp: string;
 }
 
+const WIN_PATTERNS: { [key: string]: { label: string; lines: number } } = {
+  oneLine: { label: "One Line", lines: 1 },
+  twoLines: { label: "Two Lines", lines: 2 },
+  fullHouse: { label: "Full House", lines: 3 }
+};
+
 export default function PlayerGame() {
   const { currentSession, setCurrentSession, getPlayerAssignedTickets } = useSession();
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
@@ -25,6 +31,12 @@ export default function PlayerGame() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [hasCheckedSession, setHasCheckedSession] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [activeWinPatterns, setActiveWinPatterns] = useState<string[]>(["oneLine", "twoLines", "fullHouse"]);
+  const [winPrizes, setWinPrizes] = useState<{ [key: string]: string }>({
+    oneLine: "",
+    twoLines: "",
+    fullHouse: ""
+  });
   const { toast } = useToast();
   
   useEffect(() => {
@@ -161,6 +173,48 @@ export default function PlayerGame() {
     };
   }, [currentSession]);
 
+  const calcTicketProgress = (numbers: number[], layoutMask: number, calledNumbers: number[]) => {
+    const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
+    const rows: (number | null)[][] = [[], [], []];
+    let nIdx = 0;
+
+    for (let i = 0; i < 27; i++) {
+      const row = Math.floor(i / 9);
+      if (maskBits[i] === '1') {
+        rows[row].push(numbers[nIdx]);
+        nIdx++;
+      } else {
+        rows[row].push(null);
+      }
+    }
+
+    const lineCounts = rows.map(
+      line => line.filter(num => num !== null && calledNumbers.includes(num as number)).length
+    );
+    const lineNeeded = rows.map(line => line.filter(num => num !== null).length);
+
+    const completedLines = lineCounts.filter((count, idx) => count === lineNeeded[idx]).length;
+    const result: { [pattern: string]: number } = {};
+    Object.entries(WIN_PATTERNS).forEach(([key, { lines }]) => {
+      const linesToGo = Math.max(0, lines - completedLines);
+      let minNeeded = Infinity;
+      if (linesToGo === 0) {
+        minNeeded = 0;
+      } else {
+        minNeeded = Math.min(
+          ...rows
+            .map((line, idx) =>
+              lineNeeded[idx] - lineCounts[idx]
+            )
+            .filter(n => n > 0)
+        );
+        if (minNeeded === Infinity) minNeeded = 0;
+      }
+      result[key] = minNeeded;
+    });
+    return result;
+  };
+
   const handleClaimBingo = () => {
     toast({
       title: "Bingo Claimed!",
@@ -215,6 +269,18 @@ export default function PlayerGame() {
           <div>
             <h1 className="text-xl font-bold text-bingo-primary">Bingo Blitz</h1>
             <div className="text-sm text-gray-500">Game: {currentSession?.name}</div>
+            {activeWinPatterns.length > 0 && (
+              <div className="mt-1">
+                <span className="text-xs text-gray-500 font-medium">
+                  Win Pattern: {activeWinPatterns.map(key => 
+                    <span key={key} className="inline-block mr-2 px-2 py-1 bg-blue-50 rounded text-bingo-primary">
+                      {WIN_PATTERNS[key]?.label ?? key}
+                      {winPrizes[key] ? `: ${winPrizes[key]}` : ""}
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
           </div>
           {playerCode && (
             <div className="bg-gray-100 px-3 py-1 rounded-full text-sm">
@@ -225,12 +291,18 @@ export default function PlayerGame() {
       </header>
       
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <Button 
+          className="w-full mb-4 bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
+          onClick={handleClaimBingo}
+        >
+          Claim Bingo!
+        </Button>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div>
             {tickets.length > 0 ? (
               <div className="bg-white shadow rounded-lg p-6 mb-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-4">Your Bingo Tickets ({tickets.length})</h2>
-                
                 {Array.from(new Set(tickets.map(t => t.perm))).map(perm => (
                   <div key={`perm-${perm}`} className="mb-8">
                     <h3 className="text-lg font-semibold mb-3">Strip #{perm}</h3>
@@ -238,30 +310,33 @@ export default function PlayerGame() {
                       {tickets
                         .filter(t => t.perm === perm)
                         .sort((a, b) => a.position - b.position)
-                        .map((ticket) => (
-                          <div key={ticket.serial} className="border rounded-lg p-4">
-                            <div className="flex justify-between items-center mb-2">
-                              <div className="text-sm font-medium">
-                                Perm: <span className="font-mono">{ticket.perm}</span>
+                        .map((ticket) => {
+                          const winProg = calcTicketProgress(ticket.numbers, ticket.layoutMask, calledNumbers);
+                          const minToGo = Math.min(...activeWinPatterns.map(p => winProg[p] ?? 15));
+                          return (
+                            <div key={ticket.serial} className="border rounded-lg p-4">
+                              <div className="flex justify-between items-center mb-2">
+                                <div className="text-sm font-medium">
+                                  Perm: <span className="font-mono">{ticket.perm}</span>
+                                </div>
+                                <div className="text-sm font-medium">
+                                  Position: <span className="font-mono">{ticket.position}</span>
+                                </div>
                               </div>
-                              <div className="text-sm font-medium">
-                                Position: <span className="font-mono">{ticket.position}</span>
+                              <div className="text-xs text-gray-500 mb-4">
+                                Serial: <span className="font-mono">{ticket.serial}</span>
+                              </div>
+                              <BingoCard numbers={ticket.numbers} layoutMask={ticket.layoutMask} calledNumbers={calledNumbers} />
+                              <div className="text-center mt-4">
+                                <span className={minToGo <= 3 ? "font-bold text-green-600" : "font-medium text-gray-700"}>
+                                  {minToGo === 0
+                                    ? "Bingo!"
+                                    : `${minToGo} to go`}
+                                </span>
                               </div>
                             </div>
-                            <div className="text-xs text-gray-500 mb-4">
-                              Serial: <span className="font-mono">{ticket.serial}</span>
-                            </div>
-                            
-                            <BingoCard numbers={ticket.numbers} layoutMask={ticket.layoutMask} />
-                            
-                            <Button 
-                              className="w-full mt-4 bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-                              onClick={handleClaimBingo}
-                            >
-                              Claim Bingo!
-                            </Button>
-                          </div>
-                        ))}
+                          );
+                        })}
                     </div>
                   </div>
                 ))}
