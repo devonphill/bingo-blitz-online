@@ -7,12 +7,30 @@ interface SessionContextType {
   currentSession: GameSession | null;
   players: Player[];
   createSession: (name: string, gameType: GameType) => void;
-  joinSession: (accessCode: string, nickname: string) => Promise<boolean>;
+  joinSession: (playerCode: string, nickname: string) => Promise<boolean>;
   setCurrentSession: (sessionId: string | null) => void;
   getSessionByCode: (code: string) => GameSession | null;
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
+
+function generatePlayerCode(length = 6) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let code = '';
+  for (let i = 0; i < length; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+function generateUniquePlayerCode(existingCodes: string[], length = 6): string {
+  let code = generatePlayerCode(length);
+  // Avoid collisions with existing codes
+  while (existingCodes.includes(code)) {
+    code = generatePlayerCode(length);
+  }
+  return code;
+}
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<GameSession[]>([]);
@@ -33,27 +51,34 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       status: 'pending',
       createdAt: new Date().toISOString()
     };
-    
+
     setSessions([...sessions, newSession]);
     setCurrentSessionState(newSession);
   };
 
-  const joinSession = async (accessCode: string, nickname: string): Promise<boolean> => {
-    const session = sessions.find(s => s.accessCode === accessCode);
-    
-    if (!session) {
+  // Updated joinSession to use playerCode, enforce uniqueness of playerCode
+  const joinSession = async (playerCode: string, nickname: string): Promise<boolean> => {
+    // Check if the playerCode already exists (enforce uniqueness)
+    const existingPlayer = players.find(p => p.playerCode === playerCode);
+    if (existingPlayer) {
+      // Player code already used, do not join
       return false;
     }
-    
+
+    // For now, assign the new player to the currentSession
+    if (!currentSession) {
+      return false;
+    }
+
     const newPlayer: Player = {
       id: Date.now().toString(),
-      sessionId: session.id,
+      sessionId: currentSession.id,
       nickname,
-      joinedAt: new Date().toISOString()
+      joinedAt: new Date().toISOString(),
+      playerCode
     };
-    
+
     setPlayers([...players, newPlayer]);
-    setCurrentSessionState(session);
     return true;
   };
 
@@ -62,23 +87,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setCurrentSessionState(null);
       return;
     }
-    
     const session = sessions.find(s => s.id === sessionId);
     setCurrentSessionState(session || null);
   };
-  
+
   const getSessionByCode = (code: string): GameSession | null => {
     return sessions.find(s => s.accessCode === code) || null;
   };
 
   return (
-    <SessionContext.Provider 
-      value={{ 
-        sessions, 
-        currentSession, 
-        players, 
-        createSession, 
-        joinSession, 
+    <SessionContext.Provider
+      value={{
+        sessions,
+        currentSession,
+        players,
+        createSession,
+        joinSession,
         setCurrentSession,
         getSessionByCode
       }}

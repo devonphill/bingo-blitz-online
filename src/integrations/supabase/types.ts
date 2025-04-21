@@ -113,18 +113,21 @@ export type Database = {
           id: string
           joined_at: string
           nickname: string
+          player_code: string
           session_id: string
         }
         Insert: {
           id?: string
           joined_at?: string
           nickname: string
+          player_code: string
           session_id: string
         }
         Update: {
           id?: string
           joined_at?: string
           nickname?: string
+          player_code?: string
           session_id?: string
         }
         Relationships: [

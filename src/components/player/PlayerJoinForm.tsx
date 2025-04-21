@@ -8,7 +8,7 @@ import { useSession } from '@/contexts/SessionContext';
 import { useToast } from '@/components/ui/use-toast';
 
 export default function PlayerJoinForm() {
-  const [accessCode, setAccessCode] = useState('');
+  const [playerCode, setPlayerCode] = useState('');
   const [nickname, setNickname] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   const { joinSession } = useSession();
@@ -17,9 +17,9 @@ export default function PlayerJoinForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsJoining(true);
-    
+
     try {
-      const success = await joinSession(accessCode, nickname);
+      const success = await joinSession(playerCode.toUpperCase(), nickname);
       if (success) {
         toast({
           title: 'Successfully joined game',
@@ -28,7 +28,7 @@ export default function PlayerJoinForm() {
       } else {
         toast({
           title: 'Failed to join game',
-          description: 'Invalid access code. Please check and try again.',
+          description: 'Player code already in use or invalid. Please check and try again.',
           variant: 'destructive'
         });
       }
@@ -50,21 +50,24 @@ export default function PlayerJoinForm() {
           Join Bingo Game
         </CardTitle>
         <CardDescription>
-          Enter the access code provided by your host
+          Enter your unique 6-character player code and your nickname
         </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="accessCode">Game Code</Label>
+            <Label htmlFor="playerCode">Player Code</Label>
             <Input 
-              id="accessCode" 
+              id="playerCode" 
               type="text" 
-              value={accessCode}
-              onChange={(e) => setAccessCode(e.target.value)}
+              value={playerCode}
+              onChange={(e) => setPlayerCode(e.target.value.toUpperCase())}
               required
-              placeholder="Enter 6-digit code"
+              placeholder="Enter 6-character code"
               maxLength={6}
+              minLength={6}
+              pattern="[A-Z0-9]{6}"
+              title="6 alphanumeric characters, uppercase only"
             />
           </div>
           <div className="space-y-2">
