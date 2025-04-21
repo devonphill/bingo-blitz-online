@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Check, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ interface ClaimVerificationModalProps {
   tickets: Array<{
     serial: string;
     numbers: number[];
+    layoutMask?: number;
   }>;
   calledNumbers: number[];
   currentNumber: number | null;
@@ -35,20 +36,29 @@ export default function ClaimVerificationModal({
   onValidClaim,
   onFalseClaim
 }: ClaimVerificationModalProps) {
-  // Determine if claim is valid when all numbers on any ticket have been called
-  const isClaimValid = tickets.some(ticket => 
-    ticket.numbers.every(number => calledNumbers.includes(number))
-  );
+  const [isClaimValid, setIsClaimValid] = useState(false);
+  
+  // Recalculate claim validity when props change
+  useEffect(() => {
+    if (!tickets || tickets.length === 0) return;
+    
+    // A claim is valid if all numbers on any ticket have been called
+    const valid = tickets.some(ticket => 
+      ticket.numbers.every(number => calledNumbers.includes(number))
+    );
+    
+    setIsClaimValid(valid);
+  }, [tickets, calledNumbers]);
 
   const handleValidClaim = () => {
     onValidClaim();
-    onClose();
   };
 
   const handleFalseClaim = () => {
     onFalseClaim();
-    onClose();
   };
+
+  if (!isOpen) return null;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>

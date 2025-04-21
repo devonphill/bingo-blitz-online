@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -13,8 +13,64 @@ export function useClaimManagement(sessionId: string | undefined) {
   } | null>(null);
   const { toast } = useToast();
 
+  // Auto-check for pending claims when session is loaded
+  useEffect(() => {
+    if (sessionId) {
+      // Check for pending claims immediately when session is loaded
+      const checkPendingClaims = async () => {
+        const { data, error } = await supabase
+          .from('bingo_claims')
+          .select('id, player_id, claimed_at, status')
+          .eq('session_id', sessionId)
+          .eq('status', 'pending')
+          .order('claimed_at', { ascending: true });
+
+        if (error) {
+          console.error("Error auto-checking for claims:", error);
+          return;
+        }
+
+        if (data && data.length > 0) {
+          console.log("Found pending claims during auto-check:", data.length);
+          setIsClaimLightOn(true);
+        }
+      };
+
+      checkPendingClaims();
+
+      // Set up subscription for new claims
+      const claimsChannel = supabase
+        .channel('claim-notifications')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'bingo_claims',
+            filter: `session_id=eq.${sessionId}`
+          },
+          (payload) => {
+            console.log("New claim received:", payload);
+            setIsClaimLightOn(true);
+            toast({
+              title: "Bingo Claim!",
+              description: "A player has claimed bingo. Check the claim now.",
+              variant: "default"
+            });
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(claimsChannel);
+      };
+    }
+  }, [sessionId, toast]);
+
   const verifyPendingClaims = async () => {
     if (!sessionId) return;
+    
+    console.log("Checking for pending claims...");
 
     const { data, error } = await supabase
       .from('bingo_claims')
@@ -42,6 +98,7 @@ export function useClaimManagement(sessionId: string | undefined) {
       return;
     }
 
+    console.log("Found pending claims:", data);
     const latestClaim = data[0];
     setIsClaimLightOn(true);
 
@@ -79,11 +136,15 @@ export function useClaimManagement(sessionId: string | undefined) {
       return;
     }
 
+    console.log("Setting current claim with tickets:", ticketData);
     setCurrentClaim({
       playerName: playerData.nickname,
       playerId: playerData.id,
       tickets: ticketData
     });
+    
+    // Explicitly set modal to open
+    console.log("Opening claim modal");
     setShowClaimModal(true);
   };
 
