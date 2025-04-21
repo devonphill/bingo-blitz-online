@@ -20,7 +20,6 @@ interface SessionMainContentProps {
   handleEndGame: () => void;
   handleGoLive: () => Promise<void>;
   remainingNumbers: number[];
-  isClaimLightOn: boolean;
   sessionId: string;
 }
 
@@ -38,7 +37,6 @@ export default function SessionMainContent({
   handleEndGame,
   handleGoLive,
   remainingNumbers,
-  isClaimLightOn,
   sessionId,
 }: SessionMainContentProps) {
   return (
@@ -72,7 +70,6 @@ export default function SessionMainContent({
           onEndGame={handleEndGame}
           onGoLive={handleGoLive}
           remainingNumbers={remainingNumbers}
-          isClaimLightOn={isClaimLightOn}
           sessionId={sessionId}
           winPatterns={winPatterns}
         />

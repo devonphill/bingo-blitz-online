@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,7 +10,6 @@ interface CallerControlsProps {
   onEndGame: () => void;
   onGoLive: () => Promise<void>;
   remainingNumbers: number[];
-  isClaimLightOn: boolean;
   sessionId: string;
   winPatterns: string[];
 }
@@ -22,7 +20,6 @@ export default function CallerControls({
   onEndGame,
   onGoLive,
   remainingNumbers,
-  isClaimLightOn,
   sessionId,
   winPatterns
 }: CallerControlsProps) {
@@ -118,9 +115,8 @@ export default function CallerControls({
               console.log("Verify claim button clicked");
               onVerifyClaim();
             }}
-            className={isClaimLightOn ? "bg-yellow-100 border-yellow-400" : ""}
           >
-            {isClaimLightOn ? "⚠️ Verify Claim" : "Verify Claim"}
+            Verify Claim
           </Button>
           
           <Button 

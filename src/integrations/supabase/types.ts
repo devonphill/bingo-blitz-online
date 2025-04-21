@@ -308,7 +308,6 @@ export type Database = {
       }
       players: {
         Row: {
-          claim_light_on: boolean
           email: string | null
           id: string
           joined_at: string
@@ -318,7 +317,6 @@ export type Database = {
           tickets: number
         }
         Insert: {
-          claim_light_on?: boolean
           email?: string | null
           id?: string
           joined_at?: string
@@ -328,7 +326,6 @@ export type Database = {
           tickets?: number
         }
         Update: {
-          claim_light_on?: boolean
           email?: string | null
           id?: string
           joined_at?: string
