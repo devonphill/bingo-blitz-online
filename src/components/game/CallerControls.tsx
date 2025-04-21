@@ -8,6 +8,7 @@ interface CallerControlsProps {
   onCallNumber: (number: number) => void;
   onVerifyClaim: () => void;
   onEndGame: () => void;
+  onGoLive: () => Promise<void>;
   remainingNumbers: number[];
 }
 
@@ -15,9 +16,11 @@ export default function CallerControls({
   onCallNumber, 
   onVerifyClaim, 
   onEndGame,
+  onGoLive,
   remainingNumbers
 }: CallerControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
+  const [isGoingLive, setIsGoingLive] = useState(false);
   const { toast } = useToast();
 
   const handleCallNumber = () => {
@@ -40,6 +43,12 @@ export default function CallerControls({
       onCallNumber(number);
       setIsCallingNumber(false);
     }, 1000);
+  };
+
+  const handleGoLiveClick = async () => {
+    setIsGoingLive(true);
+    await onGoLive();
+    setIsGoingLive(false);
   };
 
   return (
@@ -74,6 +83,14 @@ export default function CallerControls({
             onClick={onEndGame}
           >
             End Game
+          </Button>
+          
+          <Button
+            className="bg-green-600 hover:bg-green-700 text-white"
+            disabled={isGoingLive}
+            onClick={handleGoLiveClick}
+          >
+            {isGoingLive ? 'Going Live...' : 'Go Live'}
           </Button>
         </div>
       </CardContent>

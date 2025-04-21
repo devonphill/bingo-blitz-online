@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -5,6 +6,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useSession } from '@/contexts/SessionContext';
 import CallerControls from '@/components/game/CallerControls';
 import CalledNumbers from '@/components/game/CalledNumbers';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -15,6 +17,7 @@ export default function CallerSession() {
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const [currentNumber, setCurrentNumber] = useState<number | null>(null);
   const [remainingNumbers, setRemainingNumbers] = useState<number[]>([]);
+  const [bingoTickets, setBingoTickets] = useState<any[]>([]);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -28,6 +31,13 @@ export default function CallerSession() {
     // Prompt for game type selection on load (but focus on 90-ball only for now)
     setPromptGameType(true);
   }, [sessionId]);
+
+  // Initialize numbers pool for 90-ball game
+  useEffect(() => {
+    if (gameType === "90-ball" && remainingNumbers.length === 0) {
+      setRemainingNumbers(Array.from({ length: 90 }, (_, i) => i + 1));
+    }
+  }, [gameType, remainingNumbers.length]);
 
   const handleGameTypeChange = (type: string) => {
     setGameType(type);
@@ -79,7 +89,6 @@ export default function CallerSession() {
   };
 
   const handleVerifyClaim = () => {
-    // In a real app, this would verify a player's winning claim
     toast({
       title: "Verifying Claim",
       description: "No claims to verify at this time.",
@@ -87,13 +96,85 @@ export default function CallerSession() {
   };
 
   const handleEndGame = () => {
-    // In a real app, this would end the game and update the session status
     toast({
       title: "Game Ended",
       description: "The game session has been ended.",
     });
     
     navigate('/dashboard');
+  };
+
+  // --- GO LIVE LOGIC ---
+  const handleGoLive = async () => {
+    if (!session) return;
+    // 1. Update session status to 'active'
+    const { error: updateError } = await supabase
+      .from('game_sessions')
+      .update({ status: 'active' })
+      .eq('id', sessionId);
+
+    if (updateError) {
+      toast({
+        title: 'Failed to Go Live',
+        description: updateError.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+    // 2. Fetch bingo tickets for this session (from bingo_cards)
+    // Here we assume bingo_cards.player_id is linked to players.id and players.session_id = sessionId
+    const { data: sessionPlayersData, error: playerErr } = await supabase
+      .from('players')
+      .select('id,player_code,nickname')
+      .eq('session_id', sessionId);
+
+    if (playerErr) {
+      toast({
+        title: 'Failed to load players',
+        description: playerErr.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Gather ticket info from bingo_cards table per player
+    let allTickets: any[] = [];
+    if (sessionPlayersData && sessionPlayersData.length) {
+      // For each player, fetch their cards (can be optimized; simple for now)
+      for (const player of sessionPlayersData) {
+        const { data: tickets, error: ticketErr } = await supabase
+          .from('bingo_cards')
+          .select('id,cells')
+          .eq('player_id', player.id);
+
+        if (ticketErr) {
+          toast({
+            title: `Failed to load tickets for ${player.nickname}`,
+            description: ticketErr.message,
+            variant: 'destructive',
+          });
+          continue;
+        }
+        if (tickets && tickets.length) {
+          // Optionally map structure according to your demo tickets (add perm number if applicable)
+          allTickets.push({
+            playerId: player.id,
+            playerCode: player.player_code,
+            nickname: player.nickname,
+            tickets,
+          });
+        }
+      }
+    }
+    setBingoTickets(allTickets);
+
+    toast({
+      title: 'Game is live!',
+      description: 'Bringing players into the game and fetching their tickets.',
+    });
+
+    // Optionally: update players UI or state here to bring them from lobby into the game
+    // For a real-time effect, you would broadcast this change (Socket.IO/Supabase Realtime).
   };
 
   return (
@@ -148,6 +229,13 @@ export default function CallerSession() {
                 </div>
               )}
             </div>
+            {/* Optionally, show fetched tickets for debug/demo */}
+            {bingoTickets.length > 0 && (
+              <div className="bg-gray-50 rounded-lg p-4 mt-6">
+                <h3 className="font-semibold mb-3">Bingo Tickets (Debug)</h3>
+                <pre className="text-xs max-h-40 overflow-auto">{JSON.stringify(bingoTickets, null, 2)}</pre>
+              </div>
+            )}
           </div>
           
           <div>
@@ -155,6 +243,7 @@ export default function CallerSession() {
               onCallNumber={handleCallNumber}
               onVerifyClaim={handleVerifyClaim}
               onEndGame={handleEndGame}
+              onGoLive={handleGoLive}
               remainingNumbers={remainingNumbers}
             />
           </div>
