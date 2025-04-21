@@ -1,15 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useSession } from '@/contexts/SessionContext';
-import CallerControls from '@/components/game/CallerControls';
-import CalledNumbers from '@/components/game/CalledNumbers';
 import { supabase } from '@/integrations/supabase/client';
 import GameHeader from '@/components/game/GameHeader';
-import PlayerList from '@/components/game/PlayerList';
-import TicketsDebugDisplay from '@/components/game/TicketsDebugDisplay';
-import WinPatternSelector from "@/components/game/WinPatternSelector";
+import GameTypeSelector from '@/components/game/GameTypeSelector';
+import SessionMainContent from '@/components/game/SessionMainContent';
 import ClaimVerificationModal from '@/components/game/ClaimVerificationModal';
 import { useClaimManagement } from '@/hooks/useClaimManagement';
 import { useWinPatternManagement } from '@/hooks/useWinPatternManagement';
@@ -48,9 +44,7 @@ export default function CallerSession() {
     setWinPrizes
   } = useWinPatternManagement(sessionId);
 
-  const {
-    progressToNextGame
-  } = useGameProgression(session);
+  const { progressToNextGame } = useGameProgression(session);
 
   useEffect(() => {
     if (!session && sessionId) {
@@ -179,17 +173,30 @@ export default function CallerSession() {
     };
   }, [sessionId, toast]);
 
+  const handleGameTypeChange = (type: string) => {
+    setGameType(type);
+    setPromptGameType(false);
+  };
+
+  const handleTogglePattern = (pattern: string) => {
+    setWinPatterns(prev =>
+      prev.includes(pattern) ? prev.filter(p => p !== pattern) : [...prev, pattern]
+    );
+  };
+
+  const handlePrizeChange = (pattern: string, value: string) => {
+    setWinPrizes(prev => ({ ...prev, [pattern]: value }));
+  };
+
   const handleCallNumber = async (number: number) => {
     if (sessionId) {
       try {
         const { data, error } = await supabase
           .from('called_numbers')
-          .insert([
-            { 
-              session_id: sessionId, 
-              number 
-            }
-          ]);
+          .insert([{ 
+            session_id: sessionId, 
+            number 
+          }]);
           
         if (error) {
           console.error("Error saving called number:", error);
@@ -226,7 +233,6 @@ export default function CallerSession() {
     try {
       const nextPattern = progressWinPattern();
       
-      // Create game log entry
       await supabase
         .from('game_logs')
         .insert({
@@ -241,7 +247,6 @@ export default function CallerSession() {
           total_calls: calledNumbers.length
         });
 
-      // Update player's claim light
       await supabase
         .from('players')
         .update({ claim_light_on: false })
@@ -292,6 +297,14 @@ export default function CallerSession() {
     }
   };
 
+  const handleEndGame = () => {
+    // Placeholder for end game logic
+  };
+
+  const handleGoLive = async () => {
+    // Placeholder for go live logic
+  };
+
   if (!sessionId) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -319,42 +332,8 @@ export default function CallerSession() {
   }
 
   if (promptGameType) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="bg-white shadow p-8 rounded-lg max-w-xs w-full text-center">
-          <h2 className="text-2xl font-bold mb-3">Select Game Type</h2>
-          <Button
-            className="w-full mb-2"
-            onClick={() => handleGameTypeChange('90-ball')}
-          >
-            90-Ball Bingo
-          </Button>
-        </div>
-      </div>
-    );
+    return <GameTypeSelector onGameTypeSelect={handleGameTypeChange} />;
   }
-
-  const handleGameTypeChange = (type: string) => {
-    setGameType(type);
-    setPromptGameType(false);
-  };
-
-  const handleTogglePattern = (pattern: string) => {
-    setWinPatterns(prev =>
-      prev.includes(pattern) ? prev.filter(p => p !== pattern) : [...prev, pattern]
-    );
-  };
-  const handlePrizeChange = (pattern: string, value: string) => {
-    setWinPrizes(prev => ({ ...prev, [pattern]: value }));
-  };
-
-  const handleEndGame = () => {
-    // Placeholder for end game logic
-  };
-
-  const handleGoLive = async () => {
-    // Placeholder for go live logic
-  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -365,40 +344,22 @@ export default function CallerSession() {
         setAutoMarking={setAutoMarking} 
       />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            <div className="bg-white shadow rounded-lg p-6 mb-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Game: {session.gameType}</h2>
-              <div className="mb-4">
-                <WinPatternSelector
-                  selectedPatterns={winPatterns}
-                  onTogglePattern={handleTogglePattern}
-                  prizeValues={winPrizes}
-                  onPrizeChange={handlePrizeChange}
-                />
-              </div>
-              <CalledNumbers 
-                calledNumbers={calledNumbers}
-                currentNumber={currentNumber}
-              />
-            </div>
-            <div className="bg-white shadow rounded-lg p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Players ({sessionPlayers.length})</h2>
-              <PlayerList players={sessionPlayers} />
-            </div>
-            <TicketsDebugDisplay bingoTickets={[]} />
-          </div>
-          <div>
-            <CallerControls 
-              onCallNumber={handleCallNumber}
-              onVerifyClaim={verifyPendingClaims}
-              onEndGame={handleEndGame}
-              onGoLive={handleGoLive}
-              remainingNumbers={remainingNumbers}
-              isClaimLightOn={isClaimLightOn}
-            />
-          </div>
-        </div>
+        <SessionMainContent
+          session={session}
+          winPatterns={winPatterns}
+          winPrizes={winPrizes}
+          onTogglePattern={handleTogglePattern}
+          onPrizeChange={handlePrizeChange}
+          calledNumbers={calledNumbers}
+          currentNumber={currentNumber}
+          sessionPlayers={sessionPlayers}
+          handleCallNumber={handleCallNumber}
+          verifyPendingClaims={verifyPendingClaims}
+          handleEndGame={handleEndGame}
+          handleGoLive={handleGoLive}
+          remainingNumbers={remainingNumbers}
+          isClaimLightOn={isClaimLightOn}
+        />
       </main>
       <ClaimVerificationModal
         isOpen={showClaimModal}
