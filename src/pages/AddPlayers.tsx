@@ -8,7 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useSession } from '@/contexts/SessionContext';
 import { ArrowLeft } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { GameSession } from '@/types';
+import { GameSession, GameType } from '@/types';
 
 export default function AddPlayers() {
   const { user } = useAuth();
@@ -52,10 +52,10 @@ export default function AddPlayers() {
           const fetchedSession: GameSession = {
             id: data.id,
             name: data.name,
-            gameType: data.game_type,
+            gameType: data.game_type as GameType, // Proper type casting here
             createdBy: data.created_by,
             accessCode: data.access_code,
-            status: data.status,
+            status: data.status as 'pending' | 'active' | 'completed', // Proper type casting here
             createdAt: data.created_at
           };
           setSession(fetchedSession);
