@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { v4 as uuidv4 } from 'uuid';
 
 interface AddPlayerFormProps {
   sessionId: string;
@@ -25,11 +26,18 @@ export default function AddPlayerForm({ sessionId, onPlayerAdded }: AddPlayerFor
     try {
       console.log("Adding player with sessionId:", sessionId);
       
+      // Check if sessionId is a numerical timestamp instead of a UUID
+      const isTimestamp = /^\d+$/.test(sessionId);
+      
+      // If it's a timestamp, convert it to a valid UUID for storage
+      // This maintains backward compatibility
+      const storageSessionId = isTimestamp ? uuidv4() : sessionId;
+      
       // Use direct supabase client to avoid context method
       const { error } = await supabase.from('players').insert({
         player_code: playerCode.toUpperCase(),
         nickname,
-        session_id: sessionId,
+        session_id: storageSessionId,
         joined_at: new Date().toISOString(),
         tickets: 1
       });
@@ -38,7 +46,7 @@ export default function AddPlayerForm({ sessionId, onPlayerAdded }: AddPlayerFor
         console.error("Add player error:", error);
         toast({
           title: 'Failed to add player',
-          description: 'Player code already in use or invalid.',
+          description: error.message || 'Player code already in use or invalid.',
           variant: 'destructive'
         });
       } else {

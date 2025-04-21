@@ -9,6 +9,7 @@ import { useSession } from '@/contexts/SessionContext';
 import { ArrowLeft } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { GameSession, GameType } from '@/types';
+import { useToast } from '@/components/ui/use-toast';
 
 export default function AddPlayers() {
   const { user } = useAuth();
@@ -17,6 +18,7 @@ export default function AddPlayers() {
   const { sessionId } = useParams();
   const [session, setSession] = useState<GameSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
   useEffect(() => {
     async function fetchSessionData() {
@@ -41,6 +43,32 @@ export default function AddPlayers() {
       
       try {
         // If not found in context, fetch directly from Supabase
+        // First, check if the sessionId appears to be a timestamp (not a UUID)
+        const isTimestamp = /^\d+$/.test(sessionId);
+        
+        if (isTimestamp) {
+          // For backward compatibility - create a session object
+          toast({
+            title: "Using local session",
+            description: "This session hasn't been saved to the database yet",
+          });
+          
+          const tempSession: GameSession = {
+            id: sessionId,
+            name: `Session ${sessionId}`,
+            gameType: '90-ball' as GameType,
+            createdBy: user?.id || 'unknown',
+            accessCode: '000000',
+            status: 'pending' as 'pending',
+            createdAt: new Date().toISOString()
+          };
+          
+          setSession(tempSession);
+          setLoading(false);
+          return;
+        }
+        
+        // If it's a valid UUID, fetch from Supabase
         const { data, error } = await supabase
           .from('game_sessions')
           .select('*')
@@ -61,16 +89,39 @@ export default function AddPlayers() {
           setSession(fetchedSession);
         } else {
           console.error("Error fetching session:", error);
+          toast({
+            title: "Error",
+            description: "Could not retrieve session data. Using local session.",
+            variant: "destructive"
+          });
+          
+          // Create a fallback session
+          const tempSession: GameSession = {
+            id: sessionId,
+            name: `Session ${sessionId}`,
+            gameType: '90-ball' as GameType,
+            createdBy: user?.id || 'unknown',
+            accessCode: '000000',
+            status: 'pending' as 'pending',
+            createdAt: new Date().toISOString()
+          };
+          
+          setSession(tempSession);
         }
       } catch (err) {
         console.error("Exception fetching session:", err);
+        toast({
+          title: "Error",
+          description: "An unexpected error occurred while fetching session data.",
+          variant: "destructive"
+        });
       }
       
       setLoading(false);
     }
     
     fetchSessionData();
-  }, [sessionId, sessions]);
+  }, [sessionId, sessions, user?.id, toast]);
 
   if (!user) {
     navigate('/login');

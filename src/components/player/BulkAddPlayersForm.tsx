@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { v4 as uuidv4 } from 'uuid';
 
 interface TempPlayer {
   playerCode: string;
@@ -70,15 +71,21 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
     try {
       console.log("Attempting to add players to session ID:", sessionId);
       
+      // Check if sessionId is a numerical timestamp instead of a UUID
+      const isTimestamp = /^\d+$/.test(sessionId);
+      
+      // If it's a timestamp, convert it to a valid UUID for storage
+      // This maintains backward compatibility
+      const storageSessionId = isTimestamp ? uuidv4() : sessionId;
+      
       // Insert all players directly using supabase client
-      // IMPORTANT: Don't include an explicit ID, let Supabase generate UUIDs
       const { error } = await supabase.from('players').insert(
         players.map(p => ({
           player_code: p.playerCode,
           nickname: p.nickname,
           email: p.email,
           tickets: p.tickets,
-          session_id: sessionId,
+          session_id: storageSessionId,
           joined_at: new Date().toISOString()
         }))
       );
