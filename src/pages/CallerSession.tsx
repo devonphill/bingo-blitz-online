@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { useSession } from '@/contexts/SessionContext';
 import CallerControls from '@/components/game/CallerControls';
 import CalledNumbers from '@/components/game/CalledNumbers';
@@ -11,35 +11,44 @@ import PlayerList from '@/components/game/PlayerList';
 import TicketsDebugDisplay from '@/components/game/TicketsDebugDisplay';
 import WinPatternSelector from "@/components/game/WinPatternSelector";
 import ClaimVerificationModal from '@/components/game/ClaimVerificationModal';
+import { useClaimManagement } from '@/hooks/useClaimManagement';
+import { useWinPatternManagement } from '@/hooks/useWinPatternManagement';
+import { useGameProgression } from '@/hooks/useGameProgression';
 
 export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
-  const { sessions, players, assignTicketsToPlayer } = useSession();
+  const { sessions } = useSession();
   const [session, setSession] = useState(sessions.find(s => s.id === sessionId) || null);
   const [gameType, setGameType] = useState('90-ball');
   const [promptGameType, setPromptGameType] = useState(false);
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const [currentNumber, setCurrentNumber] = useState<number | null>(null);
   const [remainingNumbers, setRemainingNumbers] = useState<number[]>([]);
-  const [bingoTickets, setBingoTickets] = useState<any[]>([]);
-  const [winPatterns, setWinPatterns] = useState<string[]>(["oneLine", "twoLines", "fullHouse"]);
-  const [winPrizes, setWinPrizes] = useState<{ [key: string]: string }>({
-    oneLine: "",
-    twoLines: "",
-    fullHouse: "",
-  });
-  const [autoMarking, setAutoMarking] = useState(false);
   const [sessionPlayers, setSessionPlayers] = useState<any[]>([]);
-  const [isClaimLightOn, setIsClaimLightOn] = useState(false);
-  const [showClaimModal, setShowClaimModal] = useState(false);
-  const [currentClaim, setCurrentClaim] = useState<{
-    playerName: string;
-    playerId: string;
-    tickets: any[];
-  } | null>(null);
+  const [autoMarking, setAutoMarking] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [currentGameWinPattern, setCurrentGameWinPattern] = useState<string | null>(null);
+
+  const {
+    isClaimLightOn,
+    showClaimModal,
+    currentClaim,
+    setShowClaimModal,
+    setIsClaimLightOn,
+    setCurrentClaim,
+    verifyPendingClaims
+  } = useClaimManagement(sessionId);
+
+  const {
+    winPatterns,
+    winPrizes,
+    currentGameWinPattern,
+    progressWinPattern
+  } = useWinPatternManagement(sessionId);
+
+  const {
+    progressToNextGame
+  } = useGameProgression(session);
 
   useEffect(() => {
     if (!session && sessionId) {
@@ -168,9 +177,117 @@ export default function CallerSession() {
     };
   }, [sessionId, toast]);
 
-  const handleGameTypeChange = (type: string) => {
-    setGameType(type);
-    setPromptGameType(false);
+  const handleCallNumber = async (number: number) => {
+    if (sessionId) {
+      try {
+        const { data, error } = await supabase
+          .from('called_numbers')
+          .insert([
+            { 
+              session_id: sessionId, 
+              number 
+            }
+          ]);
+          
+        if (error) {
+          console.error("Error saving called number:", error);
+          toast({
+            title: "Error",
+            description: "Failed to save called number. Please try again.",
+            variant: "destructive"
+          });
+          return;
+        }
+        
+        setCurrentNumber(number);
+        setCalledNumbers(prev => [...prev, number]);
+        setRemainingNumbers(prev => prev.filter(n => n !== number));
+        
+        toast({
+          title: "Number Called",
+          description: `Called number: ${number}`,
+        });
+      } catch (err) {
+        console.error("Exception saving called number:", err);
+        toast({
+          title: "Error",
+          description: "An unexpected error occurred.",
+          variant: "destructive"
+        });
+      }
+    }
+  };
+
+  const handleValidClaim = async () => {
+    if (!currentClaim || !session) return;
+
+    try {
+      const nextPattern = progressWinPattern();
+      
+      // Create game log entry
+      await supabase
+        .from('game_logs')
+        .insert({
+          session_id: sessionId,
+          player_id: currentClaim.playerId,
+          game_number: session.numberOfGames,
+          win_pattern: currentGameWinPattern,
+          prize: winPrizes[currentGameWinPattern || ''],
+          username: currentClaim.playerName,
+          winning_ticket: currentClaim.tickets,
+          numbers_called: calledNumbers,
+          total_calls: calledNumbers.length
+        });
+
+      // Update player's claim light
+      await supabase
+        .from('players')
+        .update({ claim_light_on: false })
+        .eq('id', currentClaim.playerId)
+        .eq('session_id', sessionId);
+
+      if (!nextPattern) {
+        await progressToNextGame();
+      }
+
+      setShowClaimModal(false);
+      setCurrentClaim(null);
+      setIsClaimLightOn(false);
+      
+      verifyPendingClaims();
+    } catch (error) {
+      console.error("Error processing valid claim:", error);
+      toast({
+        title: "Error",
+        description: "Failed to process claim.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleFalseClaim = async () => {
+    if (!currentClaim) return;
+
+    try {
+      await supabase
+        .from('players')
+        .update({ claim_light_on: false })
+        .eq('id', currentClaim.playerId)
+        .eq('session_id', sessionId);
+
+      setShowClaimModal(false);
+      setCurrentClaim(null);
+      setIsClaimLightOn(false);
+      
+      verifyPendingClaims();
+    } catch (error) {
+      console.error("Error processing false claim:", error);
+      toast({
+        title: "Error",
+        description: "Failed to process false claim.",
+        variant: "destructive"
+      });
+    }
   };
 
   if (!sessionId) {
@@ -215,218 +332,9 @@ export default function CallerSession() {
     );
   }
 
-  const handleCallNumber = async (number: number) => {
-    if (sessionId) {
-      try {
-        const { data, error } = await supabase
-          .from('called_numbers')
-          .insert([
-            { 
-              session_id: sessionId, 
-              number 
-            }
-          ]);
-          
-        if (error) {
-          console.error("Error saving called number:", error);
-          toast({
-            title: "Error",
-            description: "Failed to save called number. Please try again.",
-            variant: "destructive"
-          });
-          return;
-        }
-        
-        setCurrentNumber(number);
-        setCalledNumbers(prev => [...prev, number]);
-        setRemainingNumbers(prev => prev.filter(n => n !== number));
-        
-        toast({
-          title: "Number Called",
-          description: `Called number: ${number}`,
-        });
-      } catch (err) {
-        console.error("Exception saving called number:", err);
-        toast({
-          title: "Error",
-          description: "An unexpected error occurred.",
-          variant: "destructive"
-        });
-      }
-    }
-  };
-
-  const handleVerifyClaim = async () => {
-    const { data, error } = await supabase
-      .from('bingo_claims')
-      .select('id, player_id, claimed_at, status')
-      .eq('session_id', sessionId)
-      .eq('status', 'pending')
-      .order('claimed_at', { ascending: true });
-
-    if (error || !data || data.length === 0) {
-      console.log("No pending claims found");
-      return;
-    }
-
-    // Get the first pending claim
-    const latestClaim = data[0];
-
-    // Fetch player details
-    const { data: playerData, error: playerError } = await supabase
-      .from('players')
-      .select('nickname, id, email')
-      .eq('id', latestClaim.player_id)
-      .single();
-
-    if (playerError) {
-      console.error("Error fetching player data:", playerError);
-      return;
-    }
-
-    // Fetch player's tickets for this claim
-    const { data: ticketData, error: ticketError } = await supabase
-      .from('assigned_tickets')
-      .select('*')
-      .eq('player_id', playerData.id)
-      .eq('session_id', sessionId);
-
-    if (ticketError) {
-      console.error("Error fetching ticket data:", ticketError);
-      return;
-    }
-
-    // Set current claim and open modal automatically
-    setCurrentClaim({
-      playerName: playerData.nickname,
-      playerId: playerData.id,
-      tickets: ticketData
-    });
-    setShowClaimModal(true);
-    setIsClaimLightOn(true);
-
-    // Update player's claim light
-    await supabase
-      .from('players')
-      .update({ claim_light_on: true })
-      .eq('id', playerData.id)
-      .eq('session_id', sessionId);
-  };
-
-  const handleValidClaim = async () => {
-    if (!currentClaim || !session) return;
-
-    try {
-      // Determine current win pattern
-      const currentWinPattern = determineCurrentWinPattern();
-
-      // Create game log entry
-      const { error: logError } = await supabase
-        .from('game_logs')
-        .insert({
-          session_id: sessionId,
-          player_id: currentClaim.playerId,
-          game_number: session.current_game,
-          win_pattern: currentWinPattern,
-          prize: winPrizes[currentWinPattern],
-          username: currentClaim.playerName,
-          winning_ticket: currentClaim.tickets,
-          numbers_called: calledNumbers,
-          total_calls: calledNumbers.length
-        });
-
-      if (logError) {
-        console.error("Error creating game log:", logError);
-      }
-
-      // Update player's claim light to false
-      await supabase
-        .from('players')
-        .update({ claim_light_on: false })
-        .eq('id', currentClaim.playerId)
-        .eq('session_id', sessionId);
-
-      // Determine next win pattern or progress game
-      const nextWinPattern = progressWinPatterns();
-
-      // If all win patterns claimed, move to next game
-      if (!nextWinPattern) {
-        await progressToNextGame();
-      }
-
-      // Close claim modal and reset state
-      setShowClaimModal(false);
-      setCurrentClaim(null);
-      setIsClaimLightOn(false);
-    } catch (error) {
-      console.error("Error processing valid claim:", error);
-    }
-  };
-
-  const handleFalseClaim = async () => {
-    if (!currentClaim) return;
-
-    try {
-      // Update player's claim light to false
-      await supabase
-        .from('players')
-        .update({ claim_light_on: false })
-        .eq('id', currentClaim.playerId)
-        .eq('session_id', sessionId);
-
-      // Close claim modal and reset state
-      setShowClaimModal(false);
-      setCurrentClaim(null);
-      setIsClaimLightOn(false);
-    } catch (error) {
-      console.error("Error processing false claim:", error);
-    }
-  };
-
-  const determineCurrentWinPattern = () => {
-    if (activeWinPatterns.includes("oneLine")) return "oneLine";
-    if (activeWinPatterns.includes("twoLines")) return "twoLines";
-    if (activeWinPatterns.includes("fullHouse")) return "fullHouse";
-    return "unknown";
-  };
-
-  const progressWinPatterns = () => {
-    const currentIndex = activeWinPatterns.indexOf(currentGameWinPattern);
-    const nextPattern = activeWinPatterns[currentIndex + 1];
-    
-    if (nextPattern) {
-      setCurrentGameWinPattern(nextPattern);
-      return nextPattern;
-    }
-    
-    return null;
-  };
-
-  const progressToNextGame = async () => {
-    if (!session) return;
-
-    const nextGameNumber = session.current_game + 1;
-
-    // Update session's current game
-    const { error } = await supabase
-      .from('game_sessions')
-      .update({ 
-        current_game: nextGameNumber,
-        status: nextGameNumber > session.number_of_games ? 'completed' : 'active'
-      })
-      .eq('id', sessionId);
-
-    if (error) {
-      console.error("Error progressing to next game:", error);
-      return;
-    }
-
-    // Reset win patterns if needed
-    setActiveWinPatterns(["oneLine", "twoLines", "fullHouse"]);
-    setCurrentGameWinPattern("oneLine");
-
-    // Optional: Open game type selection modal for next game
-    // You can implement this if you want a modal to select game type
+  const handleGameTypeChange = (type: string) => {
+    setGameType(type);
+    setPromptGameType(false);
   };
 
   const handleTogglePattern = (pattern: string) => {
@@ -436,6 +344,14 @@ export default function CallerSession() {
   };
   const handlePrizeChange = (pattern: string, value: string) => {
     setWinPrizes(prev => ({ ...prev, [pattern]: value }));
+  };
+
+  const handleEndGame = () => {
+    // Placeholder for end game logic
+  };
+
+  const handleGoLive = async () => {
+    // Placeholder for go live logic
   };
 
   return (
@@ -468,12 +384,12 @@ export default function CallerSession() {
               <h2 className="text-xl font-bold text-gray-900 mb-4">Players ({sessionPlayers.length})</h2>
               <PlayerList players={sessionPlayers} />
             </div>
-            <TicketsDebugDisplay bingoTickets={bingoTickets} />
+            <TicketsDebugDisplay bingoTickets={[]} />
           </div>
           <div>
             <CallerControls 
               onCallNumber={handleCallNumber}
-              onVerifyClaim={handleVerifyClaim}
+              onVerifyClaim={verifyPendingClaims}
               onEndGame={handleEndGame}
               onGoLive={handleGoLive}
               remainingNumbers={remainingNumbers}
