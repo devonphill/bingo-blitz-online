@@ -31,14 +31,20 @@ export default function CallerSession() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!session) {
-      setSession(sessions.find(s => s.id === sessionId) || null);
+    if (!session && sessionId) {
+      const foundSession = sessions.find(s => s.id === sessionId);
+      if (foundSession) {
+        setSession(foundSession);
+        console.log("Session found:", foundSession);
+      } else {
+        console.log("Session not found for ID:", sessionId);
+      }
     }
   }, [sessionId, sessions, session]);
 
   useEffect(() => {
-    setPromptGameType(true);
-  }, [sessionId]);
+    setPromptGameType(!session?.gameType);
+  }, [session]);
 
   useEffect(() => {
     if (gameType === "90-ball" && remainingNumbers.length === 0) {
@@ -46,10 +52,52 @@ export default function CallerSession() {
     }
   }, [gameType, remainingNumbers.length]);
 
+  useEffect(() => {
+    if (sessionId) {
+      const fetchCalledNumbers = async () => {
+        const { data, error } = await supabase
+          .from('called_numbers')
+          .select('number')
+          .eq('session_id', sessionId)
+          .order('called_at', { ascending: true });
+          
+        if (error) {
+          console.error("Error fetching called numbers:", error);
+          return;
+        }
+        
+        if (data && data.length > 0) {
+          const numbers = data.map(item => item.number);
+          setCalledNumbers(numbers);
+          setCurrentNumber(numbers[numbers.length - 1]);
+          
+          if (gameType === "90-ball" && remainingNumbers.length > 0) {
+            setRemainingNumbers(prev => prev.filter(n => !numbers.includes(n)));
+          }
+        }
+      };
+      
+      fetchCalledNumbers();
+    }
+  }, [sessionId, gameType, remainingNumbers.length]);
+
   const handleGameTypeChange = (type: string) => {
     setGameType(type);
     setPromptGameType(false);
   };
+
+  if (!sessionId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Session ID Missing</h2>
+          <Button onClick={() => navigate('/dashboard')}>
+            Return to Dashboard
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (!session) {
     return (
@@ -247,35 +295,6 @@ export default function CallerSession() {
   const handlePrizeChange = (pattern: string, value: string) => {
     setWinPrizes(prev => ({ ...prev, [pattern]: value }));
   };
-
-  useEffect(() => {
-    if (sessionId) {
-      const fetchCalledNumbers = async () => {
-        const { data, error } = await supabase
-          .from('called_numbers')
-          .select('number')
-          .eq('session_id', sessionId)
-          .order('called_at', { ascending: true });
-          
-        if (error) {
-          console.error("Error fetching called numbers:", error);
-          return;
-        }
-        
-        if (data && data.length > 0) {
-          const numbers = data.map(item => item.number);
-          setCalledNumbers(numbers);
-          setCurrentNumber(numbers[numbers.length - 1]);
-          
-          if (gameType === "90-ball" && remainingNumbers.length > 0) {
-            setRemainingNumbers(prev => prev.filter(n => !numbers.includes(n)));
-          }
-        }
-      };
-      
-      fetchCalledNumbers();
-    }
-  }, [sessionId, gameType, remainingNumbers.length]);
 
   return (
     <div className="min-h-screen bg-gray-50">

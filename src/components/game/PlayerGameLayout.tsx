@@ -86,7 +86,7 @@ export default function PlayerGameLayout({
           </div>
         </div>
         {/* Current Number Visual at bottom left corner positioned at the bottom of the viewport */}
-        <div className="flex items-center justify-center p-4 bg-gray-900 sticky bottom-0">
+        <div className="fixed bottom-0 left-0 w-[30%] max-w-[400px] min-w-[240px] flex items-center justify-center p-4 bg-gray-900">
           <CurrentNumberDisplay 
             number={currentNumber} 
             sizePx={Math.min(window.innerWidth * 0.3 * 0.8, 180)} 
