@@ -34,6 +34,12 @@ export default function PlayerTicketsPanel({
     if (!autoMarking) return tickets;
 
     const ticketsWithProgress = tickets.map(ticket => {
+      // Make sure ticket.layoutMask exists before trying to use toString()
+      if (!ticket.layoutMask) {
+        console.warn("Ticket without layoutMask encountered:", ticket);
+        return { ...ticket, minToGo: Infinity };
+      }
+      
       // Calculate ticket progress using the same logic from BingoWinProgress
       const maskBits = ticket.layoutMask.toString(2).padStart(27, "0").split("").reverse();
       const rows: (number | null)[][] = [[], [], []];
@@ -116,22 +122,30 @@ export default function PlayerTicketsPanel({
                   <div className="text-xs text-gray-500 mb-4">
                     Serial: <span className="font-mono">{ticket.serial}</span>
                   </div>
-                  <BingoCard
-                    numbers={ticket.numbers}
-                    layoutMask={ticket.layoutMask}
-                    calledNumbers={calledNumbers}
-                    autoMarking={autoMarking}
-                    activeWinPatterns={activeWinPatterns}
-                  />
-                  <div className="text-center mt-4">
-                    <BingoWinProgress
-                      numbers={ticket.numbers}
-                      layoutMask={ticket.layoutMask}
-                      calledNumbers={calledNumbers}
-                      activeWinPatterns={activeWinPatterns}
-                      currentWinPattern={currentWinPattern}
-                    />
-                  </div>
+                  {ticket.layoutMask ? (
+                    <>
+                      <BingoCard
+                        numbers={ticket.numbers}
+                        layoutMask={ticket.layoutMask}
+                        calledNumbers={calledNumbers}
+                        autoMarking={autoMarking}
+                        activeWinPatterns={activeWinPatterns}
+                      />
+                      <div className="text-center mt-4">
+                        <BingoWinProgress
+                          numbers={ticket.numbers}
+                          layoutMask={ticket.layoutMask}
+                          calledNumbers={calledNumbers}
+                          activeWinPatterns={activeWinPatterns}
+                          currentWinPattern={currentWinPattern}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="p-4 text-center text-gray-500">
+                      Ticket information is incomplete
+                    </div>
+                  )}
                 </div>
               ))}
           </div>

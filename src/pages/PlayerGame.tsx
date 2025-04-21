@@ -9,6 +9,7 @@ export default function PlayerGame() {
   const navigate = useNavigate();
   
   // Always call the hook, but pass null when we don't have a code yet
+  // This ensures we always have the same number of hooks on each render
   const {
     tickets,
     calledNumbers,
@@ -46,17 +47,17 @@ export default function PlayerGame() {
 
   return (
     <PlayerGameContent
-      tickets={tickets}
-      calledNumbers={calledNumbers}
+      tickets={tickets || []}
+      calledNumbers={calledNumbers || []}
       currentNumber={currentNumber}
       currentSession={currentSession}
       autoMarking={autoMarking}
       setAutoMarking={setAutoMarking}
       playerCode={playerCode || storedPlayerCode}
-      winPrizes={winPrizes}
-      activeWinPatterns={activeWinPatterns}
+      winPrizes={winPrizes || {}}
+      activeWinPatterns={activeWinPatterns || []}
       onClaimBingo={handleClaimBingo}
-      errorMessage={errorMessage}
+      errorMessage={errorMessage || ''}
       isLoading={isLoading}
       isClaiming={isClaiming}
       claimStatus={claimStatus}
