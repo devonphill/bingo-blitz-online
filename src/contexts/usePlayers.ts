@@ -3,6 +3,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { GameSession, Player } from "@/types";
 import { useTickets } from "./useTickets";
+import { SupabaseRpcFunction } from "@/integrations/supabase/customTypes";
 
 type AdminTempPlayer = {
   playerCode: string;
@@ -32,7 +33,7 @@ export function usePlayers(sessions: GameSession[], fetchSessions: () => Promise
     
     // Call RPC as a string, don't use custom types that restrict
     const { data: existingTickets, error: checkError } = await supabase
-      .rpc('get_player_assigned_tickets_count', { 
+      .rpc('get_player_assigned_tickets_count' as SupabaseRpcFunction, { 
         p_player_id: player.id, 
         p_session_id: player.sessionId 
       });

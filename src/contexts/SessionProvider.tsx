@@ -28,15 +28,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<GameSession[]>([]);
   const [currentSession, setCurrentSessionState] = useState<GameSession | null>(null);
 
-  const { assignTicketsToPlayer, getPlayerAssignedTickets } = useTickets();
-
-  // Pass the current assignTicketsToPlayer for use in the player hook
-  const { players, setPlayers, joinSession, addPlayer, bulkAddPlayers } = usePlayers(
-    sessions,
-    fetchSessions,
-    assignTicketsToPlayer
-  );
-
   // Session fetching logic stays here
   const fetchSessions = async () => {
     const { data, error } = await supabase.from('game_sessions').select('*');
@@ -56,6 +47,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       );
     }
   };
+
+  const { assignTicketsToPlayer, getPlayerAssignedTickets } = useTickets();
+
+  // Pass the current assignTicketsToPlayer for use in the player hook
+  const { players, setPlayers, joinSession, addPlayer, bulkAddPlayers } = usePlayers(
+    sessions,
+    fetchSessions,
+    assignTicketsToPlayer
+  );
 
   useEffect(() => {
     fetchSessions();

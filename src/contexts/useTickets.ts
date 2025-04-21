@@ -1,5 +1,6 @@
 
 import { supabase } from "@/integrations/supabase/client";
+import { SupabaseRpcFunction } from "@/integrations/supabase/customTypes";
 
 export interface TicketData {
   serial: string;
@@ -26,7 +27,9 @@ export function useTickets() {
   const getAvailableTickets = async (sessionId: string, count: number): Promise<TicketData[]> => {
     try {
       const { data: assignedTicketsData, error: assignedError } = await supabase
-        .rpc('get_assigned_ticket_serials_by_session', { p_session_id: sessionId });
+        .rpc('get_assigned_ticket_serials_by_session' as SupabaseRpcFunction, { 
+          p_session_id: sessionId 
+        });
 
       if (assignedError) {
         console.error("Error getting assigned tickets:", assignedError);
@@ -89,7 +92,7 @@ export function useTickets() {
   const assignTicketsToPlayer = async (playerId: string, sessionId: string, ticketCount: number): Promise<boolean> => {
     try {
       const { data: existingTicketsCount, error: checkError } = await supabase
-        .rpc('get_player_assigned_tickets_count', { 
+        .rpc('get_player_assigned_tickets_count' as SupabaseRpcFunction, { 
           p_player_id: playerId, 
           p_session_id: sessionId 
         });
@@ -117,7 +120,7 @@ export function useTickets() {
         numbers: ticket.numbers
       }));
       const { error: insertError } = await supabase
-        .rpc('insert_assigned_tickets', { tickets: ticketsToInsert });
+        .rpc('insert_assigned_tickets' as SupabaseRpcFunction, { tickets: ticketsToInsert });
       if (insertError) {
         console.error("Error assigning tickets:", insertError);
         return false;
@@ -133,7 +136,7 @@ export function useTickets() {
   const getPlayerAssignedTickets = async (playerId: string, sessionId: string): Promise<AssignedTicket[]> => {
     try {
       const { data, error } = await supabase
-        .rpc('get_player_assigned_tickets', { 
+        .rpc('get_player_assigned_tickets' as SupabaseRpcFunction, { 
           p_player_id: playerId, 
           p_session_id: sessionId 
         });
