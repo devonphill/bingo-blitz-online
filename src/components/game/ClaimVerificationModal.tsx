@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Check, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -43,6 +44,7 @@ export default function ClaimVerificationModal({
   const [rankedTickets, setRankedTickets] = useState<any[]>([]);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [actionType, setActionType] = useState<'valid' | 'false' | null>(null);
+  const [validTickets, setValidTickets] = useState<any[]>([]);
   
   console.log("ClaimVerificationModal rendered with isOpen:", isOpen, "playerName:", playerName, "currentWinPattern:", currentWinPattern);
   
@@ -71,7 +73,7 @@ export default function ClaimVerificationModal({
         score: matchedNumbers.length,
         percentMatched: Math.round((matchedNumbers.length / ticket.numbers.length) * 100),
         // Consistently use layoutMask
-        layoutMask: ticket.layout_mask || ticket.layoutMask
+        layoutMask: ticket.layoutMask
       };
     });
     
@@ -79,13 +81,16 @@ export default function ClaimVerificationModal({
     const sortedTickets = [...ticketsWithScore].sort((a, b) => b.score - a.score);
     setRankedTickets(sortedTickets);
     
+    // Array to collect valid tickets
+    const validTicketsFound: any[] = [];
+    
     // Check claim validity based on the current win pattern
     let valid = false;
     
     // Convert each ticket to check against the current win pattern
     if (currentWinPattern === "oneLine") {
       // For one line, we need to check if any row is complete
-      valid = sortedTickets.some(ticket => {
+      sortedTickets.forEach(ticket => {
         // Use layoutMask consistently
         const layoutMask = ticket.layoutMask || 0;
         const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
@@ -102,13 +107,18 @@ export default function ClaimVerificationModal({
         }
         
         // Check if any row is complete
-        return rows.some(row => 
+        const isValid = rows.some(row => 
           row.length > 0 && row.every(num => calledNumbers.includes(num))
         );
+        
+        if (isValid) {
+          valid = true;
+          validTicketsFound.push({...ticket, validPattern: 'oneLine'});
+        }
       });
     } else if (currentWinPattern === "twoLines") {
       // For two lines, we need to check if any two rows are complete
-      valid = sortedTickets.some(ticket => {
+      sortedTickets.forEach(ticket => {
         // Use layoutMask consistently
         const layoutMask = ticket.layoutMask || 0;
         const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
@@ -129,17 +139,34 @@ export default function ClaimVerificationModal({
           row.length > 0 && row.every(num => calledNumbers.includes(num))
         ).length;
         
-        return completeRows >= 2;
+        if (completeRows >= 2) {
+          valid = true;
+          validTicketsFound.push({...ticket, validPattern: 'twoLines'});
+        }
       });
     } else {
       // For full house or default, check if all numbers in any ticket have been called
-      valid = sortedTickets.some(ticket => 
-        ticket.numbers.every(number => calledNumbers.includes(number))
-      );
+      sortedTickets.forEach(ticket => {
+        const isValid = ticket.numbers.every(number => calledNumbers.includes(number));
+        if (isValid) {
+          valid = true;
+          validTicketsFound.push({...ticket, validPattern: 'fullHouse'});
+        }
+      });
     }
     
     console.log("Claim validity for pattern", currentWinPattern, ":", valid);
+    console.log("Valid tickets found:", validTicketsFound.length);
+    
     setIsClaimValid(valid);
+    setValidTickets(validTicketsFound);
+    
+    // If valid tickets are found, prioritize displaying them
+    if (validTicketsFound.length > 0) {
+      setRankedTickets([...validTicketsFound, ...sortedTickets.filter(
+        ticket => !validTicketsFound.some(vt => vt.serial === ticket.serial)
+      )]);
+    }
   }, [tickets, calledNumbers, currentWinPattern]);
 
   const handleValidClaim = () => {
@@ -178,16 +205,25 @@ export default function ClaimVerificationModal({
             <div className="text-sm text-gray-500">
               Current win pattern: <span className="font-semibold">{currentWinPattern || 'Full House'}</span>
             </div>
+            {validTickets.length > 0 && (
+              <div className="text-sm text-green-600 font-medium mt-1">
+                Found {validTickets.length} valid winning ticket{validTickets.length > 1 ? 's' : ''}
+              </div>
+            )}
           </DialogHeader>
 
           <ScrollArea className="mt-4 h-[50vh]">
             <div className="space-y-4">
               {rankedTickets.map((ticket) => (
-                <div key={ticket.serial} className="p-2 border rounded-md">
+                <div 
+                  key={ticket.serial} 
+                  className={`p-2 border rounded-md ${validTickets.some(vt => vt.serial === ticket.serial) ? 'border-green-500 bg-green-50' : 'border-gray-200'}`}
+                >
                   <div className="flex justify-between text-sm text-gray-500 mb-1">
                     <span>Ticket: {ticket.serial}</span>
-                    <span className="font-bold">
+                    <span className={`font-bold ${validTickets.some(vt => vt.serial === ticket.serial) ? 'text-green-600' : ''}`}>
                       Score: {ticket.score}/{ticket.numbers.length} numbers ({ticket.percentMatched}%)
+                      {validTickets.some(vt => vt.serial === ticket.serial) && ' - WINNING TICKET'}
                     </span>
                   </div>
                   <CallerTicketDisplay

@@ -9,8 +9,77 @@ export function useClaimManagement(sessionId: string | undefined) {
     playerName: string;
     playerId: string;
     tickets: any[];
+    claimId?: string;
   } | null>(null);
+  const [claimQueue, setClaimQueue] = useState<Array<{
+    playerName: string;
+    playerId: string;
+    claimId: string;
+  }>>([]);
+  const [processingClaim, setProcessingClaim] = useState(false);
   const { toast } = useToast();
+
+  // Process the next claim in the queue
+  const processNextClaim = useCallback(async () => {
+    if (claimQueue.length === 0 || processingClaim) {
+      return;
+    }
+
+    setProcessingClaim(true);
+    const nextClaim = claimQueue[0];
+    
+    try {
+      // Fetch player's tickets
+      const { data: ticketData, error: ticketError } = await supabase
+        .from('assigned_tickets')
+        .select('*')
+        .eq('player_id', nextClaim.playerId)
+        .eq('session_id', sessionId);
+
+      if (ticketError) {
+        console.error("Error fetching ticket data:", ticketError);
+        toast({
+          title: "Error",
+          description: "Failed to fetch ticket information.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      console.log(`Processing claim for ${nextClaim.playerName} with ${ticketData?.length || 0} tickets`);
+      
+      // Set the claim data and show modal
+      setCurrentClaim({
+        playerName: nextClaim.playerName,
+        playerId: nextClaim.playerId,
+        tickets: ticketData || [],
+        claimId: nextClaim.claimId
+      });
+      
+      // Remove from queue
+      setClaimQueue(prev => prev.slice(1));
+      
+      // Open the modal
+      console.log("Opening modal for claim verification!");
+      setShowClaimModal(true);
+    } catch (error) {
+      console.error("Error processing next claim:", error);
+      // Skip to next claim on error
+      setClaimQueue(prev => prev.slice(1));
+    } finally {
+      setProcessingClaim(false);
+    }
+  }, [claimQueue, processingClaim, sessionId, toast]);
+
+  // When current claim is processed, check for next claim
+  useEffect(() => {
+    if (!showClaimModal && !currentClaim && claimQueue.length > 0) {
+      const timer = setTimeout(() => {
+        processNextClaim();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [showClaimModal, currentClaim, claimQueue, processNextClaim]);
 
   const verifyPendingClaims = useCallback(async () => {
     if (!sessionId) {
@@ -41,55 +110,39 @@ export function useClaimManagement(sessionId: string | undefined) {
       console.log("Pending claims data:", data);
 
       if (data && data.length > 0) {
-        console.log("Found pending claims:", data);
-        const latestClaim = data[0];
-
-        // Fetch player details
-        const { data: playerData, error: playerError } = await supabase
-          .from('players')
-          .select('nickname, id, email')
-          .eq('id', latestClaim.player_id)
-          .single();
-
-        if (playerError) {
-          console.error("Error fetching player data:", playerError);
-          toast({
-            title: "Error",
-            description: "Failed to fetch player information.",
-            variant: "destructive"
-          });
-          return;
-        }
-
-        // Fetch player's tickets
-        const { data: ticketData, error: ticketError } = await supabase
-          .from('assigned_tickets')
-          .select('*')
-          .eq('player_id', playerData.id)
-          .eq('session_id', sessionId);
-
-        if (ticketError) {
-          console.error("Error fetching ticket data:", ticketError);
-          toast({
-            title: "Error",
-            description: "Failed to fetch ticket information.",
-            variant: "destructive"
-          });
-          return;
-        }
-
-        console.log("Setting current claim with tickets:", ticketData);
+        console.log("Found pending claims:", data.length);
         
-        // Set the claim data
-        setCurrentClaim({
-          playerName: playerData.nickname,
-          playerId: playerData.id,
-          tickets: ticketData || []
-        });
-        
-        // Force modal to open
-        console.log("Opening modal for claim verification!");
-        setShowClaimModal(true);
+        // Process each claim - get player details for each
+        for (const claim of data) {
+          // Skip if we're already processing this claim ID
+          if (currentClaim?.claimId === claim.id || 
+              claimQueue.some(q => q.claimId === claim.id)) {
+            console.log(`Claim ${claim.id} already in process or queue`);
+            continue;
+          }
+
+          const { data: playerData, error: playerError } = await supabase
+            .from('players')
+            .select('nickname, id')
+            .eq('id', claim.player_id)
+            .single();
+
+          if (playerError) {
+            console.error(`Error fetching player data for claim ${claim.id}:`, playerError);
+            continue;
+          }
+
+          // Add to queue
+          console.log(`Adding claim for ${playerData.nickname} to queue`);
+          setClaimQueue(prev => [
+            ...prev, 
+            { 
+              playerName: playerData.nickname, 
+              playerId: playerData.id,
+              claimId: claim.id
+            }
+          ]);
+        }
       } else {
         console.log("No pending claims found");
       }
@@ -101,7 +154,14 @@ export function useClaimManagement(sessionId: string | undefined) {
         variant: "destructive"
       });
     }
-  }, [sessionId, toast]);
+  }, [sessionId, toast, currentClaim, claimQueue]);
+
+  // After queue is updated, process the next claim if needed
+  useEffect(() => {
+    if (!showClaimModal && !currentClaim && claimQueue.length > 0 && !processingClaim) {
+      processNextClaim();
+    }
+  }, [claimQueue, showClaimModal, currentClaim, processingClaim, processNextClaim]);
 
   const checkForClaims = useCallback(() => {
     console.log("Manual claim check button pressed! - DIRECT CALL");
@@ -139,6 +199,26 @@ export function useClaimManagement(sessionId: string | undefined) {
           }
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'bingo_claims',
+          filter: `session_id=eq.${sessionId}`
+        },
+        (payload) => {
+          if (payload.new) {
+            console.log("Bingo claim updated:", payload.new);
+            
+            // Check if any claims need processing
+            const timer = setTimeout(() => {
+              verifyPendingClaims();
+            }, 500);
+            return () => clearTimeout(timer);
+          }
+        }
+      )
       .subscribe();
 
     return () => {
@@ -165,6 +245,7 @@ export function useClaimManagement(sessionId: string | undefined) {
     currentClaim,
     setCurrentClaim,
     verifyPendingClaims,
-    checkForClaims
+    checkForClaims,
+    claimQueue
   };
 }

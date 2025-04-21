@@ -1,9 +1,10 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import CurrentNumberDisplay from "@/components/game/CurrentNumberDisplay";
 import CalledNumbers from "@/components/game/CalledNumbers";
 import PlayerTicketsPanel from "@/components/game/PlayerTicketsPanel";
 import { Button } from "@/components/ui/button";
+import { Loader } from "lucide-react";
 
 // Props for layout, kept minimal for panel orchestration
 export default function PlayerGameLayout({
@@ -22,6 +23,42 @@ export default function PlayerGameLayout({
   isLoading,
 }: any) {
   const [isClaimValidating, setIsClaimValidating] = useState(false);
+  const [hasPendingClaim, setHasPendingClaim] = useState(false);
+
+  // Check if player has a pending claim
+  useEffect(() => {
+    if (!currentSession?.id || !playerCode) return;
+    
+    const checkPendingClaims = async () => {
+      try {
+        const { data, error } = await fetch('/api/player-pending-claims', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            sessionId: currentSession.id,
+            playerCode
+          }),
+        }).then(res => res.json());
+        
+        if (!error && data && data.hasPendingClaim) {
+          setHasPendingClaim(true);
+          setIsClaimValidating(true);
+        } else {
+          setHasPendingClaim(false);
+        }
+      } catch (err) {
+        console.error("Error checking pending claims:", err);
+      }
+    };
+    
+    // Check initially and set up interval
+    checkPendingClaims();
+    const interval = setInterval(checkPendingClaims, 10000); // Check every 10 seconds
+    
+    return () => clearInterval(interval);
+  }, [currentSession?.id, playerCode]);
 
   // Loading and error states
   if (isLoading) {
@@ -33,6 +70,8 @@ export default function PlayerGameLayout({
       </div>
     );
   }
+  
+  // Error display
   if (errorMessage) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -48,6 +87,8 @@ export default function PlayerGameLayout({
       </div>
     );
   }
+  
+  // Session not started yet
   if (!currentSession) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -64,11 +105,8 @@ export default function PlayerGameLayout({
   
   const handleClaimClick = async () => {
     setIsClaimValidating(true);
+    setHasPendingClaim(true);
     await onClaimBingo();
-    // Reset after 3 seconds to allow for new claims
-    setTimeout(() => {
-      setIsClaimValidating(false);
-    }, 3000);
   };
 
   return (
@@ -78,12 +116,43 @@ export default function PlayerGameLayout({
         <div className="flex-1 bg-black text-white p-4">
           <h1 className="text-xl font-bold mb-4">Bingo Game Info</h1>
           <Button
-            className="w-full bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
+            className={`w-full ${isClaimValidating 
+              ? 'bg-orange-500 hover:bg-orange-600' 
+              : 'bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary'
+            }`}
             onClick={handleClaimClick}
             disabled={isClaimValidating}
           >
-            {isClaimValidating ? "VALIDATING CLAIM..." : "CLAIM NOW!"}
+            {isClaimValidating ? (
+              <span className="flex items-center">
+                <Loader className="animate-spin mr-2 h-4 w-4" />
+                VALIDATING CLAIM...
+              </span>
+            ) : "CLAIM NOW!"}
           </Button>
+          
+          {isClaimValidating && (
+            <p className="text-xs text-gray-300 mt-2 text-center">
+              Your claim is being verified. Please wait...
+            </p>
+          )}
+          
+          {currentWinPattern && (
+            <div className="mt-4 p-2 bg-gray-800 rounded">
+              <p className="text-sm text-gray-300">
+                Current Win Pattern: <span className="font-bold text-white">{currentWinPattern === 'oneLine' 
+                  ? 'One Line' 
+                  : currentWinPattern === 'twoLines'
+                    ? 'Two Lines'
+                    : 'Full House'}</span>
+              </p>
+              {winPrizes && winPrizes[currentWinPattern] && (
+                <p className="text-sm text-gray-300 mt-1">
+                  Prize: <span className="font-bold text-white">{winPrizes[currentWinPattern]}</span>
+                </p>
+              )}
+            </div>
+          )}
         </div>
         {/* Current Number Visual at bottom left corner positioned at the bottom of the viewport */}
         <div className="fixed bottom-0 left-0 w-[30%] max-w-[400px] min-w-[240px] flex items-center justify-center p-4 bg-gray-900">

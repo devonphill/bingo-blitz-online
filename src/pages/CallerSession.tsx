@@ -31,10 +31,11 @@ export default function CallerSession() {
     currentClaim,
     setShowClaimModal,
     setCurrentClaim,
-    verifyPendingClaims
+    verifyPendingClaims,
+    claimQueue
   } = useClaimManagement(sessionId);
 
-  console.log("CallerSession render - showClaimModal:", showClaimModal);
+  console.log("CallerSession render - showClaimModal:", showClaimModal, "claimQueue:", claimQueue?.length);
 
   const {
     winPatterns,
@@ -248,12 +249,19 @@ export default function CallerSession() {
           total_calls: calledNumbers.length
         });
 
-      await supabase
-        .from('bingo_claims')
-        .update({ status: 'validated' })
-        .eq('player_id', currentClaim.playerId)
-        .eq('session_id', sessionId)
-        .eq('status', 'pending');
+      if (currentClaim.claimId) {
+        await supabase
+          .from('bingo_claims')
+          .update({ status: 'validated' })
+          .eq('id', currentClaim.claimId);
+      } else {
+        await supabase
+          .from('bingo_claims')
+          .update({ status: 'validated' })
+          .eq('player_id', currentClaim.playerId)
+          .eq('session_id', sessionId)
+          .eq('status', 'pending');
+      }
 
       if (!nextPattern) {
         await progressToNextGame();
@@ -280,12 +288,19 @@ export default function CallerSession() {
     if (!currentClaim) return;
 
     try {
-      await supabase
-        .from('bingo_claims')
-        .update({ status: 'rejected' })
-        .eq('player_id', currentClaim.playerId)
-        .eq('session_id', sessionId)
-        .eq('status', 'pending');
+      if (currentClaim.claimId) {
+        await supabase
+          .from('bingo_claims')
+          .update({ status: 'rejected' })
+          .eq('id', currentClaim.claimId);
+      } else {
+        await supabase
+          .from('bingo_claims')
+          .update({ status: 'rejected' })
+          .eq('player_id', currentClaim.playerId)
+          .eq('session_id', sessionId)
+          .eq('status', 'pending');
+      }
       
       setShowClaimModal(false);
       setCurrentClaim(null);
@@ -384,6 +399,14 @@ export default function CallerSession() {
           remainingNumbers={remainingNumbers}
           sessionId={sessionId || ''}
         />
+        
+        {claimQueue.length > 0 && (
+          <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+            <p className="text-yellow-800 font-medium">
+              {claimQueue.length} pending claim{claimQueue.length > 1 ? 's' : ''} in queue
+            </p>
+          </div>
+        )}
       </main>
       
       <ClaimVerificationModal
