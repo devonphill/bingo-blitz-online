@@ -1,8 +1,8 @@
 
 import React from 'react';
 import { usePlayerGame } from '@/hooks/usePlayerGame';
-import PlayerGameLayout from '@/components/game/PlayerGameLayout';
 import PlayerGameLoader from '@/components/game/PlayerGameLoader';
+import PlayerGameContent from '@/components/game/PlayerGameContent';
 
 export default function PlayerGame() {
   const {
@@ -20,8 +20,9 @@ export default function PlayerGame() {
     errorMessage
   } = usePlayerGame();
 
-  // Loader or waiting/error UI
-  if (isLoading || errorMessage || !currentSession) {
+  const showLoadingOrError = isLoading || errorMessage || !currentSession;
+
+  if (showLoadingOrError) {
     return (
       <PlayerGameLoader
         isLoading={isLoading}
@@ -32,7 +33,7 @@ export default function PlayerGame() {
   }
 
   return (
-    <PlayerGameLayout
+    <PlayerGameContent
       tickets={tickets}
       calledNumbers={calledNumbers}
       currentNumber={currentNumber}
