@@ -1,7 +1,6 @@
 
 import React from 'react';
 import { usePlayerGame } from '@/hooks/usePlayerGame';
-import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 import PlayerGameContent from '@/components/game/PlayerGameContent';
 
 export default function PlayerGame() {
@@ -19,18 +18,6 @@ export default function PlayerGame() {
     isLoading,
     errorMessage
   } = usePlayerGame();
-
-  const showLoadingOrError = isLoading || errorMessage || !currentSession;
-
-  if (showLoadingOrError) {
-    return (
-      <PlayerGameLoader
-        isLoading={isLoading}
-        errorMessage={errorMessage}
-        currentSession={currentSession}
-      />
-    );
-  }
 
   return (
     <PlayerGameContent
