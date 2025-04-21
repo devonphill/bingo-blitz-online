@@ -1,3 +1,4 @@
+
 export type UserRole = 'superuser' | 'subuser';
 
 export interface User {
@@ -6,7 +7,7 @@ export interface User {
   role: UserRole;
 }
 
-export type GameType = '90-ball' | '80-ball' | 'quiz' | 'music' | 'logo';
+export type GameType = '90-ball' | '80-ball' | 'quiz' | 'music' | 'logo' | 'mixed';
 
 export interface GameSession {
   id: string;
@@ -16,6 +17,8 @@ export interface GameSession {
   accessCode: string;
   status: 'pending' | 'active' | 'completed';
   createdAt: string;
+  sessionDate?: string;
+  numberOfGames?: number;
 }
 
 export interface Player {
