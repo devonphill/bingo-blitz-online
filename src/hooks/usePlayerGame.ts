@@ -79,6 +79,7 @@ export function usePlayerGame() {
 
       if (playerData) {
         setPlayerId(playerData.id);
+        // Cast supabase to any for win_patterns call below
         const { data: sessionData, error: sessionError } = await supabase
           .from('game_sessions')
           .select('*')
@@ -167,9 +168,9 @@ export function usePlayerGame() {
 
     const fetchWinPatterns = async () => {
       try {
-        const winPatternsQuery = supabase
-          // Cast to any to avoid TS errors due to missing typing for win_patterns table
-          .from<any>('win_patterns')
+        // Cast supabase to any to overcome TS errors on 'win_patterns' table usage
+        const winPatternsQuery = (supabase as any)
+          .from('win_patterns')
           .select('*')
           .eq('session_id', typeof currentSession === 'string' ? currentSession : currentSession.id)
           .order('created_at', { ascending: false });
@@ -246,7 +247,7 @@ export function usePlayerGame() {
     if (!playerId || !currentSession) return;
 
     try {
-      // Cast supabase client to any to allow inserting into 'bingo_claims' table not in types
+      // Cast supabase to any to allow insertion on bingo_claims table (not in typings)
       const insertResult = await (supabase as any)
         .from('bingo_claims')
         .insert({
