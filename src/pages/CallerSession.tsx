@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -31,8 +32,7 @@ export default function CallerSession() {
     currentClaim,
     setShowClaimModal,
     setCurrentClaim,
-    verifyPendingClaims,
-    checkForClaims
+    verifyPendingClaims
   } = useClaimManagement(sessionId);
 
   console.log("CallerSession render - showClaimModal:", showClaimModal);
@@ -48,6 +48,7 @@ export default function CallerSession() {
 
   const { progressToNextGame } = useGameProgression(session);
 
+  // Session initialization effect
   useEffect(() => {
     if (!session && sessionId) {
       const foundSession = sessions.find(s => s.id === sessionId);
@@ -60,16 +61,19 @@ export default function CallerSession() {
     }
   }, [sessionId, sessions, session]);
 
+  // Game type prompt effect
   useEffect(() => {
     setPromptGameType(!session?.gameType);
   }, [session]);
 
+  // Initialize remaining numbers effect
   useEffect(() => {
     if (gameType === "90-ball" && remainingNumbers.length === 0) {
       setRemainingNumbers(Array.from({ length: 90 }, (_, i) => i + 1));
     }
   }, [gameType, remainingNumbers.length]);
 
+  // Load called numbers effect
   useEffect(() => {
     if (sessionId) {
       const fetchCalledNumbers = async () => {
@@ -99,6 +103,7 @@ export default function CallerSession() {
     }
   }, [sessionId, gameType, remainingNumbers.length]);
 
+  // Load players and set up subscriptions effect
   useEffect(() => {
     if (!sessionId) return;
 
@@ -145,38 +150,14 @@ export default function CallerSession() {
       )
       .subscribe();
 
-    const claimsChannel = supabase
-      .channel('bingo-claims')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'bingo_claims',
-          filter: `session_id=eq.${sessionId}`
-        },
-        (payload) => {
-          if (payload.new) {
-            console.log("New bingo claim received:", payload.new);
-            
-            toast({
-              title: "Bingo Claim Received!",
-              description: `Player has claimed bingo. Check the claim to verify.`,
-              variant: "default"
-            });
-            
-            verifyPendingClaims();
-          }
-        }
-      )
-      .subscribe();
+    // Removed duplicated claims subscription as it's now in useClaimManagement hook
 
     return () => {
       supabase.removeChannel(playersChannel);
-      supabase.removeChannel(claimsChannel);
     };
-  }, [sessionId, toast, verifyPendingClaims]);
+  }, [sessionId]);
 
+  // Load win patterns effect
   useEffect(() => {
     if (sessionId) {
       const fetchWinPatterns = async () => {
@@ -198,6 +179,14 @@ export default function CallerSession() {
       fetchWinPatterns();
     }
   }, [sessionId, setWinPatterns]);
+
+  // Check for pending claims when component loads
+  useEffect(() => {
+    if (sessionId) {
+      console.log("Initial check for pending claims");
+      verifyPendingClaims();
+    }
+  }, [sessionId, verifyPendingClaims]);
 
   const handleGameTypeChange = (type: string) => {
     setGameType(type);
@@ -276,7 +265,10 @@ export default function CallerSession() {
       setShowClaimModal(false);
       setCurrentClaim(null);
       
-      verifyPendingClaims();
+      // After successfully processing a claim, check if there are more claims waiting
+      setTimeout(() => {
+        verifyPendingClaims();
+      }, 1000);
     } catch (error) {
       console.error("Error processing valid claim:", error);
       toast({
@@ -295,7 +287,10 @@ export default function CallerSession() {
       setShowClaimModal(false);
       setCurrentClaim(null);
       
-      verifyPendingClaims();
+      // After rejecting a claim, check if there are more claims waiting
+      setTimeout(() => {
+        verifyPendingClaims();
+      }, 1000);
     } catch (error) {
       console.error("Error processing false claim:", error);
       toast({
@@ -389,7 +384,7 @@ export default function CallerSession() {
         />
       </main>
       
-      {/* Explicitly render ClaimVerificationModal */}
+      {/* Explicitly render ClaimVerificationModal with debugging info */}
       <ClaimVerificationModal
         isOpen={showClaimModal}
         onClose={() => {

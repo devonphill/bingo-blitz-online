@@ -1,5 +1,5 @@
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -38,10 +38,7 @@ export function useClaimManagement(sessionId: string | undefined) {
         return;
       }
 
-      // Set default empty claim if no pending claims
-      let playerName = "No pending claims";
-      let playerId = "";
-      let tickets: any[] = [];
+      console.log("Pending claims data:", data);
 
       if (data && data.length > 0) {
         console.log("Found pending claims:", data);
@@ -82,23 +79,20 @@ export function useClaimManagement(sessionId: string | undefined) {
         }
 
         console.log("Setting current claim with tickets:", ticketData);
-        playerName = playerData.nickname;
-        playerId = playerData.id;
-        tickets = ticketData;
+        
+        // Set the claim data
+        setCurrentClaim({
+          playerName: playerData.nickname,
+          playerId: playerData.id,
+          tickets: ticketData || []
+        });
+        
+        // Force modal to open
+        console.log("Opening modal for claim verification!");
+        setShowClaimModal(true);
       } else {
-        console.log("No pending claims found, using default empty claim");
+        console.log("No pending claims found");
       }
-      
-      // Always set the claim data and open modal
-      setCurrentClaim({
-        playerName,
-        playerId,
-        tickets
-      });
-      
-      // Force modal to open
-      console.log("FORCING MODAL OPEN RIGHT NOW!");
-      setShowClaimModal(true);
     } catch (error) {
       console.error("Error in verifyPendingClaims:", error);
       toast({
@@ -111,11 +105,48 @@ export function useClaimManagement(sessionId: string | undefined) {
 
   const checkForClaims = useCallback(() => {
     console.log("Manual claim check button pressed! - DIRECT CALL");
-    // Force modal to open first
-    setShowClaimModal(true);
-    // Then verify claims
     verifyPendingClaims();
   }, [verifyPendingClaims]);
+
+  // Set up a realtime listener for new claims
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    console.log("Setting up realtime listener for bingo claims in session:", sessionId);
+    
+    const claimsChannel = supabase
+      .channel('bingo-claims-listener')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'bingo_claims',
+          filter: `session_id=eq.${sessionId}`
+        },
+        (payload) => {
+          if (payload.new) {
+            console.log("New bingo claim received in realtime:", payload.new);
+            
+            toast({
+              title: "Bingo Claim Received!",
+              description: `Player has claimed bingo. Verifying claim...`,
+              variant: "default"
+            });
+            
+            // Automatically verify the claim and show the modal
+            verifyPendingClaims();
+          }
+        }
+      )
+      .subscribe();
+
+    // Clean up the subscription when the component unmounts
+    return () => {
+      console.log("Cleaning up bingo claims listener");
+      supabase.removeChannel(claimsChannel);
+    };
+  }, [sessionId, toast, verifyPendingClaims]);
 
   return {
     showClaimModal,
