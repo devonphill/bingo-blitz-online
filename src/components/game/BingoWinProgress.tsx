@@ -79,7 +79,15 @@ export default function BingoWinProgress({
   
   return (
     <span className={minToGo <= 3 ? "font-bold text-green-600" : "font-medium text-gray-700"}>
-      {minToGo === 0 ? "Bingo!" : `${minToGo} to go`}
+      {minToGo === 0 
+        ? "Bingo!" 
+        : minToGo === 1 
+          ? "1TG" 
+          : minToGo === 2 
+            ? "2TG" 
+            : minToGo === 3 
+              ? "3TG" 
+              : `${minToGo} to go`}
     </span>
   );
 }

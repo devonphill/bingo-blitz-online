@@ -161,6 +161,8 @@ export default function CallerSession() {
               description: `Player has claimed bingo. Check the claim to verify.`,
               variant: "default"
             });
+            
+            verifyPendingClaims();
           }
         }
       )
@@ -170,7 +172,7 @@ export default function CallerSession() {
       supabase.removeChannel(playersChannel);
       supabase.removeChannel(claimsChannel);
     };
-  }, [sessionId, toast]);
+  }, [sessionId, toast, verifyPendingClaims]);
 
   useEffect(() => {
     if (sessionId) {
@@ -192,7 +194,7 @@ export default function CallerSession() {
 
       fetchWinPatterns();
     }
-  }, [sessionId]);
+  }, [sessionId, setWinPatterns]);
 
   const handleGameTypeChange = (type: string) => {
     setGameType(type);

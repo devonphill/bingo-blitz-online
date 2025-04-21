@@ -16,7 +16,7 @@ export default function CallerTicketDisplay({
   calledNumbers, 
   lastCalledNumber 
 }: CallerTicketDisplayProps) {
-  const [flashState, setFlashState] = useState<'black' | 'white' | null>(null);
+  const [flashingNumber, setFlashingNumber] = useState<number | null>(null);
   const [gridCells, setGridCells] = useState<(number | null)[][]>([]);
 
   // Convert the linear numbers array to a 3x9 grid based on layoutMask if provided
@@ -60,24 +60,19 @@ export default function CallerTicketDisplay({
     }
   }, [ticket]);
 
-  // Create flashing effect when a number is called
+  // Create flashing effect ONLY for the most recent called number
   useEffect(() => {
-    if (!lastCalledNumber) return;
+    if (!lastCalledNumber || !ticket.numbers.includes(lastCalledNumber)) return;
     
-    if (ticket.numbers.includes(lastCalledNumber)) {
-      // Start flashing between black and white
-      const flashInterval = setInterval(() => {
-        setFlashState(prev => prev === 'black' ? 'white' : 'black');
-      }, 200); // Flash every 200ms
-      
-      // Stop flashing after 1.5 seconds
-      setTimeout(() => {
-        clearInterval(flashInterval);
-        setFlashState(null);
-      }, 1500);
-      
-      return () => clearInterval(flashInterval);
-    }
+    // Only flash the last called number, not all called numbers
+    setFlashingNumber(lastCalledNumber);
+    
+    // Stop flashing after 1.5 seconds
+    const timer = setTimeout(() => {
+      setFlashingNumber(null);
+    }, 1500);
+    
+    return () => clearTimeout(timer);
   }, [lastCalledNumber, ticket.numbers]);
 
   return (
@@ -91,15 +86,14 @@ export default function CallerTicketDisplay({
               ${number === null 
                 ? 'bg-gray-100' 
                 : calledNumbers.includes(number)
-                  ? `${flashState === 'black' ? 'bg-black' : flashState === 'white' ? 'bg-white' : 'bg-green-500'} ${flashState ? 'border border-gray-400' : 'text-white'}`
+                  ? number === flashingNumber
+                    ? 'bg-black text-white animate-pulse'  
+                    : 'bg-green-500 text-white'
                   : 'bg-red-500 text-white'}
-              ${lastCalledNumber === number 
-                ? 'animate-pulse' 
-                : ''}
             `}
           >
             {number !== null && (
-              <span className={`${flashState ? (flashState === 'black' ? 'text-white' : 'text-black') : 'text-white'}`}>
+              <span>
                 {number}
               </span>
             )}

@@ -87,7 +87,7 @@ export function useClaimManagement(sessionId: string | undefined) {
       tickets: ticketData
     });
     
-    // Explicitly open the modal
+    // Explicitly open the modal and force to true
     console.log("Opening claim modal");
     setShowClaimModal(true);
   };
