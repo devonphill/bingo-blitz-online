@@ -5,6 +5,7 @@ import BingoCard from '@/components/game/BingoCard';
 import CalledNumbers from '@/components/game/CalledNumbers';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { Switch } from "@/components/ui/switch";
 
 interface BingoTicket {
   serial: string;
@@ -36,6 +37,10 @@ export default function PlayerGame() {
     oneLine: "",
     twoLines: "",
     fullHouse: ""
+  });
+  const [autoMarking, setAutoMarking] = useState<boolean>(() => {
+    const stored = localStorage.getItem("bingoAutoMarking");
+    return stored ? stored === "true" : true; // default ON
   });
   const { toast } = useToast();
   
@@ -222,6 +227,10 @@ export default function PlayerGame() {
     });
   };
 
+  useEffect(() => {
+    localStorage.setItem("bingoAutoMarking", autoMarking.toString());
+  }, [autoMarking]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -265,7 +274,7 @@ export default function PlayerGame() {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row md:justify-between md:items-center gap-2">
           <div>
             <h1 className="text-xl font-bold text-bingo-primary">Bingo Blitz</h1>
             <div className="text-sm text-gray-500">Game: {currentSession?.name}</div>
@@ -282,11 +291,22 @@ export default function PlayerGame() {
               </div>
             )}
           </div>
-          {playerCode && (
-            <div className="bg-gray-100 px-3 py-1 rounded-full text-sm">
-              Your Code: <span className="font-mono font-bold">{playerCode}</span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center space-x-2">
+              <Switch id="auto-marking"
+                checked={autoMarking}
+                onCheckedChange={setAutoMarking}
+              />
+              <label htmlFor="auto-marking" className="text-sm font-medium">
+                Auto Marking
+              </label>
             </div>
-          )}
+            {playerCode && (
+              <div className="bg-gray-100 px-3 py-1 rounded-full text-sm">
+                Your Code: <span className="font-mono font-bold">{playerCode}</span>
+              </div>
+            )}
+          </div>
         </div>
       </header>
       
@@ -326,7 +346,12 @@ export default function PlayerGame() {
                               <div className="text-xs text-gray-500 mb-4">
                                 Serial: <span className="font-mono">{ticket.serial}</span>
                               </div>
-                              <BingoCard numbers={ticket.numbers} layoutMask={ticket.layoutMask} calledNumbers={calledNumbers} />
+                              <BingoCard
+                                numbers={ticket.numbers}
+                                layoutMask={ticket.layoutMask}
+                                calledNumbers={calledNumbers}
+                                autoMarking={autoMarking}
+                              />
                               <div className="text-center mt-4">
                                 <span className={minToGo <= 3 ? "font-bold text-green-600" : "font-medium text-gray-700"}>
                                   {minToGo === 0
