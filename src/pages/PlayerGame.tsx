@@ -25,7 +25,7 @@ interface BingoTicket {
 }
 
 export default function PlayerGame() {
-  const { currentSession, sessions, setCurrentSession } = useSession();
+  const { currentSession, sessions, setCurrentSession, getPlayerAssignedTickets } = useSession();
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const [currentNumber, setCurrentNumber] = useState<number | null>(null);
   const [playerCode, setPlayerCode] = useState<string>('');
@@ -38,101 +38,108 @@ export default function PlayerGame() {
   // Get player information from local storage if available
   useEffect(() => {
     const storedPlayerCode = localStorage.getItem('playerCode');
-    if (storedPlayerCode) {
+    if (storedPlayerCode && !hasCheckedSession) {
       setPlayerCode(storedPlayerCode);
-      
-      // Check if there's an active session
-      const checkForActiveSession = async () => {
-        setIsLoading(true);
-        
-        try {
-          // Get the player information first to get their ID
-          const { data: playerData } = await supabase
-            .from('players')
-            .select('id, session_id')
-            .eq('player_code', storedPlayerCode)
-            .maybeSingle();
-            
-          if (playerData) {
-            setPlayerId(playerData.id);
-            
-            // Query sessions to find the player's session
-            const { data: sessionData } = await supabase
-              .from('game_sessions')
-              .select('*')
-              .eq('id', playerData.session_id)
-              .maybeSingle();
-              
-            if (sessionData && sessionData.status === 'active') {
-              // Format and set as current session
-              const formattedSession = {
-                id: sessionData.id,
-                name: sessionData.name,
-                gameType: sessionData.game_type,
-                createdBy: sessionData.created_by,
-                accessCode: sessionData.access_code,
-                status: sessionData.status,
-                createdAt: sessionData.created_at,
-                sessionDate: sessionData.session_date,
-                numberOfGames: sessionData.number_of_games,
-              };
-              
-              setCurrentSession(sessionData.id);
-              
-              // Fetch player's tickets
-              await fetchPlayerTickets(playerData.id);
-              
-              toast({
-                title: "Game is live!",
-                description: `You have joined the ${sessionData.name} game session.`,
-              });
-            }
-          }
-        } catch (error) {
-          console.error("Error checking for active session:", error);
-        } finally {
-          setIsLoading(false);
-          setHasCheckedSession(true);
-        }
-      };
-      
-      // Only run once to prevent constant refreshing
-      if (!hasCheckedSession) {
-        checkForActiveSession();
-      }
-    } else {
+      checkForActiveSession(storedPlayerCode);
+    } else if (!storedPlayerCode) {
       setIsLoading(false);
       setHasCheckedSession(true);
     }
-  }, [playerCode, hasCheckedSession]);
+  }, []);
   
-  // Fetch player tickets from the database
-  const fetchPlayerTickets = async (playerId: string) => {
+  // Function to check for active session and fetch tickets
+  const checkForActiveSession = async (code: string) => {
+    setIsLoading(true);
+    
     try {
-      const { data, error } = await supabase
-        .from('bingo_cards')
-        .select('*')
-        .eq('player_id', playerId);
+      // Get the player information first to get their ID
+      const { data: playerData } = await supabase
+        .from('players')
+        .select('id, session_id')
+        .eq('player_code', code)
+        .maybeSingle();
         
-      if (error) {
-        console.error("Error fetching tickets:", error);
-        return;
+      if (playerData) {
+        setPlayerId(playerData.id);
+        
+        // Query sessions to find the player's session
+        const { data: sessionData } = await supabase
+          .from('game_sessions')
+          .select('*')
+          .eq('id', playerData.session_id)
+          .maybeSingle();
+          
+        if (sessionData && sessionData.status === 'active') {
+          // Format and set as current session
+          const formattedSession = {
+            id: sessionData.id,
+            name: sessionData.name,
+            gameType: sessionData.game_type,
+            createdBy: sessionData.created_by,
+            accessCode: sessionData.access_code,
+            status: sessionData.status,
+            createdAt: sessionData.created_at,
+            sessionDate: sessionData.session_date,
+            numberOfGames: sessionData.number_of_games,
+          };
+          
+          setCurrentSession(sessionData.id);
+          
+          // Fetch player's tickets
+          await fetchPlayerTickets(playerData.id, playerData.session_id);
+          
+          toast({
+            title: "Game is live!",
+            description: `You have joined the ${sessionData.name} game session.`,
+          });
+        }
       }
-      
-      if (data && data.length > 0) {
+    } catch (error) {
+      console.error("Error checking for active session:", error);
+    } finally {
+      setIsLoading(false);
+      setHasCheckedSession(true);
+    }
+  };
+  
+  // Fetch player tickets from the assigned_tickets table
+  const fetchPlayerTickets = async (playerId: string, sessionId: string) => {
+    try {
+      const assignedTickets = await getPlayerAssignedTickets(playerId, sessionId);
+        
+      if (assignedTickets && assignedTickets.length > 0) {
         // Format the ticket data
-        const formattedTickets: BingoTicket[] = data.map((ticket: any) => ({
-          serial: ticket.id,
-          perm: ticket.cells.perm || 1,
-          position: ticket.cells.position || 1,
-          layoutMask: ticket.cells.layout_mask || 0,
-          numbers: ticket.cells.numbers || [],
+        const formattedTickets: BingoTicket[] = assignedTickets.map((ticket: any) => ({
+          serial: ticket.serial,
+          perm: ticket.perm,
+          position: ticket.position,
+          layoutMask: ticket.layout_mask,
+          numbers: ticket.numbers,
           timestamp: ticket.created_at
         }));
         
-        // Sort tickets by position
-        formattedTickets.sort((a, b) => a.position - b.position);
-        setTickets(formattedTickets);
+        // Group tickets by perm for display
+        const ticketsByPerm: Record<number, BingoTicket[]> = {};
+        
+        formattedTickets.forEach(ticket => {
+          if (!ticketsByPerm[ticket.perm]) {
+            ticketsByPerm[ticket.perm] = [];
+          }
+          ticketsByPerm[ticket.perm].push(ticket);
+        });
+        
+        // Sort each group by position
+        Object.values(ticketsByPerm).forEach(tickets => 
+          tickets.sort((a, b) => a.position - b.position)
+        );
+        
+        // Flatten back to array
+        let allSortedTickets: BingoTicket[] = [];
+        Object.values(ticketsByPerm).forEach(tickets => {
+          allSortedTickets = [...allSortedTickets, ...tickets];
+        });
+        
+        setTickets(allSortedTickets);
       }
     } catch (error) {
       console.error("Exception fetching tickets:", error);
@@ -222,46 +229,50 @@ export default function PlayerGame() {
           <div>
             {tickets.length > 0 ? (
               <div className="bg-white shadow rounded-lg p-6 mb-6">
-                <h2 className="text-xl font-bold text-gray-900 mb-4">Your Bingo Tickets</h2>
-                <div className="grid grid-cols-1 gap-6">
-                  {tickets.map((ticket, index) => (
-                    <div key={index} className="border rounded-lg p-4">
-                      <div className="flex justify-between items-center mb-2">
-                        <div className="text-sm font-medium">
-                          Perm: <span className="font-mono">{ticket.perm}</span>
-                        </div>
-                        <div className="text-sm font-medium">
-                          Position: <span className="font-mono">{ticket.position}</span>
-                        </div>
-                      </div>
-                      <div className="text-xs text-gray-500 mb-4">
-                        Serial: <span className="font-mono">{ticket.serial}</span>
-                      </div>
-                      
-                      <BingoCard numbers={ticket.numbers} />
-                      
-                      <Button 
-                        className="w-full mt-4 bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-                        onClick={handleClaimBingo}
-                      >
-                        Claim Bingo!
-                      </Button>
+                <h2 className="text-xl font-bold text-gray-900 mb-4">Your Bingo Tickets ({tickets.length})</h2>
+                
+                {/* Group tickets by perm number for display */}
+                {Array.from(new Set(tickets.map(t => t.perm))).map(perm => (
+                  <div key={`perm-${perm}`} className="mb-8">
+                    <h3 className="text-lg font-semibold mb-3">Strip #{perm}</h3>
+                    <div className="grid grid-cols-1 gap-6">
+                      {tickets
+                        .filter(t => t.perm === perm)
+                        .sort((a, b) => a.position - b.position)
+                        .map((ticket, index) => (
+                          <div key={ticket.serial} className="border rounded-lg p-4">
+                            <div className="flex justify-between items-center mb-2">
+                              <div className="text-sm font-medium">
+                                Perm: <span className="font-mono">{ticket.perm}</span>
+                              </div>
+                              <div className="text-sm font-medium">
+                                Position: <span className="font-mono">{ticket.position}</span>
+                              </div>
+                            </div>
+                            <div className="text-xs text-gray-500 mb-4">
+                              Serial: <span className="font-mono">{ticket.serial}</span>
+                            </div>
+                            
+                            <BingoCard numbers={ticket.numbers} />
+                            
+                            <Button 
+                              className="w-full mt-4 bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
+                              onClick={handleClaimBingo}
+                            >
+                              Claim Bingo!
+                            </Button>
+                          </div>
+                        ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
             ) : (
               <div className="bg-white shadow rounded-lg p-6">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold text-gray-900">Your Bingo Card</h2>
-                  <Button 
-                    className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-                    onClick={handleClaimBingo}
-                  >
-                    Claim Bingo!
-                  </Button>
+                  <h2 className="text-xl font-bold text-gray-900">No Tickets Assigned</h2>
                 </div>
-                <BingoCard />
+                <p className="text-gray-600">You don't have any tickets assigned yet. Please wait for the game organizer to assign tickets.</p>
               </div>
             )}
           </div>

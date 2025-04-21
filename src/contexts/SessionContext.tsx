@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { GameSession, GameType, Player } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
@@ -13,13 +12,24 @@ interface SessionContextType {
   bulkAddPlayers: (sessionId: string, players: AdminTempPlayer[]) => Promise<{ success: boolean, message?: string }>;
   addPlayer: (sessionId: string, playerCode: string, nickname: string) => Promise<boolean>;
   fetchSessions: () => Promise<void>;
+  assignTicketsToPlayer: (playerId: string, sessionId: string, ticketCount: number) => Promise<boolean>;
+  getPlayerAssignedTickets: (playerId: string, sessionId: string) => Promise<any[]>;
 }
+
 type AdminTempPlayer = {
   playerCode: string;
   nickname: string;
   email: string;
   tickets: number;
 };
+
+interface TicketData {
+  serial: string;
+  perm: number;
+  position: number;
+  layout_mask: number;
+  numbers: number[];
+}
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
@@ -50,7 +60,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     fetchSessions();
 
-    // Subscribe to realtime updates for game_sessions table
     const channel = supabase
       .channel('session-changes')
       .on(
@@ -68,7 +77,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           console.log('Session change received:', payload);
           fetchSessions();
 
-          // Only update if payload.new and currentSession exist and ids match
           if (currentSession && payload.new && currentSession.id === payload.new.id) {
             const updatedSession = {
               id: payload.new.id,
@@ -99,17 +107,28 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const joinSession = async (playerCode: string): Promise<{ player: Player | null }> => {
     const { data, error } = await supabase.from('players').select('*').eq('player_code', playerCode).maybeSingle();
     if (error || !data) return { player: null };
-    return {
-      player: {
-        id: data.id,
-        sessionId: data.session_id,
-        nickname: data.nickname,
-        joinedAt: data.joined_at,
-        playerCode: data.player_code,
-        email: data.email,
-        tickets: data.tickets
-      }
+    
+    const player = {
+      id: data.id,
+      sessionId: data.session_id,
+      nickname: data.nickname,
+      joinedAt: data.joined_at,
+      playerCode: data.player_code,
+      email: data.email,
+      tickets: data.tickets
     };
+    
+    const { data: existingTickets } = await supabase
+      .from('assigned_tickets')
+      .select('id')
+      .eq('player_id', player.id)
+      .eq('session_id', player.sessionId);
+      
+    if (!existingTickets || existingTickets.length === 0) {
+      await assignTicketsToPlayer(player.id, player.sessionId, player.tickets);
+    }
+    
+    return { player };
   };
 
   const setCurrentSession = (sessionId: string | null) => {
@@ -169,6 +188,145 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return { success: true };
   };
 
+  const getAvailableTickets = async (sessionId: string, count: number): Promise<TicketData[]> => {
+    try {
+      const { data: assignedTickets, error: assignedError } = await supabase
+        .from('assigned_tickets')
+        .select('serial')
+        .eq('session_id', sessionId);
+
+      if (assignedError) {
+        console.error("Error getting assigned tickets:", assignedError);
+        return [];
+      }
+
+      const assignedSerials = new Set(assignedTickets?.map(t => t.serial) || []);
+
+      const { data: availableTickets, error: availableError } = await supabase
+        .from('bingo_cards')
+        .select('id, cells')
+        .limit(count * 6);
+
+      if (availableError) {
+        console.error("Error getting available tickets:", availableError);
+        return [];
+      }
+
+      const availableFormattedTickets: TicketData[] = [];
+      
+      if (availableTickets) {
+        for (const ticket of availableTickets) {
+          if (!assignedSerials.has(ticket.id) && availableFormattedTickets.length < count * 6) {
+            const cells = ticket.cells as any;
+            availableFormattedTickets.push({
+              serial: ticket.id,
+              perm: cells.perm || 1,
+              position: cells.position || 1,
+              layout_mask: cells.layout_mask || 0,
+              numbers: cells.numbers || []
+            });
+          }
+        }
+      }
+
+      const ticketsByPerm: Record<number, TicketData[]> = {};
+      
+      for (const ticket of availableFormattedTickets) {
+        if (!ticketsByPerm[ticket.perm]) {
+          ticketsByPerm[ticket.perm] = [];
+        }
+        ticketsByPerm[ticket.perm].push(ticket);
+      }
+      
+      Object.values(ticketsByPerm).forEach(tickets => 
+        tickets.sort((a, b) => a.position - b.position)
+      );
+      
+      const result: TicketData[] = [];
+      const permNumbers = Object.keys(ticketsByPerm).map(Number);
+      
+      for (let i = 0; i < count && i < permNumbers.length; i++) {
+        const perm = ticketsByPerm[permNumbers[i]];
+        if (perm && perm.length === 6) {
+          result.push(...perm);
+        }
+      }
+      
+      return result;
+    } catch (error) {
+      console.error("Exception getting available tickets:", error);
+      return [];
+    }
+  };
+
+  const assignTicketsToPlayer = async (playerId: string, sessionId: string, ticketCount: number): Promise<boolean> => {
+    try {
+      const { data: existingTickets } = await supabase
+        .from('assigned_tickets')
+        .select('id')
+        .eq('player_id', playerId)
+        .eq('session_id', sessionId);
+
+      if (existingTickets && existingTickets.length > 0) {
+        console.log("Player already has tickets assigned");
+        return true;
+      }
+
+      const availableTickets = await getAvailableTickets(sessionId, ticketCount);
+      
+      if (availableTickets.length < ticketCount * 6) {
+        console.error(`Not enough available tickets: ${availableTickets.length} available, ${ticketCount * 6} needed`);
+        return false;
+      }
+
+      const ticketsToInsert = availableTickets.map(ticket => ({
+        player_id: playerId,
+        session_id: sessionId,
+        serial: ticket.serial,
+        perm: ticket.perm,
+        position: ticket.position,
+        layout_mask: ticket.layout_mask,
+        numbers: ticket.numbers
+      }));
+
+      const { error } = await supabase
+        .from('assigned_tickets')
+        .insert(ticketsToInsert);
+
+      if (error) {
+        console.error("Error assigning tickets:", error);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error("Exception assigning tickets:", error);
+      return false;
+    }
+  };
+
+  const getPlayerAssignedTickets = async (playerId: string, sessionId: string): Promise<any[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('assigned_tickets')
+        .select('*')
+        .eq('player_id', playerId)
+        .eq('session_id', sessionId)
+        .order('perm')
+        .order('position');
+
+      if (error) {
+        console.error("Error getting assigned tickets:", error);
+        return [];
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error("Exception getting assigned tickets:", error);
+      return [];
+    }
+  };
+
   return (
     <SessionContext.Provider
       value={{
@@ -180,7 +338,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         getSessionByCode,
         bulkAddPlayers,
         addPlayer,
-        fetchSessions
+        fetchSessions,
+        assignTicketsToPlayer,
+        getPlayerAssignedTickets
       }}
     >
       {children}

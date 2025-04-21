@@ -29,24 +29,19 @@ export default function BingoCard({ numbers }: BingoCardProps) {
     // Create a new 3x9 card filled with nulls
     const newCard = Array(3).fill(null).map(() => Array(9).fill(null));
     
-    // Sort numbers into their respective columns
-    const sortedNumbers = [...ticketNumbers].sort((a, b) => a - b);
-    
-    // Place each number in its appropriate column
-    let numbersPlaced = 0;
-    for (let num of sortedNumbers) {
+    // Process each number and place it in the appropriate column
+    for (const num of ticketNumbers) {
       // Determine which column this number belongs in
       const col = num <= 9 ? 0 : Math.floor((num - 1) / 10);
       
-      // Determine which row to place it in (cycle through rows)
-      const row = numbersPlaced % 3;
-      
-      // Place the number
-      newCard[row][col] = num;
-      numbersPlaced++;
-      
-      // If we've placed 15 numbers (standard for a 90-ball card), break
-      if (numbersPlaced >= 15) break;
+      // Find an empty spot in this column (try each row)
+      let placed = false;
+      for (let row = 0; row < 3 && !placed; row++) {
+        if (newCard[row][col] === null) {
+          newCard[row][col] = num;
+          placed = true;
+        }
+      }
     }
     
     setCard(newCard);
