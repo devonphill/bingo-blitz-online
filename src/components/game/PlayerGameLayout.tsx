@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader } from "lucide-react";
@@ -45,43 +46,23 @@ export default function PlayerGameLayout({
     const claimsChannel = supabase
       .channel('player-claims-listener')
       .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'bingo_claims',
-          filter: `player_id=eq.${playerCode}`
-        },
-        () => {
-          setIsClaimValidating(true);
-          toast({
-            title: "Claim Submitted",
-            description: "Your claim is being verified by the caller.",
-          });
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'bingo_claims',
-          filter: `player_id=eq.${playerCode}`
-        },
-        (payload: any) => {
-          if (payload.new.status === 'validated') {
-            setIsClaimValidating(false);
-            toast({
-              title: "Claim Verified!",
-              description: "Your bingo claim has been verified.",
-            });
-          } else if (payload.new.status === 'rejected') {
-            setIsClaimValidating(false);
-            toast({
-              title: "Claim Rejected",
-              description: "Your claim was not valid. Please check your numbers.",
-              variant: "destructive"
-            });
+        'broadcast',
+        { event: 'claim-result' },
+        (payload) => {
+          if (payload.payload && payload.payload.playerId === playerCode) {
+            const result = payload.payload.result;
+            
+            if (result === 'valid' || result === 'rejected') {
+              setIsClaimValidating(false);
+              
+              toast({
+                title: result === 'valid' ? "Claim Verified!" : "Claim Rejected",
+                description: result === 'valid' 
+                  ? "Your bingo claim has been verified." 
+                  : "Your claim was not valid. Please check your numbers.",
+                variant: result === 'valid' ? "default" : "destructive"
+              });
+            }
           }
         }
       )
@@ -96,8 +77,10 @@ export default function PlayerGameLayout({
     if (isClaimValidating) return;
     
     try {
-      await onClaimBingo();
-      setIsClaimValidating(true);
+      const success = await onClaimBingo();
+      if (success) {
+        setIsClaimValidating(true);
+      }
     } catch (error) {
       console.error("Error submitting claim:", error);
       toast({

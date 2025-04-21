@@ -1,7 +1,6 @@
 
-import React, { useState } from 'react';
-import { AlertCircle, CheckCircle2, Clock } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import React, { useState, useEffect } from 'react';
+import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import CalledNumbers from './CalledNumbers';
 import PlayerGameLayout from './PlayerGameLayout';
@@ -48,18 +47,17 @@ export default function PlayerGameContent({
   claimStatus
 }: PlayerGameContentProps) {
   const [isClaimingBingo, setIsClaimingBingo] = useState(isClaiming);
+  
+  // Sync the isClaimingBingo state with isClaiming prop when it changes
+  useEffect(() => {
+    setIsClaimingBingo(isClaiming);
+  }, [isClaiming]);
 
   const handleClaimBingo = async () => {
-    setIsClaimingBingo(true);
     try {
-      const success = await onClaimBingo();
-      if (!success) {
-        setIsClaimingBingo(false);
-      }
-      return success;
+      return await onClaimBingo();
     } catch (err) {
       console.error("Error claiming bingo:", err);
-      setIsClaimingBingo(false);
       return false;
     }
   };
@@ -156,7 +154,7 @@ export default function PlayerGameContent({
             <div className="rounded-lg overflow-hidden shadow">
               <CalledNumbers 
                 calledNumbers={calledNumbers}
-                currentNumber={null} // Remove current number display since it's now fixed at bottom
+                currentNumber={null}
               />
             </div>
           </div>
