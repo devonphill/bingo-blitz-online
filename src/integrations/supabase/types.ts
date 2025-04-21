@@ -187,11 +187,81 @@ export type Database = {
           },
         ]
       }
+      game_logs: {
+        Row: {
+          claimed_at: string
+          email: string | null
+          game_number: number
+          host: string | null
+          id: string
+          numbers_called: number[] | null
+          player_id: string
+          prize: string | null
+          session_id: string
+          shared: boolean
+          total_calls: number | null
+          username: string
+          win_pattern: string
+          winning_number: number | null
+          winning_ticket: Json
+        }
+        Insert: {
+          claimed_at?: string
+          email?: string | null
+          game_number: number
+          host?: string | null
+          id?: string
+          numbers_called?: number[] | null
+          player_id: string
+          prize?: string | null
+          session_id: string
+          shared?: boolean
+          total_calls?: number | null
+          username: string
+          win_pattern: string
+          winning_number?: number | null
+          winning_ticket: Json
+        }
+        Update: {
+          claimed_at?: string
+          email?: string | null
+          game_number?: number
+          host?: string | null
+          id?: string
+          numbers_called?: number[] | null
+          player_id?: string
+          prize?: string | null
+          session_id?: string
+          shared?: boolean
+          total_calls?: number | null
+          username?: string
+          win_pattern?: string
+          winning_number?: number | null
+          winning_ticket?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_logs_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "game_logs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "game_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       game_sessions: {
         Row: {
           access_code: string
           created_at: string
           created_by: string
+          current_game: number
           game_type: string
           id: string
           name: string
@@ -204,6 +274,7 @@ export type Database = {
           access_code: string
           created_at?: string
           created_by: string
+          current_game?: number
           game_type: string
           id?: string
           name: string
@@ -216,6 +287,7 @@ export type Database = {
           access_code?: string
           created_at?: string
           created_by?: string
+          current_game?: number
           game_type?: string
           id?: string
           name?: string
@@ -236,6 +308,7 @@ export type Database = {
       }
       players: {
         Row: {
+          claim_light_on: boolean
           email: string | null
           id: string
           joined_at: string
@@ -245,6 +318,7 @@ export type Database = {
           tickets: number
         }
         Insert: {
+          claim_light_on?: boolean
           email?: string | null
           id?: string
           joined_at?: string
@@ -254,6 +328,7 @@ export type Database = {
           tickets?: number
         }
         Update: {
+          claim_light_on?: boolean
           email?: string | null
           id?: string
           joined_at?: string

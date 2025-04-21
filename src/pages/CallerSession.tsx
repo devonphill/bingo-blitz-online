@@ -39,6 +39,7 @@ export default function CallerSession() {
   } | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
+  const [currentGameWinPattern, setCurrentGameWinPattern] = useState<string | null>(null);
 
   useEffect(() => {
     if (!session && sessionId) {
@@ -256,8 +257,6 @@ export default function CallerSession() {
   };
 
   const handleVerifyClaim = async () => {
-    console.log("Verify claim button clicked");
-    
     const { data, error } = await supabase
       .from('bingo_claims')
       .select('id, player_id, claimed_at, status')
@@ -265,100 +264,102 @@ export default function CallerSession() {
       .eq('status', 'pending')
       .order('claimed_at', { ascending: true });
 
-    if (error) {
-      console.error("Error fetching claims:", error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch claims.",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    if (!data || data.length === 0) {
+    if (error || !data || data.length === 0) {
       console.log("No pending claims found");
-      toast({
-        title: "No Claims",
-        description: "There are no pending claims to verify.",
-      });
       return;
     }
 
-    console.log("Found pending claims:", data);
-    const latestClaim = data[data.length - 1];
-    setIsClaimLightOn(true);
+    // Get the first pending claim
+    const latestClaim = data[0];
 
+    // Fetch player details
     const { data: playerData, error: playerError } = await supabase
       .from('players')
-      .select('nickname, id')
+      .select('nickname, id, email')
       .eq('id', latestClaim.player_id)
       .single();
 
     if (playerError) {
       console.error("Error fetching player data:", playerError);
-      toast({
-        title: "Error",
-        description: "Failed to fetch player information.",
-        variant: "destructive"
-      });
       return;
     }
 
-    console.log("Player data retrieved:", playerData);
-
+    // Fetch player's tickets for this claim
     const { data: ticketData, error: ticketError } = await supabase
       .from('assigned_tickets')
       .select('*')
-      .eq('player_id', latestClaim.player_id)
+      .eq('player_id', playerData.id)
       .eq('session_id', sessionId);
 
     if (ticketError) {
       console.error("Error fetching ticket data:", ticketError);
-      toast({
-        title: "Error",
-        description: "Failed to fetch ticket information.",
-        variant: "destructive"
-      });
       return;
     }
 
-    console.log("Ticket data retrieved:", ticketData);
-
+    // Set current claim and open modal automatically
     setCurrentClaim({
       playerName: playerData.nickname,
       playerId: playerData.id,
       tickets: ticketData
     });
-    
-    console.log("Setting showClaimModal to true");
     setShowClaimModal(true);
+    setIsClaimLightOn(true);
+
+    // Update player's claim light
+    await supabase
+      .from('players')
+      .update({ claim_light_on: true })
+      .eq('id', playerData.id)
+      .eq('session_id', sessionId);
   };
 
   const handleValidClaim = async () => {
-    if (!currentClaim) return;
+    if (!currentClaim || !session) return;
 
     try {
-      const { error } = await supabase
-        .from('bingo_claims')
-        .update({ status: 'valid' })
-        .eq('player_id', currentClaim.playerId)
-        .eq('session_id', sessionId)
-        .eq('status', 'pending');
+      // Determine current win pattern
+      const currentWinPattern = determineCurrentWinPattern();
 
-      if (error) throw error;
+      // Create game log entry
+      const { error: logError } = await supabase
+        .from('game_logs')
+        .insert({
+          session_id: sessionId,
+          player_id: currentClaim.playerId,
+          game_number: session.current_game,
+          win_pattern: currentWinPattern,
+          prize: winPrizes[currentWinPattern],
+          username: currentClaim.playerName,
+          winning_ticket: currentClaim.tickets,
+          numbers_called: calledNumbers,
+          total_calls: calledNumbers.length
+        });
 
-      toast({
-        title: "Claim Validated",
-        description: `${currentClaim.playerName}'s claim has been validated.`,
-      });
+      if (logError) {
+        console.error("Error creating game log:", logError);
+      }
+
+      // Update player's claim light to false
+      await supabase
+        .from('players')
+        .update({ claim_light_on: false })
+        .eq('id', currentClaim.playerId)
+        .eq('session_id', sessionId);
+
+      // Determine next win pattern or progress game
+      const nextWinPattern = progressWinPatterns();
+
+      // If all win patterns claimed, move to next game
+      if (!nextWinPattern) {
+        await progressToNextGame();
+      }
+
+      // Close claim modal and reset state
+      setShowClaimModal(false);
+      setCurrentClaim(null);
       setIsClaimLightOn(false);
     } catch (error) {
-      console.error("Error validating claim:", error);
-      toast({
-        title: "Error",
-        description: "Failed to validate the claim.",
-        variant: "destructive"
-      });
+      console.error("Error processing valid claim:", error);
     }
   };
 
@@ -366,138 +367,66 @@ export default function CallerSession() {
     if (!currentClaim) return;
 
     try {
-      const { error } = await supabase
-        .from('bingo_claims')
-        .update({ status: 'invalid' })
-        .eq('player_id', currentClaim.playerId)
-        .eq('session_id', sessionId)
-        .eq('status', 'pending');
+      // Update player's claim light to false
+      await supabase
+        .from('players')
+        .update({ claim_light_on: false })
+        .eq('id', currentClaim.playerId)
+        .eq('session_id', sessionId);
 
-      if (error) throw error;
-
-      toast({
-        title: "Claim Rejected",
-        description: `${currentClaim.playerName}'s claim has been rejected.`,
-        variant: "destructive"
-      });
+      // Close claim modal and reset state
+      setShowClaimModal(false);
+      setCurrentClaim(null);
       setIsClaimLightOn(false);
     } catch (error) {
-      console.error("Error rejecting claim:", error);
-      toast({
-        title: "Error",
-        description: "Failed to reject the claim.",
-        variant: "destructive"
-      });
+      console.error("Error processing false claim:", error);
     }
   };
 
-  const handleEndGame = () => {
-    toast({
-      title: "Game Ended",
-      description: "The game session has been ended.",
-    });
-    
-    navigate('/dashboard');
+  const determineCurrentWinPattern = () => {
+    if (activeWinPatterns.includes("oneLine")) return "oneLine";
+    if (activeWinPatterns.includes("twoLines")) return "twoLines";
+    if (activeWinPatterns.includes("fullHouse")) return "fullHouse";
+    return "unknown";
   };
 
-  const handleGoLive = async () => {
-    if (!session) return;
+  const progressWinPatterns = () => {
+    const currentIndex = activeWinPatterns.indexOf(currentGameWinPattern);
+    const nextPattern = activeWinPatterns[currentIndex + 1];
     
-    const { error: updateError } = await supabase
+    if (nextPattern) {
+      setCurrentGameWinPattern(nextPattern);
+      return nextPattern;
+    }
+    
+    return null;
+  };
+
+  const progressToNextGame = async () => {
+    if (!session) return;
+
+    const nextGameNumber = session.current_game + 1;
+
+    // Update session's current game
+    const { error } = await supabase
       .from('game_sessions')
-      .update({ status: 'active' })
+      .update({ 
+        current_game: nextGameNumber,
+        status: nextGameNumber > session.number_of_games ? 'completed' : 'active'
+      })
       .eq('id', sessionId);
 
-    if (updateError) {
-      toast({
-        title: 'Failed to Go Live',
-        description: updateError.message,
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    const { data: sessionPlayersData, error: playerErr } = await supabase
-      .from('players')
-      .select('id,player_code,nickname,tickets')
-      .eq('session_id', sessionId);
-
-    if (playerErr) {
-      toast({
-        title: 'Failed to load players',
-        description: playerErr.message,
-        variant: 'destructive',
-      });
+    if (error) {
+      console.error("Error progressing to next game:", error);
       return;
     }
 
-    if (sessionPlayersData && sessionPlayersData.length) {
-      toast({
-        title: 'Assigning tickets to players',
-        description: `Assigning tickets to ${sessionPlayersData.length} players...`,
-      });
-      
-      for (const player of sessionPlayersData) {
-        const { data: existingTicketsData } = await supabase
-          .from('assigned_tickets')
-          .select('perm')
-          .eq('player_id', player.id)
-          .eq('session_id', sessionId);
-          
-        const uniquePerms = existingTicketsData ? [...new Set(existingTicketsData.map(item => item.perm))] : [];
-        const permsCount = uniquePerms.length;
-        
-        if (permsCount < player.tickets) {
-          console.log(`Assigning ${player.tickets - permsCount} more strips to ${player.nickname}`);
-          await assignTicketsToPlayer(player.id, sessionId, player.tickets);
-        }
-      }
-    }
+    // Reset win patterns if needed
+    setActiveWinPatterns(["oneLine", "twoLines", "fullHouse"]);
+    setCurrentGameWinPattern("oneLine");
 
-    const { data: allAssignedTickets, error: ticketsErr } = await supabase
-      .from('assigned_tickets')
-      .select(`
-        id, serial, perm, position, layout_mask, numbers,
-        players:player_id(id, player_code, nickname)
-      `)
-      .eq('session_id', sessionId)
-      .order('perm, position');
-
-    if (ticketsErr) {
-      console.error("Error loading tickets:", ticketsErr);
-    } else if (allAssignedTickets) {
-      const groupedTickets: any[] = [];
-      const playerMap = new Map();
-      
-      allAssignedTickets.forEach(ticket => {
-        const player = ticket.players;
-        if (!playerMap.has(player.id)) {
-          playerMap.set(player.id, {
-            playerId: player.id,
-            playerCode: player.player_code,
-            nickname: player.nickname,
-            tickets: []
-          });
-          groupedTickets.push(playerMap.get(player.id));
-        }
-        
-        playerMap.get(player.id).tickets.push({
-          id: ticket.id,
-          serial: ticket.serial,
-          perm: ticket.perm,
-          position: ticket.position,
-          layoutMask: ticket.layout_mask,
-          numbers: ticket.numbers
-        });
-      });
-      
-      setBingoTickets(groupedTickets);
-    }
-
-    toast({
-      title: 'Game is live!',
-      description: 'Players can now join the game.',
-    });
+    // Optional: Open game type selection modal for next game
+    // You can implement this if you want a modal to select game type
   };
 
   const handleTogglePattern = (pattern: string) => {
