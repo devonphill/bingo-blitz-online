@@ -1,9 +1,7 @@
-
-import React from "react";
+import React, { useState } from "react";
 import CurrentNumberDisplay from "@/components/game/CurrentNumberDisplay";
 import CalledNumbers from "@/components/game/CalledNumbers";
 import PlayerTicketsPanel from "@/components/game/PlayerTicketsPanel";
-import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 
 // Props for layout, kept minimal for panel orchestration
@@ -21,6 +19,8 @@ export default function PlayerGameLayout({
   errorMessage,
   isLoading,
 }: any) {
+  const [isClaimValidating, setIsClaimValidating] = useState(false);
+
   // Loading and error states
   if (isLoading) {
     return (
@@ -60,34 +60,28 @@ export default function PlayerGameLayout({
     );
   }
   
-  // Only display the active win patterns and their prizes
-  const displayWinPatterns = activeWinPatterns.map(key => (
-    <span key={key} className="inline-block mr-2 px-2 py-1 bg-gray-800 rounded text-white">
-      {key === "oneLine" ? "One Line" : key === "twoLines" ? "Two Lines" : "Full House"}
-      {winPrizes[key] ? `: ${winPrizes[key]}` : ""}
-    </span>
-  ));
-  
+  const handleClaimClick = async () => {
+    setIsClaimValidating(true);
+    await onClaimBingo();
+    // Reset after 3 seconds to allow for new claims
+    setTimeout(() => {
+      setIsClaimValidating(false);
+    }, 3000);
+  };
+
   return (
     <div className="min-h-screen w-full flex bg-gray-50">
       {/* Side Panels */}
       <div className="flex flex-col" style={{width:'30%', minWidth:240, maxWidth:400}}>
-        {/* Black background top area */}
         <div className="flex-1 bg-black text-white p-4">
-          <div className="flex flex-col gap-2 mb-4">
-            <h1 className="text-xl font-bold">Bingo Game Info</h1>
-            {activeWinPatterns.length > 0 && (
-              <div>
-                <span className="text-xs text-gray-300 font-medium">
-                  Win Pattern: {displayWinPatterns}
-                </span>
-              </div>
-            )}
-            <div className="flex items-center space-x-2">
-              <Switch id="auto-marking" checked={autoMarking} onCheckedChange={setAutoMarking} />
-              <label htmlFor="auto-marking" className="text-sm font-medium">Auto Marking</label>
-            </div>
-          </div>
+          <h1 className="text-xl font-bold mb-4">Bingo Game Info</h1>
+          <Button
+            className="w-full bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
+            onClick={handleClaimClick}
+            disabled={isClaimValidating}
+          >
+            {isClaimValidating ? "VALIDATING CLAIM..." : "CLAIM NOW!"}
+          </Button>
         </div>
         {/* Current Number Visual at bottom left corner positioned at the bottom of the viewport */}
         <div className="fixed bottom-0 left-0 w-[30%] max-w-[400px] min-w-[240px] flex items-center justify-center p-4 bg-gray-900">
@@ -100,12 +94,6 @@ export default function PlayerGameLayout({
       {/* Main display area */}
       <div className="flex-1 bg-gray-50 h-full overflow-y-auto">
         <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-6">
-          <Button
-            className="w-full mb-4 bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-            onClick={onClaimBingo}
-          >
-            Claim Bingo!
-          </Button>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <PlayerTicketsPanel 
               tickets={tickets}

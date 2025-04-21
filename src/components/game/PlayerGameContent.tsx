@@ -32,9 +32,26 @@ export default function PlayerGameContent({
   errorMessage,
   isLoading,
 }: PlayerGameContentProps) {
+  // Get the active win pattern to display
+  const getActiveWinPattern = () => {
+    if (!activeWinPatterns.length) return null;
+    
+    if (activeWinPatterns.includes("oneLine")) return "One Line";
+    if (activeWinPatterns.includes("twoLines")) return "Two Lines";
+    if (activeWinPatterns.includes("fullHouse")) return "Full House";
+    
+    return null;
+  };
+
   return (
     <div className="flex flex-col min-h-screen">
-      <GameHeader sessionName={currentSession?.name || "Game"} accessCode={playerCode} />
+      <GameHeader 
+        sessionName={currentSession?.name || "Game"} 
+        accessCode={playerCode}
+        activeWinPattern={getActiveWinPattern()}
+        autoMarking={autoMarking}
+        setAutoMarking={setAutoMarking}
+      />
       <div className="flex-grow">
         <PlayerGameLayout
           tickets={tickets}

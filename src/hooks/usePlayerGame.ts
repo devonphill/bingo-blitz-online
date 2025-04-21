@@ -246,6 +246,13 @@ export function usePlayerGame() {
     if (!playerId || !currentSession) return;
 
     try {
+      // Get the player's tickets for validation
+      const ticketData = tickets.map(ticket => ({
+        serial: ticket.serial,
+        numbers: ticket.numbers,
+        layout_mask: ticket.layoutMask
+      }));
+
       // Cast supabase to any to bypass type limitation for bingo_claims
       const insertResult = await (supabase as any)
         .from('bingo_claims')
@@ -253,7 +260,8 @@ export function usePlayerGame() {
           player_id: playerId,
           session_id: typeof currentSession === 'string' ? currentSession : currentSession.id,
           claimed_at: new Date().toISOString(),
-          status: 'pending'
+          status: 'pending',
+          ticket_data: ticketData // Adding ticket data for validation
         });
 
       const { error } = insertResult;
@@ -268,7 +276,7 @@ export function usePlayerGame() {
       }
 
       toast({
-        title: "Bingo Claimed!",
+        title: "Claim Submitted!",
         description: "Your claim has been submitted to the caller for verification.",
       });
     } catch (error) {
