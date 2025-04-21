@@ -21,6 +21,8 @@ interface PlayerGameLayoutProps {
   errorMessage: string;
   isLoading: boolean;
   children: React.ReactNode;
+  isClaiming?: boolean;
+  claimStatus?: 'pending' | 'validated' | 'rejected';
 }
 
 export default function PlayerGameLayout({
@@ -35,7 +37,9 @@ export default function PlayerGameLayout({
   isLoading,
   children,
   currentNumber,
-  calledNumbers
+  calledNumbers,
+  isClaiming = false,
+  claimStatus
 }: PlayerGameLayoutProps) {
   const [isClaimValidating, setIsClaimValidating] = useState(false);
   const { toast } = useToast();
@@ -74,7 +78,7 @@ export default function PlayerGameLayout({
   }, [currentSession?.id, playerCode, toast]);
 
   const handleClaimClick = async () => {
-    if (isClaimValidating) return;
+    if (isClaimValidating || isClaiming) return;
     
     try {
       const success = await onClaimBingo();
@@ -137,14 +141,14 @@ export default function PlayerGameLayout({
         <div className="flex-1 bg-black text-white p-4">
           <h1 className="text-xl font-bold mb-4">Bingo Game Info</h1>
           <Button
-            className={`w-full ${isClaimValidating 
+            className={`w-full ${isClaimValidating || isClaiming
               ? 'bg-orange-500 hover:bg-orange-600' 
               : 'bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary'
             }`}
             onClick={handleClaimClick}
-            disabled={isClaimValidating}
+            disabled={isClaimValidating || isClaiming}
           >
-            {isClaimValidating ? (
+            {isClaimValidating || isClaiming ? (
               <span className="flex items-center">
                 <Loader className="animate-spin mr-2 h-4 w-4" />
                 VALIDATING CLAIM...
@@ -152,7 +156,7 @@ export default function PlayerGameLayout({
             ) : "CLAIM NOW!"}
           </Button>
           
-          {isClaimValidating && (
+          {(isClaimValidating || isClaiming) && (
             <p className="text-xs text-gray-300 mt-2 text-center">
               Your claim is being verified. Please wait...
             </p>
