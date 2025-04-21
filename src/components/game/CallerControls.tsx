@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,7 +6,6 @@ import { supabase } from '@/integrations/supabase/client';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
-  onVerifyClaim: () => void;
   onEndGame: () => void;
   onGoLive: () => Promise<void>;
   remainingNumbers: number[];
@@ -17,7 +15,6 @@ interface CallerControlsProps {
 
 export default function CallerControls({ 
   onCallNumber, 
-  onVerifyClaim, 
   onEndGame,
   onGoLive,
   remainingNumbers,
@@ -48,18 +45,6 @@ export default function CallerControls({
       onCallNumber(number);
       setIsCallingNumber(false);
     }, 1000);
-  };
-
-  const handleVerifyClaim = () => {
-    console.log("Verify claim button clicked in CallerControls - DIRECT CALL");
-    // Call the onVerifyClaim function that was passed down from the parent
-    onVerifyClaim();
-    
-    // Alert just for debugging - will remove in production
-    toast({
-      title: "Verify Claim",
-      description: "Checking for claims...",
-    });
   };
 
   const handleGoLiveClick = async () => {
@@ -120,14 +105,6 @@ export default function CallerControls({
             onClick={handleCallNumber}
           >
             {isCallingNumber ? 'Calling...' : 'Call Next Number'}
-          </Button>
-          
-          <Button 
-            variant="outline"
-            onClick={handleVerifyClaim}
-            className="bg-blue-50 hover:bg-blue-100"
-          >
-            Verify Claim
           </Button>
           
           <Button 
