@@ -10,6 +10,7 @@ interface SessionContextType {
   joinSession: (playerCode: string, nickname: string) => Promise<boolean>;
   setCurrentSession: (sessionId: string | null) => void;
   getSessionByCode: (code: string) => GameSession | null;
+  addPlayer: (sessionId: string, playerCode: string, nickname: string) => Promise<boolean>;
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
@@ -95,6 +96,33 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return sessions.find(s => s.accessCode === code) || null;
   };
 
+  // Add the missing addPlayer function
+  const addPlayer = async (sessionId: string, playerCode: string, nickname: string): Promise<boolean> => {
+    // Check if the playerCode already exists (enforce uniqueness)
+    const existingPlayer = players.find(p => p.playerCode === playerCode);
+    if (existingPlayer) {
+      // Player code already used, do not add
+      return false;
+    }
+
+    // Find the session
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) {
+      return false;
+    }
+
+    const newPlayer: Player = {
+      id: Date.now().toString(),
+      sessionId: sessionId,
+      nickname,
+      joinedAt: new Date().toISOString(),
+      playerCode
+    };
+
+    setPlayers([...players, newPlayer]);
+    return true;
+  };
+
   return (
     <SessionContext.Provider
       value={{
@@ -104,7 +132,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         createSession,
         joinSession,
         setCurrentSession,
-        getSessionByCode
+        getSessionByCode,
+        addPlayer
       }}
     >
       {children}
