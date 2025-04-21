@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Check, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -80,7 +81,7 @@ export default function ClaimVerificationSheet({
     // Validate based on current win pattern
     if (currentWinPattern === "oneLine") {
       sortedTickets.forEach(ticket => {
-        const layoutMask = ticket.layoutMask || ticket.layout_mask;
+        const layoutMask = ticket.layoutMask;
         if (!layoutMask) return;
         
         const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
@@ -106,7 +107,7 @@ export default function ClaimVerificationSheet({
       });
     } else if (currentWinPattern === "twoLines") {
       sortedTickets.forEach(ticket => {
-        const layoutMask = ticket.layoutMask || ticket.layout_mask;
+        const layoutMask = ticket.layoutMask;
         if (!layoutMask) return;
         
         const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
