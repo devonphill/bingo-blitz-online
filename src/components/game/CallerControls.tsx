@@ -51,8 +51,15 @@ export default function CallerControls({
   };
 
   const handleVerifyClaim = () => {
-    console.log("Verify claim button clicked - calling onVerifyClaim");
+    console.log("Verify claim button clicked in CallerControls - DIRECT CALL");
+    // Call the onVerifyClaim function that was passed down from the parent
     onVerifyClaim();
+    
+    // Alert just for debugging - will remove in production
+    toast({
+      title: "Verify Claim",
+      description: "Checking for claims...",
+    });
   };
 
   const handleGoLiveClick = async () => {
@@ -118,6 +125,7 @@ export default function CallerControls({
           <Button 
             variant="outline"
             onClick={handleVerifyClaim}
+            className="bg-blue-50 hover:bg-blue-100"
           >
             Verify Claim
           </Button>

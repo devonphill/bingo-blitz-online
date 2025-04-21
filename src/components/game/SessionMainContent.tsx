@@ -39,6 +39,19 @@ export default function SessionMainContent({
   remainingNumbers,
   sessionId,
 }: SessionMainContentProps) {
+  // Function to handle claim verification that guarantees the callback is triggered
+  const handleVerifyClaimClick = () => {
+    console.log("Verify claim called from SessionMainContent");
+    
+    // Use the callback for claim verification
+    if (typeof verifyPendingClaims === 'function') {
+      console.log("Calling verifyPendingClaims function");
+      verifyPendingClaims();
+    } else {
+      console.error("verifyPendingClaims is not a function!", verifyPendingClaims);
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2">
@@ -66,7 +79,7 @@ export default function SessionMainContent({
       <div>
         <CallerControls 
           onCallNumber={handleCallNumber}
-          onVerifyClaim={verifyPendingClaims}
+          onVerifyClaim={handleVerifyClaimClick}
           onEndGame={handleEndGame}
           onGoLive={handleGoLive}
           remainingNumbers={remainingNumbers}

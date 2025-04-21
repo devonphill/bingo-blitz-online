@@ -44,6 +44,16 @@ export default function ClaimVerificationModal({
   
   console.log("ClaimVerificationModal rendered with isOpen:", isOpen, "playerName:", playerName);
   
+  // Debug use useEffect to log when isOpen changes
+  useEffect(() => {
+    console.log("ClaimVerificationModal isOpen changed to:", isOpen);
+    
+    if (isOpen) {
+      console.log("MODAL IS OPEN NOW with player:", playerName);
+      console.log("Ticket data:", tickets);
+    }
+  }, [isOpen, playerName, tickets]);
+  
   // Recalculate claim validity and rank tickets when props change
   useEffect(() => {
     if (!tickets || tickets.length === 0) return;
