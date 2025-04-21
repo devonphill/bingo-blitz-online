@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import CurrentNumberDisplay from './CurrentNumberDisplay';
 
 interface CalledNumbersProps {
@@ -8,6 +8,29 @@ interface CalledNumbersProps {
 }
 
 export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNumbersProps) {
+  const [isFlashing, setIsFlashing] = useState(false);
+  
+  // Flash effect for current number
+  useEffect(() => {
+    if (currentNumber) {
+      setIsFlashing(true);
+      const timer = setInterval(() => {
+        setIsFlashing(prev => !prev);
+      }, 500);
+      
+      // Stop flashing after 3 seconds
+      const stopTimer = setTimeout(() => {
+        clearInterval(timer);
+        setIsFlashing(true); // Keep visible
+      }, 3000);
+      
+      return () => {
+        clearInterval(timer);
+        clearTimeout(stopTimer);
+      };
+    }
+  }, [currentNumber]);
+  
   // Group called numbers by tens (1-9, 10-19, etc.)
   const groupedNumbers: { [key: string]: number[] } = {};
   
@@ -38,7 +61,9 @@ export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNu
       
       {currentNumber && (
         <div className="mb-6 flex justify-center">
-          <CurrentNumberDisplay number={currentNumber} sizePx={90} />
+          <div className={isFlashing ? "opacity-100" : "opacity-50"} style={{ transition: "opacity 0.3s ease" }}>
+            <CurrentNumberDisplay number={currentNumber} sizePx={90} />
+          </div>
         </div>
       )}
       

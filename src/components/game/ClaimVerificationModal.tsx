@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import CallerTicketDisplay from './CallerTicketDisplay';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 interface ClaimVerificationModalProps {
   isOpen: boolean;
@@ -37,10 +38,24 @@ export default function ClaimVerificationModal({
   onFalseClaim
 }: ClaimVerificationModalProps) {
   const [isClaimValid, setIsClaimValid] = useState(false);
+  const [rankedTickets, setRankedTickets] = useState<any[]>([]);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [actionType, setActionType] = useState<'valid' | 'false' | null>(null);
   
-  // Recalculate claim validity when props change
+  // Recalculate claim validity and rank tickets when props change
   useEffect(() => {
     if (!tickets || tickets.length === 0) return;
+    
+    // Calculate score for each ticket (number of called numbers present)
+    const ticketsWithScore = tickets.map(ticket => {
+      const matchedNumbers = ticket.numbers.filter(num => calledNumbers.includes(num));
+      const score = matchedNumbers.length;
+      return { ...ticket, score };
+    });
+    
+    // Sort tickets by score (highest first)
+    const sortedTickets = [...ticketsWithScore].sort((a, b) => b.score - a.score);
+    setRankedTickets(sortedTickets);
     
     // A claim is valid if all numbers on any ticket have been called
     const valid = tickets.some(ticket => 
@@ -51,57 +66,95 @@ export default function ClaimVerificationModal({
   }, [tickets, calledNumbers]);
 
   const handleValidClaim = () => {
-    onValidClaim();
+    setActionType('valid');
+    setConfirmDialogOpen(true);
   };
 
   const handleFalseClaim = () => {
-    onFalseClaim();
+    setActionType('false');
+    setConfirmDialogOpen(true);
+  };
+
+  const confirmAction = () => {
+    setConfirmDialogOpen(false);
+    if (actionType === 'valid') {
+      onValidClaim();
+    } else if (actionType === 'false') {
+      onFalseClaim();
+    }
   };
 
   if (!isOpen) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[80vh]">
-        <DialogHeader>
-          <DialogTitle className={`text-2xl font-bold ${isClaimValid ? 'text-green-600' : 'text-red-600'}`}>
-            {isClaimValid ? 'CLAIM VALID' : 'CLAIM INVALID'} - {playerName}
-          </DialogTitle>
-        </DialogHeader>
+    <>
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="max-w-3xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className={`text-2xl font-bold ${isClaimValid ? 'text-green-600' : 'text-red-600'}`}>
+              {isClaimValid ? 'CLAIM VALID' : 'CLAIM INVALID'} - {playerName}
+            </DialogTitle>
+          </DialogHeader>
 
-        <ScrollArea className="mt-4 h-[50vh]">
-          <div className="space-y-4">
-            {tickets.map((ticket) => (
-              <div key={ticket.serial} className="p-2">
-                <div className="text-sm text-gray-500 mb-1">Ticket: {ticket.serial}</div>
-                <CallerTicketDisplay
-                  ticket={ticket}
-                  calledNumbers={calledNumbers}
-                  lastCalledNumber={currentNumber}
-                />
-              </div>
-            ))}
+          <ScrollArea className="mt-4 h-[50vh]">
+            <div className="space-y-4">
+              {rankedTickets.map((ticket) => (
+                <div key={ticket.serial} className="p-2 border rounded-md">
+                  <div className="text-sm text-gray-500 mb-1">
+                    Ticket: {ticket.serial} | Score: {ticket.score}/{ticket.numbers.length} numbers matched
+                  </div>
+                  <CallerTicketDisplay
+                    ticket={ticket}
+                    calledNumbers={calledNumbers}
+                    lastCalledNumber={currentNumber}
+                  />
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+
+          <div className="flex justify-end space-x-2 mt-4">
+            <Button
+              variant="destructive"
+              onClick={handleFalseClaim}
+              className="flex items-center gap-2"
+            >
+              <X className="h-4 w-4" />
+              False Call
+            </Button>
+            <Button
+              onClick={handleValidClaim}
+              className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
+            >
+              <Check className="h-4 w-4" />
+              Valid Claim
+            </Button>
           </div>
-        </ScrollArea>
+        </DialogContent>
+      </Dialog>
 
-        <div className="flex justify-end space-x-2 mt-4">
-          <Button
-            variant="destructive"
-            onClick={handleFalseClaim}
-            className="flex items-center gap-2"
-          >
-            <X className="h-4 w-4" />
-            False Call
-          </Button>
-          <Button
-            onClick={handleValidClaim}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
-          >
-            <Check className="h-4 w-4" />
-            Valid Claim
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+      <AlertDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {actionType === 'valid' ? 'Confirm Valid Claim' : 'Confirm False Call'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {actionType === 'valid' 
+                ? 'Are you sure this is a valid claim? This will update the game state and may affect prizes.' 
+                : 'Are you sure this is a false call? This will reject the player\'s claim.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmDialogOpen(false)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={confirmAction} className={actionType === 'valid' ? 'bg-green-600' : 'bg-red-600'}>
+              {actionType === 'valid' ? 'Confirm Valid' : 'Confirm False'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

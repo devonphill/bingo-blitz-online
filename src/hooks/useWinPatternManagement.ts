@@ -105,7 +105,11 @@ export function useWinPatternManagement(sessionId: string | undefined) {
 
       if (data) {
         const activePatterns: string[] = [];
-        const prizes: { [key: string]: string } = {};
+        const prizes: { [key: string]: string } = {
+          oneLine: "",
+          twoLines: "",
+          fullHouse: ""
+        };
 
         if (data.one_line_active) {
           activePatterns.push("oneLine");
@@ -122,6 +126,9 @@ export function useWinPatternManagement(sessionId: string | undefined) {
 
         setWinPatterns(activePatterns);
         setWinPrizes(prizes);
+        
+        console.log("Fetched win patterns:", activePatterns);
+        console.log("Fetched win prizes:", prizes);
       }
     };
 
@@ -131,6 +138,7 @@ export function useWinPatternManagement(sessionId: string | undefined) {
   // Save changes when win patterns or prizes change
   useEffect(() => {
     if (sessionId) {
+      console.log("Saving win patterns and prizes:", winPatterns, winPrizes);
       saveWinPatterns();
     }
   }, [winPatterns, winPrizes, sessionId]);
