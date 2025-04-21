@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import GameHeader from '@/components/game/GameHeader';
 import GameTypeSelector from '@/components/game/GameTypeSelector';
 import SessionMainContent from '@/components/game/SessionMainContent';
-import ClaimVerificationModal from '@/components/game/ClaimVerificationModal';
+import ClaimVerificationSheet from '@/components/game/ClaimVerificationSheet';
 import { useClaimManagement } from '@/hooks/useClaimManagement';
 import { useWinPatternManagement } from '@/hooks/useWinPatternManagement';
 import { useGameProgression } from '@/hooks/useGameProgression';
@@ -27,11 +27,11 @@ export default function CallerSession() {
   const navigate = useNavigate();
 
   const {
-    showClaimModal,
+    showClaimSheet,
     currentClaim,
-    setShowClaimModal,
+    setShowClaimSheet,
     setCurrentClaim,
-    verifyPendingClaims,
+    checkForClaims,
     claimQueue
   } = useClaimManagement(sessionId);
 
@@ -46,16 +46,14 @@ export default function CallerSession() {
 
   const { progressToNextGame } = useGameProgression(session);
 
-  // Log when relevant state changes
   useEffect(() => {
     console.log("CallerSession - state update", {
-      showClaimModal,
+      showClaimSheet,
       claimQueueLength: claimQueue?.length,
       currentGameWinPattern
     });
-  }, [showClaimModal, claimQueue, currentGameWinPattern]);
+  }, [showClaimSheet, claimQueue, currentGameWinPattern]);
 
-  // Load session data
   useEffect(() => {
     if (!session && sessionId) {
       const foundSession = sessions.find(s => s.id === sessionId);
@@ -78,7 +76,6 @@ export default function CallerSession() {
     }
   }, [gameType, remainingNumbers.length]);
 
-  // Fetch called numbers for this session
   useEffect(() => {
     if (sessionId) {
       const fetchCalledNumbers = async () => {
@@ -106,7 +103,6 @@ export default function CallerSession() {
       
       fetchCalledNumbers();
       
-      // Set up realtime listener for called numbers
       const calledNumbersChannel = supabase
         .channel('called-numbers-listener')
         .on(
@@ -135,7 +131,6 @@ export default function CallerSession() {
     }
   }, [sessionId, gameType, remainingNumbers.length]);
 
-  // Fetch players for this session
   useEffect(() => {
     if (!sessionId) return;
 
@@ -187,7 +182,6 @@ export default function CallerSession() {
     };
   }, [sessionId]);
 
-  // Fetch win patterns
   useEffect(() => {
     if (sessionId) {
       const fetchWinPatterns = async () => {
@@ -210,17 +204,15 @@ export default function CallerSession() {
     }
   }, [sessionId, setWinPatterns]);
 
-  // Initial check for claims
   useEffect(() => {
     if (sessionId) {
       console.log("Initial check for pending claims");
-      // Check with a slight delay to ensure session is loaded
       const timer = setTimeout(() => {
-        verifyPendingClaims();
+        checkForClaims();
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [sessionId, verifyPendingClaims]);
+  }, [sessionId, checkForClaims]);
 
   const handleGameTypeChange = (type: string) => {
     setGameType(type);
@@ -297,51 +289,70 @@ export default function CallerSession() {
           .from('bingo_claims')
           .update({ status: 'validated' })
           .eq('id', currentClaim.claimId);
+      } else {
+        await supabase
+          .from('bingo_claims')
+          .insert({
+            session_id: sessionId,
+            player_id: currentClaim.playerId,
+            status: 'validated'
+          });
       }
+
+      await supabase.channel('game-updates').send({
+        type: 'broadcast',
+        event: 'claim-result',
+        payload: {
+          playerId: currentClaim.playerId,
+          result: 'valid',
+          winPattern: currentGameWinPattern,
+          sessionId
+        }
+      });
 
       if (!nextPattern) {
         await progressToNextGame();
       }
 
-      setShowClaimModal(false);
+      setShowClaimSheet(false);
       setCurrentClaim(null);
     
-    toast({
-      title: "Claim Verified",
-      description: `${currentClaim.playerName}'s claim has been verified.`,
-    });
-    
-    setTimeout(() => {
-      verifyPendingClaims();
-    }, 1000);
-  } catch (error) {
-    console.error("Error processing valid claim:", error);
-    toast({
-      title: "Error",
-      description: "Failed to process claim.",
-      variant: "destructive"
-    });
-  }
-};
+      toast({
+        title: "Claim Verified",
+        description: `${currentClaim.playerName}'s claim has been verified.`,
+      });
+    } catch (error) {
+      console.error("Error processing valid claim:", error);
+      toast({
+        title: "Error",
+        description: "Failed to process claim.",
+        variant: "destructive"
+      });
+    }
+  };
 
   const handleFalseClaim = async () => {
     console.log("handleFalseClaim called");
     if (!currentClaim) return;
 
     try {
-      if (currentClaim.claimId) {
-        await supabase
-          .from('bingo_claims')
-          .update({ status: 'rejected' })
-          .eq('id', currentClaim.claimId);
-      } else {
-        await supabase
-          .from('bingo_claims')
-          .update({ status: 'rejected' })
-          .eq('player_id', currentClaim.playerId)
-          .eq('session_id', sessionId)
-          .eq('status', 'pending');
-      }
+      await supabase
+        .from('bingo_claims')
+        .insert({
+          session_id: sessionId,
+          player_id: currentClaim.playerId,
+          status: 'rejected'
+        });
+      
+      await supabase.channel('game-updates').send({
+        type: 'broadcast',
+        event: 'claim-result',
+        payload: {
+          playerId: currentClaim.playerId,
+          result: 'rejected',
+          sessionId
+        }
+      });
       
       toast({
         title: "Claim Rejected",
@@ -349,12 +360,8 @@ export default function CallerSession() {
         variant: "default"
       });
       
-      setShowClaimModal(false);
+      setShowClaimSheet(false);
       setCurrentClaim(null);
-      
-      setTimeout(() => {
-        verifyPendingClaims();
-      }, 1000);
     } catch (error) {
       console.error("Error processing false claim:", error);
       toast({
@@ -445,16 +452,16 @@ export default function CallerSession() {
           handleGoLive={handleGoLive}
           remainingNumbers={remainingNumbers}
           sessionId={sessionId || ''}
-          onCheckClaims={verifyPendingClaims}
+          onCheckClaims={checkForClaims}
           claimQueue={claimQueue}
         />
       </main>
       
-      <ClaimVerificationModal
-        isOpen={showClaimModal}
+      <ClaimVerificationSheet
+        isOpen={showClaimSheet}
         onClose={() => {
-          console.log("Modal close callback called");
-          setShowClaimModal(false);
+          console.log("Sheet close callback called");
+          setShowClaimSheet(false);
         }}
         playerName={currentClaim?.playerName || ''}
         tickets={currentClaim?.tickets || []}
