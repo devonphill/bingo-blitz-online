@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -12,7 +13,7 @@ import TicketsDebugDisplay from '@/components/game/TicketsDebugDisplay';
 
 export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
-  const { sessions, players } = useSession();
+  const { sessions, players, assignTicketsToPlayer } = useSession();
   const [session, setSession] = useState(sessions.find(s => s.id === sessionId) || null);
   const [gameType, setGameType] = useState('90-ball');
   const [promptGameType, setPromptGameType] = useState(false);
@@ -144,10 +145,11 @@ export default function CallerSession() {
           .from('assigned_tickets')
           .select('perm')
           .eq('player_id', player.id)
-          .eq('session_id', sessionId)
-          .distinctOn('perm');
+          .eq('session_id', sessionId);
           
-        const permsCount = existingTicketsData ? existingTicketsData.length : 0;
+        // Get unique perm values
+        const uniquePerms = existingTicketsData ? [...new Set(existingTicketsData.map(item => item.perm))] : [];
+        const permsCount = uniquePerms.length;
         
         if (permsCount < player.tickets) {
           console.log(`Assigning ${player.tickets - permsCount} more strips to ${player.nickname}`);
