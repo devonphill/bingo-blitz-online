@@ -1,6 +1,6 @@
 
 import { supabase } from "@/integrations/supabase/client";
-import { SupabaseRpcFunction, AssignedTicketResponse } from "@/integrations/supabase/customTypes";
+import { AssignedTicketResponse } from "@/integrations/supabase/customTypes";
 
 export interface TicketData {
   serial: string;
@@ -28,7 +28,7 @@ export function useTickets() {
     try {
       // Get already-assigned serials for this session
       const { data: assignedTicketsData, error: assignedError } = await supabase
-        .rpc("get_assigned_ticket_serials_by_session" as SupabaseRpcFunction, { 
+        .rpc("get_assigned_ticket_serials_by_session", { 
           p_session_id: sessionId 
         });
 
@@ -99,7 +99,7 @@ export function useTickets() {
     try {
       // Check if player already has tickets assigned
       const { data: existingTicketsCount, error: checkError } = await supabase
-        .rpc("get_player_assigned_tickets_count" as SupabaseRpcFunction, { 
+        .rpc("get_player_assigned_tickets_count", { 
           p_player_id: playerId, 
           p_session_id: sessionId 
         });
@@ -121,7 +121,7 @@ export function useTickets() {
         return false;
       }
 
-      // Prepare for insertion
+      // Prepare for insertion: convert numbers array to integer[]
       const ticketsToInsert = availableTickets.map(ticket => ({
         player_id: playerId,
         session_id: sessionId,
@@ -133,7 +133,7 @@ export function useTickets() {
       }));
 
       const { error: insertError } = await supabase
-        .rpc("insert_assigned_tickets" as SupabaseRpcFunction, { tickets: ticketsToInsert });
+        .rpc("insert_assigned_tickets", { tickets: ticketsToInsert });
 
       if (insertError) {
         console.error("Error assigning tickets:", insertError);
@@ -151,7 +151,7 @@ export function useTickets() {
   const getPlayerAssignedTickets = async (playerId: string, sessionId: string): Promise<AssignedTicket[]> => {
     try {
       const { data, error } = await supabase
-        .rpc("get_player_assigned_tickets" as SupabaseRpcFunction, { 
+        .rpc("get_player_assigned_tickets", { 
           p_player_id: playerId, 
           p_session_id: sessionId 
         });
