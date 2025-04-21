@@ -22,8 +22,15 @@ export default function AddPlayers() {
     async function fetchSessionData() {
       setLoading(true);
       
+      if (!sessionId) {
+        setLoading(false);
+        return;
+      }
+      
+      console.log("Fetching session data for ID:", sessionId);
+      
       // Try to find the session in the context first
-      if (sessionId && sessions.length > 0) {
+      if (sessions.length > 0) {
         const foundSession = sessions.find(s => s.id === sessionId);
         if (foundSession) {
           setSession(foundSession);
@@ -32,30 +39,31 @@ export default function AddPlayers() {
         }
       }
       
-      // If not found in context or sessions is empty, try to fetch from database
-      if (sessionId) {
-        try {
-          const { data, error } = await supabase
-            .from('game_sessions')
-            .select('*')
-            .eq('id', sessionId)
-            .single();
-            
-          if (data && !error) {
-            const fetchedSession: GameSession = {
-              id: data.id,
-              name: data.name,
-              gameType: data.game_type as GameSession['gameType'],
-              createdBy: data.created_by,
-              accessCode: data.access_code,
-              status: data.status as GameSession['status'],
-              createdAt: data.created_at
-            };
-            setSession(fetchedSession);
-          }
-        } catch (err) {
-          console.error("Error fetching session:", err);
+      try {
+        // If not found in context, fetch directly from Supabase
+        const { data, error } = await supabase
+          .from('game_sessions')
+          .select('*')
+          .eq('id', sessionId)
+          .single();
+          
+        if (data && !error) {
+          console.log("Found session in Supabase:", data);
+          const fetchedSession: GameSession = {
+            id: data.id,
+            name: data.name,
+            gameType: data.game_type,
+            createdBy: data.created_by,
+            accessCode: data.access_code,
+            status: data.status,
+            createdAt: data.created_at
+          };
+          setSession(fetchedSession);
+        } else {
+          console.error("Error fetching session:", error);
         }
+      } catch (err) {
+        console.error("Exception fetching session:", err);
       }
       
       setLoading(false);
@@ -108,7 +116,7 @@ export default function AddPlayers() {
             Back to Dashboard
           </Button>
           <h2 className="text-2xl font-bold text-gray-900">
-            Add Players to Session {session?.name}
+            Add Players to Session {session?.name || sessionId}
           </h2>
         </div>
         

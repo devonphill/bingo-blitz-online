@@ -23,6 +23,8 @@ export default function AddPlayerForm({ sessionId, onPlayerAdded }: AddPlayerFor
     setIsAdding(true);
 
     try {
+      console.log("Adding player with sessionId:", sessionId);
+      
       // Use direct supabase client to avoid context method
       const { error } = await supabase.from('players').insert({
         player_code: playerCode.toUpperCase(),

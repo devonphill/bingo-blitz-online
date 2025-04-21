@@ -5,7 +5,6 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
-import { useSession } from '@/contexts/SessionContext';
 import { supabase } from '@/integrations/supabase/client';
 
 interface TempPlayer {
@@ -69,8 +68,10 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
     setSaving(true);
     
     try {
+      console.log("Attempting to add players to session ID:", sessionId);
+      
       // Insert all players directly using supabase client
-      // IMPORTANT: Don't include an explicit ID, and use a UUID for session_id
+      // IMPORTANT: Don't include an explicit ID, let Supabase generate UUIDs
       const { error } = await supabase.from('players').insert(
         players.map(p => ({
           player_code: p.playerCode,
@@ -91,8 +92,8 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
         });
       } else {
         toast({
-          title: 'Players added and emailed!',
-          description: `${players.length} players committed to the database and issued codes.`,
+          title: 'Players added successfully!',
+          description: `${players.length} players committed to the database.`,
         });
         setPlayers([]);
       }
@@ -171,7 +172,7 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
       </CardContent>
       <CardFooter className="flex justify-end">
         <Button disabled={saving || players.length === 0} onClick={handleSaveAll}>
-          {saving ? 'Saving...' : 'Save All & Email Players'}
+          {saving ? 'Saving...' : 'Save All Players'}
         </Button>
       </CardFooter>
     </Card>
