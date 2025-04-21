@@ -14,6 +14,7 @@ import CallerSession from "./pages/CallerSession";
 import PlayerGame from "./pages/PlayerGame";
 import NotFound from "./pages/NotFound";
 import AdminDashboard from "./pages/AdminDashboard";
+import RegisterSuperuser from "./pages/RegisterSuperuser";
 
 const queryClient = new QueryClient();
 
@@ -54,7 +55,8 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/join" element={<PlayerJoin />} />
               <Route path="/player/game" element={<PlayerGame />} />
-              
+              <Route path="/register-superuser" element={<RegisterSuperuser />} />
+
               {/* Protected routes */}
               <Route path="/dashboard" element={
                 <ProtectedRoute>
