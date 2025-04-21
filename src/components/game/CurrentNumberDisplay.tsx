@@ -1,11 +1,7 @@
 
 import React from "react";
 
-interface CurrentNumberDisplayProps {
-  number: number | null;
-}
-
-export default function CurrentNumberDisplay({ number }: CurrentNumberDisplayProps) {
+export default function CurrentNumberDisplay({ number, sizePx = 90 }: { number: number | null, sizePx?: number }) {
   // Colors similar to CalledNumbers color mapping
   const getColor = (n: number | null) => {
     if (n == null) return "bg-gray-200 text-gray-400";
@@ -20,14 +16,11 @@ export default function CurrentNumberDisplay({ number }: CurrentNumberDisplayPro
     return "bg-teal-500";
   };
   return (
-    <div className="flex flex-col items-center justify-center w-full h-full">
+    <div className="flex flex-col items-center justify-center w-full h-full" style={{height: sizePx, width: sizePx}}>
       <span className="mb-2 text-sm text-gray-500">Current Number</span>
       <div
-        className={
-          `flex items-center justify-center rounded-full shadow-lg ${getColor(number)} ` +
-          "bingo-number-ball"
-        }
-        style={{ width: "90px", height: "90px", fontSize: "2.25rem" }}
+        className={`flex items-center justify-center rounded-full shadow-lg ${getColor(number)} bingo-number-ball`}
+        style={{ width: sizePx, height: sizePx, fontSize: sizePx * 0.25 + 24 }}
       >
         {number == null ? "--" : number}
       </div>

@@ -1,13 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Button } from '@/components/ui/button';
+import React, { useState, useEffect } from 'react';
 import { useSession } from '@/contexts/SessionContext';
-import BingoCard from '@/components/game/BingoCard';
-import CalledNumbers from '@/components/game/CalledNumbers';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Switch } from "@/components/ui/switch";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
-import CurrentNumberDisplay from '@/components/game/CurrentNumberDisplay';
+import PlayerGameLayout from '@/components/game/PlayerGameLayout';
+import PlayerTicketsPanel from '@/components/game/PlayerTicketsPanel';
 
 interface BingoTicket {
   serial: string;
@@ -274,131 +271,19 @@ export default function PlayerGame() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row md:justify-between md:items-center gap-2">
-          <div>
-            <h1 className="text-xl font-bold text-bingo-primary">Bingo Blitz</h1>
-            <div className="text-sm text-gray-500">Game: {currentSession?.name}</div>
-            {activeWinPatterns.length > 0 && (
-              <div className="mt-1">
-                <span className="text-xs text-gray-500 font-medium">
-                  Win Pattern: {activeWinPatterns.map(key => 
-                    <span key={key} className="inline-block mr-2 px-2 py-1 bg-blue-50 rounded text-bingo-primary">
-                      {WIN_PATTERNS[key]?.label ?? key}
-                      {winPrizes[key] ? `: ${winPrizes[key]}` : ""}
-                    </span>
-                  )}
-                </span>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center space-x-2">
-              <Switch id="auto-marking"
-                checked={autoMarking}
-                onCheckedChange={setAutoMarking}
-              />
-              <label htmlFor="auto-marking" className="text-sm font-medium">
-                Auto Marking
-              </label>
-            </div>
-            {playerCode && (
-              <div className="bg-gray-100 px-3 py-1 rounded-full text-sm">
-                Your Code: <span className="font-mono font-bold">{playerCode}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
-
-      <ResizablePanelGroup direction="horizontal" className="h-[calc(100vh-64px)] w-full">
-        <ResizablePanel defaultSize={30} minSize={24} maxSize={40} className="bg-transparent flex flex-col h-full">
-          <div className="flex-1 flex flex-col">
-            <div className="flex-1 p-2"></div>
-            <div className="aspect-square w-full max-w-[100%] p-2 flex items-center justify-center">
-              <CurrentNumberDisplay number={currentNumber} />
-            </div>
-          </div>
-        </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel defaultSize={70} minSize={55} className="overflow-y-auto">
-          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <Button 
-              className="w-full mb-4 bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-              onClick={handleClaimBingo}
-            >
-              Claim Bingo!
-            </Button>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div>
-                {tickets.length > 0 ? (
-                  <div className="bg-white shadow rounded-lg p-6 mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 mb-4">Your Bingo Tickets ({tickets.length})</h2>
-                    {Array.from(new Set(tickets.map(t => t.perm))).map(perm => (
-                      <div key={`perm-${perm}`} className="mb-8">
-                        <h3 className="text-lg font-semibold mb-3">Strip #{perm}</h3>
-                        <div className="grid grid-cols-1 gap-6">
-                          {tickets
-                            .filter(t => t.perm === perm)
-                            .sort((a, b) => a.position - b.position)
-                            .map((ticket) => {
-                              const winProg = calcTicketProgress(ticket.numbers, ticket.layoutMask, calledNumbers);
-                              const minToGo = Math.min(...activeWinPatterns.map(p => winProg[p] ?? 15));
-                              return (
-                                <div key={ticket.serial} className="border rounded-lg p-4">
-                                  <div className="flex justify-between items-center mb-2">
-                                    <div className="text-sm font-medium">
-                                      Perm: <span className="font-mono">{ticket.perm}</span>
-                                    </div>
-                                    <div className="text-sm font-medium">
-                                      Position: <span className="font-mono">{ticket.position}</span>
-                                    </div>
-                                  </div>
-                                  <div className="text-xs text-gray-500 mb-4">
-                                    Serial: <span className="font-mono">{ticket.serial}</span>
-                                  </div>
-                                  <BingoCard
-                                    numbers={ticket.numbers}
-                                    layoutMask={ticket.layoutMask}
-                                    calledNumbers={calledNumbers}
-                                    autoMarking={autoMarking}
-                                  />
-                                  <div className="text-center mt-4">
-                                    <span className={minToGo <= 3 ? "font-bold text-green-600" : "font-medium text-gray-700"}>
-                                      {minToGo === 0
-                                        ? "Bingo!"
-                                        : `${minToGo} to go`}
-                                    </span>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="bg-white shadow rounded-lg p-6">
-                    <div className="flex justify-between items-center mb-4">
-                      <h2 className="text-xl font-bold text-gray-900">No Tickets Assigned</h2>
-                    </div>
-                    <p className="text-gray-600">You don't have any tickets assigned yet. Please wait for the game organizer to assign tickets.</p>
-                  </div>
-                )}
-              </div>
-              <div>
-                <div className="bg-white shadow rounded-lg p-6">
-                  <CalledNumbers 
-                    calledNumbers={calledNumbers}
-                    currentNumber={currentNumber}
-                  />
-                </div>
-              </div>
-            </div>
-          </main>
-        </ResizablePanel>
-      </ResizablePanelGroup>
-    </div>
+    <PlayerGameLayout
+      tickets={tickets}
+      calledNumbers={calledNumbers}
+      currentNumber={currentNumber}
+      currentSession={currentSession}
+      autoMarking={autoMarking}
+      setAutoMarking={setAutoMarking}
+      playerCode={playerCode}
+      winPrizes={winPrizes}
+      activeWinPatterns={activeWinPatterns}
+      onClaimBingo={handleClaimBingo}
+      errorMessage={errorMessage}
+      isLoading={isLoading}
+    />
   );
 }
