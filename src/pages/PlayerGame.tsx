@@ -27,7 +27,6 @@ export default function PlayerGame() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const { toast } = useToast();
   
-  // Get player information from local storage if available
   useEffect(() => {
     const storedPlayerCode = localStorage.getItem('playerCode');
     if (storedPlayerCode && !hasCheckedSession) {
@@ -40,14 +39,12 @@ export default function PlayerGame() {
     }
   }, [hasCheckedSession]);
   
-  // Function to check for active session and fetch tickets
   const checkForActiveSession = async (code: string) => {
     setIsLoading(true);
     setErrorMessage(null);
     
     try {
       console.log("Checking active session for player code:", code);
-      // Get the player information first to get their ID
       const { data: playerData, error: playerError } = await supabase
         .from('players')
         .select('id, session_id')
@@ -65,7 +62,6 @@ export default function PlayerGame() {
         console.log("Found player data:", playerData);
         setPlayerId(playerData.id);
         
-        // Query sessions to find the player's session
         const { data: sessionData, error: sessionError } = await supabase
           .from('game_sessions')
           .select('*')
@@ -81,22 +77,8 @@ export default function PlayerGame() {
           
         if (sessionData && sessionData.status === 'active') {
           console.log("Found active session:", sessionData);
-          // Format and set as current session
-          const formattedSession = {
-            id: sessionData.id,
-            name: sessionData.name,
-            gameType: sessionData.game_type,
-            createdBy: sessionData.created_by,
-            accessCode: sessionData.access_code,
-            status: sessionData.status,
-            createdAt: sessionData.created_at,
-            sessionDate: sessionData.session_date,
-            numberOfGames: sessionData.number_of_games,
-          };
-          
           setCurrentSession(sessionData.id);
           
-          // Fetch player's tickets
           await fetchPlayerTickets(playerData.id, playerData.session_id);
           
           toast({
@@ -124,7 +106,6 @@ export default function PlayerGame() {
     }
   };
   
-  // Fetch player tickets from the assigned_tickets table
   const fetchPlayerTickets = async (playerId: string, sessionId: string) => {
     try {
       console.log(`Fetching tickets for player ${playerId} in session ${sessionId}`);
@@ -132,7 +113,6 @@ export default function PlayerGame() {
         
       if (assignedTickets && assignedTickets.length > 0) {
         console.log(`Found ${assignedTickets.length} tickets:`, assignedTickets);
-        // Format the ticket data
         const formattedTickets: BingoTicket[] = assignedTickets.map((ticket) => ({
           serial: ticket.serial,
           perm: ticket.perm,
@@ -153,11 +133,9 @@ export default function PlayerGame() {
     }
   };
 
-  // Listen for called numbers from the server
   useEffect(() => {
     if (!currentSession) return;
     
-    // Set up a realtime subscription for called numbers
     const channel = supabase
       .channel('called-numbers')
       .on(
@@ -188,7 +166,6 @@ export default function PlayerGame() {
       title: "Bingo Claimed!",
       description: "Your claim has been submitted to the caller for verification.",
     });
-    // In a real app, this would send a notification to the caller
   };
 
   if (isLoading) {
@@ -254,7 +231,6 @@ export default function PlayerGame() {
               <div className="bg-white shadow rounded-lg p-6 mb-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-4">Your Bingo Tickets ({tickets.length})</h2>
                 
-                {/* Group tickets by perm number for display */}
                 {Array.from(new Set(tickets.map(t => t.perm))).map(perm => (
                   <div key={`perm-${perm}`} className="mb-8">
                     <h3 className="text-lg font-semibold mb-3">Strip #{perm}</h3>
@@ -276,7 +252,7 @@ export default function PlayerGame() {
                               Serial: <span className="font-mono">{ticket.serial}</span>
                             </div>
                             
-                            <BingoCard numbers={ticket.numbers} />
+                            <BingoCard numbers={ticket.numbers} layoutMask={ticket.layoutMask} />
                             
                             <Button 
                               className="w-full mt-4 bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"

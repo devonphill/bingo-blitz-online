@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,20 +10,70 @@ import { useToast } from '@/components/ui/use-toast';
 
 interface BingoCardProps {
   numbers?: number[];
+  layoutMask?: number;
 }
 
-export default function BingoCard({ numbers }: BingoCardProps) {
+export default function BingoCard({ numbers = [], layoutMask }: BingoCardProps) {
   const [card, setCard] = useState<Array<Array<number | null>>>([]);
   const [markedCells, setMarkedCells] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
   useEffect(() => {
     if (numbers && numbers.length > 0) {
-      generateCardFromNumbers(numbers);
+      if (layoutMask !== undefined) {
+        generateCardFromLayoutMask(numbers, layoutMask);
+      } else {
+        generateCardFromNumbers(numbers);
+      }
     } else {
       generateCard();
     }
-  }, [numbers]);
+  }, [numbers, layoutMask]);
+
+  // Function to generate a card from a layout mask and numbers
+  const generateCardFromLayoutMask = (ticketNumbers: number[], mask: number) => {
+    // Create a new 3x9 card filled with nulls
+    const newCard = Array(3).fill(null).map(() => Array(9).fill(null));
+    
+    // Convert mask to a binary string padded to 27 bits (3 rows × 9 columns)
+    // '1' means there should be a number, '0' means it should be blank
+    const maskBinary = mask.toString(2).padStart(27, '0');
+    
+    // Organize the 15 numbers by their column
+    const columnNumbers: { [key: number]: number[] } = {};
+    
+    // Initialize column arrays
+    for (let i = 0; i < 9; i++) {
+      columnNumbers[i] = [];
+    }
+    
+    // Sort numbers into their respective columns
+    ticketNumbers.forEach(num => {
+      const colIndex = num <= 9 ? 0 : Math.floor((num - 1) / 10);
+      columnNumbers[colIndex].push(num);
+    });
+    
+    // Sort numbers within each column
+    for (let col = 0; col < 9; col++) {
+      columnNumbers[col].sort((a, b) => a - b);
+    }
+    
+    // Place numbers according to the mask
+    let ticketIndex = 0;
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 9; col++) {
+        const maskIndex = row * 9 + col;
+        const hasBit = maskBinary[maskBinary.length - 1 - maskIndex] === '1';
+        
+        if (hasBit && columnNumbers[col].length > 0) {
+          newCard[row][col] = columnNumbers[col].shift()!;
+        }
+      }
+    }
+    
+    setCard(newCard);
+    setMarkedCells(new Set());
+  };
 
   // Function to generate a card from a list of numbers
   const generateCardFromNumbers = (ticketNumbers: number[]) => {

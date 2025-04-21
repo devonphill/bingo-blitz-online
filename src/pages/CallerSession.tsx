@@ -160,7 +160,7 @@ export default function CallerSession() {
     const { data: allAssignedTickets, error: ticketsErr } = await supabase
       .from('assigned_tickets')
       .select(`
-        id, serial, perm, position, layout_mask, 
+        id, serial, perm, position, layout_mask, numbers,
         players:player_id(id, player_code, nickname)
       `)
       .eq('session_id', sessionId)
