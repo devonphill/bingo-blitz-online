@@ -1,27 +1,39 @@
+
 import React, { useState, useEffect } from "react";
-import CurrentNumberDisplay from "@/components/game/CurrentNumberDisplay";
-import CalledNumbers from "@/components/game/CalledNumbers";
-import PlayerTicketsPanel from "@/components/game/PlayerTicketsPanel";
 import { Button } from "@/components/ui/button";
 import { Loader } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
+interface PlayerGameLayoutProps {
+  tickets: any[];
+  calledNumbers: number[];
+  currentNumber: number | null;
+  currentSession: any;
+  autoMarking: boolean;
+  setAutoMarking: (value: boolean) => void;
+  playerCode: string;
+  winPrizes: { [key: string]: string };
+  activeWinPatterns: string[];
+  currentWinPattern: string | null;
+  onClaimBingo: () => Promise<boolean>;
+  errorMessage: string;
+  isLoading: boolean;
+  children: React.ReactNode;
+}
+
 export default function PlayerGameLayout({
-  tickets,
-  calledNumbers,
-  currentNumber,
   currentSession,
   autoMarking,
   setAutoMarking,
   playerCode,
-  winPrizes,
-  activeWinPatterns,
   currentWinPattern,
+  winPrizes,
   onClaimBingo,
   errorMessage,
   isLoading,
-}: any) {
+  children
+}: PlayerGameLayoutProps) {
   const [isClaimValidating, setIsClaimValidating] = useState(false);
   const { toast } = useToast();
 
@@ -178,29 +190,10 @@ export default function PlayerGameLayout({
             </div>
           )}
         </div>
-        <div className="fixed bottom-0 left-0 w-[30%] max-w-[400px] min-w-[240px] flex items-center justify-center p-4 bg-gray-900">
-          <CurrentNumberDisplay 
-            number={currentNumber} 
-            sizePx={Math.min(window.innerWidth * 0.3 * 0.8, 180)} 
-          />
-        </div>
       </div>
       <div className="flex-1 bg-gray-50 h-full overflow-y-auto">
         <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <PlayerTicketsPanel 
-              tickets={tickets}
-              calledNumbers={calledNumbers}
-              autoMarking={autoMarking}
-              activeWinPatterns={activeWinPatterns}
-              currentWinPattern={currentWinPattern}
-            />
-            <div>
-              <div className="bg-white shadow rounded-lg p-6">
-                <CalledNumbers calledNumbers={calledNumbers} currentNumber={currentNumber} />
-              </div>
-            </div>
-          </div>
+          {children}
         </div>
       </div>
     </div>

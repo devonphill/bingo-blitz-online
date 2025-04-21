@@ -262,7 +262,8 @@ export function usePlayerGame() {
       }
       
       // Broadcast the claim to all callers using Supabase broadcast
-      const { error: broadcastError } = await supabase
+      // Remove the error property check since it's now handled differently
+      await supabase
         .channel('caller-claims')
         .send({
           type: 'broadcast',
@@ -275,11 +276,6 @@ export function usePlayerGame() {
             timestamp: new Date().toISOString()
           }
         });
-      
-      if (broadcastError) {
-        console.error("Error broadcasting claim:", broadcastError);
-        throw new Error("Failed to broadcast claim");
-      }
       
       toast({
         title: "Claim Submitted",

@@ -21,7 +21,7 @@ interface SessionMainContentProps {
   remainingNumbers: number[];
   sessionId: string;
   onCheckClaims?: () => void;
-  claimQueue?: Array<{ playerName: string; playerId: string; claimId: string }>;
+  claimQueue?: Array<{ playerName: string; playerId: string; claimId?: string }>;
 }
 
 export default function SessionMainContent({

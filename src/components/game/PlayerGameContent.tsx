@@ -9,12 +9,15 @@ import PlayerGameLayout from './PlayerGameLayout';
 import CurrentNumberDisplay from './CurrentNumberDisplay';
 import PlayerGameLoader from './PlayerGameLoader';
 import BingoWinProgress from './BingoWinProgress';
+import PlayerTicketsPanel from './PlayerTicketsPanel';
 
 interface PlayerGameContentProps {
   tickets: Array<{
     serial: string;
     numbers: number[];
     layoutMask?: number;
+    perm?: number;
+    position?: number;
   }>;
   calledNumbers: number[];
   currentNumber: number | null;
@@ -68,12 +71,24 @@ export default function PlayerGameContent({
 
   const showWinResults = claimStatus === 'validated' || claimStatus === 'rejected';
   
+  // Pass the current win pattern based on claim status
+  const currentWinPattern = activeWinPatterns.length > 0 ? activeWinPatterns[0] : null;
+  
   return (
     <PlayerGameLayout
-      accessCode={playerCode}
-      sessionName={currentSession?.name || ''}
+      tickets={tickets}
+      calledNumbers={calledNumbers}
+      currentNumber={currentNumber}
+      currentSession={currentSession}
       autoMarking={autoMarking}
       setAutoMarking={setAutoMarking}
+      playerCode={playerCode}
+      winPrizes={winPrizes}
+      activeWinPatterns={activeWinPatterns}
+      currentWinPattern={currentWinPattern}
+      onClaimBingo={handleClaimBingo}
+      errorMessage={errorMessage}
+      isLoading={isLoading}
     >
       <div className="space-y-6">
         {errorMessage && (
@@ -88,11 +103,12 @@ export default function PlayerGameContent({
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2">
-            <BingoCardGrid
+            <PlayerTicketsPanel
               tickets={tickets}
               calledNumbers={calledNumbers}
-              lastCalledNumber={currentNumber}
               autoMarking={autoMarking}
+              activeWinPatterns={activeWinPatterns}
+              currentWinPattern={currentWinPattern}
             />
           </div>
           

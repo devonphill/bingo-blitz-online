@@ -16,7 +16,9 @@ export default function PlayerGame() {
     activeWinPatterns,
     handleClaimBingo,
     isLoading,
-    errorMessage
+    errorMessage,
+    isClaiming,
+    claimStatus
   } = usePlayerGame();
 
   return (
@@ -27,12 +29,14 @@ export default function PlayerGame() {
       currentSession={currentSession}
       autoMarking={autoMarking}
       setAutoMarking={setAutoMarking}
-      playerCode={playerCode}
+      playerCode={playerCode || ''}
       winPrizes={winPrizes}
       activeWinPatterns={activeWinPatterns}
       onClaimBingo={handleClaimBingo}
       errorMessage={errorMessage}
       isLoading={isLoading}
+      isClaiming={isClaiming}
+      claimStatus={claimStatus}
     />
   );
 }

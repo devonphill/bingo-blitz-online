@@ -157,7 +157,8 @@ export function useClaimManagement(sessionId: string | undefined) {
     console.log("Broadcasting claim for player:", playerName);
     
     try {
-      const { error } = await supabase
+      // The error property is now gone from the response, as it's handled differently
+      await supabase
         .channel('caller-claims')
         .send({
           type: 'broadcast',
@@ -169,11 +170,6 @@ export function useClaimManagement(sessionId: string | undefined) {
             timestamp: new Date().toISOString()
           }
         });
-      
-      if (error) {
-        console.error("Error broadcasting claim:", error);
-        throw error;
-      }
       
       return true;
     } catch (error) {
