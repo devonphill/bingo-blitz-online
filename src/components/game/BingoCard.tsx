@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,14 +7,51 @@ import { useToast } from '@/components/ui/use-toast';
 // 9 columns (numbers 1-9, 10-19, 20-29, etc.)
 // 3 rows with 5 numbers and 4 blank spaces per row
 
-export default function BingoCard() {
+interface BingoCardProps {
+  numbers?: number[];
+}
+
+export default function BingoCard({ numbers }: BingoCardProps) {
   const [card, setCard] = useState<Array<Array<number | null>>>([]);
   const [markedCells, setMarkedCells] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
   useEffect(() => {
-    generateCard();
-  }, []);
+    if (numbers && numbers.length > 0) {
+      generateCardFromNumbers(numbers);
+    } else {
+      generateCard();
+    }
+  }, [numbers]);
+
+  // Function to generate a card from a list of numbers
+  const generateCardFromNumbers = (ticketNumbers: number[]) => {
+    // Create a new 3x9 card filled with nulls
+    const newCard = Array(3).fill(null).map(() => Array(9).fill(null));
+    
+    // Sort numbers into their respective columns
+    const sortedNumbers = [...ticketNumbers].sort((a, b) => a - b);
+    
+    // Place each number in its appropriate column
+    let numbersPlaced = 0;
+    for (let num of sortedNumbers) {
+      // Determine which column this number belongs in
+      const col = num <= 9 ? 0 : Math.floor((num - 1) / 10);
+      
+      // Determine which row to place it in (cycle through rows)
+      const row = numbersPlaced % 3;
+      
+      // Place the number
+      newCard[row][col] = num;
+      numbersPlaced++;
+      
+      // If we've placed 15 numbers (standard for a 90-ball card), break
+      if (numbersPlaced >= 15) break;
+    }
+    
+    setCard(newCard);
+    setMarkedCells(new Set());
+  };
 
   // Function to generate a 90-ball bingo card
   const generateCard = () => {
@@ -136,40 +172,21 @@ export default function BingoCard() {
     }
   };
 
-  const claimBingo = () => {
-    // This would be connected to real-time functionality
-    toast({
-      title: "Bingo Claimed!",
-      description: "Your claim has been submitted to the caller.",
-    });
-  };
-
   return (
-    <Card className="w-full max-w-md mx-auto animate-fade-in">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-xl font-bold text-center">Your Bingo Card</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-9 gap-1 mb-4">
-          {card.map((row, rowIndex) => (
-            row.map((cell, colIndex) => (
-              <div 
-                key={`${rowIndex}-${colIndex}`}
-                className={`bingo-card-cell aspect-square ${markedCells.has(`${rowIndex}-${colIndex}`) ? 'marked' : ''} ${cell === null ? 'bg-gray-100' : 'cursor-pointer hover:bg-gray-50'}`}
-                onClick={() => toggleMark(rowIndex, colIndex)}
-              >
-                {cell !== null ? cell : ''}
-              </div>
-            ))
-          ))}
-        </div>
-        <Button 
-          className="w-full bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-          onClick={claimBingo}
-        >
-          Claim Bingo!
-        </Button>
-      </CardContent>
-    </Card>
+    <div className="grid grid-cols-9 gap-1">
+      {card.map((row, rowIndex) => (
+        row.map((cell, colIndex) => (
+          <div 
+            key={`${rowIndex}-${colIndex}`}
+            className={`aspect-square flex items-center justify-center text-sm font-medium border rounded 
+              ${markedCells.has(`${rowIndex}-${colIndex}`) ? 'bg-bingo-primary text-white' : ''} 
+              ${cell === null ? 'bg-gray-100' : 'cursor-pointer hover:bg-gray-50'}`}
+            onClick={() => toggleMark(rowIndex, colIndex)}
+          >
+            {cell !== null ? cell : ''}
+          </div>
+        ))
+      ))}
+    </div>
   );
 }
