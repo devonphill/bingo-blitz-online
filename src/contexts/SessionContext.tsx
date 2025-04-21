@@ -1,7 +1,7 @@
+
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { GameSession, GameType, Player } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
-import { PostgrestSingleResponse } from '@supabase/supabase-js';
 
 interface SessionContextType {
   sessions: GameSession[];
@@ -49,7 +49,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     fetchSessions();
-    
+
     // Subscribe to realtime updates for game_sessions table
     const channel = supabase
       .channel('session-changes')
@@ -60,12 +60,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           schema: 'public',
           table: 'game_sessions'
         },
-        (payload) => {
+        (payload: {
+          eventType: string;
+          new: Record<string, any> | null;
+          old: Record<string, any> | null;
+        }) => {
           console.log('Session change received:', payload);
           fetchSessions();
-          
-          // If this is an update to our current session, update it directly
-          if (currentSession && payload.new && payload.new.id === currentSession.id) {
+
+          // Only update if payload.new and currentSession exist and ids match
+          if (currentSession && payload.new && currentSession.id === payload.new.id) {
             const updatedSession = {
               id: payload.new.id,
               name: payload.new.name,
