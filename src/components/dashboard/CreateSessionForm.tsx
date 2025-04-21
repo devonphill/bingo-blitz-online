@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { GameType } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
 
 const ALL_GAME_TYPES: GameType[] = ['90-ball', '80-ball', 'quiz', 'music', 'logo', 'mixed'];
 
@@ -19,6 +20,7 @@ export default function CreateSessionForm() {
   const [numberOfGames, setNumberOfGames] = useState(1);
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,10 +50,14 @@ export default function CreateSessionForm() {
       number_of_games: Number(numberOfGames) || 1,
       access_code: accessCode,
       status: 'pending',
-      created_by: ''
+      created_by: user?.id || '00000000-0000-0000-0000-000000000000' // Use a default UUID if user ID is missing
     };
+    
+    console.log("Creating session with payload:", payload);
+    
     const { error } = await supabase.from('game_sessions').insert([payload]);
     if (error) {
+      console.error("Session creation error:", error);
       toast({
         title: 'Error',
         description: error.message || 'Failed to create session',
