@@ -21,6 +21,11 @@ export default function PlayerGame() {
     setStoredPlayerCode(playerCode);
   }, [navigate]);
 
+  // Don't initialize the hook until we have a playerCode
+  if (!storedPlayerCode) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
+
   const {
     tickets,
     calledNumbers,
@@ -37,10 +42,6 @@ export default function PlayerGame() {
     isClaiming,
     claimStatus
   } = usePlayerGame(storedPlayerCode);
-
-  if (!storedPlayerCode) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
-  }
 
   return (
     <PlayerGameContent

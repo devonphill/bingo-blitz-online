@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -29,6 +30,8 @@ export function usePlayerGame(playerCode?: string | null) {
 
     const fetchPlayerData = async () => {
       try {
+        console.log("Joining session with player code:", playerCode);
+        
         const { data: playerData, error: playerError } = await supabase
           .from('players')
           .select('id, nickname, session_id')
@@ -42,6 +45,7 @@ export function usePlayerGame(playerCode?: string | null) {
           return;
         }
 
+        console.log("Player found:", playerData.nickname, "session:", playerData.session_id);
         setPlayerId(playerData.id);
         setPlayerName(playerData.nickname);
         setSessionId(playerData.session_id);
