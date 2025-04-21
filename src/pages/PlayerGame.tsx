@@ -7,25 +7,8 @@ import PlayerGameContent from '@/components/game/PlayerGameContent';
 export default function PlayerGame() {
   const [storedPlayerCode, setStoredPlayerCode] = useState<string | null>(null);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    // Get player code from localStorage
-    const playerCode = localStorage.getItem('playerCode');
-    
-    if (!playerCode) {
-      // If no player code is found, redirect to join page
-      navigate('/join');
-      return;
-    }
-    
-    setStoredPlayerCode(playerCode);
-  }, [navigate]);
-
-  // Don't initialize the hook until we have a playerCode
-  if (!storedPlayerCode) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
-  }
-
+  
+  // Always call the hook, but pass null when we don't have a code yet
   const {
     tickets,
     calledNumbers,
@@ -42,6 +25,24 @@ export default function PlayerGame() {
     isClaiming,
     claimStatus
   } = usePlayerGame(storedPlayerCode);
+
+  useEffect(() => {
+    // Get player code from localStorage
+    const playerCode = localStorage.getItem('playerCode');
+    
+    if (!playerCode) {
+      // If no player code is found, redirect to join page
+      navigate('/join');
+      return;
+    }
+    
+    setStoredPlayerCode(playerCode);
+  }, [navigate]);
+
+  // If we're still loading the player code from localStorage, show loading
+  if (!storedPlayerCode) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
 
   return (
     <PlayerGameContent

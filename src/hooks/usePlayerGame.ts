@@ -22,9 +22,9 @@ export function usePlayerGame(playerCode?: string | null) {
 
   // Load player and session information
   useEffect(() => {
+    // Exit early if no playerCode is provided yet
+    // This prevents unnecessary data fetching when the playerCode is still null
     if (!playerCode) {
-      setErrorMessage('No player code provided');
-      setIsLoading(false);
       return;
     }
 
@@ -160,6 +160,7 @@ export function usePlayerGame(playerCode?: string | null) {
       }
     };
 
+    setIsLoading(true);
     fetchPlayerData();
   }, [playerCode]);
 
