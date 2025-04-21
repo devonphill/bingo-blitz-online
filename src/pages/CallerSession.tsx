@@ -27,6 +27,7 @@ export default function CallerSession() {
     twoLines: "",
     fullHouse: "",
   });
+  const [autoMarking, setAutoMarking] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -298,7 +299,12 @@ export default function CallerSession() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <GameHeader sessionName={session.name} accessCode={session.accessCode} />
+      <GameHeader 
+        sessionName={session.name} 
+        accessCode={session.accessCode} 
+        autoMarking={autoMarking} 
+        setAutoMarking={setAutoMarking} 
+      />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
