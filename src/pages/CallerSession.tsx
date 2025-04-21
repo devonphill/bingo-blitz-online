@@ -30,11 +30,9 @@ export default function CallerSession() {
   }, [sessionId, sessions, session]);
 
   useEffect(() => {
-    // Prompt for game type selection on load (but focus on 90-ball only for now)
     setPromptGameType(true);
   }, [sessionId]);
 
-  // Initialize numbers pool for 90-ball game
   useEffect(() => {
     if (gameType === "90-ball" && remainingNumbers.length === 0) {
       setRemainingNumbers(Array.from({ length: 90 }, (_, i) => i + 1));
@@ -60,7 +58,6 @@ export default function CallerSession() {
   }
 
   if (promptGameType) {
-    // Only allow "90-ball" for now
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="bg-white shadow p-8 rounded-lg max-w-xs w-full text-center">
@@ -71,7 +68,6 @@ export default function CallerSession() {
           >
             90-Ball Bingo
           </Button>
-          {/* Add more options once implemented */}
         </div>
       </div>
     );
@@ -106,10 +102,9 @@ export default function CallerSession() {
     navigate('/dashboard');
   };
 
-  // --- GO LIVE LOGIC ---
   const handleGoLive = async () => {
     if (!session) return;
-    // 1. Update session status to 'active'
+    
     const { error: updateError } = await supabase
       .from('game_sessions')
       .update({ status: 'active' })
@@ -123,11 +118,10 @@ export default function CallerSession() {
       });
       return;
     }
-    // 2. Fetch bingo tickets for this session (from bingo_cards)
-    // Here we assume bingo_cards.player_id is linked to players.id and players.session_id = sessionId
+    
     const { data: sessionPlayersData, error: playerErr } = await supabase
       .from('players')
-      .select('id,player_code,nickname')
+      .select('id,player_code,nickname,tickets')
       .eq('session_id', sessionId);
 
     if (playerErr) {
@@ -139,44 +133,71 @@ export default function CallerSession() {
       return;
     }
 
-    // Gather ticket info from bingo_cards table per player
-    let allTickets: any[] = [];
     if (sessionPlayersData && sessionPlayersData.length) {
-      // For each player, fetch their cards (can be optimized; simple for now)
+      toast({
+        title: 'Assigning tickets to players',
+        description: `Assigning tickets to ${sessionPlayersData.length} players...`,
+      });
+      
       for (const player of sessionPlayersData) {
-        const { data: tickets, error: ticketErr } = await supabase
-          .from('bingo_cards')
-          .select('id,cells')
-          .eq('player_id', player.id);
-
-        if (ticketErr) {
-          toast({
-            title: `Failed to load tickets for ${player.nickname}`,
-            description: ticketErr.message,
-            variant: 'destructive',
-          });
-          continue;
-        }
-        if (tickets && tickets.length) {
-          // Optionally map structure according to your demo tickets (add perm number if applicable)
-          allTickets.push({
-            playerId: player.id,
-            playerCode: player.player_code,
-            nickname: player.nickname,
-            tickets,
-          });
+        const { data: existingTicketsData } = await supabase
+          .from('assigned_tickets')
+          .select('perm')
+          .eq('player_id', player.id)
+          .eq('session_id', sessionId)
+          .distinctOn('perm');
+          
+        const permsCount = existingTicketsData ? existingTicketsData.length : 0;
+        
+        if (permsCount < player.tickets) {
+          console.log(`Assigning ${player.tickets - permsCount} more strips to ${player.nickname}`);
+          await assignTicketsToPlayer(player.id, sessionId, player.tickets);
         }
       }
     }
-    setBingoTickets(allTickets);
+
+    const { data: allAssignedTickets, error: ticketsErr } = await supabase
+      .from('assigned_tickets')
+      .select(`
+        id, serial, perm, position, 
+        players:player_id(id, player_code, nickname)
+      `)
+      .eq('session_id', sessionId)
+      .order('perm, position');
+
+    if (ticketsErr) {
+      console.error("Error loading tickets:", ticketsErr);
+    } else if (allAssignedTickets) {
+      const groupedTickets: any[] = [];
+      const playerMap = new Map();
+      
+      allAssignedTickets.forEach(ticket => {
+        const player = ticket.players;
+        if (!playerMap.has(player.id)) {
+          playerMap.set(player.id, {
+            playerId: player.id,
+            playerCode: player.player_code,
+            nickname: player.nickname,
+            tickets: []
+          });
+          groupedTickets.push(playerMap.get(player.id));
+        }
+        
+        playerMap.get(player.id).tickets.push({
+          id: ticket.id,
+          serial: ticket.serial,
+          perm: ticket.perm,
+          position: ticket.position
+        });
+      });
+      
+      setBingoTickets(groupedTickets);
+    }
 
     toast({
       title: 'Game is live!',
-      description: 'Bringing players into the game and fetching their tickets.',
+      description: 'Players can now join the game.',
     });
-
-    // Optionally: update players UI or state here to bring them from lobby into the game
-    // For a real-time effect, you would broadcast this change (Socket.IO/Supabase Realtime).
   };
 
   return (

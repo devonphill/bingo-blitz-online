@@ -11,14 +11,18 @@ type AdminTempPlayer = {
   tickets: number;
 };
 
-// Handles adding and fetching players, joining sessions, and bulk actions
 export function usePlayers(sessions: GameSession[], fetchSessions: () => Promise<void>, assignTicketsToPlayer: ReturnType<typeof useTickets>["assignTicketsToPlayer"]) {
   const [players, setPlayers] = useState<Player[]>([]);
 
   // Helper to join session by player code
   const joinSession = async (playerCode: string): Promise<{ player: Player | null }> => {
+    console.log(`Joining session with player code: ${playerCode}`);
+    
     const { data, error } = await supabase.from('players').select('*').eq('player_code', playerCode).maybeSingle();
-    if (error || !data) return { player: null };
+    if (error || !data) {
+      console.error("Error finding player:", error);
+      return { player: null };
+    }
     
     const player = {
       id: data.id,
@@ -30,18 +34,39 @@ export function usePlayers(sessions: GameSession[], fetchSessions: () => Promise
       tickets: data.tickets
     };
     
-    // Call as plain string—not typed variable to avoid TypeScript error
-    const { data: existingTickets, error: checkError } = await supabase
-      .rpc("get_player_assigned_tickets_count", { 
-        p_player_id: player.id, 
-        p_session_id: player.sessionId 
-      });
+    console.log(`Player found: ${player.nickname}, tickets: ${player.tickets}`);
+    
+    // Check if the player already has assigned tickets
+    const { data: existingTicketsData, error: checkError } = await supabase
+      .from('assigned_tickets')
+      .select('id')
+      .eq('player_id', player.id)
+      .eq('session_id', player.sessionId);
+
     if (checkError) {
       console.error("Error checking assigned tickets:", checkError);
     }
-    const ticketsCount = typeof existingTickets === 'number' ? existingTickets : 0;
-    if (ticketsCount === 0) {
+    
+    const ticketsCount = existingTicketsData ? existingTicketsData.length : 0;
+    console.log(`Player has ${ticketsCount} tickets assigned, needs ${player.tickets} strips`);
+    
+    // Calculate how many strips (perms) the player needs
+    // Each strip has 6 tickets, so we need to check unique perms
+    const { data: existingPermsData } = await supabase
+      .from('assigned_tickets')
+      .select('perm')
+      .eq('player_id', player.id)
+      .eq('session_id', player.sessionId)
+      .distinctOn('perm');
+      
+    const permsCount = existingPermsData ? existingPermsData.length : 0;
+    console.log(`Player has ${permsCount} strips (perms) assigned, needs ${player.tickets}`);
+    
+    if (permsCount < player.tickets) {
+      console.log(`Assigning ${player.tickets - permsCount} more strips to player`);
       await assignTicketsToPlayer(player.id, player.sessionId, player.tickets);
+    } else {
+      console.log("Player already has all needed tickets assigned");
     }
     
     return { player };

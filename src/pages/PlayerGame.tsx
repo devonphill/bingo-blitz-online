@@ -142,7 +142,7 @@ export default function PlayerGame() {
       if (assignedTickets && assignedTickets.length > 0) {
         console.log(`Found ${assignedTickets.length} tickets:`, assignedTickets);
         // Format the ticket data
-        const formattedTickets: BingoTicket[] = assignedTickets.map((ticket: any) => ({
+        const formattedTickets: BingoTicket[] = assignedTickets.map((ticket) => ({
           serial: ticket.serial,
           perm: ticket.perm,
           position: ticket.position,
@@ -158,7 +158,7 @@ export default function PlayerGame() {
       }
     } catch (error) {
       console.error("Exception fetching tickets:", error);
-      setErrorMessage("Failed to load your tickets. The database may not be properly set up.");
+      setErrorMessage("Failed to load your tickets. Please try refreshing the page or contact support.");
     }
   };
 
