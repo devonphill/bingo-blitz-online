@@ -14,9 +14,10 @@ CREATE TABLE IF NOT EXISTS public.assigned_tickets (
   UNIQUE(session_id, serial) -- Ensure a ticket is only assigned once per session
 );
 
--- Add an index for faster queries
+-- Add indexes for faster queries
 CREATE INDEX IF NOT EXISTS idx_assigned_tickets_player_id ON public.assigned_tickets(player_id);
 CREATE INDEX IF NOT EXISTS idx_assigned_tickets_session_id ON public.assigned_tickets(session_id);
+CREATE INDEX IF NOT EXISTS idx_assigned_tickets_perm_position ON public.assigned_tickets(perm, position);
 
 -- Enable Row Level Security
 ALTER TABLE public.assigned_tickets ENABLE ROW LEVEL SECURITY;
