@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -30,6 +29,7 @@ export default function CallerSession() {
   });
   const [autoMarking, setAutoMarking] = useState(false);
   const [sessionPlayers, setSessionPlayers] = useState<any[]>([]);
+  const [isClaimLightOn, setIsClaimLightOn] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -276,7 +276,8 @@ export default function CallerSession() {
 
     const latestClaim = data[data.length - 1];
     
-    // Get player data for the claim
+    setIsClaimLightOn(true);
+
     const { data: playerData, error: playerError } = await supabase
       .from('players')
       .select('nickname, id')
@@ -293,7 +294,6 @@ export default function CallerSession() {
       return;
     }
     
-    // Get assigned tickets for the player
     const { data: ticketData, error: ticketError } = await supabase
       .from('assigned_tickets')
       .select('*')
@@ -475,6 +475,7 @@ export default function CallerSession() {
               onEndGame={handleEndGame}
               onGoLive={handleGoLive}
               remainingNumbers={remainingNumbers}
+              isClaimLightOn={isClaimLightOn}
             />
           </div>
         </div>

@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +9,7 @@ interface CallerControlsProps {
   onEndGame: () => void;
   onGoLive: () => Promise<void>;
   remainingNumbers: number[];
+  isClaimLightOn?: boolean;
 }
 
 export default function CallerControls({ 
@@ -17,13 +17,23 @@ export default function CallerControls({
   onVerifyClaim, 
   onEndGame,
   onGoLive,
-  remainingNumbers
+  remainingNumbers,
+  isClaimLightOn = false
 }: CallerControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
   const { toast } = useToast();
 
   const handleCallNumber = () => {
+    if (isClaimLightOn) {
+      toast({
+        title: "Claim Pending",
+        description: "Please verify the current claim before calling the next number.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (remainingNumbers.length === 0) {
       toast({
         title: "No more numbers",
@@ -65,10 +75,10 @@ export default function CallerControls({
         <div className="grid grid-cols-1 gap-3">
           <Button
             className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-            disabled={isCallingNumber || remainingNumbers.length === 0}
+            disabled={isCallingNumber || remainingNumbers.length === 0 || isClaimLightOn}
             onClick={handleCallNumber}
           >
-            {isCallingNumber ? 'Calling...' : 'Call Next Number'}
+            {isClaimLightOn ? 'Claim Pending' : (isCallingNumber ? 'Calling...' : 'Call Next Number')}
           </Button>
           
           <Button 
