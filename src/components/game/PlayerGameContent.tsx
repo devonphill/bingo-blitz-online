@@ -59,14 +59,20 @@ export default function PlayerGameContent({
       if (!success) {
         setIsClaimingBingo(false);
       }
+      return success; // Return the success value to match the expected return type
     } catch (err) {
       console.error("Error claiming bingo:", err);
       setIsClaimingBingo(false);
+      return false; // Return false in case of error to match the expected return type
     }
   };
 
   if (isLoading) {
-    return <PlayerGameLoader />;
+    return <PlayerGameLoader 
+      isLoading={isLoading} 
+      errorMessage={errorMessage} 
+      currentSession={currentSession} 
+    />;
   }
 
   const showWinResults = claimStatus === 'validated' || claimStatus === 'rejected';
