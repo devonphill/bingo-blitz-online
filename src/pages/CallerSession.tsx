@@ -82,15 +82,45 @@ export default function CallerSession() {
 
   const sessionPlayers = players.filter(p => p.sessionId === sessionId);
 
-  const handleCallNumber = (number: number) => {
-    setCurrentNumber(number);
-    setCalledNumbers([...calledNumbers, number]);
-    setRemainingNumbers(remainingNumbers.filter(n => n !== number));
-    
-    toast({
-      title: "Number Called",
-      description: `Called number: ${number}`,
-    });
+  const handleCallNumber = async (number: number) => {
+    if (sessionId) {
+      try {
+        const { data, error } = await supabase
+          .from('called_numbers')
+          .insert([
+            { 
+              session_id: sessionId, 
+              number 
+            }
+          ]);
+          
+        if (error) {
+          console.error("Error saving called number:", error);
+          toast({
+            title: "Error",
+            description: "Failed to save called number. Please try again.",
+            variant: "destructive"
+          });
+          return;
+        }
+        
+        setCurrentNumber(number);
+        setCalledNumbers(prev => [...prev, number]);
+        setRemainingNumbers(prev => prev.filter(n => n !== number));
+        
+        toast({
+          title: "Number Called",
+          description: `Called number: ${number}`,
+        });
+      } catch (err) {
+        console.error("Exception saving called number:", err);
+        toast({
+          title: "Error",
+          description: "An unexpected error occurred.",
+          variant: "destructive"
+        });
+      }
+    }
   };
 
   const handleVerifyClaim = () => {
@@ -153,7 +183,6 @@ export default function CallerSession() {
           .eq('player_id', player.id)
           .eq('session_id', sessionId);
           
-        // Get unique perm values
         const uniquePerms = existingTicketsData ? [...new Set(existingTicketsData.map(item => item.perm))] : [];
         const permsCount = uniquePerms.length;
         
@@ -218,6 +247,35 @@ export default function CallerSession() {
   const handlePrizeChange = (pattern: string, value: string) => {
     setWinPrizes(prev => ({ ...prev, [pattern]: value }));
   };
+
+  useEffect(() => {
+    if (sessionId) {
+      const fetchCalledNumbers = async () => {
+        const { data, error } = await supabase
+          .from('called_numbers')
+          .select('number')
+          .eq('session_id', sessionId)
+          .order('called_at', { ascending: true });
+          
+        if (error) {
+          console.error("Error fetching called numbers:", error);
+          return;
+        }
+        
+        if (data && data.length > 0) {
+          const numbers = data.map(item => item.number);
+          setCalledNumbers(numbers);
+          setCurrentNumber(numbers[numbers.length - 1]);
+          
+          if (gameType === "90-ball" && remainingNumbers.length > 0) {
+            setRemainingNumbers(prev => prev.filter(n => !numbers.includes(n)));
+          }
+        }
+      };
+      
+      fetchCalledNumbers();
+    }
+  }, [sessionId, gameType, remainingNumbers.length]);
 
   return (
     <div className="min-h-screen bg-gray-50">

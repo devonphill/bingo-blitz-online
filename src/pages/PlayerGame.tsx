@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useSession } from '@/contexts/SessionContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -154,6 +153,32 @@ export default function PlayerGame() {
   useEffect(() => {
     if (!currentSession) return;
     
+    const fetchCalledNumbers = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('called_numbers')
+          .select('number')
+          .eq('session_id', currentSession)
+          .order('called_at', { ascending: true });
+          
+        if (error) {
+          console.error("Error fetching called numbers:", error);
+          return;
+        }
+        
+        if (data && data.length > 0) {
+          const numbers = data.map(item => item.number);
+          setCalledNumbers(numbers);
+          setCurrentNumber(numbers[numbers.length - 1]);
+          console.log(`Loaded ${numbers.length} called numbers from database`);
+        }
+      } catch (err) {
+        console.error("Exception fetching called numbers:", err);
+      }
+    };
+    
+    fetchCalledNumbers();
+    
     const channel = supabase
       .channel('called-numbers')
       .on(
@@ -162,13 +187,17 @@ export default function PlayerGame() {
           event: 'INSERT',
           schema: 'public',
           table: 'called_numbers',
-          filter: `session_id=eq.${currentSession.id}`
+          filter: `session_id=eq.${currentSession}`
         },
         (payload) => {
-          console.log('Called number received:', payload);
+          console.log('New called number received:', payload);
           if (payload.new && typeof payload.new.number === 'number') {
-            setCurrentNumber(payload.new.number);
-            setCalledNumbers(prev => [...prev, payload.new.number]);
+            const newNumber = payload.new.number;
+            setCurrentNumber(newNumber);
+            setCalledNumbers(prev => {
+              if (prev.includes(newNumber)) return prev;
+              return [...prev, newNumber];
+            });
           }
         }
       )
