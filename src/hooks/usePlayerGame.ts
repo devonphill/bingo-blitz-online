@@ -1,11 +1,8 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useParams } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 
-export function usePlayerGame() {
-  const { playerCode } = useParams<{ playerCode: string }>();
+export function usePlayerGame(playerCode?: string | null) {
   const [tickets, setTickets] = useState<any[]>([]);
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const [currentNumber, setCurrentNumber] = useState<number | null>(null);
@@ -228,8 +225,7 @@ export function usePlayerGame() {
     };
   }, [sessionId, playerId, toast]);
 
-  // Function to handle bingo claim
-  const handleClaimBingo = useCallback(async () => {
+  const handleClaimBingo = useCallback(async (): Promise<boolean> => {
     if (!playerId || !sessionId || !playerName) {
       toast({
         title: "Error",
@@ -262,7 +258,6 @@ export function usePlayerGame() {
       }
       
       // Broadcast the claim to all callers using Supabase broadcast
-      // Remove the error property check since it's now handled differently
       await supabase
         .channel('caller-claims')
         .send({

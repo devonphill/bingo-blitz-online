@@ -1,9 +1,26 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { usePlayerGame } from '@/hooks/usePlayerGame';
 import PlayerGameContent from '@/components/game/PlayerGameContent';
 
 export default function PlayerGame() {
+  const [storedPlayerCode, setStoredPlayerCode] = useState<string | null>(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Get player code from localStorage
+    const playerCode = localStorage.getItem('playerCode');
+    
+    if (!playerCode) {
+      // If no player code is found, redirect to join page
+      navigate('/join');
+      return;
+    }
+    
+    setStoredPlayerCode(playerCode);
+  }, [navigate]);
+
   const {
     tickets,
     calledNumbers,
@@ -19,7 +36,11 @@ export default function PlayerGame() {
     errorMessage,
     isClaiming,
     claimStatus
-  } = usePlayerGame();
+  } = usePlayerGame(storedPlayerCode);
+
+  if (!storedPlayerCode) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
 
   return (
     <PlayerGameContent
@@ -29,7 +50,7 @@ export default function PlayerGame() {
       currentSession={currentSession}
       autoMarking={autoMarking}
       setAutoMarking={setAutoMarking}
-      playerCode={playerCode || ''}
+      playerCode={playerCode || storedPlayerCode}
       winPrizes={winPrizes}
       activeWinPatterns={activeWinPatterns}
       onClaimBingo={handleClaimBingo}
