@@ -46,8 +46,6 @@ export default function PlayerGameContent({
   isClaiming = false,
   claimStatus
 }: PlayerGameContentProps) {
-  // Remove the local isClaimingBingo state as it's redundant with isClaiming prop
-  // This was causing the state to get out of sync
   
   const handleClaimBingo = async () => {
     try {
@@ -86,6 +84,8 @@ export default function PlayerGameContent({
       onClaimBingo={handleClaimBingo}
       errorMessage={errorMessage}
       isLoading={isLoading}
+      isClaiming={isClaiming}
+      claimStatus={claimStatus}
     >
       <div className="space-y-6">
         {errorMessage && (

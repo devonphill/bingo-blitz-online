@@ -67,6 +67,49 @@ export function useClaimManagement(sessionId: string | undefined) {
     }
   }, [claimQueue, processingClaim, sessionId, showClaimSheet]);
 
+  // Check for pending claims in the database
+  const checkForClaims = useCallback(async () => {
+    if (!sessionId) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('bingo_claims')
+        .select('id, player_id, claimed_at, players(nickname)')
+        .eq('session_id', sessionId)
+        .eq('status', 'pending')
+        .order('claimed_at', { ascending: true });
+        
+      if (error) {
+        console.error("Error fetching pending claims:", error);
+        return;
+      }
+      
+      if (data && data.length > 0) {
+        console.log("Found pending claims:", data);
+        
+        // Add pending claims to the queue if they're not already there
+        data.forEach(claim => {
+          const isDuplicate = 
+            (currentClaim?.playerId === claim.player_id) || 
+            claimQueue.some(q => q.playerId === claim.player_id);
+            
+          if (!isDuplicate) {
+            setClaimQueue(prev => [
+              ...prev, 
+              {
+                playerName: claim.players?.nickname || 'Unknown',
+                playerId: claim.player_id,
+                claimId: claim.id
+              }
+            ]);
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Error checking for pending claims:", error);
+    }
+  }, [sessionId, currentClaim, claimQueue]);
+
   // Auto-process next claim when ready
   useEffect(() => {
     if (!showClaimSheet && !currentClaim && claimQueue.length > 0) {
@@ -264,6 +307,8 @@ export function useClaimManagement(sessionId: string | undefined) {
     claimQueue,
     openClaimSheet,
     validateClaim,
-    rejectClaim
+    rejectClaim,
+    processNextClaim,  // Added this
+    checkForClaims     // Added this
   };
 }

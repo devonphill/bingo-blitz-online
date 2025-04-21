@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -33,7 +34,10 @@ export default function CallerSession() {
     setCurrentClaim,
     checkForClaims,
     claimQueue,
-    processNextClaim
+    processNextClaim,
+    openClaimSheet,
+    validateClaim,
+    rejectClaim
   } = useClaimManagement(sessionId);
 
   const {
@@ -285,43 +289,11 @@ export default function CallerSession() {
           total_calls: calledNumbers.length
         });
 
-      if (currentClaim.claimId) {
-        await supabase
-          .from('bingo_claims')
-          .update({ status: 'validated' })
-          .eq('id', currentClaim.claimId);
-      } else {
-        await supabase
-          .from('bingo_claims')
-          .insert({
-            session_id: sessionId,
-            player_id: currentClaim.playerId,
-            status: 'validated'
-          });
-      }
-
-      await supabase.channel('game-updates').send({
-        type: 'broadcast',
-        event: 'claim-result',
-        payload: {
-          playerId: currentClaim.playerId,
-          result: 'valid',
-          winPattern: currentGameWinPattern,
-          sessionId
-        }
-      });
+      validateClaim();
 
       if (!nextPattern) {
         await progressToNextGame();
       }
-
-      setShowClaimSheet(false);
-      setCurrentClaim(null);
-    
-      toast({
-        title: "Claim Verified",
-        description: `${currentClaim.playerName}'s claim has been verified.`,
-      });
     } catch (error) {
       console.error("Error processing valid claim:", error);
       toast({
@@ -337,32 +309,7 @@ export default function CallerSession() {
     if (!currentClaim) return;
 
     try {
-      await supabase
-        .from('bingo_claims')
-        .insert({
-          session_id: sessionId,
-          player_id: currentClaim.playerId,
-          status: 'rejected'
-        });
-      
-      await supabase.channel('game-updates').send({
-        type: 'broadcast',
-        event: 'claim-result',
-        payload: {
-          playerId: currentClaim.playerId,
-          result: 'rejected',
-          sessionId
-        }
-      });
-      
-      toast({
-        title: "Claim Rejected",
-        description: `${currentClaim.playerName}'s claim has been rejected.`,
-        variant: "default"
-      });
-      
-      setShowClaimSheet(false);
-      setCurrentClaim(null);
+      rejectClaim();
     } catch (error) {
       console.error("Error processing false claim:", error);
       toast({
@@ -397,12 +344,6 @@ export default function CallerSession() {
         description: "Failed to start the session",
         variant: "destructive"
       });
-    }
-  };
-
-  const openClaimSheet = () => {
-    if (claimQueue.length > 0 && !showClaimSheet) {
-      processNextClaim();
     }
   };
 
@@ -468,7 +409,7 @@ export default function CallerSession() {
         isOpen={showClaimSheet}
         onClose={() => {
           console.log("Sheet close callback called");
-          setShowClaimSheet(false);
+          setShowClaimSheet();
         }}
         playerName={currentClaim?.playerName || ''}
         tickets={currentClaim?.tickets || []}
