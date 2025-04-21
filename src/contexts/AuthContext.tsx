@@ -1,11 +1,15 @@
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User } from '@/types';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import type { Session, User as SupaUser } from "@supabase/supabase-js";
+import { useNavigate } from "react-router-dom";
 
 interface AuthContextType {
-  user: User | null;
+  user: SupaUser | null;
+  session: Session | null;
+  role: string | null;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<{ error: string | null }>;
   logout: () => void;
   error: string | null;
 }
@@ -13,70 +17,79 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<SupaUser | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [role, setRole] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check if user is already logged in
-    const storedUser = localStorage.getItem('bingoUser');
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (e) {
-        console.error('Failed to parse stored user', e);
-        localStorage.removeItem('bingoUser');
+    // Listen for auth changes
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchUserRole(session.user.id);
+      } else {
+        setRole(null);
       }
-    }
-    setIsLoading(false);
+    });
+
+    // Initial session fetch
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchUserRole(session.user.id);
+      } else {
+        setRole(null);
+      }
+      setIsLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+    // eslint-disable-next-line
   }, []);
 
-  const login = async (username: string, password: string) => {
-    setError(null);
-    setIsLoading(true);
-    
-    try {
-      // Mock API call
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      // In a real app, this would be an API call
-      if (username === 'admin' && password === 'admin123') {
-        const userData: User = {
-          id: '1',
-          username: 'admin',
-          role: 'superuser'
-        };
-        setUser(userData);
-        localStorage.setItem('bingoUser', JSON.stringify(userData));
-      } else if (username === 'caller' && password === 'caller123') {
-        const userData: User = {
-          id: '2',
-          username: 'caller',
-          role: 'subuser'
-        };
-        setUser(userData);
-        localStorage.setItem('bingoUser', JSON.stringify(userData));
-      } else {
-        throw new Error('Invalid username or password');
-      }
-    } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('An unknown error occurred');
-      }
-    } finally {
-      setIsLoading(false);
+  const fetchUserRole = async (userId: string) => {
+    // roles are stored in public.profiles > role
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", userId)
+      .maybeSingle();
+    if (data && data.role) {
+      setRole(data.role);
+    } else {
+      setRole("subuser"); // fallback to base user
     }
   };
 
-  const logout = () => {
+  const login = async (email: string, password: string) => {
+    setIsLoading(true);
+    setError(null);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setError(error.message);
+      setIsLoading(false);
+      return { error: error.message };
+    }
+    setSession(data.session);
+    setUser(data.user);
+    if (data.user) fetchUserRole(data.user.id);
+    setIsLoading(false);
+    return { error: null };
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('bingoUser');
+    setSession(null);
+    setRole(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, error }}>
+    <AuthContext.Provider value={{ user, session, role, isLoading, login, logout, error }}>
       {children}
     </AuthContext.Provider>
   );
@@ -85,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 }

@@ -1,10 +1,11 @@
-
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from "@/contexts/AuthContext";
 
 const Index = () => {
   const navigate = useNavigate();
+  const { role } = useAuth?.() || {};
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-bingo-primary/10 to-bingo-secondary/10 p-4 text-center">
@@ -31,6 +32,15 @@ const Index = () => {
           Login as Host
         </Button>
       </div>
+      
+      {role === "superuser" && (
+        <Button 
+          className="mt-6 text-lg px-6 py-6 bg-gradient-to-r from-bingo-secondary to-bingo-primary"
+          onClick={() => navigate("/admin")}
+        >
+          Go to Admin Dashboard
+        </Button>
+      )}
       
       <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl w-full animate-fade-in">
         <div className="bg-white p-6 rounded-lg shadow-md">

@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -14,6 +13,7 @@ import Dashboard from "./pages/Dashboard";
 import CallerSession from "./pages/CallerSession";
 import PlayerGame from "./pages/PlayerGame";
 import NotFound from "./pages/NotFound";
+import AdminDashboard from "./pages/AdminDashboard";
 
 const queryClient = new QueryClient();
 
@@ -29,6 +29,15 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     return <Navigate to="/login" replace />;
   }
   
+  return <>{children}</>;
+};
+
+// Protected routes logic updated for admin
+const AdminRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, isLoading, role } = useAuth();
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  if (!user) return <Navigate to="/login" replace />;
+  if (role !== "superuser") return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 };
 
@@ -56,6 +65,13 @@ const App = () => (
                 <ProtectedRoute>
                   <CallerSession />
                 </ProtectedRoute>
+              } />
+              
+              {/* Admin routes */}
+              <Route path="/admin" element={
+                <AdminRoute>
+                  <AdminDashboard />
+                </AdminRoute>
               } />
               
               <Route path="*" element={<NotFound />} />
