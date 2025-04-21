@@ -246,11 +246,13 @@ export function usePlayerGame() {
     if (!playerId || !currentSession) return;
 
     try {
-      // Get the player's tickets for validation
+      // Format ticket data properly for validation
       const ticketData = tickets.map(ticket => ({
         serial: ticket.serial,
         numbers: ticket.numbers,
-        layout_mask: ticket.layoutMask
+        layout_mask: ticket.layoutMask,
+        perm: ticket.perm,
+        position: ticket.position
       }));
 
       // Cast supabase to any to bypass type limitation for bingo_claims
@@ -267,6 +269,7 @@ export function usePlayerGame() {
       const { error } = insertResult;
 
       if (error) {
+        console.error("Claim submission error:", error);
         toast({
           title: "Failed to submit claim",
           description: "There was an error submitting your bingo claim. Please try again.",
@@ -280,6 +283,7 @@ export function usePlayerGame() {
         description: "Your claim has been submitted to the caller for verification.",
       });
     } catch (error) {
+      console.error("Claim exception:", error);
       toast({
         title: "Error",
         description: "Something went wrong. Please try again.",

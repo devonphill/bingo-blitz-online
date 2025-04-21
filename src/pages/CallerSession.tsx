@@ -28,6 +28,7 @@ export default function CallerSession() {
     fullHouse: "",
   });
   const [autoMarking, setAutoMarking] = useState(false);
+  const [sessionPlayers, setSessionPlayers] = useState<any[]>([]);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -82,6 +83,82 @@ export default function CallerSession() {
     }
   }, [sessionId, gameType, remainingNumbers.length]);
 
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const fetchSessionPlayers = async () => {
+      const { data, error } = await supabase
+        .from('players')
+        .select('*')
+        .eq('session_id', sessionId);
+
+      if (error) {
+        console.error("Error fetching players:", error);
+        return;
+      }
+
+      if (data) {
+        const formattedPlayers = data.map(p => ({
+          id: p.id,
+          nickname: p.nickname,
+          joinedAt: p.joined_at,
+          playerCode: p.player_code,
+          tickets: p.tickets
+        }));
+        setSessionPlayers(formattedPlayers);
+        console.log("Session players fetched:", formattedPlayers.length);
+      }
+    };
+
+    fetchSessionPlayers();
+
+    const playersChannel = supabase
+      .channel('session-players')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'players',
+          filter: `session_id=eq.${sessionId}`
+        },
+        (payload) => {
+          console.log("Player change detected:", payload);
+          fetchSessionPlayers();
+        }
+      )
+      .subscribe();
+
+    const claimsChannel = supabase
+      .channel('bingo-claims')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'bingo_claims',
+          filter: `session_id=eq.${sessionId}`
+        },
+        (payload) => {
+          if (payload.new) {
+            console.log("New bingo claim received:", payload.new);
+            const claimData = payload.new;
+            toast({
+              title: "Bingo Claim Received!",
+              description: `Player has claimed bingo. Check the claim to verify.`,
+              variant: "default"
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(playersChannel);
+      supabase.removeChannel(claimsChannel);
+    };
+  }, [sessionId, toast]);
+
   const handleGameTypeChange = (type: string) => {
     setGameType(type);
     setPromptGameType(false);
@@ -129,8 +206,6 @@ export default function CallerSession() {
     );
   }
 
-  const sessionPlayers = players.filter(p => p.sessionId === sessionId);
-
   const handleCallNumber = async (number: number) => {
     if (sessionId) {
       try {
@@ -172,11 +247,41 @@ export default function CallerSession() {
     }
   };
 
-  const handleVerifyClaim = () => {
+  const handleVerifyClaim = async () => {
+    const { data, error } = await supabase
+      .from('bingo_claims')
+      .select('id, player_id, claimed_at, status, ticket_data')
+      .eq('session_id', sessionId)
+      .eq('status', 'pending')
+      .order('claimed_at', { ascending: true });
+
+    if (error) {
+      console.error("Error fetching claims:", error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch claims.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      toast({
+        title: "No Claims",
+        description: "There are no pending claims to verify.",
+      });
+      return;
+    }
+
+    const latestClaim = data[data.length - 1];
+    const playerData = sessionPlayers.find(p => p.id === latestClaim.player_id);
+    
     toast({
       title: "Verifying Claim",
-      description: "No claims to verify at this time.",
+      description: `Verifying claim from ${playerData?.nickname || 'Unknown Player'}`,
     });
+    
+    console.log("Claim ticket data:", latestClaim.ticket_data);
   };
 
   const handleEndGame = () => {
@@ -325,12 +430,7 @@ export default function CallerSession() {
             </div>
             <div className="bg-white shadow rounded-lg p-6">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Players ({sessionPlayers.length})</h2>
-              <PlayerList players={sessionPlayers.map(p => ({
-                id: p.id,
-                nickname: p.nickname,
-                joinedAt: p.joinedAt,
-                playerCode: p.playerCode
-              }))} />
+              <PlayerList players={sessionPlayers} />
             </div>
             <TicketsDebugDisplay bingoTickets={bingoTickets} />
           </div>
