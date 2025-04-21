@@ -1,8 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { useSession } from '@/contexts/SessionContext';
 import { supabase } from '@/integrations/supabase/client';
+import { Button } from '@/components/ui/button'; // Add the missing import
 import GameHeader from '@/components/game/GameHeader';
 import GameTypeSelector from '@/components/game/GameTypeSelector';
 import SessionMainContent from '@/components/game/SessionMainContent';
