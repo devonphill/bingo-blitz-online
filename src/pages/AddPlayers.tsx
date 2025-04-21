@@ -12,7 +12,7 @@ import { useToast } from '@/components/ui/use-toast';
 
 export default function AddPlayers() {
   const { user } = useAuth();
-  const { sessions } = useSession();
+  const { sessions, fetchSessions } = useSession();
   const navigate = useNavigate();
   const { sessionId } = useParams();
   const [session, setSession] = useState<GameSession | null>(null);
@@ -20,107 +20,49 @@ export default function AddPlayers() {
   const { toast } = useToast();
 
   useEffect(() => {
-    async function fetchSessionData() {
+    async function fetchData() {
       setLoading(true);
-      
       if (!sessionId) {
         setLoading(false);
         return;
       }
-      
-      console.log("Fetching session data for ID:", sessionId);
-      
-      // Try to find the session in the context first
-      if (sessions.length > 0) {
-        const foundSession = sessions.find(s => s.id === sessionId);
-        if (foundSession) {
-          setSession(foundSession);
-          setLoading(false);
-          return;
-        }
-      }
-      
-      try {
-        // If not found in context, fetch directly from Supabase
-        // First, check if the sessionId appears to be a timestamp (not a UUID)
-        const isTimestamp = /^\d+$/.test(sessionId);
-        
-        if (isTimestamp) {
-          // For backward compatibility - create a session object
-          toast({
-            title: "Using local session",
-            description: "This session hasn't been saved to the database yet",
-          });
-          
-          const tempSession: GameSession = {
-            id: sessionId,
-            name: `Session ${sessionId}`,
-            gameType: '90-ball' as GameType,
-            createdBy: user?.id || 'unknown',
-            accessCode: '000000',
-            status: 'pending' as 'pending',
-            createdAt: new Date().toISOString()
-          };
-          
-          setSession(tempSession);
-          setLoading(false);
-          return;
-        }
-        
-        // If it's a valid UUID, fetch from Supabase
+      await fetchSessions();
+      const foundSession = sessions.find(s => s.id === sessionId);
+      if (foundSession) {
+        setSession(foundSession);
+        setLoading(false);
+      } else {
+        // Try to fetch directly from Supabase
         const { data, error } = await supabase
           .from('game_sessions')
           .select('*')
           .eq('id', sessionId)
           .single();
-          
         if (data && !error) {
-          console.log("Found session in Supabase:", data);
-          const fetchedSession: GameSession = {
+          setSession({
             id: data.id,
             name: data.name,
-            gameType: data.game_type as GameType, // Proper type casting here
+            gameType: data.game_type as GameType,
             createdBy: data.created_by,
             accessCode: data.access_code,
-            status: data.status as 'pending' | 'active' | 'completed', // Proper type casting here
-            createdAt: data.created_at
-          };
-          setSession(fetchedSession);
+            status: data.status as 'pending' | 'active' | 'completed',
+            createdAt: data.created_at,
+            sessionDate: data.session_date,
+            numberOfGames: data.number_of_games,
+          });
         } else {
-          console.error("Error fetching session:", error);
           toast({
-            title: "Error",
-            description: "Could not retrieve session data. Using local session.",
+            title: "Session Not Found",
+            description: "Could not find a session with that ID in the database.",
             variant: "destructive"
           });
-          
-          // Create a fallback session
-          const tempSession: GameSession = {
-            id: sessionId,
-            name: `Session ${sessionId}`,
-            gameType: '90-ball' as GameType,
-            createdBy: user?.id || 'unknown',
-            accessCode: '000000',
-            status: 'pending' as 'pending',
-            createdAt: new Date().toISOString()
-          };
-          
-          setSession(tempSession);
         }
-      } catch (err) {
-        console.error("Exception fetching session:", err);
-        toast({
-          title: "Error",
-          description: "An unexpected error occurred while fetching session data.",
-          variant: "destructive"
-        });
+        setLoading(false);
       }
-      
-      setLoading(false);
     }
-    
-    fetchSessionData();
-  }, [sessionId, sessions, user?.id, toast]);
+    fetchData();
+    // eslint-disable-next-line
+  }, [sessionId]);
 
   if (!user) {
     navigate('/login');
@@ -133,6 +75,19 @@ export default function AddPlayers() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-bingo-primary mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading session data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Session Not Found</h2>
+          <Button onClick={() => navigate('/dashboard')}>
+            Return to Dashboard
+          </Button>
         </div>
       </div>
     );
@@ -153,7 +108,6 @@ export default function AddPlayers() {
           </div>
         </div>
       </header>
-      
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex items-center mb-6">
           <Button 
@@ -169,16 +123,12 @@ export default function AddPlayers() {
             Add Players to Session {session?.name || sessionId}
           </h2>
         </div>
-        
         <div className="space-y-8">
-          {sessionId && (
-            <>
-              <BulkAddPlayersForm sessionId={sessionId} />
-            </>
+          {session && (
+            <BulkAddPlayersForm sessionId={session.id} />
           )}
         </div>
       </main>
     </div>
   );
 }
-

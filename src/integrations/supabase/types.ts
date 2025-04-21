@@ -75,6 +75,8 @@ export type Database = {
           game_type: string
           id: string
           name: string
+          number_of_games: number
+          session_date: string | null
           status: string
           updated_at: string
         }
@@ -85,6 +87,8 @@ export type Database = {
           game_type: string
           id?: string
           name: string
+          number_of_games?: number
+          session_date?: string | null
           status?: string
           updated_at?: string
         }
@@ -95,6 +99,8 @@ export type Database = {
           game_type?: string
           id?: string
           name?: string
+          number_of_games?: number
+          session_date?: string | null
           status?: string
           updated_at?: string
         }

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -11,6 +10,8 @@ export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { sessions, players } = useSession();
   const [session, setSession] = useState(sessions.find(s => s.id === sessionId) || null);
+  const [gameType, setGameType] = useState('90-ball');
+  const [promptGameType, setPromptGameType] = useState(false);
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const [currentNumber, setCurrentNumber] = useState<number | null>(null);
   const [remainingNumbers, setRemainingNumbers] = useState<number[]>([]);
@@ -24,11 +25,45 @@ export default function CallerSession() {
   }, [sessionId, sessions, session]);
 
   useEffect(() => {
-    // Initialize the remaining numbers for a 90-ball game
-    // In a real app, this would depend on the game type
-    const allNumbers = Array.from({ length: 90 }, (_, i) => i + 1);
-    setRemainingNumbers(allNumbers);
-  }, []);
+    // Prompt for game type selection on load (but focus on 90-ball only for now)
+    setPromptGameType(true);
+  }, [sessionId]);
+
+  const handleGameTypeChange = (type: string) => {
+    setGameType(type);
+    setPromptGameType(false);
+  };
+
+  if (!session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Session Not Found</h2>
+          <Button onClick={() => navigate('/dashboard')}>
+            Return to Dashboard
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (promptGameType) {
+    // Only allow "90-ball" for now
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="bg-white shadow p-8 rounded-lg max-w-xs w-full text-center">
+          <h2 className="text-2xl font-bold mb-3">Select Game Type</h2>
+          <Button
+            className="w-full mb-2"
+            onClick={() => handleGameTypeChange('90-ball')}
+          >
+            90-Ball Bingo
+          </Button>
+          {/* Add more options once implemented */}
+        </div>
+      </div>
+    );
+  }
 
   const sessionPlayers = players.filter(p => p.sessionId === sessionId);
 
@@ -60,19 +95,6 @@ export default function CallerSession() {
     
     navigate('/dashboard');
   };
-
-  if (!session) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Session Not Found</h2>
-          <Button onClick={() => navigate('/dashboard')}>
-            Return to Dashboard
-          </Button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gray-50">

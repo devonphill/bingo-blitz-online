@@ -1,5 +1,4 @@
-
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { GameSession, GameType, Player } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { PostgrestSingleResponse } from '@supabase/supabase-js';
@@ -8,12 +7,12 @@ interface SessionContextType {
   sessions: GameSession[];
   currentSession: GameSession | null;
   players: Player[];
-  createSession: (name: string, gameType: GameType) => void;
   joinSession: (playerCode: string) => Promise<{ player: Player | null }>;
   setCurrentSession: (sessionId: string | null) => void;
   getSessionByCode: (code: string) => GameSession | null;
   bulkAddPlayers: (sessionId: string, players: AdminTempPlayer[]) => Promise<{ success: boolean, message?: string }>;
   addPlayer: (sessionId: string, playerCode: string, nickname: string) => Promise<boolean>;
+  fetchSessions: () => Promise<void>;
 }
 type AdminTempPlayer = {
   playerCode: string;
@@ -29,26 +28,33 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [currentSession, setCurrentSessionState] = useState<GameSession | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
 
+  const fetchSessions = async () => {
+    const { data, error } = await supabase.from('game_sessions').select('*');
+    if (data) {
+      setSessions(
+        data.map((d: any) => ({
+          id: d.id,
+          name: d.name,
+          gameType: d.game_type as GameType,
+          createdBy: d.created_by,
+          accessCode: d.access_code,
+          status: d.status,
+          createdAt: d.created_at,
+          sessionDate: d.session_date,
+          numberOfGames: d.number_of_games,
+        }))
+      );
+    }
+  };
+
+  useEffect(() => {
+    fetchSessions();
+  }, []);
+
   const generateAccessCode = (): string => {
     return Math.floor(100000 + Math.random() * 900000).toString();
   };
 
-  const createSession = (name: string, gameType: GameType) => {
-    const newSession: GameSession = {
-      id: Date.now().toString(),
-      name,
-      gameType,
-      createdBy: 'currentUser', // Replace with actual user ID
-      accessCode: generateAccessCode(),
-      status: 'pending',
-      createdAt: new Date().toISOString()
-    };
-
-    setSessions([...sessions, newSession]);
-    setCurrentSessionState(newSession);
-  };
-
-  // User login: Only code required, fetch nickname/tickets if found
   const joinSession = async (playerCode: string): Promise<{ player: Player | null }> => {
     const { data, error } = await supabase.from('players').select('*').eq('player_code', playerCode).maybeSingle();
     if (error || !data) return { player: null };
@@ -78,10 +84,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return sessions.find(s => s.accessCode === code) || null;
   };
 
-  // Add a single player - FIXED: Don't pass numeric IDs as UUIDs
   const addPlayer = async (sessionId: string, playerCode: string, nickname: string): Promise<boolean> => {
     try {
-      // Don't include an explicit ID, let Supabase generate a valid UUID
       const { error } = await supabase.from('players').insert({
         player_code: playerCode.toUpperCase(),
         nickname,
@@ -101,12 +105,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Bulk add players with generated codes (and send email)
   const bulkAddPlayers = async (
     sessionId: string,
     newPlayers: AdminTempPlayer[],
   ): Promise<{ success: boolean; message?: string }> => {
-    // Insert all players - FIXED: Don't include explicit IDs, let Supabase generate UUIDs
     const { error } = await supabase.from('players').insert(
       newPlayers.map(p => ({
         player_code: p.playerCode,
@@ -123,8 +125,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       return { success: false, message: error.message };
     }
     
-    // Placeholder: In a real app, call an Edge Function to send emails here
-    // for (const p of newPlayers) await sendEmailToPlayer(p);
     return { success: true };
   };
 
@@ -134,12 +134,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         sessions,
         currentSession,
         players,
-        createSession,
         joinSession,
         setCurrentSession,
         getSessionByCode,
         bulkAddPlayers,
-        addPlayer
+        addPlayer,
+        fetchSessions
       }}
     >
       {children}

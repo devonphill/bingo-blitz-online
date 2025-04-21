@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,7 +33,6 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
-    // Add player to the table, autogenerate a code and reset fields
     setPlayers((prev) => [
       ...prev,
       {
@@ -67,39 +65,7 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
       return;
     }
     setSaving(true);
-    
     try {
-      console.log("Attempting to add players to session ID:", sessionId);
-      
-      // Check if sessionId is a numerical timestamp instead of a UUID
-      const isTimestamp = /^\d+$/.test(sessionId);
-      
-      if (isTimestamp) {
-        // For timestamp sessions (local/temporary sessions)
-        // Instead of trying to insert directly to Supabase, we'll use localStorage
-        // This approach is for demonstration purposes; in a real app, you might want
-        // to create a real session in the database first
-        
-        const localPlayers = JSON.parse(localStorage.getItem('localPlayers') || '[]');
-        const playersToSave = players.map(p => ({
-          ...p,
-          sessionId,
-          joinedAt: new Date().toISOString()
-        }));
-        
-        localStorage.setItem('localPlayers', JSON.stringify([...localPlayers, ...playersToSave]));
-        
-        toast({
-          title: 'Players saved locally',
-          description: `${players.length} players saved to local storage. Note: These players are not saved to the database.`,
-        });
-        
-        setPlayers([]);
-        setSaving(false);
-        return;
-      }
-      
-      // If it's a valid UUID, insert into Supabase
       const { error } = await supabase.from('players').insert(
         players.map(p => ({
           player_code: p.playerCode,
@@ -110,7 +76,6 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
           joined_at: new Date().toISOString()
         }))
       );
-  
       if (error) {
         console.error("Bulk add error:", error);
         toast({
@@ -143,11 +108,6 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
         <CardTitle>Add Multiple Players</CardTitle>
         <CardDescription>
           Enter nickname, email, tickets, then add to the table. Edit/delete before committing.
-          {/^\d+$/.test(sessionId) && (
-            <div className="mt-2 p-2 bg-yellow-50 text-yellow-800 rounded-md text-sm">
-              Note: This session ID appears to be a timestamp. Players will be saved locally and not to the database.
-            </div>
-          )}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -166,7 +126,6 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
           </div>
           <Button type="submit" variant="secondary">Add</Button>
         </form>
-        {/* Table of entered players */}
         <div className="mt-5 overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead>
