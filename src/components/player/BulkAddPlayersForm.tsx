@@ -74,18 +74,39 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
       // Check if sessionId is a numerical timestamp instead of a UUID
       const isTimestamp = /^\d+$/.test(sessionId);
       
-      // If it's a timestamp, convert it to a valid UUID for storage
-      // This maintains backward compatibility
-      const storageSessionId = isTimestamp ? uuidv4() : sessionId;
+      if (isTimestamp) {
+        // For timestamp sessions (local/temporary sessions)
+        // Instead of trying to insert directly to Supabase, we'll use localStorage
+        // This approach is for demonstration purposes; in a real app, you might want
+        // to create a real session in the database first
+        
+        const localPlayers = JSON.parse(localStorage.getItem('localPlayers') || '[]');
+        const playersToSave = players.map(p => ({
+          ...p,
+          sessionId,
+          joinedAt: new Date().toISOString()
+        }));
+        
+        localStorage.setItem('localPlayers', JSON.stringify([...localPlayers, ...playersToSave]));
+        
+        toast({
+          title: 'Players saved locally',
+          description: `${players.length} players saved to local storage. Note: These players are not saved to the database.`,
+        });
+        
+        setPlayers([]);
+        setSaving(false);
+        return;
+      }
       
-      // Insert all players directly using supabase client
+      // If it's a valid UUID, insert into Supabase
       const { error } = await supabase.from('players').insert(
         players.map(p => ({
           player_code: p.playerCode,
           nickname: p.nickname,
           email: p.email,
           tickets: p.tickets,
-          session_id: storageSessionId,
+          session_id: sessionId,
           joined_at: new Date().toISOString()
         }))
       );
@@ -122,6 +143,11 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
         <CardTitle>Add Multiple Players</CardTitle>
         <CardDescription>
           Enter nickname, email, tickets, then add to the table. Edit/delete before committing.
+          {/^\d+$/.test(sessionId) && (
+            <div className="mt-2 p-2 bg-yellow-50 text-yellow-800 rounded-md text-sm">
+              Note: This session ID appears to be a timestamp. Players will be saved locally and not to the database.
+            </div>
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent>
