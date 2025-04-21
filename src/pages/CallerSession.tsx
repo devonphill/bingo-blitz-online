@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -383,7 +382,6 @@ export default function CallerSession() {
           currentNumber={currentNumber}
           sessionPlayers={sessionPlayers}
           handleCallNumber={handleCallNumber}
-          verifyPendingClaims={checkForClaims}
           handleEndGame={handleEndGame}
           handleGoLive={handleGoLive}
           remainingNumbers={remainingNumbers}
