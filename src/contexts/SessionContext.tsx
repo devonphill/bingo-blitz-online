@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { GameSession, GameType, Player } from "@/types";
 import { supabase } from "@/integrations/supabase/client";
@@ -132,9 +131,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       tickets: data.tickets
     };
     
-    // Use custom RPC function for the assigned_tickets check
     const { data: existingTickets, error: checkError } = await supabase
-      .rpc('get_player_assigned_tickets_count' as SupabaseRpcFunction, { 
+      .rpc('get_player_assigned_tickets_count', { 
         p_player_id: player.id, 
         p_session_id: player.sessionId 
       });
@@ -210,9 +208,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const getAvailableTickets = async (sessionId: string, count: number): Promise<TicketData[]> => {
     try {
-      // Use custom RPC function for assigned tickets
       const { data: assignedTicketsData, error: assignedError } = await supabase
-        .rpc('get_assigned_ticket_serials_by_session' as SupabaseRpcFunction, { 
+        .rpc('get_assigned_ticket_serials_by_session', { 
           p_session_id: sessionId 
         });
 
@@ -221,12 +218,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         return [];
       }
 
-      // Convert the array result to a Set for efficient lookups
       const assignedSerials = new Set(Array.isArray(assignedTicketsData) ? assignedTicketsData : []);
 
       const { data: availableTickets, error: availableError } = await supabase
-        .from('bingo_cards')
-        .select('id, cells')
+        .from('bingo_tickets')
+        .select('serial, perm, position, layout_mask, numbers')
         .limit(count * 6);
 
       if (availableError) {
@@ -238,14 +234,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       
       if (availableTickets) {
         for (const ticket of availableTickets) {
-          if (!assignedSerials.has(ticket.id) && availableFormattedTickets.length < count * 6) {
-            const cells = ticket.cells as any;
+          if (!assignedSerials.has(ticket.serial) && availableFormattedTickets.length < count * 6) {
             availableFormattedTickets.push({
-              serial: ticket.id,
-              perm: cells.perm || 1,
-              position: cells.position || 1,
-              layout_mask: cells.layout_mask || 0,
-              numbers: cells.numbers || []
+              serial: ticket.serial,
+              perm: ticket.perm,
+              position: ticket.position,
+              layout_mask: ticket.layout_mask,
+              numbers: ticket.numbers
             });
           }
         }
@@ -283,9 +278,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const assignTicketsToPlayer = async (playerId: string, sessionId: string, ticketCount: number): Promise<boolean> => {
     try {
-      // Check if player already has tickets using our RPC function
       const { data: existingTicketsCount, error: checkError } = await supabase
-        .rpc('get_player_assigned_tickets_count' as SupabaseRpcFunction, { 
+        .rpc('get_player_assigned_tickets_count', { 
           p_player_id: playerId, 
           p_session_id: sessionId 
         });
@@ -295,21 +289,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         return false;
       }
 
-      // Check if the player already has tickets (ensure existingTicketsCount is a number)
       const ticketsCount = typeof existingTicketsCount === 'number' ? existingTicketsCount : 0;
       if (ticketsCount > 0) {
-        console.log("Player already has tickets assigned");
         return true;
       }
 
       const availableTickets = await getAvailableTickets(sessionId, ticketCount);
-      
       if (availableTickets.length < ticketCount * 6) {
         console.error(`Not enough available tickets: ${availableTickets.length} available, ${ticketCount * 6} needed`);
         return false;
       }
-
-      // Use an RPC function to insert the tickets
       const ticketsToInsert = availableTickets.map(ticket => ({
         player_id: playerId,
         session_id: sessionId,
@@ -321,13 +310,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }));
 
       const { error: insertError } = await supabase
-        .rpc('insert_assigned_tickets' as SupabaseRpcFunction, { tickets: ticketsToInsert });
+        .rpc('insert_assigned_tickets', { tickets: ticketsToInsert });
 
       if (insertError) {
         console.error("Error assigning tickets:", insertError);
         return false;
       }
-
       return true;
     } catch (error) {
       console.error("Exception assigning tickets:", error);
@@ -337,9 +325,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const getPlayerAssignedTickets = async (playerId: string, sessionId: string): Promise<AssignedTicket[]> => {
     try {
-      // Use an RPC function to get the player's assigned tickets
       const { data, error } = await supabase
-        .rpc('get_player_assigned_tickets' as SupabaseRpcFunction, { 
+        .rpc('get_player_assigned_tickets', { 
           p_player_id: playerId, 
           p_session_id: sessionId 
         });
@@ -349,7 +336,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         return [];
       }
 
-      return Array.isArray(data) ? data : [];
+      return Array.isArray(data)
+        ? data.map((t) => ({ ...t, created_at: t.time_stamp }))
+        : [];
     } catch (error) {
       console.error("Exception getting assigned tickets:", error);
       return [];

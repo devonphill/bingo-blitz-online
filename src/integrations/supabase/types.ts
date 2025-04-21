@@ -11,7 +11,6 @@ export type Database = {
     Tables: {
       assigned_tickets: {
         Row: {
-          created_at: string
           id: string
           layout_mask: number
           numbers: number[]
@@ -20,9 +19,9 @@ export type Database = {
           position: number
           serial: string
           session_id: string
+          time_stamp: string
         }
         Insert: {
-          created_at?: string
           id?: string
           layout_mask: number
           numbers: number[]
@@ -31,9 +30,9 @@ export type Database = {
           position: number
           serial: string
           session_id: string
+          time_stamp?: string
         }
         Update: {
-          created_at?: string
           id?: string
           layout_mask?: number
           numbers?: number[]
@@ -42,6 +41,7 @@ export type Database = {
           position?: number
           serial?: string
           session_id?: string
+          time_stamp?: string
         }
         Relationships: [
           {
@@ -88,6 +88,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      bingo_tickets: {
+        Row: {
+          created_at: string
+          id: string
+          layout_mask: number
+          numbers: number[]
+          perm: number
+          position: number
+          serial: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          layout_mask: number
+          numbers: number[]
+          perm: number
+          position: number
+          serial: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          layout_mask?: number
+          numbers?: number[]
+          perm?: number
+          position?: number
+          serial?: string
+        }
+        Relationships: []
       }
       called_numbers: {
         Row: {
@@ -238,6 +268,30 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_available_bingo_tickets: {
+        Args: { p_count: number }
+        Returns: {
+          created_at: string
+          id: string
+          layout_mask: number
+          numbers: number[]
+          perm: number
+          position: number
+          serial: string
+        }[]
+      }
+      get_available_tickets_for_session: {
+        Args: { p_session_id: string; p_count: number }
+        Returns: {
+          created_at: string
+          id: string
+          layout_mask: number
+          numbers: number[]
+          perm: number
+          position: number
+          serial: string
+        }[]
+      }
       is_superuser: {
         Args: Record<PropertyKey, never>
         Returns: boolean
