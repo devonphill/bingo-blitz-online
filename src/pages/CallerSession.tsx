@@ -209,15 +209,17 @@ export default function CallerSession() {
     }
   }, [sessionId, setWinPatterns]);
 
+  // Check for claims only when session is fully loaded and session ID exists
   useEffect(() => {
-    if (sessionId) {
+    if (sessionId && session?.id) {
       console.log("Initial check for pending claims");
+      // Slight delay to ensure all other initialization is complete
       const timer = setTimeout(() => {
         checkForClaims();
-      }, 1000);
+      }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [sessionId, checkForClaims]);
+  }, [sessionId, session?.id, checkForClaims]);
 
   const handleGameTypeChange = (type: string) => {
     setGameType(type);

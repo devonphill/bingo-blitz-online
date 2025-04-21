@@ -44,6 +44,13 @@ export default function PlayerGameLayout({
   const [isClaimValidating, setIsClaimValidating] = useState(false);
   const { toast } = useToast();
 
+  // Reset claim validating state when external claim status changes
+  useEffect(() => {
+    if (claimStatus === 'validated' || claimStatus === 'rejected') {
+      setIsClaimValidating(false);
+    }
+  }, [claimStatus]);
+
   useEffect(() => {
     if (!currentSession?.id || !playerCode) return;
     
@@ -135,20 +142,23 @@ export default function PlayerGameLayout({
     );
   }
   
+  // We now correctly determine the claim button state based on both internal and external state
+  const isClaimInProgress = isClaimValidating || isClaiming || claimStatus === 'pending';
+  
   return (
     <div className="min-h-screen w-full flex bg-gray-50">
       <div className="flex flex-col" style={{width:'30%', minWidth:240, maxWidth:400}}>
         <div className="flex-1 bg-black text-white p-4">
           <h1 className="text-xl font-bold mb-4">Bingo Game Info</h1>
           <Button
-            className={`w-full ${isClaimValidating || isClaiming
+            className={`w-full ${isClaimInProgress
               ? 'bg-orange-500 hover:bg-orange-600' 
               : 'bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary'
             }`}
             onClick={handleClaimClick}
-            disabled={isClaimValidating || isClaiming}
+            disabled={isClaimInProgress}
           >
-            {isClaimValidating || isClaiming ? (
+            {isClaimInProgress ? (
               <span className="flex items-center">
                 <Loader className="animate-spin mr-2 h-4 w-4" />
                 VALIDATING CLAIM...
@@ -156,7 +166,7 @@ export default function PlayerGameLayout({
             ) : "CLAIM NOW!"}
           </Button>
           
-          {(isClaimValidating || isClaiming) && (
+          {isClaimInProgress && (
             <p className="text-xs text-gray-300 mt-2 text-center">
               Your claim is being verified. Please wait...
             </p>

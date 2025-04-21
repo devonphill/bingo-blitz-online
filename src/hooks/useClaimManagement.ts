@@ -1,5 +1,5 @@
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -17,6 +17,7 @@ export function useClaimManagement(sessionId: string | undefined) {
     claimId?: string;
   }>>([]);
   const [processingClaim, setProcessingClaim] = useState(false);
+  const hasCheckedInitialClaims = useRef(false);
   const { toast } = useToast();
 
   // Handle closing the claim sheet
@@ -69,7 +70,9 @@ export function useClaimManagement(sessionId: string | undefined) {
 
   // Check for pending claims in the database
   const checkForClaims = useCallback(async () => {
-    if (!sessionId) return;
+    if (!sessionId || hasCheckedInitialClaims.current) return;
+    
+    hasCheckedInitialClaims.current = true;
     
     try {
       const { data, error } = await supabase
@@ -120,7 +123,7 @@ export function useClaimManagement(sessionId: string | undefined) {
     }
   }, [showClaimSheet, currentClaim, claimQueue, processNextClaim]);
 
-  // Listen for real-time bingo claims
+  // Listen for real-time bingo claims - with important fixes
   useEffect(() => {
     if (!sessionId) return;
     
@@ -308,7 +311,7 @@ export function useClaimManagement(sessionId: string | undefined) {
     openClaimSheet,
     validateClaim,
     rejectClaim,
-    processNextClaim,  // Added this
-    checkForClaims     // Added this
+    processNextClaim,
+    checkForClaims
   };
 }
