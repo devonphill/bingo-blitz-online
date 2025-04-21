@@ -19,6 +19,12 @@ export function useClaimManagement(sessionId: string | undefined) {
   const [processingClaim, setProcessingClaim] = useState(false);
   const { toast } = useToast();
 
+  // Handle closing the claim sheet
+  const handleCloseSheet = useCallback(() => {
+    setShowClaimSheet(false);
+    setCurrentClaim(null);
+  }, []);
+
   // Process the next claim in queue
   const processNextClaim = useCallback(async () => {
     if (claimQueue.length === 0 || processingClaim || showClaimSheet) {
@@ -122,52 +128,142 @@ export function useClaimManagement(sessionId: string | undefined) {
     };
   }, [sessionId, currentClaim, claimQueue, showClaimSheet, processNextClaim]);
 
-  // Manually check for claims
-  const checkForClaims = useCallback(() => {
-    console.log("Manual claim check requested");
+  // Manually open the claim sheet
+  const openClaimSheet = useCallback(() => {
+    console.log("Opening claim sheet manually");
     
-    // If we have claims in the local queue, process them
+    // If there are claims in the queue but no current claim is being displayed,
+    // process the next claim in queue
     if (claimQueue.length > 0 && !currentClaim && !showClaimSheet) {
       processNextClaim();
+    } else if (currentClaim && !showClaimSheet) {
+      // If there's a current claim but the sheet is closed, reopen it
+      setShowClaimSheet(true);
     }
-  }, [claimQueue.length, currentClaim, showClaimSheet, processNextClaim]);
+  }, [claimQueue, currentClaim, processNextClaim, showClaimSheet]);
 
-  // Function to broadcast a claim (used by players)
-  const broadcastClaim = useCallback(async (playerName: string, playerId: string) => {
-    if (!sessionId) return;
+  // Validate a claim
+  const validateClaim = useCallback(async () => {
+    if (!currentClaim || !sessionId) return;
     
-    console.log("Broadcasting claim for player:", playerName);
+    console.log("Validating claim for player:", currentClaim.playerName);
     
     try {
-      // The error property is now gone from the response, as it's handled differently
+      // Update the claim status in the database if there's a claim ID
+      if (currentClaim.claimId) {
+        const { error: updateError } = await supabase
+          .from('bingo_claims')
+          .update({ status: 'validated' })
+          .eq('id', currentClaim.claimId);
+          
+        if (updateError) {
+          console.error("Error updating claim status:", updateError);
+        }
+      }
+      
+      // Broadcast the result to all players
       await supabase
-        .channel('caller-claims')
+        .channel('game-updates')
         .send({
           type: 'broadcast',
-          event: 'bingo-claim',
+          event: 'claim-result',
           payload: { 
-            playerId, 
-            playerName,
-            sessionId,
-            timestamp: new Date().toISOString()
+            playerId: currentClaim.playerId,
+            result: 'valid'
           }
         });
       
-      return true;
+      // Close the sheet and reset current claim
+      handleCloseSheet();
+      
+      toast({
+        title: "Claim Validated",
+        description: `${currentClaim.playerName}'s claim has been validated.`
+      });
+      
+      // Process next claim if any
+      setTimeout(() => {
+        if (claimQueue.length > 0) {
+          processNextClaim();
+        }
+      }, 500);
+      
     } catch (error) {
-      console.error("Exception in broadcastClaim:", error);
-      return false;
+      console.error("Error validating claim:", error);
+      
+      toast({
+        title: "Error",
+        description: "Failed to validate the claim. Please try again.",
+        variant: "destructive"
+      });
     }
-  }, [sessionId]);
+  }, [currentClaim, sessionId, toast, handleCloseSheet, claimQueue, processNextClaim]);
+
+  // Reject a claim
+  const rejectClaim = useCallback(async () => {
+    if (!currentClaim || !sessionId) return;
+    
+    console.log("Rejecting claim for player:", currentClaim.playerName);
+    
+    try {
+      // Update the claim status in the database if there's a claim ID
+      if (currentClaim.claimId) {
+        const { error: updateError } = await supabase
+          .from('bingo_claims')
+          .update({ status: 'rejected' })
+          .eq('id', currentClaim.claimId);
+          
+        if (updateError) {
+          console.error("Error updating claim status:", updateError);
+        }
+      }
+      
+      // Broadcast the result to all players
+      await supabase
+        .channel('game-updates')
+        .send({
+          type: 'broadcast',
+          event: 'claim-result',
+          payload: { 
+            playerId: currentClaim.playerId,
+            result: 'rejected'
+          }
+        });
+      
+      // Close the sheet and reset current claim
+      handleCloseSheet();
+      
+      toast({
+        title: "Claim Rejected",
+        description: `${currentClaim.playerName}'s claim has been rejected.`
+      });
+      
+      // Process next claim if any
+      setTimeout(() => {
+        if (claimQueue.length > 0) {
+          processNextClaim();
+        }
+      }, 500);
+      
+    } catch (error) {
+      console.error("Error rejecting claim:", error);
+      
+      toast({
+        title: "Error",
+        description: "Failed to reject the claim. Please try again.",
+        variant: "destructive"
+      });
+    }
+  }, [currentClaim, sessionId, toast, handleCloseSheet, claimQueue, processNextClaim]);
 
   return {
     showClaimSheet,
-    setShowClaimSheet,
+    setShowClaimSheet: handleCloseSheet,
     currentClaim,
     setCurrentClaim,
-    checkForClaims,
     claimQueue,
-    broadcastClaim,
-    processNextClaim
+    openClaimSheet,
+    validateClaim,
+    rejectClaim
   };
 }

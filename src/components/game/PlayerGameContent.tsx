@@ -46,13 +46,9 @@ export default function PlayerGameContent({
   isClaiming = false,
   claimStatus
 }: PlayerGameContentProps) {
-  const [isClaimingBingo, setIsClaimingBingo] = useState(isClaiming);
+  // Remove the local isClaimingBingo state as it's redundant with isClaiming prop
+  // This was causing the state to get out of sync
   
-  // Sync the isClaimingBingo state with isClaiming prop when it changes
-  useEffect(() => {
-    setIsClaimingBingo(isClaiming);
-  }, [isClaiming]);
-
   const handleClaimBingo = async () => {
     try {
       return await onClaimBingo();

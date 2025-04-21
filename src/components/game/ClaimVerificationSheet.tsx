@@ -169,8 +169,10 @@ export default function ClaimVerificationSheet({
     setConfirmDialogOpen(false);
     if (actionType === 'valid') {
       onValidClaim();
+      onClose(); // Close sheet after handling the claim
     } else if (actionType === 'false') {
       onFalseClaim();
+      onClose(); // Close sheet after handling the claim
     }
   };
 
