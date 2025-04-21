@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import BulkAddPlayersForm from '@/components/player/BulkAddPlayersForm';
-import AddPlayerForm from '@/components/player/AddPlayerForm';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSession } from '@/contexts/SessionContext';
 import { ArrowLeft } from 'lucide-react';
@@ -174,7 +173,6 @@ export default function AddPlayers() {
         <div className="space-y-8">
           {sessionId && (
             <>
-              <AddPlayerForm sessionId={sessionId} />
               <BulkAddPlayersForm sessionId={sessionId} />
             </>
           )}
@@ -183,3 +181,4 @@ export default function AddPlayers() {
     </div>
   );
 }
+
