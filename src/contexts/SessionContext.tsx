@@ -1,7 +1,8 @@
+
 import React, { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { GameSession, GameType, Player } from "@/types";
 import { supabase } from "@/integrations/supabase/client";
-import { SupabaseRpcFunction } from "@/integrations/supabase/customTypes";
+import { SupabaseRpcFunction, AssignedTicketResponse } from "@/integrations/supabase/customTypes";
 
 interface AssignedTicket {
   id: string;
@@ -132,7 +133,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
     
     const { data: existingTickets, error: checkError } = await supabase
-      .rpc('get_player_assigned_tickets_count', { 
+      .rpc("get_player_assigned_tickets_count" as SupabaseRpcFunction, { 
         p_player_id: player.id, 
         p_session_id: player.sessionId 
       });
@@ -209,7 +210,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const getAvailableTickets = async (sessionId: string, count: number): Promise<TicketData[]> => {
     try {
       const { data: assignedTicketsData, error: assignedError } = await supabase
-        .rpc('get_assigned_ticket_serials_by_session', { 
+        .rpc("get_assigned_ticket_serials_by_session" as SupabaseRpcFunction, { 
           p_session_id: sessionId 
         });
 
@@ -279,7 +280,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const assignTicketsToPlayer = async (playerId: string, sessionId: string, ticketCount: number): Promise<boolean> => {
     try {
       const { data: existingTicketsCount, error: checkError } = await supabase
-        .rpc('get_player_assigned_tickets_count', { 
+        .rpc("get_player_assigned_tickets_count" as SupabaseRpcFunction, { 
           p_player_id: playerId, 
           p_session_id: sessionId 
         });
@@ -310,7 +311,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }));
 
       const { error: insertError } = await supabase
-        .rpc('insert_assigned_tickets', { tickets: ticketsToInsert });
+        .rpc("insert_assigned_tickets" as SupabaseRpcFunction, { tickets: ticketsToInsert });
 
       if (insertError) {
         console.error("Error assigning tickets:", insertError);
@@ -326,7 +327,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const getPlayerAssignedTickets = async (playerId: string, sessionId: string): Promise<AssignedTicket[]> => {
     try {
       const { data, error } = await supabase
-        .rpc('get_player_assigned_tickets', { 
+        .rpc("get_player_assigned_tickets" as SupabaseRpcFunction, { 
           p_player_id: playerId, 
           p_session_id: sessionId 
         });
@@ -337,7 +338,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
 
       return Array.isArray(data)
-        ? data.map((t) => ({ ...t, created_at: t.time_stamp }))
+        ? data.map((t: AssignedTicketResponse) => ({
+            id: t.id,
+            player_id: t.player_id,
+            session_id: t.session_id,
+            serial: t.serial,
+            perm: t.perm,
+            position: t.position,
+            layout_mask: t.layout_mask,
+            numbers: t.numbers,
+            created_at: t.time_stamp
+          }))
         : [];
     } catch (error) {
       console.error("Exception getting assigned tickets:", error);

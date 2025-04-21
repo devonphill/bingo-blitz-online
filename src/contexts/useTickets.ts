@@ -1,5 +1,6 @@
+
 import { supabase } from "@/integrations/supabase/client";
-import { SupabaseRpcFunction } from "@/integrations/supabase/customTypes";
+import { SupabaseRpcFunction, AssignedTicketResponse } from "@/integrations/supabase/customTypes";
 
 export interface TicketData {
   serial: string;
@@ -27,7 +28,7 @@ export function useTickets() {
     try {
       // Get already-assigned serials for this session
       const { data: assignedTicketsData, error: assignedError } = await supabase
-        .rpc("get_assigned_ticket_serials_by_session", { 
+        .rpc("get_assigned_ticket_serials_by_session" as SupabaseRpcFunction, { 
           p_session_id: sessionId 
         });
 
@@ -98,7 +99,7 @@ export function useTickets() {
     try {
       // Check if player already has tickets assigned
       const { data: existingTicketsCount, error: checkError } = await supabase
-        .rpc("get_player_assigned_tickets_count", { 
+        .rpc("get_player_assigned_tickets_count" as SupabaseRpcFunction, { 
           p_player_id: playerId, 
           p_session_id: sessionId 
         });
@@ -132,7 +133,7 @@ export function useTickets() {
       }));
 
       const { error: insertError } = await supabase
-        .rpc("insert_assigned_tickets", { tickets: ticketsToInsert });
+        .rpc("insert_assigned_tickets" as SupabaseRpcFunction, { tickets: ticketsToInsert });
 
       if (insertError) {
         console.error("Error assigning tickets:", insertError);
@@ -150,7 +151,7 @@ export function useTickets() {
   const getPlayerAssignedTickets = async (playerId: string, sessionId: string): Promise<AssignedTicket[]> => {
     try {
       const { data, error } = await supabase
-        .rpc("get_player_assigned_tickets", { 
+        .rpc("get_player_assigned_tickets" as SupabaseRpcFunction, { 
           p_player_id: playerId, 
           p_session_id: sessionId 
         });
@@ -160,9 +161,19 @@ export function useTickets() {
         return [];
       }
 
-      // Adjust for renamed `created_at` -> `time_stamp`
+      // Convert the response to our expected AssignedTicket type
       return Array.isArray(data)
-        ? data.map((t) => ({ ...t, created_at: t.time_stamp }))
+        ? data.map((t: AssignedTicketResponse) => ({
+            id: t.id,
+            player_id: t.player_id,
+            session_id: t.session_id,
+            serial: t.serial,
+            perm: t.perm,
+            position: t.position,
+            layout_mask: t.layout_mask,
+            numbers: t.numbers,
+            created_at: t.time_stamp
+          }))
         : [];
     } catch (error) {
       console.error("Exception getting assigned tickets:", error);

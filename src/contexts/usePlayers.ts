@@ -33,7 +33,7 @@ export function usePlayers(sessions: GameSession[], fetchSessions: () => Promise
     
     // Call as plain string—not typed variable
     const { data: existingTickets, error: checkError } = await supabase
-      .rpc('get_player_assigned_tickets_count', { 
+      .rpc("get_player_assigned_tickets_count" as SupabaseRpcFunction, { 
         p_player_id: player.id, 
         p_session_id: player.sessionId 
       });
