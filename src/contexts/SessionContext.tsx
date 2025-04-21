@@ -3,35 +3,6 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { GameSession, GameType, Player } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 
-interface SessionContextType {
-  sessions: GameSession[];
-  currentSession: GameSession | null;
-  players: Player[];
-  joinSession: (playerCode: string) => Promise<{ player: Player | null }>;
-  setCurrentSession: (sessionId: string | null) => void;
-  getSessionByCode: (code: string) => GameSession | null;
-  bulkAddPlayers: (sessionId: string, players: AdminTempPlayer[]) => Promise<{ success: boolean, message?: string }>;
-  addPlayer: (sessionId: string, playerCode: string, nickname: string) => Promise<boolean>;
-  fetchSessions: () => Promise<void>;
-  assignTicketsToPlayer: (playerId: string, sessionId: string, ticketCount: number) => Promise<boolean>;
-  getPlayerAssignedTickets: (playerId: string, sessionId: string) => Promise<any[]>;
-}
-
-type AdminTempPlayer = {
-  playerCode: string;
-  nickname: string;
-  email: string;
-  tickets: number;
-};
-
-interface TicketData {
-  serial: string;
-  perm: number;
-  position: number;
-  layout_mask: number;
-  numbers: number[];
-}
-
 interface AssignedTicket {
   id: string;
   player_id: string;
@@ -43,6 +14,35 @@ interface AssignedTicket {
   numbers: number[];
   created_at: string;
 }
+
+interface TicketData {
+  serial: string;
+  perm: number;
+  position: number;
+  layout_mask: number;
+  numbers: number[];
+}
+
+interface SessionContextType {
+  sessions: GameSession[];
+  currentSession: GameSession | null;
+  players: Player[];
+  joinSession: (playerCode: string) => Promise<{ player: Player | null }>;
+  setCurrentSession: (sessionId: string | null) => void;
+  getSessionByCode: (code: string) => GameSession | null;
+  bulkAddPlayers: (sessionId: string, players: AdminTempPlayer[]) => Promise<{ success: boolean, message?: string }>;
+  addPlayer: (sessionId: string, playerCode: string, nickname: string) => Promise<boolean>;
+  fetchSessions: () => Promise<void>;
+  assignTicketsToPlayer: (playerId: string, sessionId: string, ticketCount: number) => Promise<boolean>;
+  getPlayerAssignedTickets: (playerId: string, sessionId: string) => Promise<AssignedTicket[]>;
+}
+
+type AdminTempPlayer = {
+  playerCode: string;
+  nickname: string;
+  email: string;
+  tickets: number;
+};
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
@@ -131,7 +131,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       tickets: data.tickets
     };
     
-    // Use a raw SQL query for the assigned_tickets table check since the type is not in the generated types
+    // Use custom RPC function for the assigned_tickets check
     const { data: existingTickets, error: checkError } = await supabase
       .rpc('get_player_assigned_tickets_count', { 
         p_player_id: player.id, 
@@ -209,15 +209,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const getAvailableTickets = async (sessionId: string, count: number): Promise<TicketData[]> => {
     try {
-      // For assigned_tickets, we'll use a custom RPC function to avoid type issues
+      // Use custom RPC function for assigned tickets
       const { data: assignedTicketsData, error: assignedError } = await supabase
-        .rpc('get_assigned_ticket_serials_by_session', { p_session_id: sessionId });
+        .rpc('get_assigned_ticket_serials_by_session', { 
+          p_session_id: sessionId 
+        });
 
       if (assignedError) {
         console.error("Error getting assigned tickets:", assignedError);
         return [];
       }
 
+      // Convert the array result to a Set for efficient lookups
       const assignedSerials = new Set(assignedTicketsData || []);
 
       const { data: availableTickets, error: availableError } = await supabase
@@ -291,7 +294,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         return false;
       }
 
-      if (existingTicketsCount && existingTicketsCount > 0) {
+      // Check if the player already has tickets (ensure existingTicketsCount is a number)
+      const ticketsCount = typeof existingTicketsCount === 'number' ? existingTicketsCount : 0;
+      if (ticketsCount > 0) {
         console.log("Player already has tickets assigned");
         return true;
       }
@@ -329,7 +334,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const getPlayerAssignedTickets = async (playerId: string, sessionId: string): Promise<any[]> => {
+  const getPlayerAssignedTickets = async (playerId: string, sessionId: string): Promise<AssignedTicket[]> => {
     try {
       // Use an RPC function to get the player's assigned tickets
       const { data, error } = await supabase
