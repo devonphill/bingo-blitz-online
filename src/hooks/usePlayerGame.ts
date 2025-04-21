@@ -13,11 +13,17 @@ interface BingoTicket {
   timestamp: string;
 }
 
-const WIN_PATTERNS: { [key: string]: { label: string; lines: number } } = {
-  oneLine: { label: "One Line", lines: 1 },
-  twoLines: { label: "Two Lines", lines: 2 },
-  fullHouse: { label: "Full House", lines: 3 }
-};
+interface WinPatternRow {
+  id: string;
+  session_id: string;
+  one_line_active: boolean;
+  one_line_prize: string | null;
+  two_lines_active: boolean;
+  two_lines_prize: string | null;
+  full_house_active: boolean;
+  full_house_prize: string | null;
+  created_at: string;
+}
 
 export function usePlayerGame() {
   const { currentSession, setCurrentSession, getPlayerAssignedTickets } = useSession();
@@ -159,38 +165,40 @@ export function usePlayerGame() {
       }
     };
 
-    // Also fetch win patterns for this session
     const fetchWinPatterns = async () => {
       try {
-        const { data, error } = await supabase
-          .from('win_patterns')
+        const winPatternsQuery = supabase
+          // Cast to any to avoid TS errors due to missing typing for win_patterns table
+          .from<any>('win_patterns')
           .select('*')
           .eq('session_id', typeof currentSession === 'string' ? currentSession : currentSession.id)
           .order('created_at', { ascending: false });
           
+        const { data, error } = await winPatternsQuery;
+
         if (error || !data) return;
         
         if (data.length > 0) {
-          // Get the latest win pattern configuration
-          const latest = data[0];
+          // Assume the first is latest
+          const latest: WinPatternRow = data[0];
           const activePatterns: string[] = [];
-          const prizes: {[key: string]: string} = {};
-          
+          const prizes: { [key: string]: string } = {};
+
           if (latest.one_line_active) {
             activePatterns.push("oneLine");
             prizes.oneLine = latest.one_line_prize || "";
           }
-          
+
           if (latest.two_lines_active) {
             activePatterns.push("twoLines");
             prizes.twoLines = latest.two_lines_prize || "";
           }
-          
+
           if (latest.full_house_active) {
             activePatterns.push("fullHouse");
             prizes.fullHouse = latest.full_house_prize || "";
           }
-          
+
           setActiveWinPatterns(activePatterns);
           setWinPrizes(prizes);
         }
@@ -238,8 +246,8 @@ export function usePlayerGame() {
     if (!playerId || !currentSession) return;
 
     try {
-      // Submit the bingo claim to the database
-      const { error } = await supabase
+      // Cast supabase client to any to allow inserting into 'bingo_claims' table not in types
+      const insertResult = await (supabase as any)
         .from('bingo_claims')
         .insert({
           player_id: playerId,
@@ -247,6 +255,8 @@ export function usePlayerGame() {
           claimed_at: new Date().toISOString(),
           status: 'pending'
         });
+
+      const { error } = insertResult;
 
       if (error) {
         toast({
@@ -285,3 +295,4 @@ export function usePlayerGame() {
     handleClaimBingo,
   };
 }
+

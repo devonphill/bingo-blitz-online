@@ -89,6 +89,45 @@ export type Database = {
           },
         ]
       }
+      bingo_claims: {
+        Row: {
+          claimed_at: string
+          id: string
+          player_id: string
+          session_id: string
+          status: string
+        }
+        Insert: {
+          claimed_at?: string
+          id?: string
+          player_id: string
+          session_id: string
+          status?: string
+        }
+        Update: {
+          claimed_at?: string
+          id?: string
+          player_id?: string
+          session_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bingo_claims_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bingo_claims_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "game_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bingo_tickets: {
         Row: {
           created_at: string
@@ -262,6 +301,50 @@ export type Database = {
           username?: string
         }
         Relationships: []
+      }
+      win_patterns: {
+        Row: {
+          created_at: string
+          full_house_active: boolean
+          full_house_prize: string | null
+          id: string
+          one_line_active: boolean
+          one_line_prize: string | null
+          session_id: string
+          two_lines_active: boolean
+          two_lines_prize: string | null
+        }
+        Insert: {
+          created_at?: string
+          full_house_active?: boolean
+          full_house_prize?: string | null
+          id?: string
+          one_line_active?: boolean
+          one_line_prize?: string | null
+          session_id: string
+          two_lines_active?: boolean
+          two_lines_prize?: string | null
+        }
+        Update: {
+          created_at?: string
+          full_house_active?: boolean
+          full_house_prize?: string | null
+          id?: string
+          one_line_active?: boolean
+          one_line_prize?: string | null
+          session_id?: string
+          two_lines_active?: boolean
+          two_lines_prize?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "win_patterns_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "game_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
