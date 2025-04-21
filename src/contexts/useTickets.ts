@@ -30,8 +30,7 @@ export function useTickets() {
       const { data: assignedPermsData, error: assignedError } = await supabase
         .from('assigned_tickets')
         .select('perm')
-        .eq('session_id', sessionId)
-        .distinctOn('perm');
+        .eq('session_id', sessionId);
 
       if (assignedError) {
         console.error("Error getting assigned perms:", assignedError);
@@ -41,7 +40,9 @@ export function useTickets() {
       // Create a set of assigned perm numbers
       const assignedPerms = new Set();
       if (assignedPermsData && assignedPermsData.length > 0) {
-        assignedPermsData.forEach(item => assignedPerms.add(item.perm));
+        // Get unique perm values
+        const uniquePerms = [...new Set(assignedPermsData.map(item => item.perm))];
+        uniquePerms.forEach(perm => assignedPerms.add(perm));
       }
       
       console.log("Assigned perms:", Array.from(assignedPerms));
@@ -49,8 +50,7 @@ export function useTickets() {
       // Get all available distinct perm numbers from bingo_tickets
       const { data: availablePermsData, error: permsError } = await supabase
         .from('bingo_tickets')
-        .select('perm')
-        .distinctOn('perm');
+        .select('perm');
 
       if (permsError) {
         console.error("Error getting available perms:", permsError);
@@ -60,9 +60,11 @@ export function useTickets() {
       // Filter out perms that are already assigned
       const availablePerms: number[] = [];
       if (availablePermsData && availablePermsData.length > 0) {
-        availablePermsData.forEach(item => {
-          if (!assignedPerms.has(item.perm)) {
-            availablePerms.push(item.perm);
+        // Get unique perm values
+        const uniquePerms = [...new Set(availablePermsData.map(item => item.perm))];
+        uniquePerms.forEach(perm => {
+          if (!assignedPerms.has(perm)) {
+            availablePerms.push(perm);
           }
         });
       }
@@ -124,8 +126,7 @@ export function useTickets() {
         .from('assigned_tickets')
         .select('perm')
         .eq('player_id', playerId)
-        .eq('session_id', sessionId)
-        .distinctOn('perm');
+        .eq('session_id', sessionId);
 
       if (checkError) {
         console.error("Error checking tickets count:", checkError);
@@ -133,7 +134,8 @@ export function useTickets() {
       }
 
       // Get the number of unique perm values (strips) assigned to this player
-      const ticketsAssignedCount = existingTicketsData ? existingTicketsData.length : 0;
+      const uniquePerms = existingTicketsData ? [...new Set(existingTicketsData.map(item => item.perm))] : [];
+      const ticketsAssignedCount = uniquePerms.length;
       console.log(`Player has ${ticketsAssignedCount} strips already assigned`);
       
       if (ticketsAssignedCount >= ticketCount) {
@@ -207,7 +209,7 @@ export function useTickets() {
             position: t.position,
             layout_mask: t.layout_mask,
             numbers: t.numbers,
-            created_at: t.created_at
+            created_at: t.time_stamp // Fix the property name mismatch here
           }))
         : [];
     } catch (error) {

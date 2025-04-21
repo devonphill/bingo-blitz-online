@@ -56,10 +56,11 @@ export function usePlayers(sessions: GameSession[], fetchSessions: () => Promise
       .from('assigned_tickets')
       .select('perm')
       .eq('player_id', player.id)
-      .eq('session_id', player.sessionId)
-      .distinctOn('perm');
+      .eq('session_id', player.sessionId);
       
-    const permsCount = existingPermsData ? existingPermsData.length : 0;
+    // Get unique perm values
+    const uniquePerms = existingPermsData ? [...new Set(existingPermsData.map(item => item.perm))] : [];
+    const permsCount = uniquePerms.length;
     console.log(`Player has ${permsCount} strips (perms) assigned, needs ${player.tickets}`);
     
     if (permsCount < player.tickets) {
