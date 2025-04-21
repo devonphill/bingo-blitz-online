@@ -27,11 +27,9 @@ export default function CallerSession() {
   const navigate = useNavigate();
 
   const {
-    isClaimLightOn,
     showClaimModal,
     currentClaim,
     setShowClaimModal,
-    setIsClaimLightOn,
     setCurrentClaim,
     verifyPendingClaims
   } = useClaimManagement(sessionId);
@@ -270,19 +268,12 @@ export default function CallerSession() {
           total_calls: calledNumbers.length
         });
 
-      await supabase
-        .from('players')
-        .update({ claim_light_on: false })
-        .eq('id', currentClaim.playerId)
-        .eq('session_id', sessionId);
-
       if (!nextPattern) {
         await progressToNextGame();
       }
 
       setShowClaimModal(false);
       setCurrentClaim(null);
-      setIsClaimLightOn(false);
       
       verifyPendingClaims();
     } catch (error) {
@@ -299,15 +290,8 @@ export default function CallerSession() {
     if (!currentClaim) return;
 
     try {
-      await supabase
-        .from('players')
-        .update({ claim_light_on: false })
-        .eq('id', currentClaim.playerId)
-        .eq('session_id', sessionId);
-
       setShowClaimModal(false);
       setCurrentClaim(null);
-      setIsClaimLightOn(false);
       
       verifyPendingClaims();
     } catch (error) {
@@ -400,7 +384,6 @@ export default function CallerSession() {
           handleEndGame={handleEndGame}
           handleGoLive={handleGoLive}
           remainingNumbers={remainingNumbers}
-          isClaimLightOn={isClaimLightOn}
           sessionId={sessionId}
         />
       </main>
