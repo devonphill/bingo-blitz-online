@@ -59,7 +59,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         nickname: data.nickname,
         joinedAt: data.joined_at,
         playerCode: data.player_code,
-        // Add email and tickets properties to player
         email: data.email,
         tickets: data.tickets
       }
@@ -79,10 +78,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return sessions.find(s => s.accessCode === code) || null;
   };
 
-  // Add a single player
+  // Add a single player - FIXED: Don't pass numeric IDs as UUIDs
   const addPlayer = async (sessionId: string, playerCode: string, nickname: string): Promise<boolean> => {
     try {
-      const { data, error } = await supabase.from('players').insert({
+      // Don't include an explicit ID, let Supabase generate a valid UUID
+      const { error } = await supabase.from('players').insert({
         player_code: playerCode.toUpperCase(),
         nickname,
         session_id: sessionId,
@@ -106,8 +106,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     sessionId: string,
     newPlayers: AdminTempPlayer[],
   ): Promise<{ success: boolean; message?: string }> => {
-    // Insert all players
-    const { data, error } = await supabase.from('players').insert(
+    // Insert all players - FIXED: Don't include explicit IDs, let Supabase generate UUIDs
+    const { error } = await supabase.from('players').insert(
       newPlayers.map(p => ({
         player_code: p.playerCode,
         nickname: p.nickname,
@@ -119,8 +119,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     );
 
     if (error) {
+      console.error("Bulk add error:", error);
       return { success: false, message: error.message };
     }
+    
     // Placeholder: In a real app, call an Edge Function to send emails here
     // for (const p of newPlayers) await sendEmailToPlayer(p);
     return { success: true };
