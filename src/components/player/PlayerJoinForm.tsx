@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Label } from '@/components/ui/label';
 import { useSession } from '@/contexts/SessionContext';
 import { useToast } from '@/components/ui/use-toast';
+import { useNavigate } from 'react-router-dom';
 
 export default function PlayerJoinForm() {
   const [playerCode, setPlayerCode] = useState('');
@@ -13,6 +14,7 @@ export default function PlayerJoinForm() {
   const [isJoining, setIsJoining] = useState(false);
   const { joinSession } = useSession();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,10 +23,16 @@ export default function PlayerJoinForm() {
     try {
       const success = await joinSession(playerCode.toUpperCase(), nickname);
       if (success) {
+        // Store player code in localStorage for persistence
+        localStorage.setItem('playerCode', playerCode.toUpperCase());
+        
         toast({
           title: 'Successfully joined game',
           description: 'Welcome to the bingo session!',
         });
+        
+        // Navigate to the player game page
+        navigate('/player/game');
       } else {
         toast({
           title: 'Failed to join game',

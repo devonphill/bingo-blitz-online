@@ -118,6 +118,9 @@ export default function CallerSession() {
                       <div className="text-xs text-gray-500">
                         Joined {new Date(player.joinedAt).toLocaleTimeString()}
                       </div>
+                      <div className="text-xs font-mono mt-1">
+                        Code: {player.playerCode}
+                      </div>
                     </div>
                   ))}
                 </div>
