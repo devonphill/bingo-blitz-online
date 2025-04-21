@@ -9,6 +9,57 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      assigned_tickets: {
+        Row: {
+          created_at: string
+          id: string
+          layout_mask: number
+          numbers: number[]
+          perm: number
+          player_id: string
+          position: number
+          serial: string
+          session_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          layout_mask: number
+          numbers: number[]
+          perm: number
+          player_id: string
+          position: number
+          serial: string
+          session_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          layout_mask?: number
+          numbers?: number[]
+          perm?: number
+          player_id?: string
+          position?: number
+          serial?: string
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assigned_tickets_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assigned_tickets_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "game_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bingo_cards: {
         Row: {
           cells: Json
