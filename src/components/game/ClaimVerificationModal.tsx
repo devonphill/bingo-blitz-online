@@ -46,6 +46,8 @@ export default function ClaimVerificationModal({
   useEffect(() => {
     if (!tickets || tickets.length === 0) return;
     
+    console.log("Calculating ticket scores with called numbers:", calledNumbers.length);
+    
     // Calculate score for each ticket (number of matched called numbers)
     const ticketsWithScore = tickets.map(ticket => {
       const matchedNumbers = ticket.numbers.filter(num => calledNumbers.includes(num));
@@ -66,6 +68,7 @@ export default function ClaimVerificationModal({
     );
     
     setIsClaimValid(valid);
+    console.log("Claim validity:", valid, "with", tickets.length, "tickets");
   }, [tickets, calledNumbers]);
 
   const handleValidClaim = () => {
@@ -87,8 +90,7 @@ export default function ClaimVerificationModal({
     }
   };
 
-  // If the modal is not open, don't render anything
-  if (!isOpen) return null;
+  console.log("ClaimVerificationModal render state:", { isOpen, playerName, ticketsCount: tickets?.length });
 
   return (
     <>

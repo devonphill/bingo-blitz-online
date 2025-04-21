@@ -50,6 +50,11 @@ export default function CallerControls({
     }, 1000);
   };
 
+  const handleVerifyClaim = () => {
+    console.log("Verify claim button clicked");
+    onVerifyClaim();
+  };
+
   const handleGoLiveClick = async () => {
     if (winPatterns.length === 0) {
       toast({
@@ -112,7 +117,7 @@ export default function CallerControls({
           
           <Button 
             variant="outline"
-            onClick={onVerifyClaim}
+            onClick={handleVerifyClaim}
           >
             Verify Claim
           </Button>
