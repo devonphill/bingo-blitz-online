@@ -35,6 +35,7 @@ export default function ClaimVerificationModal({
   onValidClaim,
   onFalseClaim
 }: ClaimVerificationModalProps) {
+  // Determine if claim is valid when all numbers on any ticket have been called
   const isClaimValid = tickets.some(ticket => 
     ticket.numbers.every(number => calledNumbers.includes(number))
   );

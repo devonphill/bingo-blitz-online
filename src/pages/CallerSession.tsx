@@ -256,6 +256,8 @@ export default function CallerSession() {
   };
 
   const handleVerifyClaim = async () => {
+    console.log("Verify claim button clicked");
+    
     const { data, error } = await supabase
       .from('bingo_claims')
       .select('id, player_id, claimed_at, status')
@@ -274,6 +276,7 @@ export default function CallerSession() {
     }
 
     if (!data || data.length === 0) {
+      console.log("No pending claims found");
       toast({
         title: "No Claims",
         description: "There are no pending claims to verify.",
@@ -281,6 +284,7 @@ export default function CallerSession() {
       return;
     }
 
+    console.log("Found pending claims:", data);
     const latestClaim = data[data.length - 1];
     setIsClaimLightOn(true);
 
@@ -300,6 +304,8 @@ export default function CallerSession() {
       return;
     }
 
+    console.log("Player data retrieved:", playerData);
+
     const { data: ticketData, error: ticketError } = await supabase
       .from('assigned_tickets')
       .select('*')
@@ -316,11 +322,15 @@ export default function CallerSession() {
       return;
     }
 
+    console.log("Ticket data retrieved:", ticketData);
+
     setCurrentClaim({
       playerName: playerData.nickname,
       playerId: playerData.id,
       tickets: ticketData
     });
+    
+    console.log("Setting showClaimModal to true");
     setShowClaimModal(true);
   };
 

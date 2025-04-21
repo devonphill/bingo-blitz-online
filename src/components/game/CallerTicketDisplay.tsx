@@ -26,7 +26,7 @@ export default function CallerTicketDisplay({
               ? 'bg-green-500 text-white' 
               : 'bg-red-500 text-white'}
             ${lastCalledNumber === number 
-              ? 'animate-[pulse_1s_ease-in-out_infinite]' 
+              ? 'animate-pulse' 
               : ''}
           `}
         >
