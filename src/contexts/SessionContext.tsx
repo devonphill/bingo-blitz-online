@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { GameSession, GameType, Player } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
@@ -29,6 +30,18 @@ interface TicketData {
   position: number;
   layout_mask: number;
   numbers: number[];
+}
+
+interface AssignedTicket {
+  id: string;
+  player_id: string;
+  session_id: string;
+  serial: string;
+  perm: number;
+  position: number;
+  layout_mask: number;
+  numbers: number[];
+  created_at: string;
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
@@ -118,13 +131,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       tickets: data.tickets
     };
     
-    const { data: existingTickets } = await supabase
-      .from('assigned_tickets')
-      .select('id')
-      .eq('player_id', player.id)
-      .eq('session_id', player.sessionId);
+    // Use a raw SQL query for the assigned_tickets table check since the type is not in the generated types
+    const { data: existingTickets, error: checkError } = await supabase
+      .rpc('get_player_assigned_tickets_count', { 
+        p_player_id: player.id, 
+        p_session_id: player.sessionId 
+      });
       
-    if (!existingTickets || existingTickets.length === 0) {
+    if (checkError) {
+      console.error("Error checking assigned tickets:", checkError);
+    }
+    
+    const ticketsCount = existingTickets || 0;
+    if (ticketsCount === 0) {
       await assignTicketsToPlayer(player.id, player.sessionId, player.tickets);
     }
     
@@ -190,17 +209,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const getAvailableTickets = async (sessionId: string, count: number): Promise<TicketData[]> => {
     try {
-      const { data: assignedTickets, error: assignedError } = await supabase
-        .from('assigned_tickets')
-        .select('serial')
-        .eq('session_id', sessionId);
+      // For assigned_tickets, we'll use a custom RPC function to avoid type issues
+      const { data: assignedTicketsData, error: assignedError } = await supabase
+        .rpc('get_assigned_ticket_serials_by_session', { p_session_id: sessionId });
 
       if (assignedError) {
         console.error("Error getting assigned tickets:", assignedError);
         return [];
       }
 
-      const assignedSerials = new Set(assignedTickets?.map(t => t.serial) || []);
+      const assignedSerials = new Set(assignedTicketsData || []);
 
       const { data: availableTickets, error: availableError } = await supabase
         .from('bingo_cards')
@@ -261,13 +279,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const assignTicketsToPlayer = async (playerId: string, sessionId: string, ticketCount: number): Promise<boolean> => {
     try {
-      const { data: existingTickets } = await supabase
-        .from('assigned_tickets')
-        .select('id')
-        .eq('player_id', playerId)
-        .eq('session_id', sessionId);
+      // Check if player already has tickets using our RPC function
+      const { data: existingTicketsCount, error: checkError } = await supabase
+        .rpc('get_player_assigned_tickets_count', { 
+          p_player_id: playerId, 
+          p_session_id: sessionId 
+        });
 
-      if (existingTickets && existingTickets.length > 0) {
+      if (checkError) {
+        console.error("Error checking tickets count:", checkError);
+        return false;
+      }
+
+      if (existingTicketsCount && existingTicketsCount > 0) {
         console.log("Player already has tickets assigned");
         return true;
       }
@@ -279,6 +303,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         return false;
       }
 
+      // Use an RPC function to insert the tickets
       const ticketsToInsert = availableTickets.map(ticket => ({
         player_id: playerId,
         session_id: sessionId,
@@ -289,12 +314,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         numbers: ticket.numbers
       }));
 
-      const { error } = await supabase
-        .from('assigned_tickets')
-        .insert(ticketsToInsert);
+      const { error: insertError } = await supabase
+        .rpc('insert_assigned_tickets', { tickets: ticketsToInsert });
 
-      if (error) {
-        console.error("Error assigning tickets:", error);
+      if (insertError) {
+        console.error("Error assigning tickets:", insertError);
         return false;
       }
 
@@ -307,13 +331,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const getPlayerAssignedTickets = async (playerId: string, sessionId: string): Promise<any[]> => {
     try {
+      // Use an RPC function to get the player's assigned tickets
       const { data, error } = await supabase
-        .from('assigned_tickets')
-        .select('*')
-        .eq('player_id', playerId)
-        .eq('session_id', sessionId)
-        .order('perm')
-        .order('position');
+        .rpc('get_player_assigned_tickets', { 
+          p_player_id: playerId, 
+          p_session_id: sessionId 
+        });
 
       if (error) {
         console.error("Error getting assigned tickets:", error);
