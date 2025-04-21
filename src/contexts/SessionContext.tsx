@@ -1,37 +1,27 @@
 
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { GameSession, GameType, Player } from '@/types';
+import { supabase } from '@/integrations/supabase/client';
+import { PostgrestSingleResponse } from '@supabase/supabase-js';
 
 interface SessionContextType {
   sessions: GameSession[];
   currentSession: GameSession | null;
   players: Player[];
   createSession: (name: string, gameType: GameType) => void;
-  joinSession: (playerCode: string, nickname: string) => Promise<boolean>;
+  joinSession: (playerCode: string) => Promise<{ player: Player | null }>;
   setCurrentSession: (sessionId: string | null) => void;
   getSessionByCode: (code: string) => GameSession | null;
-  addPlayer: (sessionId: string, playerCode: string, nickname: string) => Promise<boolean>;
+  bulkAddPlayers: (sessionId: string, players: AdminTempPlayer[]) => Promise<{ success: boolean, message?: string }>;
 }
+type AdminTempPlayer = {
+  playerCode: string;
+  nickname: string;
+  email: string;
+  tickets: number;
+};
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
-
-function generatePlayerCode(length = 6) {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let code = '';
-  for (let i = 0; i < length; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
-}
-
-function generateUniquePlayerCode(existingCodes: string[], length = 6): string {
-  let code = generatePlayerCode(length);
-  // Avoid collisions with existing codes
-  while (existingCodes.includes(code)) {
-    code = generatePlayerCode(length);
-  }
-  return code;
-}
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<GameSession[]>([]);
@@ -47,7 +37,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       id: Date.now().toString(),
       name,
       gameType,
-      createdBy: 'currentUser', // This would be the actual user ID
+      createdBy: 'currentUser', // Replace with actual user ID
       accessCode: generateAccessCode(),
       status: 'pending',
       createdAt: new Date().toISOString()
@@ -57,30 +47,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setCurrentSessionState(newSession);
   };
 
-  // Updated joinSession to use playerCode, enforce uniqueness of playerCode
-  const joinSession = async (playerCode: string, nickname: string): Promise<boolean> => {
-    // Check if the playerCode already exists (enforce uniqueness)
-    const existingPlayer = players.find(p => p.playerCode === playerCode);
-    if (existingPlayer) {
-      // Player code already used, do not join
-      return false;
-    }
-
-    // For now, assign the new player to the currentSession
-    if (!currentSession) {
-      return false;
-    }
-
-    const newPlayer: Player = {
-      id: Date.now().toString(),
-      sessionId: currentSession.id,
-      nickname,
-      joinedAt: new Date().toISOString(),
-      playerCode
+  // User login: Only code required, fetch nickname/tickets if found
+  const joinSession = async (playerCode: string): Promise<{ player: Player | null }> => {
+    const { data, error } = await supabase.from('players').select('*').eq('player_code', playerCode).maybeSingle();
+    if (error || !data) return { player: null };
+    return {
+      player: {
+        id: data.id,
+        sessionId: data.session_id,
+        nickname: data.nickname,
+        joinedAt: data.joined_at,
+        playerCode: data.player_code,
+        // @ts-ignore, add email/tickets if present
+        email: data.email,
+        tickets: data.tickets
+      }
     };
-
-    setPlayers([...players, newPlayer]);
-    return true;
   };
 
   const setCurrentSession = (sessionId: string | null) => {
@@ -96,31 +78,29 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return sessions.find(s => s.accessCode === code) || null;
   };
 
-  // Add the missing addPlayer function
-  const addPlayer = async (sessionId: string, playerCode: string, nickname: string): Promise<boolean> => {
-    // Check if the playerCode already exists (enforce uniqueness)
-    const existingPlayer = players.find(p => p.playerCode === playerCode);
-    if (existingPlayer) {
-      // Player code already used, do not add
-      return false;
+  // Bulk add players with generated codes (and send email)
+  const bulkAddPlayers = async (
+    sessionId: string,
+    newPlayers: AdminTempPlayer[],
+  ): Promise<{ success: boolean; message?: string }> => {
+    // Insert all players
+    const { data, error } = await supabase.from('players').insert(
+      newPlayers.map(p => ({
+        player_code: p.playerCode,
+        nickname: p.nickname,
+        email: p.email,
+        tickets: p.tickets,
+        session_id: sessionId,
+        joined_at: new Date().toISOString()
+      }))
+    );
+
+    if (error) {
+      return { success: false, message: error.message };
     }
-
-    // Find the session
-    const session = sessions.find(s => s.id === sessionId);
-    if (!session) {
-      return false;
-    }
-
-    const newPlayer: Player = {
-      id: Date.now().toString(),
-      sessionId: sessionId,
-      nickname,
-      joinedAt: new Date().toISOString(),
-      playerCode
-    };
-
-    setPlayers([...players, newPlayer]);
-    return true;
+    // Placeholder: In a real app, call an Edge Function to send emails here
+    // for (const p of newPlayers) await sendEmailToPlayer(p);
+    return { success: true };
   };
 
   return (
@@ -133,7 +113,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         joinSession,
         setCurrentSession,
         getSessionByCode,
-        addPlayer
+        bulkAddPlayers
       }}
     >
       {children}

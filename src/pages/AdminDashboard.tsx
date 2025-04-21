@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSession } from "@/contexts/SessionContext";
 import { useNavigate } from "react-router-dom";
-import AddPlayerForm from "@/components/player/AddPlayerForm";
+import BulkAddPlayersForm from "@/components/player/BulkAddPlayersForm";
 
 export default function AdminDashboard() {
   const { user, role, logout } = useAuth();
@@ -27,11 +27,11 @@ export default function AdminDashboard() {
           <p>Welcome <span className="font-bold">{user?.email}</span> (Superuser)</p>
           <p className="mt-2 text-gray-600">Site owner/admin panel: manage users, manage the CMS, and caller profiles setup.</p>
         </div>
-        {/* Session selector and Add Player Form */}
+        {/* Session selector and Bulk Add Players Form */}
         {sessions.length > 0 && (
           <div className="my-3 flex flex-col sm:flex-row items-center gap-2">
             <label htmlFor="admin-session-select" className="text-sm font-medium mr-2">
-              Add Player To:
+              Add Players To:
             </label>
             <select
               id="admin-session-select"
@@ -48,7 +48,7 @@ export default function AdminDashboard() {
           </div>
         )}
         {sessions.length > 0 && selectedSessionId && (
-          <AddPlayerForm sessionId={selectedSessionId} />
+          <BulkAddPlayersForm sessionId={selectedSessionId} />
         )}
         <div className="flex flex-col sm:flex-row gap-4 mt-8">
           <Button

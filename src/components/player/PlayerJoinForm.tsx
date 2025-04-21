@@ -10,7 +10,6 @@ import { useNavigate } from 'react-router-dom';
 
 export default function PlayerJoinForm() {
   const [playerCode, setPlayerCode] = useState('');
-  const [nickname, setNickname] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   const { joinSession } = useSession();
   const { toast } = useToast();
@@ -21,29 +20,27 @@ export default function PlayerJoinForm() {
     setIsJoining(true);
 
     try {
-      const success = await joinSession(playerCode.toUpperCase(), nickname);
-      if (success) {
-        // Store player code in localStorage for persistence
+      const { player } = await joinSession(playerCode.toUpperCase());
+      if (player) {
         localStorage.setItem('playerCode', playerCode.toUpperCase());
-        
+        localStorage.setItem('playerNickname', player.nickname);
+        localStorage.setItem('tickets', String(player.tickets));
         toast({
-          title: 'Successfully joined game',
-          description: 'Welcome to the bingo session!',
+          title: 'Login successful',
+          description: `Welcome ${player.nickname}, you have ${player.tickets} ticket(s)!`,
         });
-        
-        // Navigate to the player game page
         navigate('/player/game');
       } else {
         toast({
-          title: 'Failed to join game',
-          description: 'Player code already in use or invalid. Please check and try again.',
+          title: 'Invalid code',
+          description: 'No player found with this code. Please check and try again.',
           variant: 'destructive'
         });
       }
     } catch (err) {
       toast({
         title: 'Error',
-        description: 'Failed to join the game. Please try again.',
+        description: 'Failed to login. Please try again.',
         variant: 'destructive'
       });
     } finally {
@@ -58,7 +55,7 @@ export default function PlayerJoinForm() {
           Join Bingo Game
         </CardTitle>
         <CardDescription>
-          Enter your unique 6-character player code and your nickname
+          Enter your unique 6-character player code to log in.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -78,28 +75,17 @@ export default function PlayerJoinForm() {
               title="6 alphanumeric characters, uppercase only"
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="nickname">Your Nickname</Label>
-            <Input 
-              id="nickname" 
-              type="text" 
-              value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
-              required
-              placeholder="Enter your nickname"
-            />
-          </div>
+          <CardFooter>
+            <Button 
+              className="w-full bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
+              type="submit"
+              disabled={isJoining}
+            >
+              {isJoining ? 'Joining...' : 'Join Game'}
+            </Button>
+          </CardFooter>
         </form>
       </CardContent>
-      <CardFooter>
-        <Button 
-          className="w-full bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-          onClick={handleSubmit}
-          disabled={isJoining}
-        >
-          {isJoining ? 'Joining...' : 'Join Game'}
-        </Button>
-      </CardFooter>
     </Card>
   );
 }

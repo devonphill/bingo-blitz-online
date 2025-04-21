@@ -110,25 +110,31 @@ export type Database = {
       }
       players: {
         Row: {
+          email: string | null
           id: string
           joined_at: string
           nickname: string
           player_code: string
           session_id: string
+          tickets: number
         }
         Insert: {
+          email?: string | null
           id?: string
           joined_at?: string
           nickname: string
           player_code: string
           session_id: string
+          tickets?: number
         }
         Update: {
+          email?: string | null
           id?: string
           joined_at?: string
           nickname?: string
           player_code?: string
           session_id?: string
+          tickets?: number
         }
         Relationships: [
           {
