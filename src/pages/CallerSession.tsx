@@ -32,8 +32,11 @@ export default function CallerSession() {
     currentClaim,
     setShowClaimModal,
     setCurrentClaim,
-    verifyPendingClaims
+    verifyPendingClaims,
+    checkForClaims
   } = useClaimManagement(sessionId);
+
+  console.log("CallerSession render - showClaimModal:", showClaimModal);
 
   const {
     winPatterns,
@@ -235,8 +238,6 @@ export default function CallerSession() {
         setCurrentNumber(number);
         setCalledNumbers(prev => [...prev, number]);
         setRemainingNumbers(prev => prev.filter(n => n !== number));
-        
-        // Remove the toast notification for each called number
       } catch (err) {
         console.error("Exception saving called number:", err);
         toast({
@@ -249,6 +250,7 @@ export default function CallerSession() {
   };
 
   const handleValidClaim = async () => {
+    console.log("handleValidClaim called");
     if (!currentClaim || !session) return;
 
     try {
@@ -287,6 +289,7 @@ export default function CallerSession() {
   };
 
   const handleFalseClaim = async () => {
+    console.log("handleFalseClaim called");
     if (!currentClaim) return;
 
     try {
@@ -364,8 +367,8 @@ export default function CallerSession() {
   return (
     <div className="min-h-screen bg-gray-50">
       <GameHeader 
-        sessionName={session.name} 
-        accessCode={session.accessCode} 
+        sessionName={session?.name || ''} 
+        accessCode={session?.accessCode || ''} 
         autoMarking={autoMarking} 
         setAutoMarking={setAutoMarking} 
       />
@@ -380,16 +383,21 @@ export default function CallerSession() {
           currentNumber={currentNumber}
           sessionPlayers={sessionPlayers}
           handleCallNumber={handleCallNumber}
-          verifyPendingClaims={verifyPendingClaims}
+          verifyPendingClaims={checkForClaims}
           handleEndGame={handleEndGame}
           handleGoLive={handleGoLive}
           remainingNumbers={remainingNumbers}
-          sessionId={sessionId}
+          sessionId={sessionId || ''}
         />
       </main>
+      
+      {/* Explicitly render ClaimVerificationModal */}
       <ClaimVerificationModal
         isOpen={showClaimModal}
-        onClose={() => setShowClaimModal(false)}
+        onClose={() => {
+          console.log("Modal close callback called");
+          setShowClaimModal(false);
+        }}
         playerName={currentClaim?.playerName || ''}
         tickets={currentClaim?.tickets || []}
         calledNumbers={calledNumbers}

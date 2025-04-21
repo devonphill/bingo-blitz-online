@@ -42,6 +42,8 @@ export default function ClaimVerificationModal({
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [actionType, setActionType] = useState<'valid' | 'false' | null>(null);
   
+  console.log("ClaimVerificationModal rendered with isOpen:", isOpen, "playerName:", playerName);
+  
   // Recalculate claim validity and rank tickets when props change
   useEffect(() => {
     if (!tickets || tickets.length === 0) return;
@@ -72,16 +74,19 @@ export default function ClaimVerificationModal({
   }, [tickets, calledNumbers]);
 
   const handleValidClaim = () => {
+    console.log("Valid claim button clicked");
     setActionType('valid');
     setConfirmDialogOpen(true);
   };
 
   const handleFalseClaim = () => {
+    console.log("False claim button clicked");
     setActionType('false');
     setConfirmDialogOpen(true);
   };
 
   const confirmAction = () => {
+    console.log("Confirming action:", actionType);
     setConfirmDialogOpen(false);
     if (actionType === 'valid') {
       onValidClaim();
@@ -90,11 +95,12 @@ export default function ClaimVerificationModal({
     }
   };
 
-  console.log("ClaimVerificationModal render state:", { isOpen, playerName, ticketsCount: tickets?.length });
-
   return (
     <>
-      <Dialog open={isOpen} onOpenChange={onClose}>
+      <Dialog open={isOpen} onOpenChange={(open) => {
+        console.log("Dialog onOpenChange called with:", open);
+        if (!open) onClose();
+      }}>
         <DialogContent className="max-w-3xl max-h-[80vh]">
           <DialogHeader>
             <DialogTitle className={`text-2xl font-bold ${isClaimValid ? 'text-green-600' : 'text-red-600'}`}>

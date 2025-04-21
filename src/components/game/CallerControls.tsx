@@ -51,7 +51,7 @@ export default function CallerControls({
   };
 
   const handleVerifyClaim = () => {
-    console.log("Verify claim button clicked");
+    console.log("Verify claim button clicked - calling onVerifyClaim");
     onVerifyClaim();
   };
 

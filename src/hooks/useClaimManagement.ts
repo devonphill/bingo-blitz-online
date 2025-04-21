@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -12,10 +12,13 @@ export function useClaimManagement(sessionId: string | undefined) {
   } | null>(null);
   const { toast } = useToast();
 
-  const verifyPendingClaims = async () => {
-    if (!sessionId) return;
+  const verifyPendingClaims = useCallback(async () => {
+    if (!sessionId) {
+      console.log("No session ID provided to verifyPendingClaims");
+      return;
+    }
     
-    console.log("Checking for pending claims...");
+    console.log("Checking for pending claims... for session:", sessionId);
 
     try {
       const { data, error } = await supabase
@@ -37,10 +40,15 @@ export function useClaimManagement(sessionId: string | undefined) {
 
       if (!data || data.length === 0) {
         console.log("No pending claims found");
-        toast({
-          title: "No Claims",
-          description: "There are no pending claims to verify.",
+        
+        // Directly open empty modal even without claims
+        console.log("No pending claims, but opening modal anyway...");
+        setCurrentClaim({
+          playerName: "No pending claims",
+          playerId: "",
+          tickets: []
         });
+        setShowClaimModal(true);
         return;
       }
 
@@ -89,7 +97,7 @@ export function useClaimManagement(sessionId: string | undefined) {
       });
       
       // Explicitly open the modal and force to true
-      console.log("Opening claim modal");
+      console.log("Opening claim modal NOW!");
       setShowClaimModal(true);
     } catch (error) {
       console.error("Error in verifyPendingClaims:", error);
@@ -99,13 +107,19 @@ export function useClaimManagement(sessionId: string | undefined) {
         variant: "destructive"
       });
     }
-  };
+  }, [sessionId, toast]);
+
+  const checkForClaims = useCallback(() => {
+    console.log("Manual claim check button pressed!");
+    verifyPendingClaims();
+  }, [verifyPendingClaims]);
 
   return {
     showClaimModal,
     setShowClaimModal,
     currentClaim,
     setCurrentClaim,
-    verifyPendingClaims
+    verifyPendingClaims,
+    checkForClaims
   };
 }
