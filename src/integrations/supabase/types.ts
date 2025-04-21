@@ -268,6 +268,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      assign_ticket_to_player: {
+        Args: {
+          p_player_id: string
+          p_session_id: string
+          p_serial: string
+          p_perm: number
+          p_position: number
+          p_layout_mask: number
+          p_numbers: number[]
+        }
+        Returns: string
+      }
       get_available_bingo_tickets: {
         Args: { p_count: number }
         Returns: {

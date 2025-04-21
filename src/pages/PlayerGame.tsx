@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { useSession } from '@/contexts/SessionContext';
@@ -6,14 +5,6 @@ import BingoCard from '@/components/game/BingoCard';
 import CalledNumbers from '@/components/game/CalledNumbers';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
 interface BingoTicket {
   serial: string;
@@ -246,7 +237,7 @@ export default function PlayerGame() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
           <div>
             <h1 className="text-xl font-bold text-bingo-primary">Bingo Blitz</h1>
-            <div className="text-sm text-gray-500">Game: {currentSession.name}</div>
+            <div className="text-sm text-gray-500">Game: {currentSession?.name}</div>
           </div>
           {playerCode && (
             <div className="bg-gray-100 px-3 py-1 rounded-full text-sm">

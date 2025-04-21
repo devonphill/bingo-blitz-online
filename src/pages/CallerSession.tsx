@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -161,7 +160,7 @@ export default function CallerSession() {
     const { data: allAssignedTickets, error: ticketsErr } = await supabase
       .from('assigned_tickets')
       .select(`
-        id, serial, perm, position, 
+        id, serial, perm, position, layout_mask, 
         players:player_id(id, player_code, nickname)
       `)
       .eq('session_id', sessionId)
@@ -189,7 +188,9 @@ export default function CallerSession() {
           id: ticket.id,
           serial: ticket.serial,
           perm: ticket.perm,
-          position: ticket.position
+          position: ticket.position,
+          layoutMask: ticket.layout_mask,
+          numbers: ticket.numbers
         });
       });
       

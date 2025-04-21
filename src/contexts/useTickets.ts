@@ -116,7 +116,7 @@ export function useTickets() {
     }
   };
 
-  // Assign tickets to player
+  // Assign tickets to player using our secure database function
   const assignTicketsToPlayer = async (playerId: string, sessionId: string, ticketCount: number): Promise<boolean> => {
     try {
       console.log(`Assigning ${ticketCount} tickets to player ${playerId} in session ${sessionId}`);
@@ -157,22 +157,22 @@ export function useTickets() {
 
       console.log(`Found ${availableTickets.length} tickets to assign`);
 
-      // Insert tickets into assigned_tickets table
+      // Use the new assign_ticket_to_player function for each ticket
       for (const ticket of availableTickets) {
-        const { error: insertError } = await supabase
-          .from('assigned_tickets')
-          .insert({
-            player_id: playerId,
-            session_id: sessionId,
-            serial: ticket.serial,
-            perm: ticket.perm,
-            position: ticket.position,
-            layout_mask: ticket.layout_mask,
-            numbers: ticket.numbers
-          });
+        const { data, error } = await supabase.rpc('assign_ticket_to_player', {
+          p_player_id: playerId,
+          p_session_id: sessionId,
+          p_serial: ticket.serial,
+          p_perm: ticket.perm,
+          p_position: ticket.position,
+          p_layout_mask: ticket.layout_mask,
+          p_numbers: ticket.numbers
+        });
 
-        if (insertError) {
-          console.error(`Error inserting ticket ${ticket.serial}:`, insertError);
+        if (error) {
+          console.error(`Error assigning ticket ${ticket.serial}:`, error);
+        } else {
+          console.log(`Successfully assigned ticket ${ticket.serial}, ID: ${data}`);
         }
       }
 
@@ -186,6 +186,7 @@ export function useTickets() {
   // Fetch tickets assigned to a player
   const getPlayerAssignedTickets = async (playerId: string, sessionId: string): Promise<AssignedTicket[]> => {
     try {
+      console.log(`Fetching tickets for player ${playerId} in session ${sessionId}`);
       const { data, error } = await supabase
         .from('assigned_tickets')
         .select('*')
@@ -198,6 +199,8 @@ export function useTickets() {
         return [];
       }
 
+      console.log(`Found ${data?.length || 0} tickets for player`);
+      
       // Convert the response to our expected AssignedTicket type
       return Array.isArray(data)
         ? data.map((t) => ({
@@ -209,7 +212,7 @@ export function useTickets() {
             position: t.position,
             layout_mask: t.layout_mask,
             numbers: t.numbers,
-            created_at: t.time_stamp // Fix the property name mismatch here
+            created_at: t.time_stamp
           }))
         : [];
     } catch (error) {
