@@ -24,7 +24,7 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold text-bingo-primary">Bingo Blitz</h1>
           <div className="flex items-center space-x-4">
             <div className="text-sm text-gray-600">
-              Welcome, <span className="font-semibold">{user?.username}</span>
+              Welcome, <span className="font-semibold">{user?.email}</span>
             </div>
             <Button variant="outline" size="sm" onClick={handleLogout}>
               Logout
