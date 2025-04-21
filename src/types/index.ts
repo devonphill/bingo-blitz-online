@@ -1,4 +1,3 @@
-
 export type UserRole = 'superuser' | 'subuser';
 
 export interface User {
@@ -24,7 +23,9 @@ export interface Player {
   sessionId: string;
   nickname: string;
   joinedAt: string;
-  playerCode: string;  // Added playerCode property
+  playerCode: string;
+  email?: string;
+  tickets: number;
 }
 
 export interface BingoCell {
@@ -43,4 +44,3 @@ export interface BingoCaller {
   calledNumbers: number[];
   currentNumber: number | null;
 }
-

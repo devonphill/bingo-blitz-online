@@ -13,6 +13,7 @@ interface SessionContextType {
   setCurrentSession: (sessionId: string | null) => void;
   getSessionByCode: (code: string) => GameSession | null;
   bulkAddPlayers: (sessionId: string, players: AdminTempPlayer[]) => Promise<{ success: boolean, message?: string }>;
+  addPlayer: (sessionId: string, playerCode: string, nickname: string) => Promise<boolean>;
 }
 type AdminTempPlayer = {
   playerCode: string;
@@ -58,7 +59,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         nickname: data.nickname,
         joinedAt: data.joined_at,
         playerCode: data.player_code,
-        // @ts-ignore, add email/tickets if present
+        // Add email and tickets properties to player
         email: data.email,
         tickets: data.tickets
       }
@@ -76,6 +77,28 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const getSessionByCode = (code: string): GameSession | null => {
     return sessions.find(s => s.accessCode === code) || null;
+  };
+
+  // Add a single player
+  const addPlayer = async (sessionId: string, playerCode: string, nickname: string): Promise<boolean> => {
+    try {
+      const { data, error } = await supabase.from('players').insert({
+        player_code: playerCode.toUpperCase(),
+        nickname,
+        session_id: sessionId,
+        joined_at: new Date().toISOString(),
+        tickets: 1
+      });
+      
+      if (error) {
+        console.error("Add player error:", error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error("Add player exception:", err);
+      return false;
+    }
   };
 
   // Bulk add players with generated codes (and send email)
@@ -113,7 +136,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         joinSession,
         setCurrentSession,
         getSessionByCode,
-        bulkAddPlayers
+        bulkAddPlayers,
+        addPlayer
       }}
     >
       {children}

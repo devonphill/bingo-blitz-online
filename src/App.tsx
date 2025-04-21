@@ -15,6 +15,7 @@ import PlayerGame from "./pages/PlayerGame";
 import NotFound from "./pages/NotFound";
 import AdminDashboard from "./pages/AdminDashboard";
 import RegisterSuperuser from "./pages/RegisterSuperuser";
+import AddPlayers from "./pages/AddPlayers";
 
 const queryClient = new QueryClient();
 
@@ -66,6 +67,11 @@ const App = () => (
               <Route path="/caller/session/:sessionId" element={
                 <ProtectedRoute>
                   <CallerSession />
+                </ProtectedRoute>
+              } />
+              <Route path="/add-players/:sessionId" element={
+                <ProtectedRoute>
+                  <AddPlayers />
                 </ProtectedRoute>
               } />
               

@@ -1,10 +1,10 @@
 
 import React from 'react';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { GameSession } from '@/types';
 import { useNavigate } from 'react-router-dom';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { GameSession } from '@/types';
+import { format } from 'date-fns';
 
 interface SessionCardProps {
   session: GameSession;
@@ -13,54 +13,48 @@ interface SessionCardProps {
 export default function SessionCard({ session }: SessionCardProps) {
   const navigate = useNavigate();
   
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-      case 'active': return 'bg-green-100 text-green-800 border-green-300';
-      case 'completed': return 'bg-gray-100 text-gray-800 border-gray-300';
-      default: return 'bg-blue-100 text-blue-800 border-blue-300';
-    }
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleString();
-  };
-
-  const handleManageSession = () => {
+  const handleStartCalling = () => {
     navigate(`/caller/session/${session.id}`);
+  };
+  
+  const handleAddPlayers = () => {
+    navigate(`/add-players/${session.id}`);
   };
 
   return (
-    <Card className="overflow-hidden transition-all hover:shadow-md">
+    <Card className="animate-fade-in">
       <CardHeader className="pb-2">
-        <CardTitle className="text-xl font-bold flex justify-between items-center">
-          {session.name}
-          <Badge className={getStatusColor(session.status)}>
-            {session.status.charAt(0).toUpperCase() + session.status.slice(1)}
-          </Badge>
-        </CardTitle>
+        <CardTitle className="text-xl">{session.name}</CardTitle>
+        <CardDescription>
+          Access Code: <span className="font-mono font-bold">{session.accessCode}</span>
+        </CardDescription>
       </CardHeader>
-      <CardContent className="pb-2">
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <div className="font-medium">Game Type:</div>
-          <div>{session.gameType}</div>
-          
-          <div className="font-medium">Access Code:</div>
-          <div className="font-mono bg-gray-100 px-2 py-1 rounded-md text-center">
-            {session.accessCode}
-          </div>
-          
-          <div className="font-medium">Created:</div>
-          <div>{formatDate(session.createdAt)}</div>
+      <CardContent className="space-y-2">
+        <div className="text-sm text-gray-500">
+          Game Type: <span className="font-medium text-gray-700">{session.gameType}</span>
+        </div>
+        <div className="text-sm text-gray-500">
+          Created: <span className="font-medium text-gray-700">
+            {format(new Date(session.createdAt), 'PPP')}
+          </span>
+        </div>
+        <div className="text-sm text-gray-500">
+          Status: <span className="font-medium text-gray-700 capitalize">{session.status}</span>
         </div>
       </CardContent>
-      <CardFooter>
+      <CardFooter className="pt-2 gap-2 flex-col sm:flex-row">
         <Button 
           className="w-full bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-          onClick={handleManageSession}
+          onClick={handleStartCalling}
         >
-          {session.status === 'pending' ? 'Start Game' : 'Manage Game'}
+          Start Calling
+        </Button>
+        <Button 
+          className="w-full" 
+          variant="outline"
+          onClick={handleAddPlayers}
+        >
+          Add Players
         </Button>
       </CardFooter>
     </Card>
