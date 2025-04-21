@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Loader } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import CurrentNumberDisplay from "./CurrentNumberDisplay";
 
 interface PlayerGameLayoutProps {
   tickets: any[];
@@ -32,7 +33,9 @@ export default function PlayerGameLayout({
   onClaimBingo,
   errorMessage,
   isLoading,
-  children
+  children,
+  currentNumber,
+  calledNumbers
 }: PlayerGameLayoutProps) {
   const [isClaimValidating, setIsClaimValidating] = useState(false);
   const { toast } = useToast();
@@ -189,6 +192,17 @@ export default function PlayerGameLayout({
               )}
             </div>
           )}
+        </div>
+        
+        {/* Fixed Call Number Display at bottom */}
+        <div className="bg-black text-white p-4 border-t border-gray-700 sticky bottom-0">
+          <h2 className="text-lg font-semibold mb-2 text-center">Current Number</h2>
+          <div className="flex justify-center">
+            <CurrentNumberDisplay number={currentNumber} sizePx={80} />
+          </div>
+          <div className="text-xs text-gray-400 mt-2 text-center">
+            {calledNumbers.length} numbers called
+          </div>
         </div>
       </div>
       <div className="flex-1 bg-gray-50 h-full overflow-y-auto">

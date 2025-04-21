@@ -3,12 +3,9 @@ import React, { useState } from 'react';
 import { AlertCircle, CheckCircle2, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import BingoCardGrid from './BingoCardGrid';
 import CalledNumbers from './CalledNumbers';
 import PlayerGameLayout from './PlayerGameLayout';
-import CurrentNumberDisplay from './CurrentNumberDisplay';
 import PlayerGameLoader from './PlayerGameLoader';
-import BingoWinProgress from './BingoWinProgress';
 import PlayerTicketsPanel from './PlayerTicketsPanel';
 
 interface PlayerGameContentProps {
@@ -59,11 +56,11 @@ export default function PlayerGameContent({
       if (!success) {
         setIsClaimingBingo(false);
       }
-      return success; // Return the success value to match the expected return type
+      return success;
     } catch (err) {
       console.error("Error claiming bingo:", err);
       setIsClaimingBingo(false);
-      return false; // Return false in case of error to match the expected return type
+      return false;
     }
   };
 
@@ -105,10 +102,29 @@ export default function PlayerGameContent({
           </Alert>
         )}
         
-        <CurrentNumberDisplay number={currentNumber} />
+        {showWinResults && (
+          <Alert 
+            variant={claimStatus === 'validated' ? "default" : "destructive"}
+            className={claimStatus === 'validated' ? "bg-green-50 border-green-200" : ""}
+          >
+            {claimStatus === 'validated' ? (
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+            ) : (
+              <AlertCircle className="h-4 w-4" />
+            )}
+            <AlertTitle>
+              {claimStatus === 'validated' ? 'Win Verified!' : 'Claim Rejected'}
+            </AlertTitle>
+            <AlertDescription>
+              {claimStatus === 'validated' 
+                ? 'Your win has been verified by the caller.' 
+                : 'Your claim was not verified. Please continue playing.'}
+            </AlertDescription>
+          </Alert>
+        )}
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="md:col-span-2">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <div className="lg:col-span-3">
             <PlayerTicketsPanel
               tickets={tickets}
               calledNumbers={calledNumbers}
@@ -124,7 +140,7 @@ export default function PlayerGameContent({
               {activeWinPatterns.map(pattern => (
                 <div key={pattern} className="mb-2 last:mb-0">
                   <div className="flex justify-between items-center">
-                    <span className="font-medium capitalize">
+                    <span className={`font-medium capitalize ${pattern === currentWinPattern ? 'text-green-600 font-bold' : ''}`}>
                       {pattern === 'oneLine' ? '1 Line' : 
                        pattern === 'twoLines' ? '2 Lines' : 
                        'Full House'}
@@ -133,58 +149,14 @@ export default function PlayerGameContent({
                       {winPrizes[pattern] || 'Prize TBD'}
                     </span>
                   </div>
-                  {tickets[0]?.layoutMask && (
-                    <BingoWinProgress 
-                      numbers={tickets[0].numbers}
-                      layoutMask={tickets[0].layoutMask}
-                      calledNumbers={calledNumbers}
-                      activeWinPatterns={[pattern]}
-                    />
-                  )}
                 </div>
               ))}
-            </div>
-            
-            <div className="text-center">
-              {showWinResults ? (
-                <Alert 
-                  variant={claimStatus === 'validated' ? "default" : "destructive"}
-                  className={claimStatus === 'validated' ? "bg-green-50 border-green-200" : ""}
-                >
-                  {claimStatus === 'validated' ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-600" />
-                  ) : (
-                    <AlertCircle className="h-4 w-4" />
-                  )}
-                  <AlertTitle>
-                    {claimStatus === 'validated' ? 'Win Verified!' : 'Claim Rejected'}
-                  </AlertTitle>
-                  <AlertDescription>
-                    {claimStatus === 'validated' 
-                      ? 'Your win has been verified by the caller.' 
-                      : 'Your claim was not verified. Please continue playing.'}
-                  </AlertDescription>
-                </Alert>
-              ) : (
-                <Button 
-                  className="w-full py-6 text-xl bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary transition-all"
-                  disabled={isClaimingBingo}
-                  onClick={handleClaimBingo}
-                >
-                  {isClaimingBingo ? (
-                    <>
-                      <Clock className="mr-2 h-4 w-4 animate-spin" />
-                      Validating Claim...
-                    </>
-                  ) : 'CLAIM NOW!'}
-                </Button>
-              )}
             </div>
             
             <div className="rounded-lg overflow-hidden shadow">
               <CalledNumbers 
                 calledNumbers={calledNumbers}
-                currentNumber={currentNumber}
+                currentNumber={null} // Remove current number display since it's now fixed at bottom
               />
             </div>
           </div>

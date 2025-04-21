@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,12 +33,10 @@ export default function CallerControls({
   const [pendingClaims, setPendingClaims] = useState(0);
   const { toast } = useToast();
 
-  // Update from props or check directly
   useEffect(() => {
     setPendingClaims(claimCount);
   }, [claimCount]);
 
-  // Check for pending claims
   useEffect(() => {
     if (!sessionId) return;
 
@@ -59,10 +56,8 @@ export default function CallerControls({
       }
     };
     
-    // Initial check
     checkPendingClaims();
     
-    // Set up realtime listener
     const claimsChannel = supabase
       .channel('caller-claims-counter')
       .on(
@@ -96,7 +91,6 @@ export default function CallerControls({
 
     setIsCallingNumber(true);
     
-    // Simulate a delay to show the number being called
     setTimeout(() => {
       const randomIndex = Math.floor(Math.random() * remainingNumbers.length);
       const number = remainingNumbers[randomIndex];
@@ -118,7 +112,6 @@ export default function CallerControls({
 
     setIsGoingLive(true);
     try {
-      // Update session status
       const { error: sessionError } = await supabase
         .from('game_sessions')
         .update({ status: 'active' })

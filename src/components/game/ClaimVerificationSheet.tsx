@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Check, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -48,7 +47,6 @@ export default function ClaimVerificationSheet({
   
   console.log("ClaimVerificationSheet rendered with isOpen:", isOpen, "playerName:", playerName);
   
-  // Debug use useEffect to log when isOpen changes
   useEffect(() => {
     console.log("ClaimVerificationSheet isOpen changed to:", isOpen);
     
@@ -59,13 +57,12 @@ export default function ClaimVerificationSheet({
     }
   }, [isOpen, playerName, tickets, currentWinPattern]);
   
-  // Recalculate claim validity and rank tickets when props change
   useEffect(() => {
     if (!tickets || tickets.length === 0) return;
     
     console.log("Calculating ticket scores with called numbers:", calledNumbers.length);
+    console.log("Validating against current win pattern:", currentWinPattern);
     
-    // Calculate score for each ticket (number of matched called numbers)
     const ticketsWithScore = tickets.map(ticket => {
       const matchedNumbers = ticket.numbers.filter(num => calledNumbers.includes(num));
       return { 
@@ -75,27 +72,20 @@ export default function ClaimVerificationSheet({
       };
     });
     
-    // Sort tickets by score (highest first)
     const sortedTickets = [...ticketsWithScore].sort((a, b) => b.score - a.score);
     setRankedTickets(sortedTickets);
     
-    // Array to collect valid tickets
     const validTicketsFound: any[] = [];
     
-    // Check claim validity based on the current win pattern
     let valid = false;
     
-    // Convert each ticket to check against the current win pattern
     if (currentWinPattern === "oneLine") {
-      // For one line, we need to check if any row is complete
       sortedTickets.forEach(ticket => {
-        // Use layoutMask consistently
         const layoutMask = ticket.layoutMask || 0;
         const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
         const rows: number[][] = [[], [], []];
         let numIndex = 0;
         
-        // Reconstruct the ticket rows
         for (let i = 0; i < 27; i++) {
           const row = Math.floor(i / 9);
           if (maskBits[i] === '1') {
@@ -104,7 +94,6 @@ export default function ClaimVerificationSheet({
           }
         }
         
-        // Check if any row is complete
         const isValid = rows.some(row => 
           row.length > 0 && row.every(num => calledNumbers.includes(num))
         );
@@ -115,15 +104,12 @@ export default function ClaimVerificationSheet({
         }
       });
     } else if (currentWinPattern === "twoLines") {
-      // For two lines, we need to check if any two rows are complete
       sortedTickets.forEach(ticket => {
-        // Use layoutMask consistently
         const layoutMask = ticket.layoutMask || 0;
         const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
         const rows: number[][] = [[], [], []];
         let numIndex = 0;
         
-        // Reconstruct the ticket rows
         for (let i = 0; i < 27; i++) {
           const row = Math.floor(i / 9);
           if (maskBits[i] === '1') {
@@ -132,7 +118,6 @@ export default function ClaimVerificationSheet({
           }
         }
         
-        // Count complete rows
         const completeRows = rows.filter(row => 
           row.length > 0 && row.every(num => calledNumbers.includes(num))
         ).length;
@@ -142,8 +127,15 @@ export default function ClaimVerificationSheet({
           validTicketsFound.push({...ticket, validPattern: 'twoLines'});
         }
       });
+    } else if (currentWinPattern === "fullHouse") {
+      sortedTickets.forEach(ticket => {
+        const isValid = ticket.numbers.every(number => calledNumbers.includes(number));
+        if (isValid) {
+          valid = true;
+          validTicketsFound.push({...ticket, validPattern: 'fullHouse'});
+        }
+      });
     } else {
-      // For full house or default, check if all numbers in any ticket have been called
       sortedTickets.forEach(ticket => {
         const isValid = ticket.numbers.every(number => calledNumbers.includes(number));
         if (isValid) {
@@ -159,7 +151,6 @@ export default function ClaimVerificationSheet({
     setIsClaimValid(valid);
     setValidTickets(validTicketsFound);
     
-    // If valid tickets are found, prioritize displaying them
     if (validTicketsFound.length > 0) {
       setRankedTickets([...validTicketsFound, ...sortedTickets.filter(
         ticket => !validTicketsFound.some(vt => vt.serial === ticket.serial)

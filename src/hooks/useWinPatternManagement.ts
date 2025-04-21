@@ -15,14 +15,50 @@ export function useWinPatternManagement(sessionId: string | undefined) {
 
   const progressWinPattern = () => {
     if (!currentGameWinPattern) return null;
+    
     const patterns = ["oneLine", "twoLines", "fullHouse"];
     const currentIndex = patterns.indexOf(currentGameWinPattern);
-    const nextPattern = patterns[currentIndex + 1];
     
-    if (nextPattern && winPatterns.includes(nextPattern)) {
+    // Find the next active pattern after the current one
+    let nextPatternIndex = currentIndex + 1;
+    let nextPattern = null;
+    
+    while (nextPatternIndex < patterns.length) {
+      const possibleNextPattern = patterns[nextPatternIndex];
+      if (winPatterns.includes(possibleNextPattern)) {
+        nextPattern = possibleNextPattern;
+        break;
+      }
+      nextPatternIndex++;
+    }
+    
+    if (nextPattern) {
+      console.log(`Progressing from ${currentGameWinPattern} to ${nextPattern}`);
       setCurrentGameWinPattern(nextPattern);
+      
+      // Notify players about win pattern change
+      if (sessionId) {
+        supabase.channel('game-updates').send({
+          type: 'broadcast',
+          event: 'win-pattern-change',
+          payload: {
+            previousPattern: currentGameWinPattern,
+            newPattern: nextPattern,
+            sessionId
+          }
+        });
+        
+        toast({
+          title: "Win Pattern Updated",
+          description: `The win pattern has been updated to ${nextPattern === 'oneLine' ? 'One Line' : 
+            nextPattern === 'twoLines' ? 'Two Lines' : 'Full House'}`,
+        });
+      }
+      
       return nextPattern;
     }
+    
+    console.log("No next pattern available - this was the last pattern");
     return null;
   };
 
@@ -133,7 +169,7 @@ export function useWinPatternManagement(sessionId: string | undefined) {
         console.log("Fetched win patterns:", activePatterns);
         console.log("Fetched win prizes:", prizes);
         
-        // Set current game win pattern to the first active pattern
+        // Set current game win pattern to the first active pattern if not set already
         if (activePatterns.length > 0 && !currentGameWinPattern) {
           setCurrentGameWinPattern(activePatterns[0]);
         }
