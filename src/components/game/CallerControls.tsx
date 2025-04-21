@@ -112,10 +112,7 @@ export default function CallerControls({
           
           <Button 
             variant="outline"
-            onClick={() => {
-              console.log("Verify claim button clicked");
-              onVerifyClaim();
-            }}
+            onClick={onVerifyClaim}
           >
             Verify Claim
           </Button>

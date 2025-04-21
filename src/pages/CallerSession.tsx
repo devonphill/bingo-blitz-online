@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -155,7 +156,7 @@ export default function CallerSession() {
         (payload) => {
           if (payload.new) {
             console.log("New bingo claim received:", payload.new);
-            const claimData = payload.new;
+            
             toast({
               title: "Bingo Claim Received!",
               description: `Player has claimed bingo. Check the claim to verify.`,
@@ -235,10 +236,7 @@ export default function CallerSession() {
         setCalledNumbers(prev => [...prev, number]);
         setRemainingNumbers(prev => prev.filter(n => n !== number));
         
-        toast({
-          title: "Number Called",
-          description: `Called number: ${number}`,
-        });
+        // Remove the toast notification for each called number
       } catch (err) {
         console.error("Exception saving called number:", err);
         toast({
