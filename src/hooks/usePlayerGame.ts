@@ -79,7 +79,6 @@ export function usePlayerGame() {
 
       if (playerData) {
         setPlayerId(playerData.id);
-        // Cast supabase to any for win_patterns call below
         const { data: sessionData, error: sessionError } = await supabase
           .from('game_sessions')
           .select('*')
@@ -168,7 +167,7 @@ export function usePlayerGame() {
 
     const fetchWinPatterns = async () => {
       try {
-        // Cast supabase to any to overcome TS errors on 'win_patterns' table usage
+        // Cast supabase to any to get around missing type info for win_patterns:
         const winPatternsQuery = (supabase as any)
           .from('win_patterns')
           .select('*')
@@ -180,8 +179,8 @@ export function usePlayerGame() {
         if (error || !data) return;
         
         if (data.length > 0) {
-          // Assume the first is latest
-          const latest: WinPatternRow = data[0];
+          // Use the shape from interface WinPatternRow, safely:
+          const latest = data[0] as WinPatternRow;
           const activePatterns: string[] = [];
           const prizes: { [key: string]: string } = {};
 
@@ -247,7 +246,7 @@ export function usePlayerGame() {
     if (!playerId || !currentSession) return;
 
     try {
-      // Cast supabase to any to allow insertion on bingo_claims table (not in typings)
+      // Cast supabase to any to bypass type limitation for bingo_claims
       const insertResult = await (supabase as any)
         .from('bingo_claims')
         .insert({
@@ -297,3 +296,5 @@ export function usePlayerGame() {
   };
 }
 
+// NOTE: This file is getting very long (~300 lines).
+// Consider breaking it up into smaller focused hooks for maintainability.
