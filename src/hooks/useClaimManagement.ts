@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -19,7 +18,6 @@ export function useClaimManagement(sessionId: string | undefined) {
   const [processingClaim, setProcessingClaim] = useState(false);
   const { toast } = useToast();
 
-  // Process the next claim in the queue
   const processNextClaim = useCallback(async () => {
     if (claimQueue.length === 0 || processingClaim || showClaimModal) {
       return;
@@ -29,7 +27,6 @@ export function useClaimManagement(sessionId: string | undefined) {
     const nextClaim = claimQueue[0];
     
     try {
-      // Fetch player's tickets
       const { data: ticketData, error: ticketError } = await supabase
         .from('assigned_tickets')
         .select('*')
@@ -48,7 +45,6 @@ export function useClaimManagement(sessionId: string | undefined) {
 
       console.log(`Processing claim for ${nextClaim.playerName} with ${ticketData?.length || 0} tickets`);
       
-      // Set the claim data and show modal
       setCurrentClaim({
         playerName: nextClaim.playerName,
         playerId: nextClaim.playerId,
@@ -56,22 +52,18 @@ export function useClaimManagement(sessionId: string | undefined) {
         claimId: nextClaim.claimId
       });
       
-      // Remove from queue
       setClaimQueue(prev => prev.slice(1));
       
-      // Open the modal
       console.log("Opening modal for claim verification!");
       setShowClaimModal(true);
     } catch (error) {
       console.error("Error processing next claim:", error);
-      // Skip to next claim on error
       setClaimQueue(prev => prev.slice(1));
     } finally {
       setProcessingClaim(false);
     }
   }, [claimQueue, processingClaim, sessionId, toast, showClaimModal]);
 
-  // When current claim is processed, check for next claim
   useEffect(() => {
     if (!showClaimModal && !currentClaim && claimQueue.length > 0) {
       const timer = setTimeout(() => {
@@ -112,9 +104,7 @@ export function useClaimManagement(sessionId: string | undefined) {
       if (data && data.length > 0) {
         console.log("Found pending claims:", data.length);
         
-        // Process each claim - get player details for each
         for (const claim of data) {
-          // Skip if we're already processing this claim ID
           if (currentClaim?.claimId === claim.id || 
               claimQueue.some(q => q.claimId === claim.id)) {
             console.log(`Claim ${claim.id} already in process or queue`);
@@ -137,8 +127,6 @@ export function useClaimManagement(sessionId: string | undefined) {
             continue;
           }
 
-          // Add to queue
-          console.log(`Adding claim for ${playerData.nickname} to queue`);
           setClaimQueue(prev => [
             ...prev, 
             { 
@@ -161,61 +149,38 @@ export function useClaimManagement(sessionId: string | undefined) {
     }
   }, [sessionId, toast, currentClaim, claimQueue]);
 
-  // Set up an interval to check for pending claims
   useEffect(() => {
     if (!sessionId) return;
     
-    // Initial check
     verifyPendingClaims();
     
-    // Set up interval for periodic checks
     const intervalId = setInterval(() => {
       verifyPendingClaims();
-    }, 5000); // Check every 5 seconds
+    }, 5000);
     
     return () => clearInterval(intervalId);
   }, [sessionId, verifyPendingClaims]);
 
-  // Set up a realtime listener for new claims
   useEffect(() => {
     if (!sessionId) return;
     
-    console.log("Setting up realtime listener for bingo claims in session:", sessionId);
-    
-    const claimsChannel = supabase
-      .channel('bingo-claims-listener')
+    const channel = supabase
+      .channel('caller-claims')
       .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'bingo_claims',
-          filter: `session_id=eq.${sessionId}`
-        },
-        (payload) => {
-          if (payload.new) {
-            console.log("New bingo claim received in realtime:", payload.new);
-            
-            toast({
-              title: "Bingo Claim Received!",
-              description: `Player has claimed bingo. Verifying claim...`,
-              variant: "default"
-            });
-            
-            // Automatically verify the claim and show the modal
-            verifyPendingClaims();
-          }
+        'broadcast',
+        { event: 'bingo-claim' },
+        ({ payload }) => {
+          console.log("Received bingo claim:", payload);
+          verifyPendingClaims();
         }
       )
       .subscribe();
 
     return () => {
-      console.log("Cleaning up bingo claims listener");
-      supabase.removeChannel(claimsChannel);
+      supabase.removeChannel(channel);
     };
-  }, [sessionId, toast, verifyPendingClaims]);
+  }, [sessionId, verifyPendingClaims]);
 
-  // After queue is updated, process the next claim if needed
   useEffect(() => {
     if (!showClaimModal && !currentClaim && claimQueue.length > 0 && !processingClaim) {
       processNextClaim();

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -298,13 +297,6 @@ export default function CallerSession() {
           .from('bingo_claims')
           .update({ status: 'validated' })
           .eq('id', currentClaim.claimId);
-      } else {
-        await supabase
-          .from('bingo_claims')
-          .update({ status: 'validated' })
-          .eq('player_id', currentClaim.playerId)
-          .eq('session_id', sessionId)
-          .eq('status', 'pending');
       }
 
       if (!nextPattern) {
@@ -313,25 +305,24 @@ export default function CallerSession() {
 
       setShowClaimModal(false);
       setCurrentClaim(null);
-      
-      toast({
-        title: "Claim Verified",
-        description: `${currentClaim.playerName}'s claim has been verified as valid.`,
-        variant: "success"
-      });
-      
-      setTimeout(() => {
-        verifyPendingClaims();
-      }, 1000);
-    } catch (error) {
-      console.error("Error processing valid claim:", error);
-      toast({
-        title: "Error",
-        description: "Failed to process claim.",
-        variant: "destructive"
-      });
-    }
-  };
+    
+    toast({
+      title: "Claim Verified",
+      description: `${currentClaim.playerName}'s claim has been verified.`,
+    });
+    
+    setTimeout(() => {
+      verifyPendingClaims();
+    }, 1000);
+  } catch (error) {
+    console.error("Error processing valid claim:", error);
+    toast({
+      title: "Error",
+      description: "Failed to process claim.",
+      variant: "destructive"
+    });
+  }
+};
 
   const handleFalseClaim = async () => {
     console.log("handleFalseClaim called");

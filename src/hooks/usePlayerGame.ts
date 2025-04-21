@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useSession } from '@/contexts/SessionContext';
@@ -260,33 +259,22 @@ export function usePlayerGame() {
     if (!playerId || !currentSession) return;
 
     try {
-      console.log("Submitting claim with player ID:", playerId);
-      console.log("Session ID:", typeof currentSession === 'string' ? currentSession : currentSession.id);
+      const realTimeChannel = supabase.channel('caller-notification');
       
-      // Insert the claim without ticket_data field
-      const { error } = await supabase
-        .from('bingo_claims')
-        .insert({
-          player_id: playerId,
-          session_id: typeof currentSession === 'string' ? currentSession : currentSession.id,
-          claimed_at: new Date().toISOString(),
-          status: 'pending'
-        });
-
-      if (error) {
-        console.error("Claim submission error:", error);
-        toast({
-          title: "Failed to submit claim",
-          description: "There was an error submitting your bingo claim. Please try again.",
-          variant: "destructive"
-        });
-        return;
-      }
-
-      toast({
-        title: "Claim Submitted!",
-        description: "Your claim has been submitted to the caller for verification.",
+      await realTimeChannel.subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await realTimeChannel.send({
+            type: 'broadcast',
+            event: 'bingo-claim',
+            payload: {
+              playerId,
+              playerName: playerCode,
+              sessionId: typeof currentSession === 'string' ? currentSession : currentSession.id
+            }
+          });
+        }
       });
+
     } catch (error) {
       console.error("Claim exception:", error);
       toast({
