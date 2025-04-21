@@ -1,57 +1,35 @@
 
+
 import React, { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { GameSession, GameType, Player } from "@/types";
 import { supabase } from "@/integrations/supabase/client";
-import { SupabaseRpcFunction, AssignedTicketResponse } from "@/integrations/supabase/customTypes";
+import { usePlayers } from "./usePlayers";
+import { useTickets } from "./useTickets";
 
-interface AssignedTicket {
-  id: string;
-  player_id: string;
-  session_id: string;
-  serial: string;
-  perm: number;
-  position: number;
-  layout_mask: number;
-  numbers: number[];
-  created_at: string;
-}
-
-interface TicketData {
-  serial: string;
-  perm: number;
-  position: number;
-  layout_mask: number;
-  numbers: number[];
-}
-
+// Define the context type
 interface SessionContextType {
   sessions: GameSession[];
   currentSession: GameSession | null;
-  players: Player[];
-  joinSession: (playerCode: string) => Promise<{ player: Player | null }>;
   setCurrentSession: (sessionId: string | null) => void;
   getSessionByCode: (code: string) => GameSession | null;
-  bulkAddPlayers: (sessionId: string, players: AdminTempPlayer[]) => Promise<{ success: boolean, message?: string }>;
-  addPlayer: (sessionId: string, playerCode: string, nickname: string) => Promise<boolean>;
   fetchSessions: () => Promise<void>;
-  assignTicketsToPlayer: (playerId: string, sessionId: string, ticketCount: number) => Promise<boolean>;
-  getPlayerAssignedTickets: (playerId: string, sessionId: string) => Promise<AssignedTicket[]>;
+  // Player logic delegated to hook
+  players: Player[];
+  joinSession: ReturnType<typeof usePlayers>["joinSession"];
+  addPlayer: ReturnType<typeof usePlayers>["addPlayer"];
+  bulkAddPlayers: ReturnType<typeof usePlayers>["bulkAddPlayers"];
+  // Ticket logic
+  assignTicketsToPlayer: ReturnType<typeof useTickets>["assignTicketsToPlayer"];
+  getPlayerAssignedTickets: ReturnType<typeof useTickets>["getPlayerAssignedTickets"];
 }
-
-type AdminTempPlayer = {
-  playerCode: string;
-  nickname: string;
-  email: string;
-  tickets: number;
-};
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<GameSession[]>([]);
   const [currentSession, setCurrentSessionState] = useState<GameSession | null>(null);
-  const [players, setPlayers] = useState<Player[]>([]);
 
+  // Session fetch & realtime
   const fetchSessions = async () => {
     const { data, error } = await supabase.from('game_sessions').select('*');
     if (data) {
@@ -88,7 +66,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           new: Record<string, any> | null;
           old: Record<string, any> | null;
         }) => {
-          console.log('Session change received:', payload);
           fetchSessions();
 
           if (currentSession && payload.new && currentSession.id === payload.new.id) {
@@ -114,41 +91,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
   }, [currentSession]);
 
-  const generateAccessCode = (): string => {
-    return Math.floor(100000 + Math.random() * 900000).toString();
-  };
-
-  const joinSession = async (playerCode: string): Promise<{ player: Player | null }> => {
-    const { data, error } = await supabase.from('players').select('*').eq('player_code', playerCode).maybeSingle();
-    if (error || !data) return { player: null };
-    
-    const player = {
-      id: data.id,
-      sessionId: data.session_id,
-      nickname: data.nickname,
-      joinedAt: data.joined_at,
-      playerCode: data.player_code,
-      email: data.email,
-      tickets: data.tickets
-    };
-    
-    const { data: existingTickets, error: checkError } = await supabase
-      .rpc("get_player_assigned_tickets_count" as SupabaseRpcFunction, { 
-        p_player_id: player.id, 
-        p_session_id: player.sessionId 
-      });
-      
-    if (checkError) {
-      console.error("Error checking assigned tickets:", checkError);
-    }
-    
-    const ticketsCount = typeof existingTickets === 'number' ? existingTickets : 0;
-    if (ticketsCount === 0) {
-      await assignTicketsToPlayer(player.id, player.sessionId, player.tickets);
-    }
-    
-    return { player };
-  };
+  // Tickets and Players hooks (delegated)
+  const ticketHook = useTickets();
+  const playerHook = usePlayers(
+    sessions, fetchSessions, ticketHook.assignTicketsToPlayer
+  );
 
   const setCurrentSession = (sessionId: string | null) => {
     if (!sessionId) {
@@ -163,213 +110,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return sessions.find(s => s.accessCode === code) || null;
   };
 
-  const addPlayer = async (sessionId: string, playerCode: string, nickname: string): Promise<boolean> => {
-    try {
-      const { error } = await supabase.from('players').insert({
-        player_code: playerCode.toUpperCase(),
-        nickname,
-        session_id: sessionId,
-        joined_at: new Date().toISOString(),
-        tickets: 1
-      });
-      
-      if (error) {
-        console.error("Add player error:", error);
-        return false;
-      }
-      return true;
-    } catch (err) {
-      console.error("Add player exception:", err);
-      return false;
-    }
-  };
-
-  const bulkAddPlayers = async (
-    sessionId: string,
-    newPlayers: AdminTempPlayer[],
-  ): Promise<{ success: boolean; message?: string }> => {
-    const { error } = await supabase.from('players').insert(
-      newPlayers.map(p => ({
-        player_code: p.playerCode,
-        nickname: p.nickname,
-        email: p.email,
-        tickets: p.tickets,
-        session_id: sessionId,
-        joined_at: new Date().toISOString()
-      }))
-    );
-
-    if (error) {
-      console.error("Bulk add error:", error);
-      return { success: false, message: error.message };
-    }
-    
-    return { success: true };
-  };
-
-  const getAvailableTickets = async (sessionId: string, count: number): Promise<TicketData[]> => {
-    try {
-      const { data: assignedTicketsData, error: assignedError } = await supabase
-        .rpc("get_assigned_ticket_serials_by_session" as SupabaseRpcFunction, { 
-          p_session_id: sessionId 
-        });
-
-      if (assignedError) {
-        console.error("Error getting assigned tickets:", assignedError);
-        return [];
-      }
-
-      const assignedSerials = new Set(Array.isArray(assignedTicketsData) ? assignedTicketsData : []);
-
-      const { data: availableTickets, error: availableError } = await supabase
-        .from('bingo_tickets')
-        .select('serial, perm, position, layout_mask, numbers')
-        .limit(count * 6);
-
-      if (availableError) {
-        console.error("Error getting available tickets:", availableError);
-        return [];
-      }
-
-      const availableFormattedTickets: TicketData[] = [];
-      
-      if (availableTickets) {
-        for (const ticket of availableTickets) {
-          if (!assignedSerials.has(ticket.serial) && availableFormattedTickets.length < count * 6) {
-            availableFormattedTickets.push({
-              serial: ticket.serial,
-              perm: ticket.perm,
-              position: ticket.position,
-              layout_mask: ticket.layout_mask,
-              numbers: ticket.numbers
-            });
-          }
-        }
-      }
-
-      const ticketsByPerm: Record<number, TicketData[]> = {};
-      
-      for (const ticket of availableFormattedTickets) {
-        if (!ticketsByPerm[ticket.perm]) {
-          ticketsByPerm[ticket.perm] = [];
-        }
-        ticketsByPerm[ticket.perm].push(ticket);
-      }
-      
-      Object.values(ticketsByPerm).forEach(tickets => 
-        tickets.sort((a, b) => a.position - b.position)
-      );
-      
-      const result: TicketData[] = [];
-      const permNumbers = Object.keys(ticketsByPerm).map(Number);
-      
-      for (let i = 0; i < count && i < permNumbers.length; i++) {
-        const perm = ticketsByPerm[permNumbers[i]];
-        if (perm && perm.length === 6) {
-          result.push(...perm);
-        }
-      }
-      
-      return result;
-    } catch (error) {
-      console.error("Exception getting available tickets:", error);
-      return [];
-    }
-  };
-
-  const assignTicketsToPlayer = async (playerId: string, sessionId: string, ticketCount: number): Promise<boolean> => {
-    try {
-      const { data: existingTicketsCount, error: checkError } = await supabase
-        .rpc("get_player_assigned_tickets_count" as SupabaseRpcFunction, { 
-          p_player_id: playerId, 
-          p_session_id: sessionId 
-        });
-
-      if (checkError) {
-        console.error("Error checking tickets count:", checkError);
-        return false;
-      }
-
-      const ticketsCount = typeof existingTicketsCount === 'number' ? existingTicketsCount : 0;
-      if (ticketsCount > 0) {
-        return true;
-      }
-
-      const availableTickets = await getAvailableTickets(sessionId, ticketCount);
-      if (availableTickets.length < ticketCount * 6) {
-        console.error(`Not enough available tickets: ${availableTickets.length} available, ${ticketCount * 6} needed`);
-        return false;
-      }
-      const ticketsToInsert = availableTickets.map(ticket => ({
-        player_id: playerId,
-        session_id: sessionId,
-        serial: ticket.serial,
-        perm: ticket.perm,
-        position: ticket.position,
-        layout_mask: ticket.layout_mask,
-        numbers: ticket.numbers
-      }));
-
-      const { error: insertError } = await supabase
-        .rpc("insert_assigned_tickets" as SupabaseRpcFunction, { tickets: ticketsToInsert });
-
-      if (insertError) {
-        console.error("Error assigning tickets:", insertError);
-        return false;
-      }
-      return true;
-    } catch (error) {
-      console.error("Exception assigning tickets:", error);
-      return false;
-    }
-  };
-
-  const getPlayerAssignedTickets = async (playerId: string, sessionId: string): Promise<AssignedTicket[]> => {
-    try {
-      const { data, error } = await supabase
-        .rpc("get_player_assigned_tickets" as SupabaseRpcFunction, { 
-          p_player_id: playerId, 
-          p_session_id: sessionId 
-        });
-
-      if (error) {
-        console.error("Error getting assigned tickets:", error);
-        return [];
-      }
-
-      return Array.isArray(data)
-        ? data.map((t: AssignedTicketResponse) => ({
-            id: t.id,
-            player_id: t.player_id,
-            session_id: t.session_id,
-            serial: t.serial,
-            perm: t.perm,
-            position: t.position,
-            layout_mask: t.layout_mask,
-            numbers: t.numbers,
-            created_at: t.time_stamp
-          }))
-        : [];
-    } catch (error) {
-      console.error("Exception getting assigned tickets:", error);
-      return [];
-    }
-  };
-
   return (
     <SessionContext.Provider
       value={{
         sessions,
         currentSession,
-        players,
-        joinSession,
         setCurrentSession,
         getSessionByCode,
-        bulkAddPlayers,
-        addPlayer,
         fetchSessions,
-        assignTicketsToPlayer,
-        getPlayerAssignedTickets
+        // Player logic
+        players: playerHook.players,
+        joinSession: playerHook.joinSession,
+        addPlayer: playerHook.addPlayer,
+        bulkAddPlayers: playerHook.bulkAddPlayers,
+        // Ticket logic
+        assignTicketsToPlayer: ticketHook.assignTicketsToPlayer,
+        getPlayerAssignedTickets: ticketHook.getPlayerAssignedTickets,
       }}
     >
       {children}
@@ -384,3 +140,4 @@ export function useSession() {
   }
   return context;
 }
+
