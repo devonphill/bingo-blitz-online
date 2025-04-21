@@ -25,7 +25,7 @@ interface BingoTicket {
 }
 
 export default function PlayerGame() {
-  const { currentSession, sessions, setCurrentSession, getPlayerAssignedTickets } = useSession();
+  const { currentSession, setCurrentSession, getPlayerAssignedTickets } = useSession();
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const [currentNumber, setCurrentNumber] = useState<number | null>(null);
   const [playerCode, setPlayerCode] = useState<string>('');
@@ -41,11 +41,12 @@ export default function PlayerGame() {
     if (storedPlayerCode && !hasCheckedSession) {
       setPlayerCode(storedPlayerCode);
       checkForActiveSession(storedPlayerCode);
+      setHasCheckedSession(true);
     } else if (!storedPlayerCode) {
       setIsLoading(false);
       setHasCheckedSession(true);
     }
-  }, []);
+  }, [hasCheckedSession]);
   
   // Function to check for active session and fetch tickets
   const checkForActiveSession = async (code: string) => {
@@ -92,13 +93,14 @@ export default function PlayerGame() {
             title: "Game is live!",
             description: `You have joined the ${sessionData.name} game session.`,
           });
+        } else {
+          setCurrentSession(null);
         }
       }
     } catch (error) {
       console.error("Error checking for active session:", error);
     } finally {
       setIsLoading(false);
-      setHasCheckedSession(true);
     }
   };
   
@@ -118,28 +120,7 @@ export default function PlayerGame() {
           timestamp: ticket.created_at
         }));
         
-        // Group tickets by perm for display
-        const ticketsByPerm: Record<number, BingoTicket[]> = {};
-        
-        formattedTickets.forEach(ticket => {
-          if (!ticketsByPerm[ticket.perm]) {
-            ticketsByPerm[ticket.perm] = [];
-          }
-          ticketsByPerm[ticket.perm].push(ticket);
-        });
-        
-        // Sort each group by position
-        Object.values(ticketsByPerm).forEach(tickets => 
-          tickets.sort((a, b) => a.position - b.position)
-        );
-        
-        // Flatten back to array
-        let allSortedTickets: BingoTicket[] = [];
-        Object.values(ticketsByPerm).forEach(tickets => {
-          allSortedTickets = [...allSortedTickets, ...tickets];
-        });
-        
-        setTickets(allSortedTickets);
+        setTickets(formattedTickets);
       }
     } catch (error) {
       console.error("Exception fetching tickets:", error);
@@ -148,32 +129,32 @@ export default function PlayerGame() {
 
   // Listen for called numbers from the server
   useEffect(() => {
-    if (currentSession) {
-      // Set up a realtime subscription for called numbers
-      const channel = supabase
-        .channel('called-numbers')
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'called_numbers',
-            filter: `session_id=eq.${currentSession.id}`
-          },
-          (payload) => {
-            console.log('Called number received:', payload);
-            if (payload.new && typeof payload.new.number === 'number') {
-              setCurrentNumber(payload.new.number);
-              setCalledNumbers(prev => [...prev, payload.new.number]);
-            }
+    if (!currentSession) return;
+    
+    // Set up a realtime subscription for called numbers
+    const channel = supabase
+      .channel('called-numbers')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'called_numbers',
+          filter: `session_id=eq.${currentSession.id}`
+        },
+        (payload) => {
+          console.log('Called number received:', payload);
+          if (payload.new && typeof payload.new.number === 'number') {
+            setCurrentNumber(payload.new.number);
+            setCalledNumbers(prev => [...prev, payload.new.number]);
           }
-        )
-        .subscribe();
+        }
+      )
+      .subscribe();
 
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    }
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [currentSession]);
 
   const handleClaimBingo = () => {
@@ -239,7 +220,7 @@ export default function PlayerGame() {
                       {tickets
                         .filter(t => t.perm === perm)
                         .sort((a, b) => a.position - b.position)
-                        .map((ticket, index) => (
+                        .map((ticket) => (
                           <div key={ticket.serial} className="border rounded-lg p-4">
                             <div className="flex justify-between items-center mb-2">
                               <div className="text-sm font-medium">

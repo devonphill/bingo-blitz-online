@@ -142,7 +142,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       console.error("Error checking assigned tickets:", checkError);
     }
     
-    const ticketsCount = existingTickets || 0;
+    const ticketsCount = typeof existingTickets === 'number' ? existingTickets : 0;
     if (ticketsCount === 0) {
       await assignTicketsToPlayer(player.id, player.sessionId, player.tickets);
     }
@@ -221,7 +221,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
 
       // Convert the array result to a Set for efficient lookups
-      const assignedSerials = new Set(assignedTicketsData || []);
+      const assignedSerials = new Set(Array.isArray(assignedTicketsData) ? assignedTicketsData : []);
 
       const { data: availableTickets, error: availableError } = await supabase
         .from('bingo_cards')
@@ -348,7 +348,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         return [];
       }
 
-      return data || [];
+      return Array.isArray(data) ? data : [];
     } catch (error) {
       console.error("Exception getting assigned tickets:", error);
       return [];
