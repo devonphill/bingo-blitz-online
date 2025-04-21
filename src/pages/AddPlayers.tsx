@@ -3,29 +3,81 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import BulkAddPlayersForm from '@/components/player/BulkAddPlayersForm';
+import AddPlayerForm from '@/components/player/AddPlayerForm';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSession } from '@/contexts/SessionContext';
 import { ArrowLeft } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { GameSession } from '@/types';
 
 export default function AddPlayers() {
   const { user } = useAuth();
   const { sessions } = useSession();
   const navigate = useNavigate();
   const { sessionId } = useParams();
-  const [session, setSession] = useState<any>(null);
+  const [session, setSession] = useState<GameSession | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (sessionId && sessions.length > 0) {
-      const foundSession = sessions.find(s => s.id === sessionId);
-      if (foundSession) {
-        setSession(foundSession);
+    async function fetchSessionData() {
+      setLoading(true);
+      
+      // Try to find the session in the context first
+      if (sessionId && sessions.length > 0) {
+        const foundSession = sessions.find(s => s.id === sessionId);
+        if (foundSession) {
+          setSession(foundSession);
+          setLoading(false);
+          return;
+        }
       }
+      
+      // If not found in context or sessions is empty, try to fetch from database
+      if (sessionId) {
+        try {
+          const { data, error } = await supabase
+            .from('game_sessions')
+            .select('*')
+            .eq('id', sessionId)
+            .single();
+            
+          if (data && !error) {
+            const fetchedSession: GameSession = {
+              id: data.id,
+              name: data.name,
+              gameType: data.game_type as GameSession['gameType'],
+              createdBy: data.created_by,
+              accessCode: data.access_code,
+              status: data.status as GameSession['status'],
+              createdAt: data.created_at
+            };
+            setSession(fetchedSession);
+          }
+        } catch (err) {
+          console.error("Error fetching session:", err);
+        }
+      }
+      
+      setLoading(false);
     }
+    
+    fetchSessionData();
   }, [sessionId, sessions]);
 
   if (!user) {
     navigate('/login');
     return null;
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-bingo-primary mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading session data...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -60,9 +112,14 @@ export default function AddPlayers() {
           </h2>
         </div>
         
-        {sessionId && (
-          <BulkAddPlayersForm sessionId={sessionId} />
-        )}
+        <div className="space-y-8">
+          {sessionId && (
+            <>
+              <AddPlayerForm sessionId={sessionId} />
+              <BulkAddPlayersForm sessionId={sessionId} />
+            </>
+          )}
+        </div>
       </main>
     </div>
   );

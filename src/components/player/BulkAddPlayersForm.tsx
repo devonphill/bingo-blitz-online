@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { useSession } from '@/contexts/SessionContext';
+import { supabase } from '@/integrations/supabase/client';
 
 interface TempPlayer {
   playerCode: string;
@@ -24,7 +25,6 @@ function generatePlayerCode(length = 6) {
 }
 
 export default function BulkAddPlayersForm({ sessionId }: { sessionId: string }) {
-  const { bulkAddPlayers } = useSession();
   const { toast } = useToast();
   const [players, setPlayers] = useState<TempPlayer[]>([]);
   const [nickname, setNickname] = useState('');
@@ -67,20 +67,44 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
       return;
     }
     setSaving(true);
-    const res = await bulkAddPlayers(sessionId, players);
-    setSaving(false);
-    if (res.success) {
+    
+    try {
+      // Insert all players directly using supabase client
+      // IMPORTANT: Don't include an explicit ID, and use a UUID for session_id
+      const { error } = await supabase.from('players').insert(
+        players.map(p => ({
+          player_code: p.playerCode,
+          nickname: p.nickname,
+          email: p.email,
+          tickets: p.tickets,
+          session_id: sessionId,
+          joined_at: new Date().toISOString()
+        }))
+      );
+  
+      if (error) {
+        console.error("Bulk add error:", error);
+        toast({
+          title: 'Some players failed',
+          description: error.message || 'There were problems saving some or all players.',
+          variant: 'destructive'
+        });
+      } else {
+        toast({
+          title: 'Players added and emailed!',
+          description: `${players.length} players committed to the database and issued codes.`,
+        });
+        setPlayers([]);
+      }
+    } catch (err) {
+      console.error("Unexpected error:", err);
       toast({
-        title: 'Players added and emailed!',
-        description: `${players.length} players committed to the database and issued codes.`,
-      });
-      setPlayers([]);
-    } else {
-      toast({
-        title: 'Some players failed',
-        description: res.message || 'There were problems saving some or all players.',
+        title: 'Error saving players',
+        description: 'An unexpected error occurred.',
         variant: 'destructive'
       });
+    } finally {
+      setSaving(false);
     }
   };
 

@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { useSession } from '@/contexts/SessionContext';
 import { useToast } from '@/components/ui/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface AddPlayerFormProps {
   sessionId: string;
@@ -16,7 +16,6 @@ export default function AddPlayerForm({ sessionId, onPlayerAdded }: AddPlayerFor
   const [playerCode, setPlayerCode] = useState('');
   const [nickname, setNickname] = useState('');
   const [isAdding, setIsAdding] = useState(false);
-  const { addPlayer } = useSession();
   const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -24,8 +23,23 @@ export default function AddPlayerForm({ sessionId, onPlayerAdded }: AddPlayerFor
     setIsAdding(true);
 
     try {
-      const success = await addPlayer(sessionId, playerCode.toUpperCase(), nickname);
-      if (success) {
+      // Use direct supabase client to avoid context method
+      const { error } = await supabase.from('players').insert({
+        player_code: playerCode.toUpperCase(),
+        nickname,
+        session_id: sessionId,
+        joined_at: new Date().toISOString(),
+        tickets: 1
+      });
+      
+      if (error) {
+        console.error("Add player error:", error);
+        toast({
+          title: 'Failed to add player',
+          description: 'Player code already in use or invalid.',
+          variant: 'destructive'
+        });
+      } else {
         toast({
           title: 'Player Added',
           description: 'Player has been added to the session.',
@@ -33,14 +47,9 @@ export default function AddPlayerForm({ sessionId, onPlayerAdded }: AddPlayerFor
         setPlayerCode('');
         setNickname('');
         if (onPlayerAdded) onPlayerAdded();
-      } else {
-        toast({
-          title: 'Failed to add player',
-          description: 'Player code already in use or invalid.',
-          variant: 'destructive'
-        });
       }
     } catch (err) {
+      console.error("Add player exception:", err);
       toast({
         title: 'Error',
         description: 'Failed to add player, please try again.',
@@ -52,7 +61,7 @@ export default function AddPlayerForm({ sessionId, onPlayerAdded }: AddPlayerFor
   };
 
   return (
-    <Card className="w-full max-w-md mx-auto animate-fade-in my-4">
+    <Card className="w-full max-w-md mx-auto animate-fade-in">
       <CardHeader className="space-y-1 text-center">
         <CardTitle className="text-xl font-bold tracking-tight">
           Add Player
@@ -89,15 +98,13 @@ export default function AddPlayerForm({ sessionId, onPlayerAdded }: AddPlayerFor
               placeholder="Enter nickname"
             />
           </div>
-          <CardFooter>
-            <Button 
-              type="submit"
-              className="w-full bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-              disabled={isAdding}
-            >
-              {isAdding ? 'Adding...' : 'Add Player'}
-            </Button>
-          </CardFooter>
+          <Button 
+            type="submit"
+            className="w-full bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
+            disabled={isAdding}
+          >
+            {isAdding ? 'Adding...' : 'Add Player'}
+          </Button>
         </form>
       </CardContent>
     </Card>
