@@ -1,3 +1,4 @@
+
 import React, { useState } from "react";
 import CurrentNumberDisplay from "@/components/game/CurrentNumberDisplay";
 import CalledNumbers from "@/components/game/CalledNumbers";
@@ -15,6 +16,7 @@ export default function PlayerGameLayout({
   playerCode,
   winPrizes,
   activeWinPatterns,
+  currentWinPattern,
   onClaimBingo,
   errorMessage,
   isLoading,
@@ -100,6 +102,7 @@ export default function PlayerGameLayout({
               calledNumbers={calledNumbers}
               autoMarking={autoMarking}
               activeWinPatterns={activeWinPatterns}
+              currentWinPattern={currentWinPattern}
             />
             <div>
               <div className="bg-white shadow rounded-lg p-6">

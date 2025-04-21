@@ -11,7 +11,6 @@ interface CallerControlsProps {
   onEndGame: () => void;
   onGoLive: () => Promise<void>;
   remainingNumbers: number[];
-  isClaimLightOn?: boolean;
   sessionId: string;
   winPatterns: string[];
 }
@@ -22,7 +21,6 @@ export default function CallerControls({
   onEndGame,
   onGoLive,
   remainingNumbers,
-  isClaimLightOn = false,
   sessionId,
   winPatterns
 }: CallerControlsProps) {
@@ -31,15 +29,6 @@ export default function CallerControls({
   const { toast } = useToast();
 
   const handleCallNumber = () => {
-    if (isClaimLightOn) {
-      toast({
-        title: "Claim Pending",
-        description: "Please verify the current claim before calling the next number.",
-        variant: "destructive"
-      });
-      return;
-    }
-
     if (remainingNumbers.length === 0) {
       toast({
         title: "No more numbers",
@@ -101,11 +90,6 @@ export default function CallerControls({
     }
   };
 
-  const handleVerifyClaim = () => {
-    // Directly call the passed in function to verify claims
-    onVerifyClaim();
-  };
-
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -120,15 +104,18 @@ export default function CallerControls({
         <div className="grid grid-cols-1 gap-3">
           <Button
             className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-            disabled={isCallingNumber || remainingNumbers.length === 0 || isClaimLightOn}
+            disabled={isCallingNumber || remainingNumbers.length === 0}
             onClick={handleCallNumber}
           >
-            {isClaimLightOn ? 'Claim Pending' : (isCallingNumber ? 'Calling...' : 'Call Next Number')}
+            {isCallingNumber ? 'Calling...' : 'Call Next Number'}
           </Button>
           
           <Button 
             variant="outline"
-            onClick={handleVerifyClaim}
+            onClick={() => {
+              console.log("Verify claim button clicked");
+              onVerifyClaim();
+            }}
           >
             Verify Claim
           </Button>

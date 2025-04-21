@@ -11,12 +11,14 @@ export default function BingoWinProgress({
   numbers,
   layoutMask,
   calledNumbers,
-  activeWinPatterns
+  activeWinPatterns,
+  currentWinPattern
 }: {
   numbers: number[],
   layoutMask: number,
   calledNumbers: number[],
-  activeWinPatterns: string[]
+  activeWinPatterns: string[],
+  currentWinPattern?: string | null
 }) {
   // Replicates calcTicketProgress logic
   const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
@@ -38,30 +40,42 @@ export default function BingoWinProgress({
   const completedLines = lineCounts.filter((count, idx) => count === lineNeeded[idx]).length;
 
   const result: { [pattern: string]: number } = {};
-  Object.entries(WIN_PATTERNS).forEach(([key, { lines }]) => {
-    // Only calculate for active win patterns
-    if (!activeWinPatterns.includes(key)) return;
+  
+  // We'll prioritize the current win pattern if provided
+  const patternsToCheck = currentWinPattern 
+    ? [currentWinPattern] 
+    : activeWinPatterns;
+  
+  patternsToCheck.forEach(pattern => {
+    if (!WIN_PATTERNS[pattern]) return;
     
+    const { lines } = WIN_PATTERNS[pattern];
     const linesToGo = Math.max(0, lines - completedLines);
     let minNeeded = Infinity;
+    
     if (linesToGo === 0) {
       minNeeded = 0;
     } else {
-      minNeeded = Math.min(
-        ...rows
-          .map((line, idx) => lineNeeded[idx] - lineCounts[idx])
-          .filter(n => n > 0)
-      );
-      if (minNeeded === Infinity) minNeeded = 0;
+      const incompleteLines = rows
+        .map((line, idx) => lineNeeded[idx] - lineCounts[idx])
+        .filter(n => n > 0);
+        
+      minNeeded = incompleteLines.length > 0 
+        ? Math.min(...incompleteLines) 
+        : 0;
     }
-    result[key] = minNeeded;
+    
+    result[pattern] = minNeeded;
   });
 
-  // Only consider active patterns when calculating minToGo
-  const activePatterns = activeWinPatterns.filter(p => Object.keys(WIN_PATTERNS).includes(p));
-  const minToGo = activePatterns.length > 0 
-    ? Math.min(...activePatterns.map(p => result[p] ?? 15))
-    : 15; // Default high value if no active patterns
+  // Get the value for the current win pattern, or the minimum of all active patterns
+  let minToGo = 15; // Default high value
+  
+  if (currentWinPattern && result[currentWinPattern] !== undefined) {
+    minToGo = result[currentWinPattern];
+  } else if (patternsToCheck.length > 0) {
+    minToGo = Math.min(...patternsToCheck.map(p => result[p] ?? 15));
+  }
   
   return (
     <span className={minToGo <= 3 ? "font-bold text-green-600" : "font-medium text-gray-700"}>

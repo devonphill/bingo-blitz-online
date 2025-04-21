@@ -8,9 +8,16 @@ interface PlayerTicketsPanelProps {
   calledNumbers: number[];
   autoMarking: boolean;
   activeWinPatterns: string[];
+  currentWinPattern?: string | null;
 }
 
-export default function PlayerTicketsPanel({ tickets, calledNumbers, autoMarking, activeWinPatterns }: PlayerTicketsPanelProps) {
+export default function PlayerTicketsPanel({ 
+  tickets, 
+  calledNumbers, 
+  autoMarking, 
+  activeWinPatterns,
+  currentWinPattern
+}: PlayerTicketsPanelProps) {
   if (!tickets || tickets.length === 0) {
     return (
       <div className="bg-white shadow rounded-lg p-6">
@@ -46,8 +53,11 @@ export default function PlayerTicketsPanel({ tickets, calledNumbers, autoMarking
       const lineNeeded = rows.map(line => line.filter(num => num !== null).length);
       const completedLines = lineCounts.filter((count, idx) => count === lineNeeded[idx]).length;
 
+      // If there's a current win pattern, prioritize scoring based on it
+      const patternsToCheck = currentWinPattern ? [currentWinPattern] : activeWinPatterns;
       const result: { [pattern: string]: number } = {};
-      activeWinPatterns.forEach(pattern => {
+      
+      patternsToCheck.forEach(pattern => {
         let lines = 0;
         if (pattern === "oneLine") lines = 1;
         if (pattern === "twoLines") lines = 2;
@@ -68,8 +78,10 @@ export default function PlayerTicketsPanel({ tickets, calledNumbers, autoMarking
         result[pattern] = minNeeded;
       });
 
-      // Get the minimum number needed for any active win pattern
-      const minToGo = Math.min(...activeWinPatterns.map(p => result[p] ?? 15));
+      // Get the minimum number needed for the current win pattern or any active pattern
+      const minToGo = currentWinPattern && result[currentWinPattern] !== undefined
+        ? result[currentWinPattern]
+        : Math.min(...patternsToCheck.map(p => result[p] ?? 15));
       
       return {
         ...ticket,
@@ -79,7 +91,7 @@ export default function PlayerTicketsPanel({ tickets, calledNumbers, autoMarking
 
     // Sort tickets by how close they are to winning (lowest minToGo first)
     return [...ticketsWithProgress].sort((a, b) => a.minToGo - b.minToGo);
-  }, [tickets, calledNumbers, autoMarking, activeWinPatterns]);
+  }, [tickets, calledNumbers, autoMarking, activeWinPatterns, currentWinPattern]);
 
   return (
     <div className="bg-white shadow rounded-lg p-6 mb-6">
@@ -117,6 +129,7 @@ export default function PlayerTicketsPanel({ tickets, calledNumbers, autoMarking
                       layoutMask={ticket.layoutMask}
                       calledNumbers={calledNumbers}
                       activeWinPatterns={activeWinPatterns}
+                      currentWinPattern={currentWinPattern}
                     />
                   </div>
                 </div>

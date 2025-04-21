@@ -10,7 +10,7 @@ interface CalledNumbersProps {
 export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNumbersProps) {
   const [isFlashing, setIsFlashing] = useState(false);
   
-  // Flash effect for current number
+  // Flash effect for current number only
   useEffect(() => {
     if (currentNumber) {
       setIsFlashing(true);

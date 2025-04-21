@@ -36,6 +36,7 @@ export function usePlayerGame() {
   const [hasCheckedSession, setHasCheckedSession] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeWinPatterns, setActiveWinPatterns] = useState<string[]>(["oneLine", "twoLines", "fullHouse"]);
+  const [currentWinPattern, setCurrentWinPattern] = useState<string | null>(null);
   const [winPrizes, setWinPrizes] = useState<{ [key: string]: string }>({
     oneLine: "",
     twoLines: "",
@@ -182,7 +183,11 @@ export function usePlayerGame() {
           // Use the shape from interface WinPatternRow, safely:
           const latest = data[0] as WinPatternRow;
           const activePatterns: string[] = [];
-          const prizes: { [key: string]: string } = {};
+          const prizes: { [key: string]: string } = {
+            oneLine: "",
+            twoLines: "",
+            fullHouse: ""
+          };
 
           if (latest.one_line_active) {
             activePatterns.push("oneLine");
@@ -201,6 +206,15 @@ export function usePlayerGame() {
 
           setActiveWinPatterns(activePatterns);
           setWinPrizes(prizes);
+          
+          // Set current win pattern to the first active pattern if none is set
+          if (activePatterns.length > 0 && !currentWinPattern) {
+            setCurrentWinPattern(activePatterns[0]);
+          }
+          
+          console.log("Fetched win patterns:", activePatterns);
+          console.log("Fetched win prizes:", prizes);
+          console.log("Current win pattern:", currentWinPattern || activePatterns[0]);
         }
       } catch (err) {
         // do nothing
@@ -236,7 +250,7 @@ export function usePlayerGame() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [currentSession]);
+  }, [currentSession, currentWinPattern]);
 
   useEffect(() => {
     localStorage.setItem("bingoAutoMarking", autoMarking.toString());
@@ -295,9 +309,7 @@ export function usePlayerGame() {
     setAutoMarking,
     winPrizes,
     activeWinPatterns,
+    currentWinPattern,
     handleClaimBingo,
   };
 }
-
-// NOTE: This file is getting very long (~300 lines).
-// Consider breaking it up into smaller focused hooks for maintainability.

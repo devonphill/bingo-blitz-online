@@ -31,6 +31,9 @@ export function useWinPatternManagement(sessionId: string | undefined) {
     if (!sessionId) return;
 
     try {
+      console.log("Saving win patterns:", winPatterns);
+      console.log("Saving win prizes:", winPrizes);
+      
       // First check if patterns already exist for this session
       const { data: existingData, error: checkError } = await supabase
         .from('win_patterns')
@@ -129,11 +132,16 @@ export function useWinPatternManagement(sessionId: string | undefined) {
         
         console.log("Fetched win patterns:", activePatterns);
         console.log("Fetched win prizes:", prizes);
+        
+        // Set current game win pattern to the first active pattern
+        if (activePatterns.length > 0 && !currentGameWinPattern) {
+          setCurrentGameWinPattern(activePatterns[0]);
+        }
       }
     };
 
     fetchWinPatterns();
-  }, [sessionId]);
+  }, [sessionId, currentGameWinPattern]);
 
   // Save changes when win patterns or prizes change
   useEffect(() => {

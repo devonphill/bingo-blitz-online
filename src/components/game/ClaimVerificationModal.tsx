@@ -46,11 +46,14 @@ export default function ClaimVerificationModal({
   useEffect(() => {
     if (!tickets || tickets.length === 0) return;
     
-    // Calculate score for each ticket (number of called numbers present)
+    // Calculate score for each ticket (number of matched called numbers)
     const ticketsWithScore = tickets.map(ticket => {
       const matchedNumbers = ticket.numbers.filter(num => calledNumbers.includes(num));
-      const score = matchedNumbers.length;
-      return { ...ticket, score };
+      return { 
+        ...ticket, 
+        score: matchedNumbers.length,
+        percentMatched: Math.round((matchedNumbers.length / ticket.numbers.length) * 100)
+      };
     });
     
     // Sort tickets by score (highest first)
@@ -84,6 +87,7 @@ export default function ClaimVerificationModal({
     }
   };
 
+  // If the modal is not open, don't render anything
   if (!isOpen) return null;
 
   return (
@@ -100,8 +104,11 @@ export default function ClaimVerificationModal({
             <div className="space-y-4">
               {rankedTickets.map((ticket) => (
                 <div key={ticket.serial} className="p-2 border rounded-md">
-                  <div className="text-sm text-gray-500 mb-1">
-                    Ticket: {ticket.serial} | Score: {ticket.score}/{ticket.numbers.length} numbers matched
+                  <div className="flex justify-between text-sm text-gray-500 mb-1">
+                    <span>Ticket: {ticket.serial}</span>
+                    <span className="font-bold">
+                      Score: {ticket.score}/{ticket.numbers.length} numbers ({ticket.percentMatched}%)
+                    </span>
                   </div>
                   <CallerTicketDisplay
                     ticket={ticket}
