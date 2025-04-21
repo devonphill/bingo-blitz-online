@@ -172,13 +172,32 @@ export default function BingoCard({
           return (
             <div
               key={`${rowIndex}-${colIndex}`}
-              className={`aspect-square flex items-center justify-center text-sm font-medium border rounded
+              className={`relative aspect-square flex items-center justify-center text-sm font-medium border rounded
                 ${cell !== null ? (autoMarking ? 'cursor-default' : 'cursor-pointer hover:bg-gray-50') : 'bg-gray-100'}
-                ${marked ? 'bg-green-500 text-white font-bold' : ''}
               `}
               onClick={() => toggleMark(rowIndex, colIndex, cell)}
+              style={{
+                overflow: "hidden",
+                minHeight: 32,
+                minWidth: 32,
+                position: "relative"
+              }}
             >
-              {cell !== null ? cell : ''}
+              {cell !== null ? (
+                <>
+                  <span
+                    className={`relative z-10 select-none ${marked ? "text-white font-bold" : ""}`}
+                  >
+                    {cell}
+                  </span>
+                  {marked && (
+                    <span
+                      className="absolute inset-0 z-20 flex rounded-lg"
+                      style={{ background: "rgba(0,0,0,0.6)" }}
+                    />
+                  )}
+                </>
+              ) : ""}
             </div>
           );
         })
