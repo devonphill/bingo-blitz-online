@@ -7,18 +7,24 @@ export default function BingoCardGrid({
   markedCells,
   calledNumbers,
   autoMarking,
-  setMarkedCells
+  setMarkedCells,
+  oneTGNumbers = []
 }: {
   card: (number | null)[][];
   markedCells: Set<string>;
   calledNumbers: number[];
   autoMarking: boolean;
   setMarkedCells: (f: (prev: Set<string>) => Set<string>) => void;
+  oneTGNumbers?: number[];
 }) {
   const isCellMarked = (row: number, col: number, value: number | null) => {
     if (value === null) return false;
     if (autoMarking) return calledNumbers.includes(value);
     return markedCells.has(`${row},${col}`);
+  };
+
+  const isCell1TG = (value: number | null) => {
+    return value !== null && oneTGNumbers.includes(value);
   };
 
   const toggleMark = (row: number, col: number, value: number | null) => {
@@ -47,6 +53,7 @@ export default function BingoCardGrid({
             marked={isCellMarked(rowIndex, colIndex, cell)}
             autoMarking={autoMarking}
             onClick={() => toggleMark(rowIndex, colIndex, cell)}
+            is1TG={isCell1TG(cell)}
           />
         ))
       ))}

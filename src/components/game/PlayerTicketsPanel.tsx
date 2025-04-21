@@ -1,5 +1,5 @@
 
-import React from "react";
+import React, { useMemo } from "react";
 import BingoCard from "@/components/game/BingoCard";
 import BingoWinProgress from "@/components/game/BingoWinProgress";
 
@@ -22,16 +22,75 @@ export default function PlayerTicketsPanel({ tickets, calledNumbers, autoMarking
     );
   }
 
+  // Calculate win progress for each ticket and reorder them
+  const sortedTickets = useMemo(() => {
+    if (!autoMarking) return tickets;
+
+    const ticketsWithProgress = tickets.map(ticket => {
+      // Calculate ticket progress using the same logic from BingoWinProgress
+      const maskBits = ticket.layoutMask.toString(2).padStart(27, "0").split("").reverse();
+      const rows: (number | null)[][] = [[], [], []];
+      let nIdx = 0;
+
+      for (let i = 0; i < 27; i++) {
+        const row = Math.floor(i / 9);
+        if (maskBits[i] === '1') {
+          rows[row].push(ticket.numbers[nIdx]);
+          nIdx++;
+        } else {
+          rows[row].push(null);
+        }
+      }
+
+      const lineCounts = rows.map(line => line.filter(num => num !== null && calledNumbers.includes(num as number)).length);
+      const lineNeeded = rows.map(line => line.filter(num => num !== null).length);
+      const completedLines = lineCounts.filter((count, idx) => count === lineNeeded[idx]).length;
+
+      const result: { [pattern: string]: number } = {};
+      activeWinPatterns.forEach(pattern => {
+        let lines = 0;
+        if (pattern === "oneLine") lines = 1;
+        if (pattern === "twoLines") lines = 2;
+        if (pattern === "fullHouse") lines = 3;
+        
+        const linesToGo = Math.max(0, lines - completedLines);
+        let minNeeded = Infinity;
+        if (linesToGo === 0) {
+          minNeeded = 0;
+        } else {
+          minNeeded = Math.min(
+            ...rows
+              .map((line, idx) => lineNeeded[idx] - lineCounts[idx])
+              .filter(n => n > 0)
+          );
+          if (minNeeded === Infinity) minNeeded = 0;
+        }
+        result[pattern] = minNeeded;
+      });
+
+      // Get the minimum number needed for any active win pattern
+      const minToGo = Math.min(...activeWinPatterns.map(p => result[p] ?? 15));
+      
+      return {
+        ...ticket,
+        minToGo
+      };
+    });
+
+    // Sort tickets by how close they are to winning (lowest minToGo first)
+    return [...ticketsWithProgress].sort((a, b) => a.minToGo - b.minToGo);
+  }, [tickets, calledNumbers, autoMarking, activeWinPatterns]);
+
   return (
     <div className="bg-white shadow rounded-lg p-6 mb-6">
       <h2 className="text-xl font-bold text-gray-900 mb-4">Your Bingo Tickets ({tickets.length})</h2>
-      {Array.from(new Set(tickets.map(t => t.perm))).map(perm => (
+      {Array.from(new Set(sortedTickets.map(t => t.perm))).map(perm => (
         <div key={`perm-${perm}`} className="mb-8">
           <h3 className="text-lg font-semibold mb-3">Strip #{perm}</h3>
           <div className="grid grid-cols-1 gap-6">
-            {tickets
+            {sortedTickets
               .filter(t => t.perm === perm)
-              .sort((a, b) => a.position - b.position)
+              .sort((a, b) => autoMarking ? a.minToGo - b.minToGo : a.position - b.position)
               .map((ticket) => (
                 <div key={ticket.serial} className="border rounded-lg p-4">
                   <div className="flex justify-between items-center mb-2">
@@ -50,6 +109,7 @@ export default function PlayerTicketsPanel({ tickets, calledNumbers, autoMarking
                     layoutMask={ticket.layoutMask}
                     calledNumbers={calledNumbers}
                     autoMarking={autoMarking}
+                    activeWinPatterns={activeWinPatterns}
                   />
                   <div className="text-center mt-4">
                     <BingoWinProgress

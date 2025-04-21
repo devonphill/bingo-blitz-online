@@ -1,5 +1,6 @@
 
 import React from "react";
+import OneTouchAnimation from "./OneTouchAnimation";
 
 export default function BingoCell({
   rowIndex,
@@ -7,19 +8,22 @@ export default function BingoCell({
   value,
   marked,
   autoMarking,
-  onClick
+  onClick,
+  is1TG = false
 }: {
   rowIndex: number,
   colIndex: number,
   value: number | null,
   marked: boolean,
   autoMarking: boolean,
-  onClick: () => void
+  onClick: () => void,
+  is1TG?: boolean
 }) {
   return (
     <div
       className={`relative aspect-square flex items-center justify-center text-sm font-medium border rounded
         ${value !== null ? (autoMarking ? 'cursor-default' : 'cursor-pointer hover:bg-gray-50') : 'bg-gray-100'}
+        ${is1TG && !marked ? 'border-green-500 border-2' : ''}
       `}
       onClick={onClick}
       style={{
@@ -34,7 +38,7 @@ export default function BingoCell({
       {value !== null ? (
         <>
           <span
-            className={`relative z-10 select-none ${marked ? "text-white font-bold" : ""}`}
+            className={`relative z-10 select-none ${marked ? "text-white font-bold" : is1TG ? "text-green-600 font-bold" : ""}`}
           >
             {value}
           </span>
@@ -44,6 +48,7 @@ export default function BingoCell({
               style={{ opacity: 0.6 }}
             />
           )}
+          {is1TG && !marked && <OneTouchAnimation />}
         </>
       ) : ""}
     </div>

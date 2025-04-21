@@ -39,6 +39,9 @@ export default function BingoWinProgress({
 
   const result: { [pattern: string]: number } = {};
   Object.entries(WIN_PATTERNS).forEach(([key, { lines }]) => {
+    // Only calculate for active win patterns
+    if (!activeWinPatterns.includes(key)) return;
+    
     const linesToGo = Math.max(0, lines - completedLines);
     let minNeeded = Infinity;
     if (linesToGo === 0) {
@@ -54,7 +57,12 @@ export default function BingoWinProgress({
     result[key] = minNeeded;
   });
 
-  const minToGo = Math.min(...activeWinPatterns.map(p => result[p] ?? 15));
+  // Only consider active patterns when calculating minToGo
+  const activePatterns = activeWinPatterns.filter(p => Object.keys(WIN_PATTERNS).includes(p));
+  const minToGo = activePatterns.length > 0 
+    ? Math.min(...activePatterns.map(p => result[p] ?? 15))
+    : 15; // Default high value if no active patterns
+  
   return (
     <span className={minToGo <= 3 ? "font-bold text-green-600" : "font-medium text-gray-700"}>
       {minToGo === 0 ? "Bingo!" : `${minToGo} to go`}

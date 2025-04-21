@@ -159,7 +159,48 @@ export function usePlayerGame() {
       }
     };
 
+    // Also fetch win patterns for this session
+    const fetchWinPatterns = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('win_patterns')
+          .select('*')
+          .eq('session_id', typeof currentSession === 'string' ? currentSession : currentSession.id)
+          .order('created_at', { ascending: false });
+          
+        if (error || !data) return;
+        
+        if (data.length > 0) {
+          // Get the latest win pattern configuration
+          const latest = data[0];
+          const activePatterns: string[] = [];
+          const prizes: {[key: string]: string} = {};
+          
+          if (latest.one_line_active) {
+            activePatterns.push("oneLine");
+            prizes.oneLine = latest.one_line_prize || "";
+          }
+          
+          if (latest.two_lines_active) {
+            activePatterns.push("twoLines");
+            prizes.twoLines = latest.two_lines_prize || "";
+          }
+          
+          if (latest.full_house_active) {
+            activePatterns.push("fullHouse");
+            prizes.fullHouse = latest.full_house_prize || "";
+          }
+          
+          setActiveWinPatterns(activePatterns);
+          setWinPrizes(prizes);
+        }
+      } catch (err) {
+        // do nothing
+      }
+    };
+
     fetchCalledNumbers();
+    fetchWinPatterns();
 
     const channel = supabase
       .channel('called-numbers')
@@ -193,11 +234,40 @@ export function usePlayerGame() {
     localStorage.setItem("bingoAutoMarking", autoMarking.toString());
   }, [autoMarking]);
 
-  const handleClaimBingo = () => {
-    toast({
-      title: "Bingo Claimed!",
-      description: "Your claim has been submitted to the caller for verification.",
-    });
+  const handleClaimBingo = async () => {
+    if (!playerId || !currentSession) return;
+
+    try {
+      // Submit the bingo claim to the database
+      const { error } = await supabase
+        .from('bingo_claims')
+        .insert({
+          player_id: playerId,
+          session_id: typeof currentSession === 'string' ? currentSession : currentSession.id,
+          claimed_at: new Date().toISOString(),
+          status: 'pending'
+        });
+
+      if (error) {
+        toast({
+          title: "Failed to submit claim",
+          description: "There was an error submitting your bingo claim. Please try again.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      toast({
+        title: "Bingo Claimed!",
+        description: "Your claim has been submitted to the caller for verification.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Something went wrong. Please try again.",
+        variant: "destructive"
+      });
+    }
   };
 
   return {

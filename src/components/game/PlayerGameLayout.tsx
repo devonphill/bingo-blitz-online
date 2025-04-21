@@ -60,6 +60,14 @@ export default function PlayerGameLayout({
     );
   }
   
+  // Only display the active win patterns and their prizes
+  const displayWinPatterns = activeWinPatterns.map(key => (
+    <span key={key} className="inline-block mr-2 px-2 py-1 bg-gray-800 rounded text-white">
+      {key === "oneLine" ? "One Line" : key === "twoLines" ? "Two Lines" : "Full House"}
+      {winPrizes[key] ? `: ${winPrizes[key]}` : ""}
+    </span>
+  ));
+  
   return (
     <div className="min-h-screen w-full flex bg-gray-50">
       {/* Side Panels */}
@@ -71,11 +79,7 @@ export default function PlayerGameLayout({
             {activeWinPatterns.length > 0 && (
               <div>
                 <span className="text-xs text-gray-300 font-medium">
-                  Win Pattern: {activeWinPatterns.map((key: string) => 
-                    <span key={key} className="inline-block mr-2 px-2 py-1 bg-gray-800 rounded text-white">
-                      {key}{winPrizes[key] ? `: ${winPrizes[key]}` : ""}
-                    </span>
-                  )}
+                  Win Pattern: {displayWinPatterns}
                 </span>
               </div>
             )}
