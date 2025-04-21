@@ -5,6 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 
 export function useClaimManagement(sessionId: string | undefined) {
   const [showClaimModal, setShowClaimModal] = useState(false);
+  const [isClaimLightOn, setIsClaimLightOn] = useState(false);
   const [currentClaim, setCurrentClaim] = useState<{
     playerName: string;
     playerId: string;
@@ -90,6 +91,7 @@ export function useClaimManagement(sessionId: string | undefined) {
     // Explicitly open the modal
     console.log("Opening claim modal");
     setShowClaimModal(true);
+    setIsClaimLightOn(true);
   };
 
   return {
@@ -97,6 +99,8 @@ export function useClaimManagement(sessionId: string | undefined) {
     setShowClaimModal,
     currentClaim,
     setCurrentClaim,
+    isClaimLightOn,
+    setIsClaimLightOn,
     verifyPendingClaims
   };
 }

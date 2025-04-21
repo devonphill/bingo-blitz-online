@@ -11,6 +11,7 @@ interface CallerControlsProps {
   onEndGame: () => void;
   onGoLive: () => Promise<void>;
   remainingNumbers: number[];
+  isClaimLightOn: boolean;
   sessionId: string;
   winPatterns: string[];
 }
@@ -21,6 +22,7 @@ export default function CallerControls({
   onEndGame,
   onGoLive,
   remainingNumbers,
+  isClaimLightOn,
   sessionId,
   winPatterns
 }: CallerControlsProps) {
@@ -116,8 +118,9 @@ export default function CallerControls({
               console.log("Verify claim button clicked");
               onVerifyClaim();
             }}
+            className={isClaimLightOn ? "bg-yellow-100 border-yellow-400" : ""}
           >
-            Verify Claim
+            {isClaimLightOn ? "⚠️ Verify Claim" : "Verify Claim"}
           </Button>
           
           <Button 
