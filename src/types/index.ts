@@ -24,6 +24,7 @@ export interface Player {
   sessionId: string;
   nickname: string;
   joinedAt: string;
+  playerCode: string;  // Added playerCode property
 }
 
 export interface BingoCell {
@@ -42,3 +43,4 @@ export interface BingoCaller {
   calledNumbers: number[];
   currentNumber: number | null;
 }
+
