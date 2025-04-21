@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -250,7 +251,7 @@ export default function CallerSession() {
   const handleVerifyClaim = async () => {
     const { data, error } = await supabase
       .from('bingo_claims')
-      .select('id, player_id, claimed_at, status, ticket_data')
+      .select('id, player_id, claimed_at, status')
       .eq('session_id', sessionId)
       .eq('status', 'pending')
       .order('claimed_at', { ascending: true });
@@ -274,14 +275,47 @@ export default function CallerSession() {
     }
 
     const latestClaim = data[data.length - 1];
-    const playerData = sessionPlayers.find(p => p.id === latestClaim.player_id);
+    
+    // Get player data for the claim
+    const { data: playerData, error: playerError } = await supabase
+      .from('players')
+      .select('nickname, id')
+      .eq('id', latestClaim.player_id)
+      .single();
+
+    if (playerError) {
+      console.error("Error fetching player data:", playerError);
+      toast({
+        title: "Error",
+        description: "Failed to fetch player information.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Get assigned tickets for the player
+    const { data: ticketData, error: ticketError } = await supabase
+      .from('assigned_tickets')
+      .select('*')
+      .eq('player_id', latestClaim.player_id)
+      .eq('session_id', sessionId);
+      
+    if (ticketError) {
+      console.error("Error fetching ticket data:", ticketError);
+      toast({
+        title: "Error",
+        description: "Failed to fetch ticket information.",
+        variant: "destructive"
+      });
+      return;
+    }
     
     toast({
       title: "Verifying Claim",
       description: `Verifying claim from ${playerData?.nickname || 'Unknown Player'}`,
     });
     
-    console.log("Claim ticket data:", latestClaim.ticket_data);
+    console.log("Player tickets:", ticketData);
   };
 
   const handleEndGame = () => {
