@@ -21,7 +21,7 @@ export function useClaimManagement(sessionId: string | undefined) {
 
   // Process the next claim in the queue
   const processNextClaim = useCallback(async () => {
-    if (claimQueue.length === 0 || processingClaim) {
+    if (claimQueue.length === 0 || processingClaim || showClaimModal) {
       return;
     }
 
@@ -69,7 +69,7 @@ export function useClaimManagement(sessionId: string | undefined) {
     } finally {
       setProcessingClaim(false);
     }
-  }, [claimQueue, processingClaim, sessionId, toast]);
+  }, [claimQueue, processingClaim, sessionId, toast, showClaimModal]);
 
   // When current claim is processed, check for next claim
   useEffect(() => {
@@ -132,6 +132,11 @@ export function useClaimManagement(sessionId: string | undefined) {
             continue;
           }
 
+          if (!playerData) {
+            console.error(`No player data found for claim ${claim.id}`);
+            continue;
+          }
+
           // Add to queue
           console.log(`Adding claim for ${playerData.nickname} to queue`);
           setClaimQueue(prev => [
@@ -156,17 +161,20 @@ export function useClaimManagement(sessionId: string | undefined) {
     }
   }, [sessionId, toast, currentClaim, claimQueue]);
 
-  // After queue is updated, process the next claim if needed
+  // Set up an interval to check for pending claims
   useEffect(() => {
-    if (!showClaimModal && !currentClaim && claimQueue.length > 0 && !processingClaim) {
-      processNextClaim();
-    }
-  }, [claimQueue, showClaimModal, currentClaim, processingClaim, processNextClaim]);
-
-  const checkForClaims = useCallback(() => {
-    console.log("Manual claim check button pressed! - DIRECT CALL");
+    if (!sessionId) return;
+    
+    // Initial check
     verifyPendingClaims();
-  }, [verifyPendingClaims]);
+    
+    // Set up interval for periodic checks
+    const intervalId = setInterval(() => {
+      verifyPendingClaims();
+    }, 5000); // Check every 5 seconds
+    
+    return () => clearInterval(intervalId);
+  }, [sessionId, verifyPendingClaims]);
 
   // Set up a realtime listener for new claims
   useEffect(() => {
@@ -199,26 +207,6 @@ export function useClaimManagement(sessionId: string | undefined) {
           }
         }
       )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'bingo_claims',
-          filter: `session_id=eq.${sessionId}`
-        },
-        (payload) => {
-          if (payload.new) {
-            console.log("Bingo claim updated:", payload.new);
-            
-            // Check if any claims need processing
-            const timer = setTimeout(() => {
-              verifyPendingClaims();
-            }, 500);
-            return () => clearTimeout(timer);
-          }
-        }
-      )
       .subscribe();
 
     return () => {
@@ -227,17 +215,17 @@ export function useClaimManagement(sessionId: string | undefined) {
     };
   }, [sessionId, toast, verifyPendingClaims]);
 
-  // Initial check for claims when the component mounts
+  // After queue is updated, process the next claim if needed
   useEffect(() => {
-    if (sessionId) {
-      console.log("INITIAL MOUNT - Checking for pending claims");
-      // Short delay to ensure everything is loaded properly
-      const timer = setTimeout(() => {
-        verifyPendingClaims();
-      }, 500);
-      return () => clearTimeout(timer);
+    if (!showClaimModal && !currentClaim && claimQueue.length > 0 && !processingClaim) {
+      processNextClaim();
     }
-  }, [sessionId, verifyPendingClaims]);
+  }, [claimQueue, showClaimModal, currentClaim, processingClaim, processNextClaim]);
+
+  const checkForClaims = useCallback(() => {
+    console.log("Manual claim check button pressed! - DIRECT CALL");
+    verifyPendingClaims();
+  }, [verifyPendingClaims]);
 
   return {
     showClaimModal,

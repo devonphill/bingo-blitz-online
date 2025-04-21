@@ -72,8 +72,6 @@ export default function ClaimVerificationModal({
         ...ticket, 
         score: matchedNumbers.length,
         percentMatched: Math.round((matchedNumbers.length / ticket.numbers.length) * 100),
-        // Consistently use layoutMask
-        layoutMask: ticket.layoutMask
       };
     });
     

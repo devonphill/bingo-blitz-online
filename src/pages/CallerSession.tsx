@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -35,8 +36,6 @@ export default function CallerSession() {
     claimQueue
   } = useClaimManagement(sessionId);
 
-  console.log("CallerSession render - showClaimModal:", showClaimModal, "claimQueue:", claimQueue?.length);
-
   const {
     winPatterns,
     winPrizes,
@@ -48,6 +47,16 @@ export default function CallerSession() {
 
   const { progressToNextGame } = useGameProgression(session);
 
+  // Log when relevant state changes
+  useEffect(() => {
+    console.log("CallerSession - state update", {
+      showClaimModal,
+      claimQueueLength: claimQueue?.length,
+      currentGameWinPattern
+    });
+  }, [showClaimModal, claimQueue, currentGameWinPattern]);
+
+  // Load session data
   useEffect(() => {
     if (!session && sessionId) {
       const foundSession = sessions.find(s => s.id === sessionId);
@@ -70,6 +79,7 @@ export default function CallerSession() {
     }
   }, [gameType, remainingNumbers.length]);
 
+  // Fetch called numbers for this session
   useEffect(() => {
     if (sessionId) {
       const fetchCalledNumbers = async () => {
@@ -96,9 +106,37 @@ export default function CallerSession() {
       };
       
       fetchCalledNumbers();
+      
+      // Set up realtime listener for called numbers
+      const calledNumbersChannel = supabase
+        .channel('called-numbers-listener')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'called_numbers',
+            filter: `session_id=eq.${sessionId}`
+          },
+          (payload) => {
+            if (payload.new) {
+              const newNumber = payload.new.number;
+              console.log("New number called:", newNumber);
+              setCalledNumbers(prev => [...prev, newNumber]);
+              setCurrentNumber(newNumber);
+              setRemainingNumbers(prev => prev.filter(n => n !== newNumber));
+            }
+          }
+        )
+        .subscribe();
+        
+      return () => {
+        supabase.removeChannel(calledNumbersChannel);
+      };
     }
   }, [sessionId, gameType, remainingNumbers.length]);
 
+  // Fetch players for this session
   useEffect(() => {
     if (!sessionId) return;
 
@@ -150,6 +188,7 @@ export default function CallerSession() {
     };
   }, [sessionId]);
 
+  // Fetch win patterns
   useEffect(() => {
     if (sessionId) {
       const fetchWinPatterns = async () => {
@@ -172,10 +211,15 @@ export default function CallerSession() {
     }
   }, [sessionId, setWinPatterns]);
 
+  // Initial check for claims
   useEffect(() => {
     if (sessionId) {
       console.log("Initial check for pending claims");
-      verifyPendingClaims();
+      // Check with a slight delay to ensure session is loaded
+      const timer = setTimeout(() => {
+        verifyPendingClaims();
+      }, 1000);
+      return () => clearTimeout(timer);
     }
   }, [sessionId, verifyPendingClaims]);
 
@@ -270,6 +314,12 @@ export default function CallerSession() {
       setShowClaimModal(false);
       setCurrentClaim(null);
       
+      toast({
+        title: "Claim Verified",
+        description: `${currentClaim.playerName}'s claim has been verified as valid.`,
+        variant: "success"
+      });
+      
       setTimeout(() => {
         verifyPendingClaims();
       }, 1000);
@@ -301,6 +351,12 @@ export default function CallerSession() {
           .eq('session_id', sessionId)
           .eq('status', 'pending');
       }
+      
+      toast({
+        title: "Claim Rejected",
+        description: `${currentClaim.playerName}'s claim has been rejected.`,
+        variant: "default"
+      });
       
       setShowClaimModal(false);
       setCurrentClaim(null);
@@ -398,15 +454,9 @@ export default function CallerSession() {
           handleGoLive={handleGoLive}
           remainingNumbers={remainingNumbers}
           sessionId={sessionId || ''}
+          onCheckClaims={verifyPendingClaims}
+          claimQueue={claimQueue}
         />
-        
-        {claimQueue.length > 0 && (
-          <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-            <p className="text-yellow-800 font-medium">
-              {claimQueue.length} pending claim{claimQueue.length > 1 ? 's' : ''} in queue
-            </p>
-          </div>
-        )}
       </main>
       
       <ClaimVerificationModal

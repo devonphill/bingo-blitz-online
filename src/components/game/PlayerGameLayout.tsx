@@ -5,6 +5,8 @@ import CalledNumbers from "@/components/game/CalledNumbers";
 import PlayerTicketsPanel from "@/components/game/PlayerTicketsPanel";
 import { Button } from "@/components/ui/button";
 import { Loader } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 // Props for layout, kept minimal for panel orchestration
 export default function PlayerGameLayout({
@@ -24,6 +26,7 @@ export default function PlayerGameLayout({
 }: any) {
   const [isClaimValidating, setIsClaimValidating] = useState(false);
   const [hasPendingClaim, setHasPendingClaim] = useState(false);
+  const { toast } = useToast();
 
   // Check if player has a pending claim
   useEffect(() => {
@@ -31,22 +34,44 @@ export default function PlayerGameLayout({
     
     const checkPendingClaims = async () => {
       try {
-        const { data, error } = await fetch('/api/player-pending-claims', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            sessionId: currentSession.id,
-            playerCode
-          }),
-        }).then(res => res.json());
+        const { data, error } = await supabase
+          .from('bingo_claims')
+          .select('id, status')
+          .eq('session_id', currentSession.id)
+          .eq('player_id', playerCode)
+          .order('claimed_at', { ascending: false })
+          .limit(1);
         
-        if (!error && data && data.hasPendingClaim) {
-          setHasPendingClaim(true);
-          setIsClaimValidating(true);
+        if (!error && data && data.length > 0) {
+          const latestClaim = data[0];
+          // Set claim status based on the most recent claim
+          if (latestClaim.status === 'pending') {
+            setHasPendingClaim(true);
+            setIsClaimValidating(true);
+          } else if (latestClaim.status === 'validated') {
+            // Clear validating state when claim is validated
+            setIsClaimValidating(false);
+            setHasPendingClaim(false);
+            toast({
+              title: "Bingo Validated!",
+              description: "Your claim has been verified.",
+              variant: "success"
+            });
+          } else if (latestClaim.status === 'rejected') {
+            // Clear validating state when claim is rejected
+            setIsClaimValidating(false);
+            setHasPendingClaim(false);
+            toast({
+              title: "Claim Rejected",
+              description: "Your claim was not valid. Please check your numbers.",
+              variant: "destructive"
+            });
+          } else {
+            setHasPendingClaim(false);
+          }
         } else {
           setHasPendingClaim(false);
+          setIsClaimValidating(false);
         }
       } catch (err) {
         console.error("Error checking pending claims:", err);
@@ -55,10 +80,31 @@ export default function PlayerGameLayout({
     
     // Check initially and set up interval
     checkPendingClaims();
-    const interval = setInterval(checkPendingClaims, 10000); // Check every 10 seconds
+    const interval = setInterval(checkPendingClaims, 5000); // Check every 5 seconds
     
-    return () => clearInterval(interval);
-  }, [currentSession?.id, playerCode]);
+    // Set up real-time listener for claim status changes
+    const claimsChannel = supabase
+      .channel('player-claims-listener')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'bingo_claims',
+          filter: `player_id=eq.${playerCode}`
+        },
+        (payload) => {
+          console.log("Claim status changed:", payload);
+          checkPendingClaims();
+        }
+      )
+      .subscribe();
+    
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(claimsChannel);
+    };
+  }, [currentSession?.id, playerCode, toast]);
 
   // Loading and error states
   if (isLoading) {
@@ -104,9 +150,27 @@ export default function PlayerGameLayout({
   }
   
   const handleClaimClick = async () => {
+    if (isClaimValidating || hasPendingClaim) return;
+    
     setIsClaimValidating(true);
     setHasPendingClaim(true);
-    await onClaimBingo();
+    
+    try {
+      await onClaimBingo();
+      toast({
+        title: "Claim Submitted",
+        description: "Your Bingo claim has been submitted for verification.",
+      });
+    } catch (error) {
+      console.error("Error submitting claim:", error);
+      setIsClaimValidating(false);
+      setHasPendingClaim(false);
+      toast({
+        title: "Claim Error",
+        description: "There was a problem submitting your claim. Please try again.",
+        variant: "destructive"
+      });
+    }
   };
 
   return (

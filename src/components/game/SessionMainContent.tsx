@@ -20,6 +20,8 @@ interface SessionMainContentProps {
   handleGoLive: () => Promise<void>;
   remainingNumbers: number[];
   sessionId: string;
+  onCheckClaims?: () => void;
+  claimQueue?: Array<{ playerName: string; playerId: string; claimId: string }>;
 }
 
 export default function SessionMainContent({
@@ -36,6 +38,8 @@ export default function SessionMainContent({
   handleGoLive,
   remainingNumbers,
   sessionId,
+  onCheckClaims,
+  claimQueue = []
 }: SessionMainContentProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -69,7 +73,20 @@ export default function SessionMainContent({
           remainingNumbers={remainingNumbers}
           sessionId={sessionId}
           winPatterns={winPatterns}
+          onCheckClaims={onCheckClaims}
+          claimCount={claimQueue?.length || 0}
         />
+        
+        {claimQueue && claimQueue.length > 0 && (
+          <div className="mt-4 p-3 bg-yellow-50 border border-yellow-300 rounded-md shadow-sm">
+            <p className="text-yellow-800 font-medium">
+              {claimQueue.length} pending claim{claimQueue.length > 1 ? 's' : ''} in queue
+            </p>
+            <p className="text-xs text-yellow-700 mt-1">
+              Players waiting for verification: {claimQueue.map(c => c.playerName).join(', ')}
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
