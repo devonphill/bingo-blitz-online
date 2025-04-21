@@ -37,11 +37,6 @@ export function useClaimManagement(sessionId: string | undefined) {
 
       if (ticketError) {
         console.error("Error fetching ticket data:", ticketError);
-        toast({
-          title: "Error",
-          description: "Failed to fetch ticket information.",
-          variant: "destructive"
-        });
         return;
       }
 
@@ -64,7 +59,7 @@ export function useClaimManagement(sessionId: string | undefined) {
     } finally {
       setProcessingClaim(false);
     }
-  }, [claimQueue, processingClaim, sessionId, toast, showClaimSheet]);
+  }, [claimQueue, processingClaim, sessionId, showClaimSheet]);
 
   // Auto-process next claim when ready
   useEffect(() => {
@@ -109,12 +104,10 @@ export function useClaimManagement(sessionId: string | undefined) {
                 }
               ]);
               
-              // Notify caller about the new claim
-              toast({
-                title: "New Claim!",
-                description: `${claimData.playerName} has claimed a win!`,
-                variant: "default"
-              });
+              // Only open claim sheet automatically if there's no current claim being processed
+              if (!showClaimSheet && !currentClaim) {
+                processNextClaim();
+              }
             } else {
               console.log("Duplicate claim received, ignoring:", claimData.playerName);
             }
@@ -127,28 +120,17 @@ export function useClaimManagement(sessionId: string | undefined) {
       console.log("Removing channel for bingo claims");
       supabase.removeChannel(channel);
     };
-  }, [sessionId, toast, currentClaim, claimQueue]);
-
-  // Process next claim if available
-  useEffect(() => {
-    if (!showClaimSheet && !currentClaim && claimQueue.length > 0 && !processingClaim) {
-      processNextClaim();
-    }
-  }, [claimQueue, showClaimSheet, currentClaim, processingClaim, processNextClaim]);
+  }, [sessionId, currentClaim, claimQueue, showClaimSheet, processNextClaim]);
 
   // Manually check for claims
   const checkForClaims = useCallback(() => {
     console.log("Manual claim check requested");
-    toast({
-      title: "Checking claims",
-      description: "Verifying if there are any pending claims..."
-    });
     
     // If we have claims in the local queue, process them
     if (claimQueue.length > 0 && !currentClaim && !showClaimSheet) {
       processNextClaim();
     }
-  }, [claimQueue.length, currentClaim, showClaimSheet, processNextClaim, toast]);
+  }, [claimQueue.length, currentClaim, showClaimSheet, processNextClaim]);
 
   // Function to broadcast a claim (used by players)
   const broadcastClaim = useCallback(async (playerName: string, playerId: string) => {
@@ -185,6 +167,7 @@ export function useClaimManagement(sessionId: string | undefined) {
     setCurrentClaim,
     checkForClaims,
     claimQueue,
-    broadcastClaim
+    broadcastClaim,
+    processNextClaim
   };
 }

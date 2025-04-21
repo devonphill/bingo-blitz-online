@@ -32,7 +32,8 @@ export default function CallerSession() {
     setShowClaimSheet,
     setCurrentClaim,
     checkForClaims,
-    claimQueue
+    claimQueue,
+    processNextClaim
   } = useClaimManagement(sessionId);
 
   const {
@@ -399,6 +400,12 @@ export default function CallerSession() {
     }
   };
 
+  const openClaimSheet = () => {
+    if (claimQueue.length > 0 && !showClaimSheet) {
+      processNextClaim();
+    }
+  };
+
   if (!sessionId) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -452,8 +459,8 @@ export default function CallerSession() {
           handleGoLive={handleGoLive}
           remainingNumbers={remainingNumbers}
           sessionId={sessionId || ''}
-          onCheckClaims={checkForClaims}
           claimQueue={claimQueue}
+          openClaimSheet={openClaimSheet}
         />
       </main>
       

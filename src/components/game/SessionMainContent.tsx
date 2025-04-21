@@ -22,6 +22,7 @@ interface SessionMainContentProps {
   sessionId: string;
   onCheckClaims?: () => void;
   claimQueue?: Array<{ playerName: string; playerId: string; claimId?: string }>;
+  openClaimSheet: () => void;
 }
 
 export default function SessionMainContent({
@@ -38,8 +39,8 @@ export default function SessionMainContent({
   handleGoLive,
   remainingNumbers,
   sessionId,
-  onCheckClaims,
-  claimQueue = []
+  claimQueue = [],
+  openClaimSheet
 }: SessionMainContentProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -73,8 +74,8 @@ export default function SessionMainContent({
           remainingNumbers={remainingNumbers}
           sessionId={sessionId}
           winPatterns={winPatterns}
-          onCheckClaims={onCheckClaims}
           claimCount={claimQueue?.length || 0}
+          openClaimSheet={openClaimSheet}
         />
         
         {claimQueue && claimQueue.length > 0 && (

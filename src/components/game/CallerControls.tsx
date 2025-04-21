@@ -1,8 +1,6 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Bell } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +14,7 @@ interface CallerControlsProps {
   winPatterns: string[];
   onCheckClaims?: () => void;
   claimCount?: number;
+  openClaimSheet: () => void;
 }
 
 export default function CallerControls({ 
@@ -25,12 +24,11 @@ export default function CallerControls({
   remainingNumbers,
   sessionId,
   winPatterns,
-  onCheckClaims,
-  claimCount = 0
+  claimCount = 0,
+  openClaimSheet
 }: CallerControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
-  const { toast } = useToast();
 
   const handleCallNumber = () => {
     if (remainingNumbers.length === 0) {
@@ -92,10 +90,8 @@ export default function CallerControls({
     }
   };
 
-  const handleCheckClaimsClick = () => {
-    if (onCheckClaims) {
-      onCheckClaims();
-    }
+  const handleBellClick = () => {
+    openClaimSheet();
   };
 
   return (
@@ -108,7 +104,7 @@ export default function CallerControls({
               size="sm" 
               variant="outline" 
               className="relative"
-              onClick={handleCheckClaimsClick}
+              onClick={handleBellClick}
             >
               <Bell className="h-4 w-4 text-amber-500" />
               <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center bg-amber-500">
@@ -121,7 +117,7 @@ export default function CallerControls({
               size="sm" 
               variant="outline" 
               className="relative"
-              onClick={handleCheckClaimsClick}
+              onClick={handleBellClick}
             >
               <Bell className="h-4 w-4 text-gray-500" />
             </Button>
