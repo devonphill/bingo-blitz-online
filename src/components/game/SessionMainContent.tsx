@@ -5,11 +5,14 @@ import CalledNumbers from './CalledNumbers';
 import PlayerList from './PlayerList';
 import TicketsDebugDisplay from './TicketsDebugDisplay';
 import CallerControls from './CallerControls';
+import type { WinPatternConfig } from '@/hooks/useWinPatternManagement';
 
 interface SessionMainContentProps {
   session: any;
   winPatterns: string[];
   winPrizes: { [key: string]: string };
+  winPatternConfigs?: WinPatternConfig[];
+  currentPattern: string | null;
   onTogglePattern: (pattern: string) => void;
   onPrizeChange: (pattern: string, value: string) => void;
   calledNumbers: number[];
@@ -23,12 +26,15 @@ interface SessionMainContentProps {
   onCheckClaims?: () => void;
   claimQueue?: Array<{ playerName: string; playerId: string; claimId?: string }>;
   openClaimSheet: () => void;
+  gameType?: string;
 }
 
 export default function SessionMainContent({
   session,
   winPatterns,
   winPrizes,
+  winPatternConfigs = [],
+  currentPattern,
   onTogglePattern,
   onPrizeChange,
   calledNumbers,
@@ -40,20 +46,26 @@ export default function SessionMainContent({
   remainingNumbers,
   sessionId,
   claimQueue = [],
-  openClaimSheet
+  openClaimSheet,
+  gameType = '90-ball'
 }: SessionMainContentProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2">
         <div className="bg-white shadow rounded-lg p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Game: {session.gameType}</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Game: {gameType}</h2>
           <div className="mb-4">
-            <WinPatternSelector
-              selectedPatterns={winPatterns}
-              onTogglePattern={onTogglePattern}
-              prizeValues={winPrizes}
-              onPrizeChange={onPrizeChange}
-            />
+            {winPatternConfigs && winPatternConfigs.length > 0 ? (
+              <WinPatternSelector
+                winPatternConfigs={winPatternConfigs}
+                onTogglePattern={onTogglePattern}
+                onPrizeChange={onPrizeChange}
+                currentPattern={currentPattern}
+              />
+            ) : (
+              // Legacy fallback
+              <div className="text-gray-500">Loading win patterns...</div>
+            )}
           </div>
           <CalledNumbers 
             calledNumbers={calledNumbers}
@@ -76,6 +88,7 @@ export default function SessionMainContent({
           winPatterns={winPatterns}
           claimCount={claimQueue?.length || 0}
           openClaimSheet={openClaimSheet}
+          gameType={gameType}
         />
       </div>
     </div>

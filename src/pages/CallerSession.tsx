@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -44,11 +43,15 @@ export default function CallerSession() {
   const {
     winPatterns,
     winPrizes,
+    winPatternConfigs,
     currentGameWinPattern,
     progressWinPattern,
     setWinPatterns,
-    setWinPrizes
-  } = useWinPatternManagement(sessionId);
+    setWinPrizes,
+    updatePrizeValue,
+    togglePatternActive,
+    validateWinClaim
+  } = useWinPatternManagement(sessionId, gameType);
 
   const { progressToNextGame } = useGameProgression(session);
 
@@ -79,6 +82,8 @@ export default function CallerSession() {
   useEffect(() => {
     if (gameType === "90-ball" && remainingNumbers.length === 0) {
       setRemainingNumbers(Array.from({ length: 90 }, (_, i) => i + 1));
+    } else if (gameType === "75-ball" && remainingNumbers.length === 0) {
+      setRemainingNumbers(Array.from({ length: 75 }, (_, i) => i + 1));
     }
   }, [gameType, remainingNumbers.length]);
 
@@ -223,16 +228,20 @@ export default function CallerSession() {
   const handleGameTypeChange = (type: string) => {
     setGameType(type);
     setPromptGameType(false);
+    
+    if (type === "90-ball") {
+      setRemainingNumbers(Array.from({ length: 90 }, (_, i) => i + 1));
+    } else if (type === "75-ball") {
+      setRemainingNumbers(Array.from({ length: 75 }, (_, i) => i + 1));
+    }
   };
 
-  const handleTogglePattern = (pattern: string) => {
-    setWinPatterns(prev =>
-      prev.includes(pattern) ? prev.filter(p => p !== pattern) : [...prev, pattern]
-    );
+  const handleTogglePattern = (patternId: string) => {
+    togglePatternActive(patternId);
   };
 
-  const handlePrizeChange = (pattern: string, value: string) => {
-    setWinPrizes(prev => ({ ...prev, [pattern]: value }));
+  const handlePrizeChange = (patternId: string, value: string) => {
+    updatePrizeValue(patternId, value);
   };
 
   const handleCallNumber = async (number: number) => {
@@ -305,6 +314,10 @@ export default function CallerSession() {
         console.log("No more win patterns, progressing to next game");
         await progressToNextGame();
       }
+      
+      // Close the claim sheet
+      setShowClaimSheet(false);
+      setCurrentClaim(null);
       
     } catch (error) {
       console.error("Error processing valid claim:", error);
@@ -404,6 +417,8 @@ export default function CallerSession() {
           session={session}
           winPatterns={winPatterns}
           winPrizes={winPrizes}
+          winPatternConfigs={winPatternConfigs}
+          currentPattern={currentGameWinPattern}
           onTogglePattern={handleTogglePattern}
           onPrizeChange={handlePrizeChange}
           calledNumbers={calledNumbers}
@@ -416,6 +431,7 @@ export default function CallerSession() {
           sessionId={sessionId || ''}
           claimQueue={claimQueue}
           openClaimSheet={openClaimSheet}
+          gameType={gameType}
         />
       </main>
       
@@ -423,7 +439,7 @@ export default function CallerSession() {
         isOpen={showClaimSheet}
         onClose={() => {
           console.log("Sheet close callback called");
-          setShowClaimSheet();
+          setShowClaimSheet(false);
         }}
         playerName={currentClaim?.playerName || ''}
         tickets={currentClaim?.tickets || []}
@@ -432,6 +448,7 @@ export default function CallerSession() {
         onValidClaim={handleValidClaim}
         onFalseClaim={handleFalseClaim}
         currentWinPattern={currentGameWinPattern}
+        gameType={gameType}
       />
     </div>
   );

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Check, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -12,6 +11,7 @@ import {
 import CallerTicketDisplay from './CallerTicketDisplay';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import BingoWinProgress from './BingoWinProgress';
+import { getGameRulesForType } from '@/game-rules/gameRulesRegistry';
 
 interface ClaimVerificationSheetProps {
   isOpen: boolean;
@@ -27,6 +27,7 @@ interface ClaimVerificationSheetProps {
   onValidClaim: () => void;
   onFalseClaim: () => void;
   currentWinPattern?: string | null;
+  gameType?: string;
 }
 
 export default function ClaimVerificationSheet({
@@ -38,7 +39,8 @@ export default function ClaimVerificationSheet({
   currentNumber,
   onValidClaim,
   onFalseClaim,
-  currentWinPattern
+  currentWinPattern,
+  gameType = '90-ball'
 }: ClaimVerificationSheetProps) {
   const [isClaimValid, setIsClaimValid] = useState(false);
   const [rankedTickets, setRankedTickets] = useState<any[]>([]);
@@ -81,68 +83,19 @@ export default function ClaimVerificationSheet({
     const sortedTickets = [...ticketsWithScore].sort((a, b) => b.score - a.score);
     setRankedTickets(sortedTickets);
     
+    // Get game rules for validation
+    const gameRules = getGameRulesForType(gameType);
     let valid = false;
     const validTicketsFound: any[] = [];
     
-    // Validate based on current win pattern
-    if (currentWinPattern === "oneLine") {
+    // Validate with game rules
+    if (currentWinPattern) {
       sortedTickets.forEach(ticket => {
-        const layoutMask = ticket.layoutMask;
-        if (!layoutMask) return;
-        
-        const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
-        const rows: number[][] = [[], [], []];
-        let numIndex = 0;
-        
-        for (let i = 0; i < 27; i++) {
-          const row = Math.floor(i / 9);
-          if (maskBits[i] === '1') {
-            rows[row].push(ticket.numbers[numIndex]);
-            numIndex++;
-          }
-        }
-        
-        const isValid = rows.some(row => 
-          row.length > 0 && row.every(num => calledNumbers.includes(num))
-        );
+        const isValid = gameRules.validateWin(currentWinPattern, ticket, calledNumbers);
         
         if (isValid) {
           valid = true;
-          validTicketsFound.push({...ticket, validPattern: 'oneLine'});
-        }
-      });
-    } else if (currentWinPattern === "twoLines") {
-      sortedTickets.forEach(ticket => {
-        const layoutMask = ticket.layoutMask;
-        if (!layoutMask) return;
-        
-        const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
-        const rows: number[][] = [[], [], []];
-        let numIndex = 0;
-        
-        for (let i = 0; i < 27; i++) {
-          const row = Math.floor(i / 9);
-          if (maskBits[i] === '1') {
-            rows[row].push(ticket.numbers[numIndex]);
-            numIndex++;
-          }
-        }
-        
-        const completeRows = rows.filter(row => 
-          row.length > 0 && row.every(num => calledNumbers.includes(num))
-        ).length;
-        
-        if (completeRows >= 2) {
-          valid = true;
-          validTicketsFound.push({...ticket, validPattern: 'twoLines'});
-        }
-      });
-    } else if (currentWinPattern === "fullHouse") {
-      sortedTickets.forEach(ticket => {
-        const isValid = ticket.numbers.every(number => calledNumbers.includes(number));
-        if (isValid) {
-          valid = true;
-          validTicketsFound.push({...ticket, validPattern: 'fullHouse'});
+          validTicketsFound.push({...ticket, validPattern: currentWinPattern});
         }
       });
     }
@@ -156,7 +109,7 @@ export default function ClaimVerificationSheet({
         ticket => !validTicketsFound.some(vt => vt.serial === ticket.serial)
       )]);
     }
-  }, [tickets, calledNumbers, currentWinPattern]);
+  }, [tickets, calledNumbers, currentWinPattern, gameType]);
 
   const handleValidClaim = () => {
     if (isProcessing) return;
@@ -239,6 +192,7 @@ export default function ClaimVerificationSheet({
                         calledNumbers={calledNumbers}
                         activeWinPatterns={currentWinPattern ? [currentWinPattern] : ["fullHouse"]}
                         currentWinPattern={currentWinPattern}
+                        gameType={gameType}
                       />
                     </div>
                   )}

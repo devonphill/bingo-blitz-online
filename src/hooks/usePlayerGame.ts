@@ -17,12 +17,10 @@ export function usePlayerGame(playerCode?: string | null) {
   const [activeWinPatterns, setActiveWinPatterns] = useState<string[]>([]);
   const [isClaiming, setIsClaiming] = useState(false);
   const [claimStatus, setClaimStatus] = useState<'pending' | 'validated' | 'rejected' | undefined>(undefined);
+  const [gameType, setGameType] = useState<string>('90-ball');
   const { toast } = useToast();
 
-  // Load player and session information
   useEffect(() => {
-    // Exit early if no playerCode is provided yet
-    // This prevents unnecessary data fetching when the playerCode is still null
     if (!playerCode) {
       return;
     }
@@ -49,7 +47,6 @@ export function usePlayerGame(playerCode?: string | null) {
         setPlayerName(playerData.nickname);
         setSessionId(playerData.session_id);
 
-        // Fetch session data
         const { data: sessionData, error: sessionError } = await supabase
           .from('game_sessions')
           .select('*')
@@ -64,8 +61,8 @@ export function usePlayerGame(playerCode?: string | null) {
         }
 
         setCurrentSession(sessionData);
+        setGameType(sessionData.game_type || '90-ball');
 
-        // Fetch win patterns for the session
         const { data: patternData, error: patternError } = await supabase
           .from('win_patterns')
           .select('*')
@@ -95,7 +92,6 @@ export function usePlayerGame(playerCode?: string | null) {
           setWinPrizes(prizes);
         }
 
-        // Fetch player's tickets
         const { data: ticketData, error: ticketError } = await supabase
           .from('assigned_tickets')
           .select('*')
@@ -109,16 +105,13 @@ export function usePlayerGame(playerCode?: string | null) {
           return;
         }
 
-        // Transform ticket data to ensure consistent property naming
         const transformedTickets = ticketData?.map(ticket => ({
           ...ticket,
-          // Map layout_mask to layoutMask for consistency in the UI components
           layoutMask: ticket.layout_mask
         })) || [];
 
         setTickets(transformedTickets);
 
-        // Fetch called numbers for the session
         const { data: numberData, error: numberError } = await supabase
           .from('called_numbers')
           .select('number')
@@ -138,7 +131,6 @@ export function usePlayerGame(playerCode?: string | null) {
           setCurrentNumber(numbers[numbers.length - 1]);
         }
 
-        // Check if player has a pending claim
         const { data: claimData, error: claimError } = await supabase
           .from('bingo_claims')
           .select('status')
@@ -170,11 +162,9 @@ export function usePlayerGame(playerCode?: string | null) {
     fetchPlayerData();
   }, [playerCode]);
 
-  // Set up realtime listeners for called numbers and claim responses
   useEffect(() => {
     if (!sessionId) return;
 
-    // Listen for new called numbers
     const calledNumbersChannel = supabase
       .channel('called-numbers-for-player')
       .on(
@@ -196,7 +186,6 @@ export function usePlayerGame(playerCode?: string | null) {
       )
       .subscribe();
 
-    // Listen for claim result broadcasts
     const gameUpdatesChannel = supabase
       .channel('game-updates')
       .on(
@@ -252,7 +241,6 @@ export function usePlayerGame(playerCode?: string | null) {
       
       console.log("Broadcasting bingo claim");
       
-      // Create claim record in database to track history
       const { data: claimData, error: claimError } = await supabase
         .from('bingo_claims')
         .insert({
@@ -268,7 +256,6 @@ export function usePlayerGame(playerCode?: string | null) {
         throw new Error("Failed to save claim");
       }
       
-      // Broadcast the claim to all callers using Supabase broadcast
       await supabase
         .channel('caller-claims')
         .send({
@@ -319,6 +306,7 @@ export function usePlayerGame(playerCode?: string | null) {
     isLoading,
     errorMessage,
     isClaiming,
-    claimStatus
+    claimStatus,
+    gameType
   };
 }

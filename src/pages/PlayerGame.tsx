@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePlayerGame } from '@/hooks/usePlayerGame';
@@ -24,7 +23,8 @@ export default function PlayerGame() {
     isLoading,
     errorMessage,
     isClaiming,
-    claimStatus
+    claimStatus,
+    gameType
   } = usePlayerGame(storedPlayerCode);
 
   useEffect(() => {
@@ -61,6 +61,7 @@ export default function PlayerGame() {
       isLoading={isLoading}
       isClaiming={isClaiming}
       claimStatus={claimStatus}
+      gameType={gameType}
     />
   );
 }

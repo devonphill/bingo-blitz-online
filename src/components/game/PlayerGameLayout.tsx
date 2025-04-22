@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader } from "lucide-react";
@@ -23,6 +22,7 @@ interface PlayerGameLayoutProps {
   children: React.ReactNode;
   isClaiming?: boolean;
   claimStatus?: 'pending' | 'validated' | 'rejected';
+  gameType?: string;
 }
 
 export default function PlayerGameLayout({
@@ -39,18 +39,17 @@ export default function PlayerGameLayout({
   currentNumber,
   calledNumbers,
   isClaiming = false,
-  claimStatus
+  claimStatus,
+  gameType = '90-ball'
 }: PlayerGameLayoutProps) {
   const [localClaimValidating, setLocalClaimValidating] = useState(false);
   const { toast } = useToast();
 
-  // Reset local claim state when external claim status changes
   useEffect(() => {
     if (claimStatus === 'validated' || claimStatus === 'rejected') {
       setLocalClaimValidating(false);
     }
     
-    // When isClaiming changes to false, also reset local state
     if (isClaiming === false) {
       setLocalClaimValidating(false);
     }
@@ -92,7 +91,6 @@ export default function PlayerGameLayout({
   }, [currentSession?.id, playerCode, toast]);
 
   const handleClaimClick = async () => {
-    // Check if a claim is already in process (either local or from parent)
     if (localClaimValidating || isClaiming || claimStatus === 'pending') {
       console.log("Claim already in progress, ignoring click");
       return;
@@ -104,7 +102,6 @@ export default function PlayerGameLayout({
       const success = await onClaimBingo();
       
       if (!success) {
-        // If the parent returns false, reset our local state
         setLocalClaimValidating(false);
         toast({
           title: "Claim Failed",
@@ -164,7 +161,6 @@ export default function PlayerGameLayout({
     );
   }
   
-  // Determine if a claim is in progress using both local and parent state
   const isClaimInProgress = localClaimValidating || isClaiming || claimStatus === 'pending';
   
   return (
@@ -172,6 +168,13 @@ export default function PlayerGameLayout({
       <div className="flex flex-col" style={{width:'30%', minWidth:240, maxWidth:400}}>
         <div className="flex-1 bg-black text-white p-4">
           <h1 className="text-xl font-bold mb-4">Bingo Game Info</h1>
+          {gameType && (
+            <div className="mb-4 p-2 bg-gray-800 rounded">
+              <p className="text-sm text-gray-300">
+                Game Type: <span className="font-bold text-white">{gameType}</span>
+              </p>
+            </div>
+          )}
           <Button
             className={`w-full ${isClaimInProgress
               ? 'bg-orange-500 hover:bg-orange-600' 
@@ -197,11 +200,19 @@ export default function PlayerGameLayout({
           {currentWinPattern && (
             <div className="mt-4 p-2 bg-gray-800 rounded">
               <p className="text-sm text-gray-300">
-                Current Win Pattern: <span className="font-bold text-white">{currentWinPattern === 'oneLine' 
-                  ? 'One Line' 
-                  : currentWinPattern === 'twoLines'
-                    ? 'Two Lines'
-                    : 'Full House'}</span>
+                Current Win Pattern: <span className="font-bold text-white">{
+                  currentWinPattern === 'oneLine' 
+                    ? 'One Line' 
+                    : currentWinPattern === 'twoLines'
+                      ? 'Two Lines'
+                      : currentWinPattern === 'fullHouse'
+                        ? 'Full House'
+                        : currentWinPattern === 'pattern'
+                          ? 'Pattern'
+                          : currentWinPattern === 'blackout'
+                            ? 'Blackout'
+                            : currentWinPattern
+                }</span>
               </p>
               {winPrizes && winPrizes[currentWinPattern] && (
                 <p className="text-sm text-gray-300 mt-1">
@@ -213,7 +224,7 @@ export default function PlayerGameLayout({
         </div>
         
         <div className="bg-black text-white p-4 border-t border-gray-700 sticky bottom-0" style={{ height: '30vw', maxHeight: '400px' }}>
-          <CurrentNumberDisplay number={currentNumber} sizePx={Math.min(window.innerWidth * 0.25, 350)} />
+          <CurrentNumberDisplay number={currentNumber} sizePx={Math.min(window.innerWidth * 0.25, 350)} gameType={gameType} />
           <div className="text-xs text-gray-400 mt-2 text-center">
             {calledNumbers.length} numbers called
           </div>

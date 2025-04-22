@@ -1,47 +1,46 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
+import type { WinPatternConfig } from "@/hooks/useWinPatternManagement";
 
 interface WinPatternSelectorProps {
-  selectedPatterns: string[];
-  onTogglePattern: (pattern: string) => void;
-  prizeValues: Record<string, string>;
-  onPrizeChange: (pattern: string, prize: string) => void;
+  winPatternConfigs: WinPatternConfig[];
+  onTogglePattern: (patternId: string) => void;
+  onPrizeChange: (patternId: string, prize: string) => void;
+  currentPattern: string | null;
 }
 
-const patterns = [
-  { key: "oneLine", label: "One Line" },
-  { key: "twoLines", label: "Two Lines" },
-  { key: "fullHouse", label: "Full House" },
-];
-
 export default function WinPatternSelector({
-  selectedPatterns,
+  winPatternConfigs,
   onTogglePattern,
-  prizeValues,
   onPrizeChange,
+  currentPattern,
 }: WinPatternSelectorProps) {
+  // Sort patterns by order
+  const sortedPatterns = [...winPatternConfigs].sort((a, b) => a.order - b.order);
+  
   return (
     <div className="space-y-2">
       <div className="flex gap-2 items-center mb-2 font-medium text-base">Win Patterns:</div>
-      <div className="flex gap-4 mb-2">
-        {patterns.map((pat) => (
-          <div key={pat.key} className="flex items-center space-x-2">
+      <div className="flex flex-wrap gap-4 mb-2">
+        {sortedPatterns.map((pattern) => (
+          <div key={pattern.id} className="flex items-center space-x-2">
             <Button
               type="button"
               size="sm"
-              variant={selectedPatterns.includes(pat.key) ? "default" : "outline"}
-              className={selectedPatterns.includes(pat.key) ? "bg-bingo-primary text-white" : ""}
-              onClick={() => onTogglePattern(pat.key)}
+              variant={pattern.active ? "default" : "outline"}
+              className={`${pattern.active ? "bg-bingo-primary text-white" : ""} 
+                ${currentPattern === pattern.id ? "ring-2 ring-offset-2 ring-bingo-tertiary" : ""}`}
+              onClick={() => onTogglePattern(pattern.id)}
             >
-              {pat.label}
+              {pattern.name}
             </Button>
             <input
               type="text"
               placeholder="Prize"
               className="border rounded px-2 py-1 w-24 text-xs"
-              value={prizeValues[pat.key] || ""}
-              onChange={e => onPrizeChange(pat.key, e.target.value)}
+              value={pattern.prize || ""}
+              onChange={e => onPrizeChange(pattern.id, e.target.value)}
             />
           </div>
         ))}
