@@ -2,346 +2,163 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { getGameRulesForType } from '@/game-rules/gameRulesRegistry';
 
-export interface WinPatternConfig {
-  id: string;
+export interface Winline {
+  id: number; // 1-5
   name: string;
   active: boolean;
-  prize: string;
-  order: number;
 }
 
-export function useWinPatternManagement(sessionId: string | undefined, gameType: string = '90-ball') {
-  const [winPatterns, setWinPatterns] = useState<string[]>(["oneLine", "twoLines", "fullHouse"]);
-  const [winPrizes, setWinPrizes] = useState<{ [key: string]: string }>({
-    oneLine: "",
-    twoLines: "",
-    fullHouse: "",
-  });
-  const [winPatternConfigs, setWinPatternConfigs] = useState<WinPatternConfig[]>([]);
-  const [currentGameWinPattern, setCurrentGameWinPattern] = useState<string | null>("oneLine");
+export interface ActiveWinlines {
+  id: string;
+  session_id: string;
+  user_id: string;
+  winline_1_prize: string | null;
+  winline_2_prize: string | null;
+  winline_3_prize: string | null;
+  winline_4_prize: string | null;
+  winline_5_prize: string | null;
+  active_winline: number; // 1-5
+  created_at: string;
+  updated_at: string;
+}
+
+export function useWinPatternManagement(sessionId: string | undefined, userId: string | undefined) {
+  // Winlines for config (up to 5 possible)
+  const [winlines, setWinlines] = useState<Winline[]>([
+    { id: 1, name: 'Winline 1', active: true },
+    { id: 2, name: 'Winline 2', active: false },
+    { id: 3, name: 'Winline 3', active: false },
+    { id: 4, name: 'Winline 4', active: false },
+    { id: 5, name: 'Winline 5', active: false },
+  ]);
+  // Active winlines/prizes state
+  const [activeWinlines, setActiveWinlines] = useState<ActiveWinlines | null>(null);
+  // For convenience
+  const [currentActiveWinline, setCurrentActiveWinline] = useState<number>(1);
   const { toast } = useToast();
 
-  // Load the game rules based on game type
-  const gameRules = getGameRulesForType(gameType);
-  
-  // Fetch win patterns for the specific game type
-  const fetchWinPatternConfigs = useCallback(async () => {
+  // Fetch session winline config (flags for which winlines are active)
+  const fetchWinlinesConfig = useCallback(async () => {
     if (!sessionId) return;
-    
-    console.log("Fetching win pattern configs for session:", sessionId, "game type:", gameType);
-    
-    try {
-      // First check if this session already has win patterns defined
-      const { data: existingPatterns, error: fetchError } = await supabase
-        .from('win_patterns')
-        .select('*')
-        .eq('session_id', sessionId)
-        .maybeSingle();
-      
-      if (fetchError) {
-        console.error("Error fetching win patterns:", fetchError);
-        return;
-      }
-      
-      // If we have patterns, convert them to our config format
-      if (existingPatterns) {
-        const configs: WinPatternConfig[] = [];
-        const prizes: { [key: string]: string } = {};
-        const activePatterns: string[] = [];
-        
-        // Process "one line" pattern
-        if (existingPatterns.one_line_active) {
-          configs.push({
-            id: "oneLine",
-            name: "One Line",
-            active: true,
-            prize: existingPatterns.one_line_prize || "",
-            order: 1
-          });
-          prizes.oneLine = existingPatterns.one_line_prize || "";
-          activePatterns.push("oneLine");
-        }
-        
-        // Process "two lines" pattern
-        if (existingPatterns.two_lines_active) {
-          configs.push({
-            id: "twoLines",
-            name: "Two Lines",
-            active: true,
-            prize: existingPatterns.two_lines_prize || "",
-            order: 2
-          });
-          prizes.twoLines = existingPatterns.two_lines_prize || "";
-          activePatterns.push("twoLines");
-        }
-        
-        // Process "full house" pattern
-        if (existingPatterns.full_house_active) {
-          configs.push({
-            id: "fullHouse",
-            name: "Full House",
-            active: true,
-            prize: existingPatterns.full_house_prize || "",
-            order: 3
-          });
-          prizes.fullHouse = existingPatterns.full_house_prize || "";
-          activePatterns.push("fullHouse");
-        }
-        
-        // Update state
-        setWinPatternConfigs(configs);
-        setWinPrizes(prizes);
-        setWinPatterns(activePatterns);
-        
-        // Set current game win pattern to the first active pattern if not set already
-        if (activePatterns.length > 0 && !currentGameWinPattern) {
-          const sortedPatterns = [...configs].sort((a, b) => a.order - b.order);
-          const firstActive = sortedPatterns.find(p => p.active);
-          if (firstActive) {
-            setCurrentGameWinPattern(firstActive.id);
-          }
-        }
-        
-        console.log("Loaded win patterns from DB:", configs);
-      } else {
-        // No patterns exist yet for this session, use default patterns from game rules
-        console.log("No existing win patterns found, using defaults from game rules");
-        const defaultConfigs = gameRules.getDefaultWinPatterns();
-        setWinPatternConfigs(defaultConfigs);
-        
-        // Convert to prizes and active patterns for backwards compatibility
-        const prizes: { [key: string]: string } = {};
-        const activePatterns: string[] = [];
-        
-        defaultConfigs.forEach(config => {
-          if (config.active) {
-            prizes[config.id] = config.prize;
-            activePatterns.push(config.id);
-          }
-        });
-        
-        setWinPrizes(prizes);
-        setWinPatterns(activePatterns);
-        
-        // Set current win pattern to first active pattern
-        const sortedPatterns = [...defaultConfigs].sort((a, b) => a.order - b.order);
-        const firstActive = sortedPatterns.find(p => p.active);
-        if (firstActive) {
-          setCurrentGameWinPattern(firstActive.id);
-        }
-      }
-    } catch (error) {
-      console.error("Exception fetching win patterns:", error);
+    const { data, error } = await supabase
+      .from('win_patterns')
+      .select('*')
+      .eq('session_id', sessionId)
+      .maybeSingle();
+    if (error) {
+      console.error('Error fetching win_patterns:', error);
+      return;
     }
-  }, [sessionId, gameType, gameRules, currentGameWinPattern]);
+    if (data) {
+      setWinlines([
+        { id: 1, name: 'Winline 1', active: !!data.winline_1_active },
+        { id: 2, name: 'Winline 2', active: !!data.winline_2_active },
+        { id: 3, name: 'Winline 3', active: !!data.winline_3_active },
+        { id: 4, name: 'Winline 4', active: !!data.winline_4_active },
+        { id: 5, name: 'Winline 5', active: !!data.winline_5_active },
+      ]);
+    }
+  }, [sessionId]);
 
-  // Initialize win patterns
-  useEffect(() => {
-    fetchWinPatternConfigs();
-  }, [fetchWinPatternConfigs]);
+  // Update win_patterns config for toggling winlines
+  const updateWinlineActive = useCallback(async (winlineId: number, newActive: boolean) => {
+    if (!sessionId) return;
+    const key = `winline_${winlineId}_active`;
+    const updateObj: Record<string, boolean> = {};
+    updateObj[key] = newActive;
+    await supabase
+      .from('win_patterns')
+      .update(updateObj)
+      .eq('session_id', sessionId);
+    // Refresh
+    fetchWinlinesConfig();
+  }, [sessionId, fetchWinlinesConfig]);
 
-  // Progress to the next win pattern
-  const progressWinPattern = useCallback(() => {
-    if (!currentGameWinPattern) return null;
-    
-    // Sort win pattern configs by order
-    const sortedPatterns = [...winPatternConfigs]
-      .filter(pattern => pattern.active)
-      .sort((a, b) => a.order - b.order);
-    
-    const currentIndex = sortedPatterns.findIndex(pattern => pattern.id === currentGameWinPattern);
-    
-    // Find the next pattern after the current one
-    const nextPattern = currentIndex < sortedPatterns.length - 1 
-      ? sortedPatterns[currentIndex + 1] 
-      : null;
-    
-    if (nextPattern) {
-      console.log(`Progressing from ${currentGameWinPattern} to ${nextPattern.id}`);
-      setCurrentGameWinPattern(nextPattern.id);
-      
-      // Notify players about win pattern change
-      if (sessionId) {
-        supabase.channel('game-updates').send({
-          type: 'broadcast',
-          event: 'win-pattern-change',
-          payload: {
-            previousPattern: currentGameWinPattern,
-            newPattern: nextPattern.id,
-            sessionId
-          }
-        });
-        
+  // Fetch prizes & active winline for the session/user
+  const fetchActiveWinlines = useCallback(async () => {
+    if (!sessionId || !userId) return;
+    const { data, error } = await supabase
+      .from('active_winlines')
+      .select('*')
+      .eq('session_id', sessionId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) {
+      console.error('Error fetching active_winlines:', error);
+      return;
+    }
+    if (data) {
+      setActiveWinlines(data);
+      setCurrentActiveWinline(data.active_winline || 1);
+    }
+  }, [sessionId, userId]);
+
+  // Called to advance to next valid winline
+  const progressWinline = useCallback(async () => {
+    if (!activeWinlines) return null;
+    // Get sorted actives
+    const activeIds = winlines.filter(wl => wl.active).map(wl => wl.id).sort((a, b) => a - b);
+    const currentIdx = activeIds.indexOf(activeWinlines.active_winline);
+    if (currentIdx === -1) return null; // impossible
+    // Progress to next active, if any
+    const next = activeIds[currentIdx + 1];
+    if (next) {
+      // Update DB and state
+      const { error } = await supabase
+        .from('active_winlines')
+        .update({ active_winline: next })
+        .eq('id', activeWinlines.id);
+      if (!error) {
+        setCurrentActiveWinline(next);
+        setActiveWinlines(prev => (prev ? { ...prev, active_winline: next } : prev));
         toast({
-          title: "Win Pattern Updated",
-          description: `The win pattern has been updated to ${nextPattern.name}`,
+          title: 'Advanced to Next Winline',
+          description: `Now requiring winline #${next}`,
         });
       }
-      
-      return nextPattern.id;
+      return next;
     }
-    
-    console.log("No next pattern available - this was the last pattern");
+    // No more; all finished
     return null;
-  }, [currentGameWinPattern, winPatternConfigs, sessionId, toast]);
+  }, [activeWinlines, winlines, toast]);
 
-  // Update win pattern config
-  const updateWinPatternConfig = useCallback((patternId: string, updates: Partial<WinPatternConfig>) => {
-    setWinPatternConfigs(prev => {
-      const updated = prev.map(pattern => 
-        pattern.id === patternId ? { ...pattern, ...updates } : pattern
-      );
-      
-      // If we're updating prizes, also update winPrizes for backward compatibility
-      if (updates.prize !== undefined) {
-        setWinPrizes(prev => ({ ...prev, [patternId]: updates.prize || "" }));
-      }
-      
-      // If we're updating active state, also update winPatterns for backward compatibility
-      if (updates.active !== undefined) {
-        setWinPatterns(prev => {
-          if (updates.active) {
-            return prev.includes(patternId) ? prev : [...prev, patternId];
-          } else {
-            return prev.filter(id => id !== patternId);
-          }
-        });
-      }
-      
-      return updated;
-    });
-  }, []);
-
-  // Toggle pattern active state
-  const togglePatternActive = useCallback((patternId: string) => {
-    setWinPatternConfigs(prev => {
-      const pattern = prev.find(p => p.id === patternId);
-      if (!pattern) return prev;
-      
-      const newActive = !pattern.active;
-      
-      // Update winPatterns array for backward compatibility
-      if (newActive) {
-        setWinPatterns(prev => prev.includes(patternId) ? prev : [...prev, patternId]);
-      } else {
-        setWinPatterns(prev => prev.filter(id => id !== patternId));
-      }
-      
-      return prev.map(p => 
-        p.id === patternId ? { ...p, active: newActive } : p
-      );
-    });
-  }, []);
-
-  // Update prize value
-  const updatePrizeValue = useCallback((patternId: string, value: string) => {
-    // Update both prize in config and winPrizes for backward compatibility
-    updateWinPatternConfig(patternId, { prize: value });
-    setWinPrizes(prev => ({ ...prev, [patternId]: value }));
-  }, [updateWinPatternConfig]);
-
-  // Save win patterns to database
-  const saveWinPatterns = useCallback(async () => {
-    if (!sessionId) return;
-
-    try {
-      console.log("Saving win patterns:", winPatternConfigs);
-      
-      // First check if patterns already exist for this session
-      const { data: existingData, error: checkError } = await supabase
-        .from('win_patterns')
-        .select('id')
-        .eq('session_id', sessionId)
-        .maybeSingle();
-
-      if (checkError) {
-        console.error("Error checking for existing win patterns:", checkError);
-        return;
-      }
-
-      // Convert our configs back to the database format
-      const oneLineConfig = winPatternConfigs.find(p => p.id === "oneLine");
-      const twoLinesConfig = winPatternConfigs.find(p => p.id === "twoLines");
-      const fullHouseConfig = winPatternConfigs.find(p => p.id === "fullHouse");
-      
-      const patternsData = {
-        session_id: sessionId,
-        one_line_active: oneLineConfig?.active || false,
-        two_lines_active: twoLinesConfig?.active || false,
-        full_house_active: fullHouseConfig?.active || false,
-        one_line_prize: oneLineConfig?.prize || null,
-        two_lines_prize: twoLinesConfig?.prize || null,
-        full_house_prize: fullHouseConfig?.prize || null
-      };
-
-      let error;
-      
-      if (existingData) {
-        // Update existing patterns
-        const { error: updateError } = await supabase
-          .from('win_patterns')
-          .update(patternsData)
-          .eq('session_id', sessionId);
-        
-        error = updateError;
-      } else {
-        // Insert new patterns
-        const { error: insertError } = await supabase
-          .from('win_patterns')
-          .insert([patternsData]);
-        
-        error = insertError;
-      }
-
-      if (error) {
-        console.error("Error saving win patterns:", error);
-        toast({
-          title: "Error",
-          description: "Failed to save win patterns.",
-          variant: "destructive"
-        });
-      } else {
-        console.log("Win patterns saved successfully");
-      }
-    } catch (error) {
-      console.error("Exception saving win patterns:", error);
+  // Toggle winline active status in config
+  const handleToggleWinline = useCallback((winlineId: number) => {
+    const cur = winlines.find(wl => wl.id === winlineId);
+    if (cur) {
+      updateWinlineActive(winlineId, !cur.active);
     }
-  }, [sessionId, winPatternConfigs, toast]);
+  }, [winlines, updateWinlineActive]);
 
-  // Save changes when win patterns or prizes change
-  useEffect(() => {
-    if (sessionId && winPatternConfigs.length > 0) {
-      console.log("Scheduling save of win patterns:", winPatternConfigs);
-      const timeoutId = setTimeout(() => {
-        saveWinPatterns();
-      }, 500); // Debounce saves
-      
-      return () => clearTimeout(timeoutId);
+  // Change prize for a winline
+  const handlePrizeChange = useCallback(async (winlineId: number, prize: string) => {
+    if (!activeWinlines) return;
+    const prizeKey = `winline_${winlineId}_prize`;
+    const updateObj: Record<string, string> = {};
+    updateObj[prizeKey] = prize;
+    const { error } = await supabase
+      .from('active_winlines')
+      .update(updateObj)
+      .eq('id', activeWinlines.id);
+    if (!error) {
+      setActiveWinlines(prev => prev ? { ...prev, [prizeKey]: prize } : prev);
+      toast({ title: 'Prize updated', description: `Prize set for winline #${winlineId}` });
     }
-  }, [winPatternConfigs, sessionId, saveWinPatterns]);
+  }, [activeWinlines, toast]);
 
-  // Validate a win claim based on the current pattern
-  const validateWinClaim = useCallback((ticket: any, calledNumbers: number[]) => {
-    if (!currentGameWinPattern || !gameRules) return false;
-    
-    return gameRules.validateWin(currentGameWinPattern, ticket, calledNumbers);
-  }, [currentGameWinPattern, gameRules]);
+  // Set up and fetch config/prizes on load
+  useEffect(() => { fetchWinlinesConfig(); }, [fetchWinlinesConfig]);
+  useEffect(() => { fetchActiveWinlines(); }, [fetchActiveWinlines]);
+  // Refetch when toggling etc
+  useEffect(() => { fetchActiveWinlines(); }, [activeWinlines?.active_winline]); 
 
   return {
-    winPatterns,
-    winPrizes,
-    winPatternConfigs,
-    currentGameWinPattern,
-    setCurrentGameWinPattern,
-    progressWinPattern,
-    setWinPatterns,
-    setWinPrizes,
-    saveWinPatterns,
-    togglePatternActive,
-    updatePrizeValue,
-    updateWinPatternConfig,
-    validateWinClaim
+    winlines, // Array of { id: 1-5, name, active }
+    currentActiveWinline, // index (1-based)
+    activeWinlines,
+    handleToggleWinline,
+    handlePrizeChange,
+    progressWinline
   };
 }

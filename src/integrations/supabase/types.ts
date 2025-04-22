@@ -9,6 +9,56 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      active_winlines: {
+        Row: {
+          active_winline: number
+          created_at: string
+          id: string
+          session_id: string
+          updated_at: string
+          user_id: string
+          winline_1_prize: string | null
+          winline_2_prize: string | null
+          winline_3_prize: string | null
+          winline_4_prize: string | null
+          winline_5_prize: string | null
+        }
+        Insert: {
+          active_winline?: number
+          created_at?: string
+          id?: string
+          session_id: string
+          updated_at?: string
+          user_id: string
+          winline_1_prize?: string | null
+          winline_2_prize?: string | null
+          winline_3_prize?: string | null
+          winline_4_prize?: string | null
+          winline_5_prize?: string | null
+        }
+        Update: {
+          active_winline?: number
+          created_at?: string
+          id?: string
+          session_id?: string
+          updated_at?: string
+          user_id?: string
+          winline_1_prize?: string | null
+          winline_2_prize?: string | null
+          winline_3_prize?: string | null
+          winline_4_prize?: string | null
+          winline_5_prize?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "active_winlines_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "game_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assigned_tickets: {
         Row: {
           id: string
@@ -377,36 +427,33 @@ export type Database = {
       win_patterns: {
         Row: {
           created_at: string
-          full_house_active: boolean
-          full_house_prize: string | null
           id: string
-          one_line_active: boolean
-          one_line_prize: string | null
           session_id: string
-          two_lines_active: boolean
-          two_lines_prize: string | null
+          winline_1_active: boolean
+          winline_2_active: boolean
+          winline_3_active: boolean
+          winline_4_active: boolean
+          winline_5_active: boolean
         }
         Insert: {
           created_at?: string
-          full_house_active?: boolean
-          full_house_prize?: string | null
           id?: string
-          one_line_active?: boolean
-          one_line_prize?: string | null
           session_id: string
-          two_lines_active?: boolean
-          two_lines_prize?: string | null
+          winline_1_active?: boolean
+          winline_2_active?: boolean
+          winline_3_active?: boolean
+          winline_4_active?: boolean
+          winline_5_active?: boolean
         }
         Update: {
           created_at?: string
-          full_house_active?: boolean
-          full_house_prize?: string | null
           id?: string
-          one_line_active?: boolean
-          one_line_prize?: string | null
           session_id?: string
-          two_lines_active?: boolean
-          two_lines_prize?: string | null
+          winline_1_active?: boolean
+          winline_2_active?: boolean
+          winline_3_active?: boolean
+          winline_4_active?: boolean
+          winline_5_active?: boolean
         }
         Relationships: [
           {

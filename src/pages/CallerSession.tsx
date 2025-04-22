@@ -40,28 +40,26 @@ export default function CallerSession() {
     rejectClaim
   } = useClaimManagement(sessionId);
 
-  const {
-    winPatterns,
-    winPrizes,
-    winPatternConfigs,
-    currentGameWinPattern,
-    progressWinPattern,
-    setWinPatterns,
-    setWinPrizes,
-    updatePrizeValue,
-    togglePatternActive,
-    validateWinClaim
-  } = useWinPatternManagement(sessionId, gameType);
+  // Mock: get current userId, later use real user auth id
+  const userId = 'superuser-id-placeholder';
 
-  const { progressToNextGame } = useGameProgression(session);
+  // Update hook usage: supply sessionId and userId
+  const {
+    winlines,
+    currentActiveWinline,
+    activeWinlines,
+    handleToggleWinline,
+    handlePrizeChange,
+    progressWinline,
+  } = useWinPatternManagement(sessionId, userId);
 
   useEffect(() => {
     console.log("CallerSession - state update", {
       showClaimSheet,
       claimQueueLength: claimQueue?.length,
-      currentGameWinPattern
+      currentGameWinPattern: currentActiveWinline
     });
-  }, [showClaimSheet, claimQueue, currentGameWinPattern]);
+  }, [showClaimSheet, claimQueue, currentActiveWinline]);
 
   useEffect(() => {
     if (!session && sessionId) {
@@ -207,13 +205,12 @@ export default function CallerSession() {
           if (data.one_line_active) patterns.push('oneLine');
           if (data.two_lines_active) patterns.push('twoLines');
           if (data.full_house_active) patterns.push('fullHouse');
-          setWinPatterns(patterns);
         }
       };
 
       fetchWinPatterns();
     }
-  }, [sessionId, setWinPatterns]);
+  }, [sessionId]);
 
   useEffect(() => {
     if (sessionId && session?.id) {
@@ -236,12 +233,12 @@ export default function CallerSession() {
     }
   };
 
-  const handleTogglePattern = (patternId: string) => {
-    togglePatternActive(patternId);
+  const handleToggleWinline = (winlineId: number) => {
+    handleToggleWinline(winlineId);
   };
 
-  const handlePrizeChange = (patternId: string, value: string) => {
-    updatePrizeValue(patternId, value);
+  const handlePrizeChange = (winlineId: number, value: string) => {
+    handlePrizeChange(winlineId, value);
   };
 
   const handleCallNumber = async (number: number) => {
@@ -295,8 +292,8 @@ export default function CallerSession() {
           session_id: sessionId,
           player_id: currentClaim.playerId,
           game_number: session.numberOfGames,
-          win_pattern: currentGameWinPattern,
-          prize: winPrizes[currentGameWinPattern || ''],
+          win_pattern: String(currentActiveWinline),
+          prize: activeWinlines?.[`winline_${currentActiveWinline}_prize`] || '',
           username: currentClaim.playerName,
           winning_ticket: currentClaim.tickets,
           numbers_called: calledNumbers,
@@ -306,7 +303,7 @@ export default function CallerSession() {
       console.log("Game log created for valid claim");
 
       // Move to the next pattern or game
-      const nextPattern = progressWinPattern();
+      const nextPattern = await progressWinline();
       console.log("Progress win pattern result:", nextPattern);
       
       // If there are no more patterns, progress to the next game
@@ -413,13 +410,12 @@ export default function CallerSession() {
         setAutoMarking={setAutoMarking} 
       />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Compose the new props */}
         <SessionMainContent
           session={session}
-          winPatterns={winPatterns}
-          winPrizes={winPrizes}
-          winPatternConfigs={winPatternConfigs}
-          currentPattern={currentGameWinPattern}
-          onTogglePattern={handleTogglePattern}
+          winLines={winlines}
+          currentActiveWinline={currentActiveWinline}
+          onToggleWinline={handleToggleWinline}
           onPrizeChange={handlePrizeChange}
           calledNumbers={calledNumbers}
           currentNumber={currentNumber}
@@ -447,7 +443,7 @@ export default function CallerSession() {
         currentNumber={currentNumber}
         onValidClaim={handleValidClaim}
         onFalseClaim={handleFalseClaim}
-        currentWinPattern={currentGameWinPattern}
+        currentWinPattern={String(currentActiveWinline)}
         gameType={gameType}
       />
     </div>

@@ -1,4 +1,3 @@
-
 import React from 'react';
 import WinPatternSelector from './WinPatternSelector';
 import CalledNumbers from './CalledNumbers';
@@ -9,12 +8,10 @@ import type { WinPatternConfig } from '@/hooks/useWinPatternManagement';
 
 interface SessionMainContentProps {
   session: any;
-  winPatterns: string[];
-  winPrizes: { [key: string]: string };
-  winPatternConfigs?: WinPatternConfig[];
-  currentPattern: string | null;
-  onTogglePattern: (pattern: string) => void;
-  onPrizeChange: (pattern: string, value: string) => void;
+  winLines: Array<{ id: number; name: string; active: boolean }>;
+  currentActiveWinline: number;
+  onToggleWinline: (winlineId: number) => void;
+  onPrizeChange: (winlineId: number, value: string) => void;
   calledNumbers: number[];
   currentNumber: number | null;
   sessionPlayers: any[];
@@ -23,7 +20,6 @@ interface SessionMainContentProps {
   handleGoLive: () => Promise<void>;
   remainingNumbers: number[];
   sessionId: string;
-  onCheckClaims?: () => void;
   claimQueue?: Array<{ playerName: string; playerId: string; claimId?: string }>;
   openClaimSheet: () => void;
   gameType?: string;
@@ -31,11 +27,9 @@ interface SessionMainContentProps {
 
 export default function SessionMainContent({
   session,
-  winPatterns,
-  winPrizes,
-  winPatternConfigs = [],
-  currentPattern,
-  onTogglePattern,
+  winLines,
+  currentActiveWinline,
+  onToggleWinline,
   onPrizeChange,
   calledNumbers,
   currentNumber,
@@ -55,17 +49,12 @@ export default function SessionMainContent({
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Game: {gameType}</h2>
           <div className="mb-4">
-            {winPatternConfigs && winPatternConfigs.length > 0 ? (
-              <WinPatternSelector
-                winPatternConfigs={winPatternConfigs}
-                onTogglePattern={onTogglePattern}
-                onPrizeChange={onPrizeChange}
-                currentPattern={currentPattern}
-              />
-            ) : (
-              // Legacy fallback
-              <div className="text-gray-500">Loading win patterns...</div>
-            )}
+            <WinPatternSelector
+              winLines={winLines}
+              currentActiveWinline={currentActiveWinline}
+              onToggleWinline={onToggleWinline}
+              onPrizeChange={onPrizeChange}
+            />
           </div>
           <CalledNumbers 
             calledNumbers={calledNumbers}
@@ -85,10 +74,9 @@ export default function SessionMainContent({
           onGoLive={handleGoLive}
           remainingNumbers={remainingNumbers}
           sessionId={sessionId}
-          winPatterns={winPatterns}
+          winPatterns={[]} // not used anymore
           claimCount={claimQueue?.length || 0}
           openClaimSheet={openClaimSheet}
-          // gameType prop removed since it's not used in CallerControls
         />
       </div>
     </div>
