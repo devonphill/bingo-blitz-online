@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -209,11 +208,9 @@ export default function CallerSession() {
     }
   }, [sessionId, setWinPatterns]);
 
-  // Check for claims only when session is fully loaded and session ID exists
   useEffect(() => {
     if (sessionId && session?.id) {
       console.log("Initial check for pending claims");
-      // Slight delay to ensure all other initialization is complete
       const timer = setTimeout(() => {
         checkForClaims();
       }, 2000);
