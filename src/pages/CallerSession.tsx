@@ -316,7 +316,7 @@ export default function CallerSession() {
       }
       
       // Close the claim sheet
-      setShowClaimSheet(false);
+      setShowClaimSheet(true);
       setCurrentClaim(null);
       
     } catch (error) {

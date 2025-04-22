@@ -1,13 +1,16 @@
+
 import React from "react";
 
 interface CurrentNumberDisplayProps {
   number: number | null;
   sizePx?: number;
+  gameType?: string;
 }
 
 export default function CurrentNumberDisplay({ 
   number, 
-  sizePx = 90
+  sizePx = 90,
+  gameType = '90-ball'
 }: CurrentNumberDisplayProps) {
   // Colors similar to CalledNumbers color mapping
   const getColor = (n: number | null) => {
