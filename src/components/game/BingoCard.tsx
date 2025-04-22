@@ -1,4 +1,3 @@
-
 // BingoCard.tsx -- splits to use BingoCardGrid and BingoCell
 
 import React, { useState, useEffect } from 'react';
@@ -124,6 +123,7 @@ export default function BingoCard({
       autoMarking={autoMarking}
       setMarkedCells={setMarkedCells}
       oneTGNumbers={oneTGNumbers}
+      activeWinPatterns={activeWinPatterns}
     />
   );
 }

@@ -29,7 +29,7 @@ export default function CallerControls({
   winPatterns,
   claimCount = 0,
   openClaimSheet,
-  gameType = '90-ball'
+  // Removed unused prop 'gameType' from prop destructure
 }: CallerControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);

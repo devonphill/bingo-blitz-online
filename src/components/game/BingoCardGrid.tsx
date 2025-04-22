@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import BingoCell from "./BingoCell";
 import BingoCard from "./BingoCard";
@@ -24,7 +23,6 @@ export default function BingoCardGrid({
   activeWinPatterns = [],
   currentWinPattern = null,
   gameType = '90-ball',
-  // Legacy props
   card,
   markedCells,
   setMarkedCells,
@@ -58,7 +56,7 @@ export default function BingoCardGrid({
       )}
     </div>
   );
-  
+
   // Legacy render function (for backward compatibility)
   function renderLegacyCard() {
     const [recentlyMarked, setRecentlyMarked] = useState<Set<string>>(new Set());

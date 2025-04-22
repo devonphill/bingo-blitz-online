@@ -1,4 +1,3 @@
-
 import React from 'react';
 import WinPatternSelector from './WinPatternSelector';
 import CalledNumbers from './CalledNumbers';
@@ -88,7 +87,6 @@ export default function SessionMainContent({
           winPatterns={winPatterns}
           claimCount={claimQueue?.length || 0}
           openClaimSheet={openClaimSheet}
-          gameType={gameType}
         />
       </div>
     </div>
