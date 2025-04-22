@@ -17,6 +17,7 @@ interface CallerControlsProps {
   onCheckClaims?: () => void;
   claimCount?: number;
   openClaimSheet: () => void;
+  gameType?: string;
 }
 
 export default function CallerControls({ 
@@ -27,7 +28,8 @@ export default function CallerControls({
   sessionId,
   winPatterns,
   claimCount = 0,
-  openClaimSheet
+  openClaimSheet,
+  gameType = '90-ball'
 }: CallerControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);

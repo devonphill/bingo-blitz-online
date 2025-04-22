@@ -1,7 +1,17 @@
 
 import React from "react";
 
-export default function CurrentNumberDisplay({ number, sizePx = 90 }: { number: number | null, sizePx?: number }) {
+interface CurrentNumberDisplayProps {
+  number: number | null;
+  sizePx?: number;
+  gameType?: string;
+}
+
+export default function CurrentNumberDisplay({ 
+  number, 
+  sizePx = 90, 
+  gameType = '90-ball' 
+}: CurrentNumberDisplayProps) {
   // Colors similar to CalledNumbers color mapping
   const getColor = (n: number | null) => {
     if (n == null) return "bg-gray-200 text-gray-400";
