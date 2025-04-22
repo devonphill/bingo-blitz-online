@@ -41,15 +41,20 @@ export default function PlayerGameLayout({
   isClaiming = false,
   claimStatus
 }: PlayerGameLayoutProps) {
-  const [isClaimValidating, setIsClaimValidating] = useState(false);
+  const [localClaimValidating, setLocalClaimValidating] = useState(false);
   const { toast } = useToast();
 
-  // Reset claim validating state when external claim status changes
+  // Reset local claim state when external claim status changes
   useEffect(() => {
     if (claimStatus === 'validated' || claimStatus === 'rejected') {
-      setIsClaimValidating(false);
+      setLocalClaimValidating(false);
     }
-  }, [claimStatus]);
+    
+    // When isClaiming changes to false, also reset local state
+    if (isClaiming === false) {
+      setLocalClaimValidating(false);
+    }
+  }, [claimStatus, isClaiming]);
 
   useEffect(() => {
     if (!currentSession?.id || !playerCode) return;
@@ -60,11 +65,13 @@ export default function PlayerGameLayout({
         'broadcast',
         { event: 'claim-result' },
         (payload) => {
+          console.log("Received claim result broadcast:", payload);
+          
           if (payload.payload && payload.payload.playerId === playerCode) {
             const result = payload.payload.result;
             
             if (result === 'valid' || result === 'rejected') {
-              setIsClaimValidating(false);
+              setLocalClaimValidating(false);
               
               toast({
                 title: result === 'valid' ? "Claim Verified!" : "Claim Rejected",
@@ -85,15 +92,30 @@ export default function PlayerGameLayout({
   }, [currentSession?.id, playerCode, toast]);
 
   const handleClaimClick = async () => {
-    if (isClaimValidating || isClaiming) return;
+    // Check if a claim is already in process (either local or from parent)
+    if (localClaimValidating || isClaiming || claimStatus === 'pending') {
+      console.log("Claim already in progress, ignoring click");
+      return;
+    }
     
     try {
+      console.log("Attempting to claim bingo");
+      setLocalClaimValidating(true);
       const success = await onClaimBingo();
-      if (success) {
-        setIsClaimValidating(true);
+      
+      if (!success) {
+        // If the parent returns false, reset our local state
+        setLocalClaimValidating(false);
+        toast({
+          title: "Claim Failed",
+          description: "Unable to submit your claim. Please try again.",
+          variant: "destructive"
+        });
       }
     } catch (error) {
       console.error("Error submitting claim:", error);
+      setLocalClaimValidating(false);
+      
       toast({
         title: "Error",
         description: "There was a problem submitting your claim. Please try again.",
@@ -142,8 +164,8 @@ export default function PlayerGameLayout({
     );
   }
   
-  // We now correctly determine the claim button state based on both internal and external state
-  const isClaimInProgress = isClaimValidating || isClaiming || claimStatus === 'pending';
+  // Determine if a claim is in progress using both local and parent state
+  const isClaimInProgress = localClaimValidating || isClaiming || claimStatus === 'pending';
   
   return (
     <div className="min-h-screen w-full flex bg-gray-50">

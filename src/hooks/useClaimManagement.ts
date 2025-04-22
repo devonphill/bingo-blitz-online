@@ -23,7 +23,8 @@ export function useClaimManagement(sessionId: string | undefined) {
   // Handle closing the claim sheet
   const handleCloseSheet = useCallback(() => {
     setShowClaimSheet(false);
-    setCurrentClaim(null);
+    // We don't immediately clear currentClaim here to prevent UI jumps
+    // It will be cleared before processing the next claim
   }, []);
 
   // Process the next claim in queue
@@ -32,6 +33,9 @@ export function useClaimManagement(sessionId: string | undefined) {
       return;
     }
 
+    // First clear any previous claim
+    setCurrentClaim(null);
+    
     setProcessingClaim(true);
     const nextClaim = claimQueue[0];
     
@@ -44,11 +48,15 @@ export function useClaimManagement(sessionId: string | undefined) {
 
       if (ticketError) {
         console.error("Error fetching ticket data:", ticketError);
+        // Remove the problematic claim from queue and continue
+        setClaimQueue(prev => prev.slice(1));
+        setProcessingClaim(false);
         return;
       }
 
       console.log(`Processing claim for ${nextClaim.playerName} with ${ticketData?.length || 0} tickets`);
       
+      // Set the current claim after we successfully fetched the tickets
       setCurrentClaim({
         playerName: nextClaim.playerName,
         playerId: nextClaim.playerId,
@@ -56,14 +64,19 @@ export function useClaimManagement(sessionId: string | undefined) {
         claimId: nextClaim.claimId
       });
       
+      // Remove this claim from the queue
       setClaimQueue(prev => prev.slice(1));
       
       console.log("Opening sheet for claim verification!");
-      setShowClaimSheet(true);
+      // Open the sheet only after setting current claim
+      setTimeout(() => {
+        setShowClaimSheet(true);
+        setProcessingClaim(false);
+      }, 100);
+      
     } catch (error) {
       console.error("Error processing next claim:", error);
       setClaimQueue(prev => prev.slice(1));
-    } finally {
       setProcessingClaim(false);
     }
   }, [claimQueue, processingClaim, sessionId, showClaimSheet]);
@@ -72,6 +85,7 @@ export function useClaimManagement(sessionId: string | undefined) {
   const checkForClaims = useCallback(async () => {
     if (!sessionId || hasCheckedInitialClaims.current) return;
     
+    console.log("Performing initial check for claims, setting flag to true");
     hasCheckedInitialClaims.current = true;
     
     try {
@@ -115,13 +129,13 @@ export function useClaimManagement(sessionId: string | undefined) {
 
   // Auto-process next claim when ready
   useEffect(() => {
-    if (!showClaimSheet && !currentClaim && claimQueue.length > 0) {
+    if (!showClaimSheet && !processingClaim && claimQueue.length > 0) {
       const timer = setTimeout(() => {
         processNextClaim();
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [showClaimSheet, currentClaim, claimQueue, processNextClaim]);
+  }, [showClaimSheet, processingClaim, claimQueue, processNextClaim]);
 
   // Listen for real-time bingo claims - with important fixes
   useEffect(() => {
@@ -157,7 +171,7 @@ export function useClaimManagement(sessionId: string | undefined) {
               ]);
               
               // Only open claim sheet automatically if there's no current claim being processed
-              if (!showClaimSheet && !currentClaim) {
+              if (!showClaimSheet && !processingClaim && !currentClaim) {
                 processNextClaim();
               }
             } else {
@@ -172,7 +186,7 @@ export function useClaimManagement(sessionId: string | undefined) {
       console.log("Removing channel for bingo claims");
       supabase.removeChannel(channel);
     };
-  }, [sessionId, currentClaim, claimQueue, showClaimSheet, processNextClaim]);
+  }, [sessionId, currentClaim, claimQueue, showClaimSheet, processingClaim, processNextClaim]);
 
   // Manually open the claim sheet
   const openClaimSheet = useCallback(() => {
@@ -180,13 +194,13 @@ export function useClaimManagement(sessionId: string | undefined) {
     
     // If there are claims in the queue but no current claim is being displayed,
     // process the next claim in queue
-    if (claimQueue.length > 0 && !currentClaim && !showClaimSheet) {
+    if (claimQueue.length > 0 && !currentClaim && !showClaimSheet && !processingClaim) {
       processNextClaim();
-    } else if (currentClaim && !showClaimSheet) {
+    } else if (currentClaim && !showClaimSheet && !processingClaim) {
       // If there's a current claim but the sheet is closed, reopen it
       setShowClaimSheet(true);
     }
-  }, [claimQueue, currentClaim, processNextClaim, showClaimSheet]);
+  }, [claimQueue, currentClaim, processNextClaim, showClaimSheet, processingClaim]);
 
   // Validate a claim
   const validateClaim = useCallback(async () => {
@@ -219,20 +233,12 @@ export function useClaimManagement(sessionId: string | undefined) {
           }
         });
       
-      // Close the sheet and reset current claim
-      handleCloseSheet();
-      
       toast({
         title: "Claim Validated",
         description: `${currentClaim.playerName}'s claim has been validated.`
       });
       
-      // Process next claim if any
-      setTimeout(() => {
-        if (claimQueue.length > 0) {
-          processNextClaim();
-        }
-      }, 500);
+      // The sheet will be closed by the confirmation callback with a delay
       
     } catch (error) {
       console.error("Error validating claim:", error);
@@ -243,7 +249,7 @@ export function useClaimManagement(sessionId: string | undefined) {
         variant: "destructive"
       });
     }
-  }, [currentClaim, sessionId, toast, handleCloseSheet, claimQueue, processNextClaim]);
+  }, [currentClaim, sessionId, toast]);
 
   // Reject a claim
   const rejectClaim = useCallback(async () => {
@@ -276,20 +282,12 @@ export function useClaimManagement(sessionId: string | undefined) {
           }
         });
       
-      // Close the sheet and reset current claim
-      handleCloseSheet();
-      
       toast({
         title: "Claim Rejected",
         description: `${currentClaim.playerName}'s claim has been rejected.`
       });
       
-      // Process next claim if any
-      setTimeout(() => {
-        if (claimQueue.length > 0) {
-          processNextClaim();
-        }
-      }, 500);
+      // The sheet will be closed by the confirmation callback with a delay
       
     } catch (error) {
       console.error("Error rejecting claim:", error);
@@ -300,7 +298,7 @@ export function useClaimManagement(sessionId: string | undefined) {
         variant: "destructive"
       });
     }
-  }, [currentClaim, sessionId, toast, handleCloseSheet, claimQueue, processNextClaim]);
+  }, [currentClaim, sessionId, toast]);
 
   return {
     showClaimSheet,

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -23,6 +24,7 @@ export default function CallerSession() {
   const [remainingNumbers, setRemainingNumbers] = useState<number[]>([]);
   const [sessionPlayers, setSessionPlayers] = useState<any[]>([]);
   const [autoMarking, setAutoMarking] = useState(false);
+  const [isProcessingValidClaim, setIsProcessingValidClaim] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -269,11 +271,15 @@ export default function CallerSession() {
 
   const handleValidClaim = async () => {
     console.log("handleValidClaim called");
-    if (!currentClaim || !session) return;
+    if (!currentClaim || !session || isProcessingValidClaim) return;
 
     try {
-      const nextPattern = progressWinPattern();
+      setIsProcessingValidClaim(true);
       
+      // First validate the claim - this sends notifications to players
+      await validateClaim();
+      
+      // Then log the win in game_logs
       await supabase
         .from('game_logs')
         .insert({
@@ -287,12 +293,19 @@ export default function CallerSession() {
           numbers_called: calledNumbers,
           total_calls: calledNumbers.length
         });
+        
+      console.log("Game log created for valid claim");
 
-      validateClaim();
-
+      // Move to the next pattern or game
+      const nextPattern = progressWinPattern();
+      console.log("Progress win pattern result:", nextPattern);
+      
+      // If there are no more patterns, progress to the next game
       if (!nextPattern) {
+        console.log("No more win patterns, progressing to next game");
         await progressToNextGame();
       }
+      
     } catch (error) {
       console.error("Error processing valid claim:", error);
       toast({
@@ -300,6 +313,8 @@ export default function CallerSession() {
         description: "Failed to process claim.",
         variant: "destructive"
       });
+    } finally {
+      setIsProcessingValidClaim(false);
     }
   };
 
@@ -308,7 +323,7 @@ export default function CallerSession() {
     if (!currentClaim) return;
 
     try {
-      rejectClaim();
+      await rejectClaim();
     } catch (error) {
       console.error("Error processing false claim:", error);
       toast({

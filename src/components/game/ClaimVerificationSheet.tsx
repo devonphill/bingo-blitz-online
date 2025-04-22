@@ -45,6 +45,7 @@ export default function ClaimVerificationSheet({
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [actionType, setActionType] = useState<'valid' | 'false' | null>(null);
   const [validTickets, setValidTickets] = useState<any[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
   
   console.log("ClaimVerificationSheet rendered with isOpen:", isOpen, "playerName:", playerName);
   
@@ -55,6 +56,11 @@ export default function ClaimVerificationSheet({
       console.log("SHEET IS OPEN NOW with player:", playerName);
       console.log("Ticket data:", tickets);
       console.log("Current win pattern:", currentWinPattern);
+    }
+    
+    // Reset processing state when sheet opens/closes
+    if (!isOpen) {
+      setIsProcessing(false);
     }
   }, [isOpen, playerName, tickets, currentWinPattern]);
   
@@ -153,32 +159,43 @@ export default function ClaimVerificationSheet({
   }, [tickets, calledNumbers, currentWinPattern]);
 
   const handleValidClaim = () => {
+    if (isProcessing) return;
     console.log("Valid claim button clicked");
     setActionType('valid');
     setConfirmDialogOpen(true);
   };
 
   const handleFalseClaim = () => {
+    if (isProcessing) return;
     console.log("False claim button clicked");
     setActionType('false');
     setConfirmDialogOpen(true);
   };
 
   const confirmAction = () => {
+    if (isProcessing) return;
+    
     console.log("Confirming action:", actionType);
     setConfirmDialogOpen(false);
+    setIsProcessing(true);
+    
     if (actionType === 'valid') {
       onValidClaim();
     } else if (actionType === 'false') {
       onFalseClaim();
     }
+    
+    // Close the sheet after a short delay to avoid UI freezes
+    setTimeout(() => {
+      onClose();
+    }, 500);
   };
 
   return (
     <>
       <Sheet open={isOpen} onOpenChange={(open) => {
         console.log("Sheet onOpenChange called with:", open);
-        if (!open) onClose();
+        if (!open && !isProcessing) onClose();
       }}>
         <SheetContent className="w-[85%] sm:w-[600px] md:w-[85%] max-w-3xl overflow-auto" side="right">
           <SheetHeader>
@@ -235,16 +252,18 @@ export default function ClaimVerificationSheet({
               variant="destructive"
               onClick={handleFalseClaim}
               className="flex items-center gap-2"
+              disabled={isProcessing}
             >
               <X className="h-4 w-4" />
-              False Call
+              {isProcessing && actionType === 'false' ? 'Processing...' : 'False Call'}
             </Button>
             <Button
               onClick={handleValidClaim}
               className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
+              disabled={isProcessing}
             >
               <Check className="h-4 w-4" />
-              Valid Claim
+              {isProcessing && actionType === 'valid' ? 'Processing...' : 'Valid Claim'}
             </Button>
           </div>
         </SheetContent>
@@ -263,11 +282,11 @@ export default function ClaimVerificationSheet({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmDialogOpen(false)}>
+            <AlertDialogCancel onClick={() => setConfirmDialogOpen(false)} disabled={isProcessing}>
               Cancel
             </AlertDialogCancel>
-            <AlertDialogAction onClick={confirmAction} className={actionType === 'valid' ? 'bg-green-600' : 'bg-red-600'}>
-              {actionType === 'valid' ? 'Confirm Valid' : 'Confirm False'}
+            <AlertDialogAction onClick={confirmAction} className={actionType === 'valid' ? 'bg-green-600' : 'bg-red-600'} disabled={isProcessing}>
+              {isProcessing ? 'Processing...' : (actionType === 'valid' ? 'Confirm Valid' : 'Confirm False')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
