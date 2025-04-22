@@ -6,17 +6,13 @@ import type { Winline } from "@/hooks/useWinPatternManagement";
 interface WinPatternSelectorProps {
   winLines: Winline[];
   onToggleWinline: (winlineId: number) => void;
-  onPrizeChange: (winlineId: number, prize: string) => void;
-  currentActiveWinline: number;
-  activeWinlines?: any;
+  currentActiveWinline?: number;
 }
 
 export default function WinPatternSelector({
   winLines,
   onToggleWinline,
-  onPrizeChange,
   currentActiveWinline,
-  activeWinlines,
 }: WinPatternSelectorProps) {
   const sortedWinlines = [...winLines].sort((a, b) => a.id - b.id);
 
@@ -36,13 +32,6 @@ export default function WinPatternSelector({
             >
               {wl.name}
             </Button>
-            <input
-              type="text"
-              placeholder="Prize"
-              className="border rounded px-2 py-1 w-24 text-xs"
-              value={activeWinlines ? (activeWinlines[`winline_${wl.id}_prize`] || "") : ""}
-              onChange={e => onPrizeChange(wl.id, e.target.value)}
-            />
           </div>
         ))}
       </div>

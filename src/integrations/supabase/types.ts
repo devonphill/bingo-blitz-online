@@ -427,8 +427,7 @@ export type Database = {
       win_patterns: {
         Row: {
           created_at: string
-          id: string
-          session_id: string
+          id: number
           winline_1_active: boolean
           winline_2_active: boolean
           winline_3_active: boolean
@@ -437,8 +436,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          id?: string
-          session_id: string
+          id: number
           winline_1_active?: boolean
           winline_2_active?: boolean
           winline_3_active?: boolean
@@ -447,23 +445,14 @@ export type Database = {
         }
         Update: {
           created_at?: string
-          id?: string
-          session_id?: string
+          id?: number
           winline_1_active?: boolean
           winline_2_active?: boolean
           winline_3_active?: boolean
           winline_4_active?: boolean
           winline_5_active?: boolean
         }
-        Relationships: [
-          {
-            foreignKeyName: "win_patterns_session_id_fkey"
-            columns: ["session_id"]
-            isOneToOne: false
-            referencedRelation: "game_sessions"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
     }
     Views: {

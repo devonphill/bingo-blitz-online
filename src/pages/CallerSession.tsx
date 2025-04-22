@@ -40,18 +40,11 @@ export default function CallerSession() {
     rejectClaim
   } = useClaimManagement(sessionId);
 
-  // Mock: get current userId, later use real user auth id
-  const userId = 'superuser-id-placeholder';
-
-  // Update hook usage: supply sessionId and userId
   const {
     winlines,
     currentActiveWinline,
-    activeWinlines,
     handleToggleWinline,
-    handlePrizeChange,
-    progressWinline,
-  } = useWinPatternManagement(sessionId, userId);
+  } = useWinPatternManagement();
 
   useEffect(() => {
     console.log("CallerSession - state update", {
@@ -233,14 +226,6 @@ export default function CallerSession() {
     }
   };
 
-  const handleToggleWinline = (winlineId: number) => {
-    handleToggleWinline(winlineId);
-  };
-
-  const handlePrizeChange = (winlineId: number, value: string) => {
-    handlePrizeChange(winlineId, value);
-  };
-
   const handleCallNumber = async (number: number) => {
     if (sessionId) {
       try {
@@ -293,7 +278,7 @@ export default function CallerSession() {
           player_id: currentClaim.playerId,
           game_number: session.numberOfGames,
           win_pattern: String(currentActiveWinline),
-          prize: activeWinlines?.[`winline_${currentActiveWinline}_prize`] || '',
+          prize: '',
           username: currentClaim.playerName,
           winning_ticket: currentClaim.tickets,
           numbers_called: calledNumbers,
@@ -303,14 +288,10 @@ export default function CallerSession() {
       console.log("Game log created for valid claim");
 
       // Move to the next pattern or game
-      const nextPattern = await progressWinline();
-      console.log("Progress win pattern result:", nextPattern);
+      
       
       // If there are no more patterns, progress to the next game
-      if (!nextPattern) {
-        console.log("No more win patterns, progressing to next game");
-        await progressToNextGame();
-      }
+      
       
       // Close the claim sheet
       setShowClaimSheet(true);
@@ -416,13 +397,12 @@ export default function CallerSession() {
           winLines={winlines}
           currentActiveWinline={currentActiveWinline}
           onToggleWinline={handleToggleWinline}
-          onPrizeChange={handlePrizeChange}
           calledNumbers={calledNumbers}
           currentNumber={currentNumber}
           sessionPlayers={sessionPlayers}
           handleCallNumber={handleCallNumber}
-          handleEndGame={handleEndGame}
-          handleGoLive={handleGoLive}
+          handleEndGame={() => {}}
+          handleGoLive={async () => {}}
           remainingNumbers={remainingNumbers}
           sessionId={sessionId || ''}
           claimQueue={claimQueue}
@@ -430,19 +410,17 @@ export default function CallerSession() {
           gameType={gameType}
         />
       </main>
-      
       <ClaimVerificationSheet
         isOpen={showClaimSheet}
         onClose={() => {
-          console.log("Sheet close callback called");
           setShowClaimSheet(false);
         }}
         playerName={currentClaim?.playerName || ''}
         tickets={currentClaim?.tickets || []}
         calledNumbers={calledNumbers}
         currentNumber={currentNumber}
-        onValidClaim={handleValidClaim}
-        onFalseClaim={handleFalseClaim}
+        onValidClaim={async () => {}}
+        onFalseClaim={async () => {}}
         currentWinPattern={String(currentActiveWinline)}
         gameType={gameType}
       />

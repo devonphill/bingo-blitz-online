@@ -11,7 +11,6 @@ interface SessionMainContentProps {
   winLines: Array<{ id: number; name: string; active: boolean }>;
   currentActiveWinline: number;
   onToggleWinline: (winlineId: number) => void;
-  onPrizeChange: (winlineId: number, value: string) => void;
   calledNumbers: number[];
   currentNumber: number | null;
   sessionPlayers: any[];
@@ -30,7 +29,6 @@ export default function SessionMainContent({
   winLines,
   currentActiveWinline,
   onToggleWinline,
-  onPrizeChange,
   calledNumbers,
   currentNumber,
   sessionPlayers,
@@ -53,7 +51,6 @@ export default function SessionMainContent({
               winLines={winLines}
               currentActiveWinline={currentActiveWinline}
               onToggleWinline={onToggleWinline}
-              onPrizeChange={onPrizeChange}
             />
           </div>
           <CalledNumbers 
