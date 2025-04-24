@@ -1,239 +1,168 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useToast } from '@/hooks/use-toast';
-import { useSession } from '@/contexts/SessionContext';
-import { useSessions } from '@/contexts/useSessions';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { GameSession, WinPattern } from '@/types';
+import BingoCard from '@/components/caller/BingoCard';
+import WinPatternSelector from '@/components/caller/WinPatternSelector';
 import { Button } from '@/components/ui/button';
-import GameHeader from '@/components/game/GameHeader';
-import GameTypeSelector from '@/components/game/GameTypeSelector';
-import SessionMainContent from '@/components/game/SessionMainContent';
-import ClaimVerificationSheet from '@/components/game/ClaimVerificationSheet';
-import { useClaimManagement } from '@/hooks/useClaimManagement';
-import { GameSetup } from '@/components/game/GameSetup';
-import { WinPatternStatusDisplay } from '@/components/game/WinPatternStatusDisplay';
-import { Winline } from '@/types/winline';
-import CallerControls from '@/components/game/CallerControls';
-import PlayerList from '@/components/game/PlayerList';
-import CalledNumbers from '@/components/game/CalledNumbers';
+import { useToast } from "@/hooks/use-toast"
+import { Copy, RefreshCw, UserPlus } from 'lucide-react';
 
 export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
-  const { sessions } = useSession();
-  const { currentSession, updateCurrentGameState } = useSessions();
-  const [session, setSession] = useState(sessions.find(s => s.id === sessionId) || null);
-  const [gameType, setGameType] = useState('90-ball');
-  const [promptGameType, setPromptGameType] = useState(false);
-  const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
+  const [session, setSession] = useState<GameSession | null>(null);
   const [currentNumber, setCurrentNumber] = useState<number | null>(null);
-  const [remainingNumbers, setRemainingNumbers] = useState<number[]>([]);
-  const [sessionPlayers, setSessionPlayers] = useState<any[]>([]);
-  const [autoMarking, setAutoMarking] = useState(false);
-  const [isProcessingValidClaim, setIsProcessingValidClaim] = useState(false);
+  const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
+  const [winPatterns, setWinPatterns] = useState<WinPattern[]>([]);
+  const [currentPattern, setCurrentPattern] = useState<WinPattern | null>(null);
+  const [pendingClaims, setPendingClaims] = useState<any[]>([]);
   const { toast } = useToast();
-  const navigate = useNavigate();
-  
-  const [winPatterns, setWinPatterns] = useState<Array<{id: string; name: string; active: boolean}>>([]);
-  const [currentActivePattern, setCurrentActivePattern] = useState<string | null>(null);
-  const [gameIsLive, setGameIsLive] = useState(false);
 
-  // Legacy winlines for compatibility with existing components
-  const [winlines, setWinlines] = useState<Winline[]>([
-    { id: 1, name: 'One Line', active: true },
-    { id: 2, name: 'Two Lines', active: true },
-    { id: 3, name: 'Full House', active: true },
-  ]);
-  const [currentActiveWinline, setCurrentActiveWinline] = useState(1);
-
-  const {
-    showClaimSheet,
-    currentClaim,
-    setShowClaimSheet,
-    setCurrentClaim,
-    checkForClaims,
-    claimQueue,
-    processNextClaim,
-    openClaimSheet,
-    validateClaim,
-    rejectClaim
-  } = useClaimManagement(sessionId);
-
-  const handleToggleWinline = (winlineId: number) => {
-    setCurrentActiveWinline(winlineId);
-    setWinlines(prev => 
-      prev.map(line => ({
-        ...line,
-        active: line.id === winlineId ? true : line.active
-      }))
-    );
-  };
-
-  // Update state based on current session
-  useEffect(() => {
-    if (currentSession?.current_game_state) {
-      // Update game state from session
-      setGameIsLive(currentSession.current_game_state.status === 'active');
-      
-      // Map pattern IDs to display format
-      const patterns = [
-        { id: 'oneLine', name: 'One Line', active: false },
-        { id: 'twoLines', name: 'Two Lines', active: false },
-        { id: 'fullHouse', name: 'Full House', active: false }
-      ];
-      
-      const activePatterns = currentSession.current_game_state.activePatternIds || [];
-      const updatedPatterns = patterns.map(pattern => ({
-        ...pattern,
-        active: activePatterns.includes(pattern.id)
-      }));
-      
-      setWinPatterns(updatedPatterns);
-      
-      // Set current active pattern if not already set
-      if (currentActivePattern === null && activePatterns.length > 0) {
-        setCurrentActivePattern(activePatterns[0]);
-      }
-    }
-  }, [currentSession, currentActivePattern]);
-
-  useEffect(() => {
-    console.log("CallerSession - state update", {
-      showClaimSheet,
-      claimQueueLength: claimQueue?.length,
-      currentGameWinPattern: currentActiveWinline
-    });
-  }, [showClaimSheet, claimQueue, currentActiveWinline]);
-
-  useEffect(() => {
-    if (!session && sessionId) {
-      const foundSession = sessions.find(s => s.id === sessionId);
-      if (foundSession) {
-        setSession(foundSession);
-        console.log("Session found:", foundSession);
-      } else {
-        console.log("Session not found for ID:", sessionId);
-      }
-    }
-  }, [sessionId, sessions, session]);
-
-  useEffect(() => {
-    if (!session?.gameType) {
-      setPromptGameType(true);
-    }
-  }, [session]);
-
-  useEffect(() => {
-    const maxNumber = gameType === 'mainstage' ? 90 : 75;
-    if (remainingNumbers.length === 0) {
-      setRemainingNumbers(Array.from({ length: maxNumber }, (_, i) => i + 1));
-    }
-  }, [gameType, remainingNumbers.length]);
-
-  useEffect(() => {
-    if (sessionId) {
-      const fetchCalledNumbers = async () => {
-        const { data, error } = await supabase
-          .from('called_numbers')
-          .select('number')
-          .eq('session_id', sessionId)
-          .order('called_at', { ascending: true });
-          
-        if (error) {
-          console.error("Error fetching called numbers:", error);
-          return;
-        }
-        
-        if (data && data.length > 0) {
-          const numbers = data.map(item => item.number);
-          setCalledNumbers(numbers);
-          setCurrentNumber(numbers[numbers.length - 1]);
-          
-          if (gameType === "90-ball" && remainingNumbers.length > 0) {
-            setRemainingNumbers(prev => prev.filter(n => !numbers.includes(n)));
-          }
-        }
-      };
-      
-      fetchCalledNumbers();
-      
-      const calledNumbersChannel = supabase
-        .channel('called-numbers-listener')
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'called_numbers',
-            filter: `session_id=eq.${sessionId}`
-          },
-          (payload) => {
-            if (payload.new) {
-              const newNumber = payload.new.number;
-              console.log("New number called:", newNumber);
-              setCalledNumbers(prev => [...prev, newNumber]);
-              setCurrentNumber(newNumber);
-              setRemainingNumbers(prev => prev.filter(n => n !== newNumber));
-            }
-          }
-        )
-        .subscribe();
-        
-      return () => {
-        supabase.removeChannel(calledNumbersChannel);
-      };
-    }
-  }, [sessionId, gameType, remainingNumbers.length]);
-
-  useEffect(() => {
+  const fetchSession = useCallback(async () => {
     if (!sessionId) return;
 
-    const fetchSessionPlayers = async () => {
-      const { data, error } = await supabase
-        .from('players')
-        .select('*')
-        .eq('session_id', sessionId);
+    const { data, error } = await supabase
+      .from('game_sessions')
+      .select('*')
+      .eq('id', sessionId)
+      .single();
 
-      if (error) {
-        console.error("Error fetching players:", error);
-        return;
-      }
-
-      if (data) {
-        const formattedPlayers = data.map(p => ({
-          id: p.id,
-          nickname: p.nickname,
-          joinedAt: p.joined_at,
-          playerCode: p.player_code,
-          tickets: p.tickets
-        }));
-        setSessionPlayers(formattedPlayers);
-        console.log("Session players fetched:", formattedPlayers.length);
-      }
-    };
-
-    fetchSessionPlayers();
-
-    const playersChannel = supabase
-      .channel('session-players')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'players',
-          filter: `session_id=eq.${sessionId}`
-        },
-        (payload) => {
-          console.log("Player change detected:", payload);
-          fetchSessionPlayers();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(playersChannel);
-    };
+    if (error) {
+      console.error("Error fetching session:", error);
+    } else {
+      setSession(data);
+    }
   }, [sessionId]);
+
+  const fetchWinPatterns = useCallback(async () => {
+    if (!sessionId) return;
+
+    const { data, error } = await supabase
+      .from('win_patterns')
+      .select('*')
+      .eq('game_session_id', sessionId);
+
+    if (error) {
+      console.error("Error fetching win patterns:", error);
+    } else {
+      setWinPatterns(data);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    fetchSession();
+    fetchWinPatterns();
+  }, [fetchSession, fetchWinPatterns]);
+
+  const callNumber = async () => {
+    if (!session) return;
+
+    const newNumber = Math.floor(Math.random() * session.numberRange) + 1;
+    if (calledNumbers.includes(newNumber)) {
+      // Number already called, try again
+      callNumber();
+      return;
+    }
+
+    setCurrentNumber(newNumber);
+    setCalledNumbers([...calledNumbers, newNumber]);
+
+    // Optimistically update the UI
+    setSession(prevSession => ({
+      ...prevSession!,
+      calledNumbers: [...calledNumbers, newNumber]
+    }));
+
+    const { error } = await supabase
+      .from('game_sessions')
+      .update({ calledNumbers: [...calledNumbers, newNumber] })
+      .eq('id', sessionId);
+
+    if (error) {
+      console.error("Error updating called numbers:", error);
+      toast({
+        title: "Error calling number",
+        description: "Failed to update the called number. Please try again.",
+        variant: "destructive",
+      });
+      // Revert the UI update on error
+      setSession(prevSession => ({
+        ...prevSession!,
+        calledNumbers: calledNumbers
+      }));
+    } else {
+      toast({
+        title: "Number called",
+        description: `The number ${newNumber} has been called.`,
+      });
+    }
+  };
+
+  const resetNumbers = async () => {
+    setCurrentNumber(null);
+    setCalledNumbers([]);
+
+    // Optimistically update the UI
+    setSession(prevSession => ({
+      ...prevSession!,
+      calledNumbers: []
+    }));
+
+    const { error } = await supabase
+      .from('game_sessions')
+      .update({ calledNumbers: [] })
+      .eq('id', sessionId);
+
+    if (error) {
+      console.error("Error resetting numbers:", error);
+      toast({
+        title: "Error resetting numbers",
+        description: "Failed to reset the numbers. Please try again.",
+        variant: "destructive",
+      });
+      // Revert the UI update on error
+      setSession(prevSession => ({
+        ...prevSession!,
+        calledNumbers: calledNumbers
+      }));
+    } else {
+      toast({
+        title: "Numbers reset",
+        description: "The called numbers have been reset.",
+      });
+    }
+  };
+
+  const handlePatternSelect = (pattern: WinPattern) => {
+    setCurrentPattern(pattern);
+  };
+
+  const checkForClaims = async () => {
+    if (!sessionId) return;
+
+    const { data: claims, error } = await supabase
+      .from('player_claims')
+      .select('*')
+      .eq('game_session_id', sessionId)
+      .eq('status', 'pending');
+
+    if (error) {
+      console.error("Error fetching pending claims:", error);
+      toast({
+        title: "Error checking claims",
+        description: "Failed to check for pending claims. Please try again.",
+        variant: "destructive",
+      });
+    } else {
+      setPendingClaims(claims);
+      if (claims && claims.length > 0) {
+        toast({
+          title: "New claims!",
+          description: `There are ${claims.length} new claims to review.`,
+        });
+      }
+    }
+  };
 
   useEffect(() => {
     if (sessionId && session?.id) {
@@ -243,225 +172,55 @@ export default function CallerSession() {
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [session?.id, sessionId]);
+  }, [sessionId, session?.id, checkForClaims]);
 
-  const handleGameTypeChange = (type: string) => {
-    setGameType(type);
-    setPromptGameType(false);
-    
-    const maxNumber = type === 'mainstage' ? 90 : 75;
-    setRemainingNumbers(Array.from({ length: maxNumber }, (_, i) => i + 1));
-  };
-
-  const handleCallNumber = async (number: number) => {
-    if (sessionId) {
-      try {
-        const { data, error } = await supabase
-          .from('called_numbers')
-          .insert([{ 
-            session_id: sessionId, 
-            number 
-          }]);
-          
-        if (error) {
-          console.error("Error saving called number:", error);
-          toast({
-            title: "Error",
-            description: "Failed to save called number. Please try again.",
-            variant: "destructive"
-          });
-          return;
-        }
-        
-        setCurrentNumber(number);
-        setCalledNumbers(prev => [...prev, number]);
-        setRemainingNumbers(prev => prev.filter(n => n !== number));
-      } catch (err) {
-        console.error("Exception saving called number:", err);
-        toast({
-          title: "Error",
-          description: "An unexpected error occurred.",
-          variant: "destructive"
-        });
-      }
-    }
-  };
-
-  const handleClaimBingo = () => {
-    validateClaim();
-  };
-
-  const handleFalseClaim = () => {
-    rejectClaim();
-  };
-
-  const handleValidClaim = async () => {
-    console.log("handleValidClaim called");
-    if (!currentClaim || !session || isProcessingValidClaim) return;
-
-    try {
-      setIsProcessingValidClaim(true);
-      
-      validateClaim();
-      
-      await supabase
-        .from('game_logs')
-        .insert({
-          session_id: sessionId,
-          player_id: currentClaim.playerId,
-          game_number: session.numberOfGames,
-          win_pattern: String(currentActiveWinline),
-          prize: '',
-          username: currentClaim.playerName,
-          winning_ticket: currentClaim.tickets,
-          numbers_called: calledNumbers,
-          total_calls: calledNumbers.length
-        });
-        
-      console.log("Game log created for valid claim");
-      
-      setShowClaimSheet(false);
-      setCurrentClaim(null);
-      
-    } catch (error) {
-      console.error("Error processing valid claim:", error);
+  const handleAddPlayers = () => {
+    if (session) {
+      navigator.clipboard.writeText(session.accessCode);
       toast({
-        title: "Error",
-        description: "Failed to process claim.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsProcessingValidClaim(false);
-    }
-  };
-
-  const handleEndGame = () => {
-    // Placeholder for end game logic
-  };
-
-  const handleGoLive = async () => {
-    if (!session || !sessionId || !currentSession) return;
-    
-    try {
-      await updateCurrentGameState({
-        status: 'active'
-      });
-
-      await supabase
-        .from('game_sessions')
-        .update({ status: 'active' })
-        .eq('id', sessionId);
-
-      setGameIsLive(true);
-
-      toast({
-        title: "Success",
-        description: "Session is now live!",
-      });
-    } catch (error) {
-      console.error('Error going live:', error);
-      toast({
-        title: "Error",
-        description: "Failed to start the session",
-        variant: "destructive"
+        title: "Access code copied",
+        description: "Share this code with your players!",
       });
     }
   };
-
-  if (!sessionId) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Session ID Missing</h2>
-          <Button onClick={() => navigate('/dashboard')}>
-            Return to Dashboard
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!session) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Session Not Found</h2>
-          <Button onClick={() => navigate('/dashboard')}>
-            Return to Dashboard
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (promptGameType) {
-    return <GameTypeSelector onGameTypeSelect={handleGameTypeChange} />;
-  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <GameHeader 
-        sessionName={session?.name || ''} 
-        accessCode={session?.accessCode || ''} 
-        autoMarking={autoMarking} 
-        setAutoMarking={setAutoMarking} 
-      />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Game setup section */}
-        <GameSetup />
-        
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            <WinPatternStatusDisplay 
-              patterns={winPatterns} 
-              currentActive={currentActivePattern}
-              gameIsLive={gameIsLive}
-            />
-            
-            <div className="bg-white shadow rounded-lg p-6 mt-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Game: {gameType}</h2>
-              <CalledNumbers 
-                calledNumbers={calledNumbers}
-                currentNumber={currentNumber}
-              />
-            </div>
-            
-            <div className="bg-white shadow rounded-lg p-6 mt-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Players ({sessionPlayers.length})</h2>
-              <PlayerList players={sessionPlayers} />
-            </div>
-          </div>
-          
-          <div>
-            <CallerControls 
-              onCallNumber={handleCallNumber}
-              onEndGame={handleEndGame}
-              onGoLive={handleGoLive}
-              remainingNumbers={remainingNumbers}
-              sessionId={sessionId || ''}
-              winPatterns={winPatterns.filter(p => p.active).map(p => p.id)}
-              claimCount={claimQueue?.length || 0}
-              openClaimSheet={openClaimSheet}
-              gameType={gameType}
-            />
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <header className="bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+          <h1 className="text-2xl font-bold text-bingo-primary">Caller Session</h1>
+          <div className="flex items-center space-x-4">
+            <Button onClick={handleAddPlayers}>
+              <UserPlus className="mr-2 h-4 w-4" />
+              Copy Access Code
+            </Button>
+            <Button variant="outline" onClick={callNumber}>Call Number</Button>
+            <Button variant="destructive" onClick={resetNumbers}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Reset Numbers
+            </Button>
           </div>
         </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold text-gray-900">Current Number</h2>
+          <div className="text-6xl font-extrabold text-bingo-primary">{currentNumber || '-'}</div>
+          <p className="text-gray-600">
+            Called numbers: {calledNumbers.join(', ') || 'None'}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <BingoCard numbers={calledNumbers} numberRange={session?.numberRange || 75} />
+        </div>
+
+        <WinPatternSelector
+          onPatternSelect={handlePatternSelect}
+          currentPattern={currentPattern}
+        />
       </main>
-      
-      <ClaimVerificationSheet
-        isOpen={showClaimSheet}
-        onClose={() => {
-          setShowClaimSheet(false);
-        }}
-        playerName={currentClaim?.playerName || ''}
-        tickets={currentClaim?.tickets || []}
-        calledNumbers={calledNumbers}
-        currentNumber={currentNumber}
-        onValidClaim={handleClaimBingo}
-        onFalseClaim={handleFalseClaim}
-        currentWinPattern={String(currentActiveWinline)}
-        gameType={gameType}
-      />
     </div>
   );
 }
