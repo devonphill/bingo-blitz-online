@@ -26,16 +26,16 @@ export function GameTypeChanger() {
       <h3 className="text-lg font-semibold mb-3">Change Game Type</h3>
       <div className="flex gap-4">
         <Button 
-          variant={currentSession?.current_game_state?.gameType === '90-ball' ? 'default' : 'outline'}
-          onClick={() => changeGameType('90-ball')}
+          variant={currentSession?.current_game_state?.gameType === 'mainstage' ? 'default' : 'outline'}
+          onClick={() => changeGameType('mainstage')}
         >
-          90 Ball
+          Mainstage Bingo
         </Button>
         <Button 
-          variant={currentSession?.current_game_state?.gameType === '75-ball' ? 'default' : 'outline'}
-          onClick={() => changeGameType('75-ball')}
+          variant={currentSession?.current_game_state?.gameType === 'party' ? 'default' : 'outline'}
+          onClick={() => changeGameType('party')}
         >
-          75 Ball
+          Party Bingo
         </Button>
       </div>
     </div>

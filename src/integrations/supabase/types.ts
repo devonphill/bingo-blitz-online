@@ -306,6 +306,33 @@ export type Database = {
           },
         ]
       }
+      game_rules_config: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          game_type: Database["public"]["Enums"]["game_type"]
+          id: string
+          rules: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          game_type: Database["public"]["Enums"]["game_type"]
+          id?: string
+          rules?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          game_type?: Database["public"]["Enums"]["game_type"]
+          id?: string
+          rules?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       game_sessions: {
         Row: {
           access_code: string
@@ -474,7 +501,7 @@ export type Database = {
       }
     }
     Enums: {
-      [_ in never]: never
+      game_type: "mainstage" | "party" | "quiz" | "music" | "logo"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -589,6 +616,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      game_type: ["mainstage", "party", "quiz", "music", "logo"],
+    },
   },
 } as const
