@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { GameSession, GameType, CurrentGameState } from "@/types";
@@ -167,13 +166,13 @@ export const useSessions = () => {
       
       // Create a complete game state with all required fields
       const updatedGameState: CurrentGameState = {
-        gameNumber: newGameState.gameNumber ?? currentGameState.gameNumber,
-        gameType: newGameState.gameType ?? currentGameState.gameType,
-        activePatternIds: newGameState.activePatternIds ?? currentGameState.activePatternIds,
-        calledItems: newGameState.calledItems ?? currentGameState.calledItems,
-        lastCalledItem: newGameState.lastCalledItem ?? currentGameState.lastCalledItem,
-        status: newGameState.status ?? currentGameState.status,
-        prizes: newGameState.prizes ?? currentGameState.prizes
+        gameNumber: newGameState.gameNumber !== undefined ? newGameState.gameNumber : currentGameState.gameNumber,
+        gameType: newGameState.gameType !== undefined ? newGameState.gameType : currentGameState.gameType,
+        activePatternIds: newGameState.activePatternIds !== undefined ? newGameState.activePatternIds : currentGameState.activePatternIds,
+        calledItems: newGameState.calledItems !== undefined ? newGameState.calledItems : currentGameState.calledItems,
+        lastCalledItem: newGameState.lastCalledItem !== undefined ? newGameState.lastCalledItem : currentGameState.lastCalledItem,
+        status: newGameState.status !== undefined ? newGameState.status : currentGameState.status,
+        prizes: newGameState.prizes !== undefined ? newGameState.prizes : currentGameState.prizes
       };
 
       const { error } = await supabase
@@ -189,12 +188,13 @@ export const useSessions = () => {
       }
 
       // Update the local state with the properly typed game state
-      setCurrentSessionState(prevSession => 
-        prevSession ? {
+      setCurrentSessionState((prevSession) => {
+        if (!prevSession) return null;
+        return {
           ...prevSession,
           current_game_state: updatedGameState
-        } : null
-      );
+        };
+      });
 
       return true;
     } catch (err) {

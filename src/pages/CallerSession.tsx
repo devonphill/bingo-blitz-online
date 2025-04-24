@@ -10,14 +10,14 @@ import GameTypeSelector from '@/components/game/GameTypeSelector';
 import SessionMainContent from '@/components/game/SessionMainContent';
 import ClaimVerificationSheet from '@/components/game/ClaimVerificationSheet';
 import { useClaimManagement } from '@/hooks/useClaimManagement';
-import { WinPatternSelector } from '@/components/caller/WinPatternSelector';
+import { GameSetup } from '@/components/game/GameSetup';
+import { WinPatternStatusDisplay } from '@/components/game/WinPatternStatusDisplay';
 import { Winline } from '@/types/winline';
-import { GameTypeChanger } from '@/components/game/GameTypeChanger';
 
 export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { sessions } = useSession();
-  const { updateCurrentGameState } = useSessions();
+  const { currentSession, updateCurrentGameState } = useSessions();
   const [session, setSession] = useState(sessions.find(s => s.id === sessionId) || null);
   const [gameType, setGameType] = useState('90-ball');
   const [promptGameType, setPromptGameType] = useState(false);
@@ -29,7 +29,12 @@ export default function CallerSession() {
   const [isProcessingValidClaim, setIsProcessingValidClaim] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
+  
+  const [winPatterns, setWinPatterns] = useState<Array<{id: string; name: string; active: boolean}>>([]);
+  const [currentActivePattern, setCurrentActivePattern] = useState<string | null>(null);
+  const [gameIsLive, setGameIsLive] = useState(false);
 
+  // Legacy winlines for compatibility with existing components
   const [winlines, setWinlines] = useState<Winline[]>([
     { id: 1, name: 'One Line', active: true },
     { id: 2, name: 'Two Lines', active: true },
@@ -59,6 +64,34 @@ export default function CallerSession() {
       }))
     );
   };
+
+  // Update state based on current session
+  useEffect(() => {
+    if (currentSession?.current_game_state) {
+      // Update game state from session
+      setGameIsLive(currentSession.current_game_state.status === 'active');
+      
+      // Map pattern IDs to display format
+      const patterns = [
+        { id: 'oneLine', name: 'One Line', active: false },
+        { id: 'twoLines', name: 'Two Lines', active: false },
+        { id: 'fullHouse', name: 'Full House', active: false }
+      ];
+      
+      const activePatterns = currentSession.current_game_state.activePatternIds || [];
+      const updatedPatterns = patterns.map(pattern => ({
+        ...pattern,
+        active: activePatterns.includes(pattern.id)
+      }));
+      
+      setWinPatterns(updatedPatterns);
+      
+      // Set current active pattern if not already set
+      if (currentActivePattern === null && activePatterns.length > 0) {
+        setCurrentActivePattern(activePatterns[0]);
+      }
+    }
+  }, [currentSession, currentActivePattern]);
 
   useEffect(() => {
     console.log("CallerSession - state update", {
@@ -254,15 +287,11 @@ export default function CallerSession() {
   };
 
   const handleClaimBingo = () => {
-    if (currentClaim) {
-      validateClaim();
-    }
+    validateClaim();
   };
 
   const handleFalseClaim = () => {
-    if (currentClaim) {
-      rejectClaim();
-    }
+    rejectClaim();
   };
 
   const handleValidClaim = async () => {
@@ -310,13 +339,19 @@ export default function CallerSession() {
   };
 
   const handleGoLive = async () => {
-    if (!session || !sessionId) return;
+    if (!session || !sessionId || !currentSession) return;
     
     try {
+      await updateCurrentGameState({
+        status: 'active'
+      });
+
       await supabase
         .from('game_sessions')
         .update({ status: 'active' })
         .eq('id', sessionId);
+
+      setGameIsLive(true);
 
       toast({
         title: "Success",
@@ -371,25 +406,47 @@ export default function CallerSession() {
         setAutoMarking={setAutoMarking} 
       />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <GameTypeChanger />
-        <SessionMainContent
-          session={session}
-          winLines={winlines}
-          currentActiveWinline={currentActiveWinline}
-          onToggleWinline={handleToggleWinline}
-          calledNumbers={calledNumbers}
-          currentNumber={currentNumber}
-          sessionPlayers={sessionPlayers}
-          handleCallNumber={handleCallNumber}
-          handleEndGame={handleEndGame}
-          handleGoLive={handleGoLive}
-          remainingNumbers={remainingNumbers}
-          sessionId={sessionId || ''}
-          claimQueue={claimQueue}
-          openClaimSheet={openClaimSheet}
-          gameType={gameType}
-        />
+        {/* Game setup section */}
+        <GameSetup />
+        
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <WinPatternStatusDisplay 
+              patterns={winPatterns} 
+              currentActive={currentActivePattern}
+              gameIsLive={gameIsLive}
+            />
+            
+            <div className="bg-white shadow rounded-lg p-6 mt-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-4">Game: {gameType}</h2>
+              <CalledNumbers 
+                calledNumbers={calledNumbers}
+                currentNumber={currentNumber}
+              />
+            </div>
+            
+            <div className="bg-white shadow rounded-lg p-6 mt-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-4">Players ({sessionPlayers.length})</h2>
+              <PlayerList players={sessionPlayers} />
+            </div>
+          </div>
+          
+          <div>
+            <CallerControls 
+              onCallNumber={handleCallNumber}
+              onEndGame={handleEndGame}
+              onGoLive={handleGoLive}
+              remainingNumbers={remainingNumbers}
+              sessionId={sessionId || ''}
+              winPatterns={winPatterns.filter(p => p.active).map(p => p.id)}
+              claimCount={claimQueue?.length || 0}
+              openClaimSheet={openClaimSheet}
+              gameType={gameType}
+            />
+          </div>
+        </div>
       </main>
+      
       <ClaimVerificationSheet
         isOpen={showClaimSheet}
         onClose={() => {

@@ -29,7 +29,7 @@ export default function CallerControls({
   winPatterns,
   claimCount = 0,
   openClaimSheet,
-  // Removed unused prop 'gameType' from prop destructure
+  gameType,
 }: CallerControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
@@ -68,21 +68,7 @@ export default function CallerControls({
 
     setIsGoingLive(true);
     try {
-      const { error: sessionError } = await supabase
-        .from('game_sessions')
-        .update({ status: 'active' })
-        .eq('id', sessionId);
-
-      if (sessionError) {
-        throw sessionError;
-      }
-
       await onGoLive();
-      
-      toast({
-        title: "Success",
-        description: "Game is now live!",
-      });
     } catch (error) {
       console.error('Error going live:', error);
       toast({
