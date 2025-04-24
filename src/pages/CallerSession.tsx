@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -31,7 +30,6 @@ export default function CallerSession() {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  // Default win lines for compatibility with existing components
   const [winlines, setWinlines] = useState<Winline[]>([
     { id: 1, name: 'One Line', active: true },
     { id: 2, name: 'Two Lines', active: true },
@@ -52,7 +50,6 @@ export default function CallerSession() {
     rejectClaim
   } = useClaimManagement(sessionId);
 
-  // Simple function to handle toggling win line active state
   const handleToggleWinline = (winlineId: number) => {
     setCurrentActiveWinline(winlineId);
     setWinlines(prev => 
@@ -275,7 +272,7 @@ export default function CallerSession() {
     try {
       setIsProcessingValidClaim(true);
       
-      await validateClaim();
+      validateClaim();
       
       await supabase
         .from('game_logs')

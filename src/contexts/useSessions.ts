@@ -159,9 +159,21 @@ export const useSessions = () => {
     if (!currentSession) return false;
 
     try {
-      let updatedGameState = { 
-        ...(currentSession.current_game_state as CurrentGameState || {}),
-        ...newGameState
+      // Make sure all required properties are included in the merged game state
+      const currentGameState = currentSession.current_game_state || initializeGameState(
+        currentSession.gameType, 
+        1
+      );
+      
+      // Create a complete game state with all required fields
+      const updatedGameState: CurrentGameState = {
+        gameNumber: newGameState.gameNumber ?? currentGameState.gameNumber,
+        gameType: newGameState.gameType ?? currentGameState.gameType,
+        activePatternIds: newGameState.activePatternIds ?? currentGameState.activePatternIds,
+        calledItems: newGameState.calledItems ?? currentGameState.calledItems,
+        lastCalledItem: newGameState.lastCalledItem ?? currentGameState.lastCalledItem,
+        status: newGameState.status ?? currentGameState.status,
+        prizes: newGameState.prizes ?? currentGameState.prizes
       };
 
       const { error } = await supabase
@@ -176,7 +188,7 @@ export const useSessions = () => {
         return false;
       }
 
-      // Update the local state with proper type casting
+      // Update the local state with the properly typed game state
       setCurrentSessionState(prevSession => 
         prevSession ? {
           ...prevSession,
