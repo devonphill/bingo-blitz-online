@@ -2,13 +2,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { GameSession } from '@/types';
+import { GameSession, GameType, CurrentGameState } from '@/types';
 import { WinPattern } from '@/types/winPattern';
 import BingoCard from '@/components/caller/BingoCard';
 import { WinPatternSelector } from '@/components/caller/WinPatternSelector';
 import { Button } from '@/components/ui/button';
 import { useToast } from "@/hooks/use-toast";
 import { Copy, RefreshCw, UserPlus } from 'lucide-react';
+import { GameTypeChanger } from '@/components/game/GameTypeChanger';
 
 export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -36,26 +37,26 @@ export default function CallerSession() {
       const sessionData: GameSession = {
         id: data.id,
         name: data.name,
-        gameType: data.game_type as any,
+        gameType: data.game_type as GameType,
         createdBy: data.created_by,
         accessCode: data.access_code,
-        status: data.status,
+        status: data.status as "pending" | "active" | "completed",
         createdAt: data.created_at,
         sessionDate: data.session_date,
         numberOfGames: data.number_of_games,
-        current_game_state: data.current_game_state
+        current_game_state: data.current_game_state as CurrentGameState
       };
       
       setSession(sessionData);
       
       // Set called numbers if they exist in the current game state
-      if (data.current_game_state?.calledItems) {
-        setCalledNumbers(data.current_game_state.calledItems);
+      if (sessionData.current_game_state?.calledItems) {
+        setCalledNumbers(sessionData.current_game_state.calledItems as number[]);
       }
       
       // Set current number if it exists
-      if (data.current_game_state?.lastCalledItem) {
-        setCurrentNumber(data.current_game_state.lastCalledItem);
+      if (sessionData.current_game_state?.lastCalledItem) {
+        setCurrentNumber(sessionData.current_game_state.lastCalledItem as number);
       }
     }
   }, [sessionId]);
@@ -258,6 +259,8 @@ export default function CallerSession() {
             Called numbers: {calledNumbers.join(', ') || 'None'}
           </p>
         </div>
+
+        <GameTypeChanger />
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <BingoCard numbers={calledNumbers} numberRange={getNumberRange()} />
