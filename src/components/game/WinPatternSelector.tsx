@@ -1,7 +1,13 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
-import type { Winline } from "@/hooks/useWinPatternManagement";
+
+// Create a local type definition to replace the missing import
+interface Winline {
+  id: number;
+  name: string;
+  active: boolean;
+}
 
 interface WinPatternSelectorProps {
   winLines: Winline[];

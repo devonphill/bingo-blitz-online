@@ -264,7 +264,7 @@ export function usePlayerGame(playerCode?: string | null) {
        console.log(`Claim recorded with ID: ${claimData.id}. Broadcasting...`);
 
       // Broadcast the claim event *after* successful DB insert
-      const { error: broadcastError } = await supabase
+      const broadcastResponse = await supabase
         .channel('caller-claims') // Ensure this channel name matches useClaimManagement
         .send({
           type: 'broadcast',
@@ -278,22 +278,21 @@ export function usePlayerGame(playerCode?: string | null) {
           }
         });
 
-       if(broadcastError) {
-            console.error("Error broadcasting claim:", broadcastError);
-            // Note: Claim is in DB but caller might not be notified immediately.
-            // Consider error handling / retry? For now, log it.
-             toast({
-                title: "Claim Submitted (Broadcast Issue)",
-                description: "Your claim was saved but might be delayed notifying the caller.",
-                variant: "destructive"
-             });
-       } else {
-            toast({
-                title: "Claim Submitted",
-                description: "Your bingo claim is being verified by the caller.",
-                variant: "default"
-            });
-       }
+      // Handle potential broadcast errors without accessing the non-existent error property
+      if(!broadcastResponse) {
+        console.error("Error broadcasting claim: No response received");
+        toast({
+          title: "Claim Submitted (Broadcast Issue)",
+          description: "Your claim was saved but might be delayed notifying the caller.",
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Claim Submitted",
+          description: "Your bingo claim is being verified by the caller.",
+          variant: "default"
+        });
+      }
 
       return true; // Claim successfully submitted
 

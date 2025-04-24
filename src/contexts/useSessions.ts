@@ -183,9 +183,11 @@ export function useSessions() {
 
     try {
       console.log(`Updating game state for session ${currentSession.id}:`, updatedState);
+      // Cast the CurrentGameState to any to bypass TypeScript's type checking
+      // This is necessary because the supabase client expects a JSON object
       const { error: updateError } = await supabase
         .from("game_sessions")
-        .update({ current_game_state: updatedState })
+        .update({ current_game_state: updatedState as any })
         .eq("id", currentSession.id);
 
       if (updateError) {

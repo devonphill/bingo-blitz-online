@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { useSession } from '@/contexts/SessionContext';
+import { useSessions } from '@/contexts/useSessions';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import GameHeader from '@/components/game/GameHeader';
@@ -15,6 +16,7 @@ import { WinPatternSelector } from '@/components/caller/WinPatternSelector';
 export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { sessions } = useSession();
+  const { updateCurrentGameState } = useSessions();
   const [session, setSession] = useState(sessions.find(s => s.id === sessionId) || null);
   const [gameType, setGameType] = useState('90-ball');
   const [promptGameType, setPromptGameType] = useState(false);
@@ -201,7 +203,7 @@ export default function CallerSession() {
     if (sessionId && session?.id) {
       console.log("Initial check for pending claims");
       const timer = setTimeout(() => {
-        checkForClaims();
+        checkForClaims(sessionId);
       }, 2000);
       return () => clearTimeout(timer);
     }
@@ -259,6 +261,7 @@ export default function CallerSession() {
     try {
       setIsProcessingValidClaim(true);
       
+      // Pass no arguments since validateClaim doesn't take any
       await validateClaim();
       
       await supabase
@@ -297,6 +300,7 @@ export default function CallerSession() {
     if (!currentClaim) return;
 
     try {
+      // Pass no arguments since rejectClaim doesn't take any
       await rejectClaim();
     } catch (error) {
       console.error("Error processing false claim:", error);
