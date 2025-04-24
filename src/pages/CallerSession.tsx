@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -12,6 +11,7 @@ import SessionMainContent from '@/components/game/SessionMainContent';
 import ClaimVerificationSheet from '@/components/game/ClaimVerificationSheet';
 import { useClaimManagement } from '@/hooks/useClaimManagement';
 import { WinPatternSelector } from '@/components/caller/WinPatternSelector';
+import { Winline } from '@/types/winline';
 
 export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -30,7 +30,7 @@ export default function CallerSession() {
   const navigate = useNavigate();
 
   // Default win lines for compatibility with existing components
-  const [winlines, setWinlines] = useState([
+  const [winlines, setWinlines] = useState<Winline[]>([
     { id: 1, name: 'One Line', active: true },
     { id: 2, name: 'Two Lines', active: true },
     { id: 3, name: 'Full House', active: true },
@@ -261,7 +261,6 @@ export default function CallerSession() {
     try {
       setIsProcessingValidClaim(true);
       
-      // Pass no arguments since validateClaim doesn't take any
       await validateClaim();
       
       await supabase
@@ -300,7 +299,6 @@ export default function CallerSession() {
     if (!currentClaim) return;
 
     try {
-      // Pass no arguments since rejectClaim doesn't take any
       await rejectClaim();
     } catch (error) {
       console.error("Error processing false claim:", error);

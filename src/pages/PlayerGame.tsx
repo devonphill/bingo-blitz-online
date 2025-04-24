@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -18,8 +19,8 @@ export default function PlayerGame() {
     playerId,
     currentSession,
     currentGameState,
-    calledItems, // This is coming from usePlayerGame
-    lastCalledItem, // This is coming from usePlayerGame  
+    calledItems, 
+    lastCalledItem,
     activeWinPatterns,
     autoMarking,
     setAutoMarking,
@@ -123,7 +124,6 @@ export default function PlayerGame() {
               <div key={ticket.id} className="relative">
                 <dt>
                   <div className="absolute flex items-center justify-center h-12 w-12 rounded-md bg-indigo-500 text-white">
-                    {/* Heroicon name: outline/globe-alt */}
                     <svg className="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3.055 11H5.5a2.5 2.5 0 012.5 2.5V19a2.5 2.5 0 01-2.5 2.5H3.055a2.5 2.5 0 01-2.5-2.5V13.5a2.5 2.5 0 012.5-2.5zM8.555 11H11a2.5 2.5 0 012.5 2.5V19a2.5 2.5 0 01-2.5 2.5H8.555a2.5 2.5 0 01-2.5-2.5V13.5a2.5 2.5 0 012.5-2.5zM14.055 11H16.5a2.5 2.5 0 012.5 2.5V19a2.5 2.5 0 01-2.5 2.5H14.055a2.5 2.5 0 01-2.5-2.5V13.5a2.5 2.5 0 012.5-2.5z" />
                     </svg>

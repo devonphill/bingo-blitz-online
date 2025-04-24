@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { GameSession, GameType, CurrentGameState } from "@/types";
@@ -14,7 +13,7 @@ const initializeGameState = (gameType: GameType, gameNumber: number): CurrentGam
   prizes: {},
 });
 
-export function useSessions() {
+export const useSessions = () => {
   const [sessions, setSessions] = useState<GameSession[]>([]);
   const [currentSession, setCurrentSessionState] = useState<GameSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -151,62 +150,60 @@ export function useSessions() {
     }
   }, [sessions]);
 
-  // Function to update the current_game_state for the current session
-  const updateCurrentGameState = useCallback(async (newGameState: Partial<CurrentGameState>) => {
-    if (!currentSession?.current_game_state) {
-      console.error("Cannot update game state: No current session or game state initialized.");
-      setError("Cannot update game state: No current session or game state initialized.");
-      return false;
-    }
-
-    // Special handling for game type changes
-    let updatedState: CurrentGameState;
-    if (newGameState.gameType && newGameState.gameType !== currentSession.current_game_state.gameType) {
-      // If game type is changing, initialize a new game state with the new type
-      updatedState = {
-        ...initializeGameState(
-          newGameState.gameType,
-          currentSession.current_game_state.gameNumber + 1 // Increment game number for new game type
-        ),
-        ...newGameState, // Apply any other changes provided
-      };
-    } else {
-      // Regular state update
-      updatedState = {
-        ...currentSession.current_game_state,
-        ...newGameState,
-      };
-    }
-
-    setIsLoading(true);
-    setError(null);
+  // Function to update the current game state within a session
+  const updateCurrentGameState = async (newGameState: Partial<CurrentGameState>): Promise<boolean> => {
+    if (!currentSession) return false;
 
     try {
-      console.log(`Updating game state for session ${currentSession.id}:`, updatedState);
-      // Cast the CurrentGameState to any to bypass TypeScript's type checking
-      // This is necessary because the supabase client expects a JSON object
-      const { error: updateError } = await supabase
-        .from("game_sessions")
-        .update({ current_game_state: updatedState as any })
-        .eq("id", currentSession.id);
+      // Get the current state to update
+      let updatedGameState = { 
+        ...(currentSession.current_game_state as CurrentGameState || {}),
+        ...newGameState
+      };
 
-      if (updateError) {
-        console.error("Error updating game state:", updateError);
-        setError(`Failed to update game state: ${updateError.message}`);
+      // Special handling for gameType changes which should reset the game state
+      if (newGameState.gameType && newGameState.gameType !== (currentSession.current_game_state as CurrentGameState)?.gameType) {
+        // Reset the game state but keep the new gameType and increment gameNumber
+        updatedGameState = {
+          gameType: newGameState.gameType,
+          gameNumber: ((currentSession.current_game_state as CurrentGameState)?.gameNumber || 0) + 1,
+          calledItems: [],
+          lastCalledItem: null,
+          activePatternIds: ['oneLine'], // Default pattern for new games
+          prizes: {}
+        };
+      }
+      
+      // Convert the CurrentGameState to a plain object for JSON compatibility
+      const gameStateAsPlainObject: Record<string, any> = {
+        ...updatedGameState
+      };
+
+      const { error } = await supabase
+        .from('game_sessions')
+        .update({ current_game_state: gameStateAsPlainObject })
+        .eq('id', currentSession.id);
+
+      if (error) {
+        console.error('Error updating game state:', error);
         return false;
       }
 
-      // The realtime subscription will handle updating the local state
-      console.log("Game state update successful in DB.");
+      // Update the local state
+      setCurrentSession(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          current_game_state: gameStateAsPlainObject
+        };
+      });
+
       return true;
     } catch (err) {
-      console.error("Exception updating game state:", err);
-      setError("An unexpected error occurred while updating game state.");
+      console.error('Exception updating game state:', err);
       return false;
-    } finally {
-      setIsLoading(false);
     }
-  }, [currentSession]);
+  };
 
   // Look up session by access code
   const getSessionByCode = useCallback((code: string): GameSession | null => {
@@ -223,4 +220,4 @@ export function useSessions() {
     isLoading,
     error,
   };
-}
+};

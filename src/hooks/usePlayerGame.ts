@@ -2,54 +2,45 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-// Assuming SessionProvider or similar provides session context, or import useSessions directly
-import { useSessions } from '@/contexts/useSessions'; // Import useSessions
-import { CurrentGameState } from '@/types'; // Import the game state type
+import { useSessions } from '@/contexts/useSessions';
+import { CurrentGameState } from '@/types';
 
 export function usePlayerGame(playerCode?: string | null) {
-  // Use useSessions hook to get session context
   const { currentSession: sessionFromContext, isLoading: isSessionLoading } = useSessions();
 
-  const [tickets, setTickets] = useState<any[]>([]); // Consider defining a proper ticket type
-  const [calledItems, setCalledItems] = useState<Array<any>>([]); // Generic item array
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [calledItems, setCalledItems] = useState<Array<any>>([]);
   const [lastCalledItem, setLastCalledItem] = useState<any | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [playerName, setPlayerName] = useState<string>('');
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [autoMarking, setAutoMarking] = useState<boolean>(true); // Keep this local UI state
+  const [autoMarking, setAutoMarking] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
-  // Remove local state for win prizes/patterns, get from context
-  // const [winPrizes, setWinPrizes] = useState<{ [key: string]: string }>({});
-  // const [activeWinPatterns, setActiveWinPatterns] = useState<string[]>([]);
   const [isClaiming, setIsClaiming] = useState(false);
   const [claimStatus, setClaimStatus] = useState<'pending' | 'validated' | 'rejected' | undefined>(undefined);
-  // Remove local gameType state, get from context
-  // const [gameType, setGameType] = useState<string>('90-ball');
 
   const { toast } = useToast();
 
-  // Extract derived state from context for easier use
   const currentGameState: CurrentGameState | null = sessionFromContext?.current_game_state ?? null;
   const activeWinPatterns: string[] = currentGameState?.activePatternIds ?? [];
   const winPrizes: { [key: string]: string } = currentGameState?.prizes ?? {};
-  const gameType: string | null = currentGameState?.gameType ?? sessionFromContext?.gameType ?? null; // Fallback logic
+  const gameType: string | null = currentGameState?.gameType ?? sessionFromContext?.gameType ?? null;
 
-  // Effect to fetch initial player-specific data (tickets, name, initial claim status)
   useEffect(() => {
     if (!playerCode) {
-      setIsLoading(false); // Not loading if no player code
+      setIsLoading(false);
       return;
     }
 
-    let isMounted = true; // Prevent state updates on unmounted component
+    let isMounted = true;
     const fetchPlayerData = async () => {
       setIsLoading(true);
       setErrorMessage('');
       setTickets([]);
       setPlayerId(null);
       setPlayerName('');
-      setSessionId(null); // Reset session ID on player code change
+      setSessionId(null);
       setClaimStatus(undefined);
       setIsClaiming(false);
 
@@ -58,9 +49,9 @@ export function usePlayerGame(playerCode?: string | null) {
 
         const { data: playerData, error: playerError } = await supabase
           .from('players')
-          .select('id, nickname, session_id') // Select only needed fields initially
+          .select('id, nickname, session_id')
           .eq('player_code', playerCode)
-          .maybeSingle(); // Use maybeSingle to handle not found gracefully
+          .maybeSingle();
 
         if (!isMounted) return;
 
@@ -74,35 +65,30 @@ export function usePlayerGame(playerCode?: string | null) {
         console.log("Player found:", playerData.nickname, "session:", playerData.session_id);
         setPlayerId(playerData.id);
         setPlayerName(playerData.nickname);
-        setSessionId(playerData.session_id); // Session ID is now known
+        setSessionId(playerData.session_id);
 
-        // Fetch tickets associated with this player and session
         const { data: ticketData, error: ticketError } = await supabase
           .from('assigned_tickets')
-          .select('*') // Adjust select as needed
+          .select('*')
           .eq('player_id', playerData.id)
           .eq('session_id', playerData.session_id);
 
-         if (!isMounted) return;
+        if (!isMounted) return;
 
         if (ticketError) {
           console.error("Error fetching tickets:", ticketError);
           setErrorMessage('Could not load your tickets');
-          setIsLoading(false); // Still might have session info
-          return; // Stop if tickets fail, or allow partial load?
+          setIsLoading(false);
+          return;
         }
 
-        // Assuming ticket transformation is needed (e.g., layout_mask)
-        // Define a proper type for TransformedTicket if possible
         const transformedTickets = ticketData?.map(ticket => ({
           ...ticket,
-          // Example transformation, adjust as needed based on ticket structure
           layoutMask: ticket.layout_mask
         })) || [];
 
         setTickets(transformedTickets);
 
-        // Check for existing claim status for this player/session
         const { data: claimData, error: claimError } = await supabase
           .from('bingo_claims')
           .select('status')
@@ -121,11 +107,9 @@ export function usePlayerGame(playerCode?: string | null) {
           }
         }
 
-        // Initial loading complete (session data comes from context now)
         setIsLoading(false);
-
       } catch (error) {
-         if (!isMounted) return;
+        if (!isMounted) return;
         console.error("Error in fetchPlayerData:", error);
         setErrorMessage('Failed to load initial player data');
         setIsLoading(false);
@@ -135,51 +119,39 @@ export function usePlayerGame(playerCode?: string | null) {
     fetchPlayerData();
 
     return () => {
-      isMounted = false; // Cleanup function to prevent setting state on unmount
+      isMounted = false;
     };
+  }, [playerCode]);
 
-  }, [playerCode]); // Only refetch player data when playerCode changes
-
-  // Effect to synchronize with session state from context
   useEffect(() => {
     if (sessionFromContext && sessionFromContext.id === sessionId) {
-       // Update local state based on context's current_game_state
-        if (sessionFromContext.current_game_state) {
-            setCalledItems(sessionFromContext.current_game_state.calledItems || []);
-            setLastCalledItem(sessionFromContext.current_game_state.lastCalledItem ?? null);
-            // No need to set activeWinPatterns/winPrizes/gameType locally, use derived state
-        } else {
-            // Handle case where context has session but no game state (reset local)
-            setCalledItems([]);
-            setLastCalledItem(null);
-        }
-        setIsLoading(isSessionLoading); // Reflect session loading state
-        setErrorMessage(''); // Clear previous errors if session is now valid
+      if (sessionFromContext.current_game_state) {
+        setCalledItems(sessionFromContext.current_game_state.calledItems || []);
+        setLastCalledItem(sessionFromContext.current_game_state.lastCalledItem ?? null);
+      } else {
+        setCalledItems([]);
+        setLastCalledItem(null);
+      }
+      setIsLoading(isSessionLoading);
+      setErrorMessage('');
     } else if (sessionId && !sessionFromContext) {
-        // Handle case where we have a session ID but no context (e.g., context cleared)
-        // setErrorMessage("Session data not available.");
-        // setIsLoading(true); // Or false, depending on desired behavior
+      // Handle case where we have a session ID but no context
     }
   }, [sessionFromContext, sessionId, isSessionLoading]);
 
-
-  // Effect for real-time claim results (independent of session context state)
   useEffect(() => {
-    // Only subscribe if we have a player ID
     if (!playerId) return;
 
     const gameUpdatesChannel = supabase
-      .channel(`game-updates-for-player-${playerId}`) // Player-specific channel name
+      .channel(`game-updates-for-player-${playerId}`)
       .on(
         'broadcast',
         { event: 'claim-result' },
         (payload) => {
           console.log("Received claim result:", payload);
-          // Check if the result is specifically for this player
           if (payload.payload && payload.payload.playerId === playerId) {
-            const result = payload.payload.result as 'valid' | 'rejected'; // Type assertion
-
-            if (result === 'valid') { // Use 'valid' instead of 'validated' from broadcast
+            const result = payload.payload.result as 'valid' | 'rejected';
+            if (result === 'valid') {
               setClaimStatus('validated');
               setIsClaiming(false);
               toast({
@@ -200,23 +172,21 @@ export function usePlayerGame(playerCode?: string | null) {
         }
       )
       .subscribe((status, err) => {
-         if (status === 'SUBSCRIBED') {
-            console.log(`Player ${playerId} subscribed to claim results`);
-         }
-          if (err) {
-             console.error(`Subscription error for player ${playerId}:`, err);
-          }
+        if (status === 'SUBSCRIBED') {
+          console.log(`Player ${playerId} subscribed to claim results`);
+        }
+        if (err) {
+          console.error(`Subscription error for player ${playerId}:`, err);
+        }
       });
 
-    // Cleanup
     return () => {
       supabase.removeChannel(gameUpdatesChannel)
-          .then(() => console.log(`Player ${playerId} unsubscribed from claim results`))
-          .catch(err => console.error("Error removing player channel:", err));
+        .then(() => console.log(`Player ${playerId} unsubscribed from claim results`))
+        .catch(err => console.error("Error removing player channel:", err));
     };
-  }, [playerId, toast]); // Depend only on playerId and toast
+  }, [playerId, toast]);
 
-  // Claim Bingo function (remains largely the same, uses local playerId/sessionId)
   const handleClaimBingo = useCallback(async (): Promise<boolean> => {
     if (!playerId || !sessionId || !playerName) {
       toast({
@@ -226,14 +196,14 @@ export function usePlayerGame(playerCode?: string | null) {
       });
       return false;
     }
-    // Prevent double-claiming if already pending or recently resolved
+
     if (isClaiming || claimStatus === 'validated') {
-        toast({
-            title: "Claim Status",
-            description: claimStatus === 'validated' ? "Your win is already validated." : "Your claim is already being processed.",
-            variant: "default"
-          });
-        return false;
+      toast({
+        title: "Claim Status",
+        description: claimStatus === 'validated' ? "Your win is already validated." : "Your claim is already being processed.",
+        variant: "default"
+      });
+      return false;
     }
 
     setIsClaiming(true);
@@ -242,30 +212,27 @@ export function usePlayerGame(playerCode?: string | null) {
     try {
       console.log(`Player ${playerName} (${playerId}) claiming bingo in session ${sessionId}`);
 
-      // Insert the claim record
       const { data: claimData, error: claimError } = await supabase
         .from('bingo_claims')
         .insert({
           player_id: playerId,
           session_id: sessionId,
-          status: 'pending' // Ensure status is set correctly
+          status: 'pending'
         })
-        .select('id') // Select the ID of the new claim
+        .select('id')
         .single();
 
       if (claimError || !claimData) {
         console.error("Error creating claim record:", claimError);
-        // Attempt to rollback optimistic state change
         setIsClaiming(false);
-        setClaimStatus(undefined); // Revert status
+        setClaimStatus(undefined);
         throw new Error(`Failed to save claim: ${claimError?.message || 'Unknown error'}`);
       }
 
-       console.log(`Claim recorded with ID: ${claimData.id}. Broadcasting...`);
+      console.log(`Claim recorded with ID: ${claimData.id}. Broadcasting...`);
 
-      // Broadcast the claim event *after* successful DB insert
       const broadcastResponse = await supabase
-        .channel('caller-claims') // Ensure this channel name matches useClaimManagement
+        .channel('caller-claims')
         .send({
           type: 'broadcast',
           event: 'bingo-claim',
@@ -273,12 +240,11 @@ export function usePlayerGame(playerCode?: string | null) {
             playerId,
             playerName,
             sessionId,
-            claimId: claimData.id, // Send the actual claim ID
+            claimId: claimData.id,
             timestamp: new Date().toISOString()
           }
         });
 
-      // Handle potential broadcast errors without accessing the non-existent error property
       if(!broadcastResponse) {
         console.error("Error broadcasting claim: No response received");
         toast({
@@ -294,47 +260,35 @@ export function usePlayerGame(playerCode?: string | null) {
         });
       }
 
-      return true; // Claim successfully submitted
-
+      return true;
     } catch (error) {
       console.error("Error claiming bingo:", error);
-      // Rollback optimistic state changes if not already done
       setIsClaiming(false);
       setClaimStatus(undefined);
-
       toast({
         title: "Error",
         description: `Failed to submit your bingo claim: ${error instanceof Error ? error.message : 'Please try again.'}`,
         variant: "destructive"
       });
-
-      return false; // Claim failed
+      return false;
     }
-  }, [playerId, sessionId, playerName, toast, isClaiming, claimStatus]); // Add isClaiming/claimStatus dependency
+  }, [playerId, sessionId, playerName, toast, isClaiming, claimStatus]);
 
-  // Return derived state from context along with local state/handlers
   return {
-    // Player/Ticket Data
     tickets,
     playerName,
-    playerId, // Exposed for potential use
-
-    // Game State (derived from context)
-    currentSession: sessionFromContext, // Provide the full session context object
-    currentGameState, // Provide the specific game state object
-    calledItems, // Use generic name
-    lastCalledItem, // Use generic name
-    activeWinPatterns, // Derived from context
-    winPrizes, // Derived from context
-    gameType, // Derived from context
-
-    // Local UI State
+    playerId,
+    currentSession: sessionFromContext,
+    currentGameState,
+    calledItems,
+    lastCalledItem,
+    activeWinPatterns,
+    winPrizes,
+    gameType,
     autoMarking,
     setAutoMarking,
-    isLoading, // Combined loading state
+    isLoading,
     errorMessage,
-
-    // Claim State & Handler
     handleClaimBingo,
     isClaiming,
     claimStatus,
