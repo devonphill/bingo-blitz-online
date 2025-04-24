@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -240,12 +239,11 @@ export default function CallerSession() {
     if (sessionId && session?.id) {
       console.log("Initial check for pending claims");
       const timer = setTimeout(() => {
-        // Fixed: Removed argument from checkForClaims call
         checkForClaims();
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [sessionId, session?.id, checkForClaims]);
+  }, [session?.id, sessionId]);
 
   const handleGameTypeChange = (type: string) => {
     setGameType(type);

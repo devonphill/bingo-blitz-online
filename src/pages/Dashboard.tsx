@@ -6,9 +6,10 @@ import CreateSessionForm from '@/components/dashboard/CreateSessionForm';
 import SessionCard from '@/components/dashboard/SessionCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSession } from '@/contexts/SessionContext';
+import { Settings } from 'lucide-react';
 
 export default function Dashboard() {
-  const { user, logout } = useAuth();
+  const { user, role, logout } = useAuth();
   const { sessions } = useSession();
   const navigate = useNavigate();
 
@@ -23,6 +24,17 @@ export default function Dashboard() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
           <h1 className="text-2xl font-bold text-bingo-primary">Bingo Blitz</h1>
           <div className="flex items-center space-x-4">
+            {role === 'superuser' && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => navigate('/admin')}
+                className="flex items-center gap-2"
+              >
+                <Settings className="w-4 h-4" />
+                Game Settings
+              </Button>
+            )}
             <div className="text-sm text-gray-600">
               Welcome, <span className="font-semibold">{user?.email}</span>
             </div>

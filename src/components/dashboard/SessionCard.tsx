@@ -5,6 +5,21 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { GameSession } from '@/types';
 import { format } from 'date-fns';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { useSession } from '@/contexts/SessionContext';
+import { Trash2 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface SessionCardProps {
   session: GameSession;
@@ -12,6 +27,8 @@ interface SessionCardProps {
 
 export default function SessionCard({ session }: SessionCardProps) {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const { fetchSessions } = useSession();
   
   const handleStartCalling = () => {
     navigate(`/caller/session/${session.id}`);
@@ -19,6 +36,27 @@ export default function SessionCard({ session }: SessionCardProps) {
   
   const handleAddPlayers = () => {
     navigate(`/add-players/${session.id}`);
+  };
+
+  const handleDelete = async () => {
+    const { error } = await supabase
+      .from('game_sessions')
+      .delete()
+      .eq('id', session.id);
+
+    if (error) {
+      toast({
+        title: "Error deleting session",
+        description: error.message,
+        variant: "destructive"
+      });
+    } else {
+      toast({
+        title: "Session deleted",
+        description: "The game session has been successfully deleted."
+      });
+      fetchSessions();
+    }
   };
 
   return (
@@ -56,6 +94,30 @@ export default function SessionCard({ session }: SessionCardProps) {
         >
           Add Players
         </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button 
+              variant="destructive" 
+              size="icon"
+              className="w-10 h-10"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the game session
+                and all associated player data.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </CardFooter>
     </Card>
   );
