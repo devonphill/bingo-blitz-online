@@ -1,12 +1,16 @@
+// src/game-rules/gameRulesRegistry.ts
 
 import { NinetyBallRules } from './ninetyBallRules';
-import { SevenfiveRules } from './seventyfiveRules';
+// Ensure the class name exported from seventyfiveRules.ts matches here
+import { SeventyfiveRules } from './seventyfiveRules';
+// Import the *corrected* GameRules interface
 import type { GameRules } from './types';
 
 // Registry of game rules implementations
+// The type constraint { [key: string]: GameRules } will now use the corrected interface
 const GAME_RULES: { [key: string]: GameRules } = {
   '90-ball': new NinetyBallRules(),
-  '75-ball': new SevenfiveRules(),
+  '75-ball': new SeventyfiveRules(), // Assumes seventyfiveRules.ts exports 'SeventyfiveRules'
   // Add more game types as needed
 };
 
@@ -16,15 +20,15 @@ const GAME_RULES: { [key: string]: GameRules } = {
 export function getGameRulesForType(gameType: string): GameRules {
   // Normalize game type string (remove spaces, lowercase)
   const normalizedType = gameType.toLowerCase().replace(/\s+/g, '-');
-  
-  // Default to 90-ball if the game type is not recognized
-  const rules = GAME_RULES[normalizedType] || GAME_RULES['90-ball'];
-  
+
+  const rules = GAME_RULES[normalizedType];
+
   if (!rules) {
-    console.warn(`Game rules for "${gameType}" not found, using 90-ball as fallback`);
+    console.warn(`Game rules for "${gameType}" not found, using 90-ball as default`);
+    // Fallback to 90-ball if type not found
     return GAME_RULES['90-ball'];
   }
-  
+
   return rules;
 }
 
