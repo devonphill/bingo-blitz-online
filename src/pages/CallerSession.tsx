@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -10,7 +11,6 @@ import SessionMainContent from '@/components/game/SessionMainContent';
 import ClaimVerificationSheet from '@/components/game/ClaimVerificationSheet';
 import { useClaimManagement } from '@/hooks/useClaimManagement';
 import { WinPatternSelector } from '@/components/caller/WinPatternSelector';
-import { useGameProgression } from '@/hooks/useGameProgression';
 
 export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -27,6 +27,14 @@ export default function CallerSession() {
   const { toast } = useToast();
   const navigate = useNavigate();
 
+  // Default win lines for compatibility with existing components
+  const [winlines, setWinlines] = useState([
+    { id: 1, name: 'One Line', active: true },
+    { id: 2, name: 'Two Lines', active: true },
+    { id: 3, name: 'Full House', active: true },
+  ]);
+  const [currentActiveWinline, setCurrentActiveWinline] = useState(1);
+
   const {
     showClaimSheet,
     currentClaim,
@@ -40,7 +48,16 @@ export default function CallerSession() {
     rejectClaim
   } = useClaimManagement(sessionId);
 
-
+  // Simple function to handle toggling win line active state
+  const handleToggleWinline = (winlineId: number) => {
+    setCurrentActiveWinline(winlineId);
+    setWinlines(prev => 
+      prev.map(line => ({
+        ...line,
+        active: line.id === winlineId ? true : line.active
+      }))
+    );
+  };
 
   useEffect(() => {
     console.log("CallerSession - state update", {

@@ -1,55 +1,54 @@
 
-import type { GameRules } from './types';
+import { DefaultWinPattern, GameRules } from "./types";
 
-export class SevenfiveRules implements GameRules {
-  getGameTypeName(): string {
-    return '75-ball';
-  }
-  
-  getDefaultWinPatterns(): WinPatternConfig[] {
+export class SeventyFiveBallRules implements GameRules {
+  getDefaultWinPatterns(): DefaultWinPattern[] {
     return [
       {
-        id: "pattern",
-        name: "Pattern",
-        active: true,
-        prize: "",
-        order: 1
+        id: 'line',
+        name: 'Line',
+        description: 'Complete any horizontal, vertical, or diagonal line',
+        validate: (markedCells, board) => this.validateLine(markedCells, board)
       },
       {
-        id: "blackout",
-        name: "Blackout",
-        active: true,
-        prize: "",
-        order: 2
+        id: 'letter-x',
+        name: 'Letter X',
+        description: 'Complete both diagonals to form an X',
+        validate: (markedCells, board) => this.validateLetterX(markedCells, board)
+      },
+      {
+        id: 'coverall',
+        name: 'Coverall',
+        description: 'Mark all numbers on your card',
+        validate: (markedCells, board) => this.validateCoverall(markedCells, board)
       }
     ];
   }
-  
-  validateWin(patternId: string, ticket: any, calledNumbers: number[]): boolean {
-    // This is a placeholder implementation for 75-ball
-    // In a real implementation, we would check pattern-specific validation
-    
-    if (patternId === "blackout") {
-      // Blackout requires all numbers to be called
-      return ticket.numbers.every((num: number) => calledNumbers.includes(num));
-    }
-    
-    // For pattern wins, we'd need pattern-specific logic
-    // This is just a simplified implementation
-    return false;
+
+  validatePattern(
+    patternId: string,
+    markedCells: number[],
+    board: number[][]
+  ): boolean {
+    const patterns = this.getDefaultWinPatterns();
+    const pattern = patterns.find(p => p.id === patternId);
+    if (!pattern) return false;
+    return pattern.validate(markedCells, board);
   }
-  
-  getWinDistance(patternId: string, ticket: any, calledNumbers: number[]): number {
-    // This is a placeholder implementation
-    if (patternId === "blackout") {
-      // Count uncalled numbers
-      const uncalledCount = ticket.numbers.filter(
-        (num: number) => !calledNumbers.includes(num)
-      ).length;
-      return uncalledCount;
-    }
-    
-    // For pattern-specific distance calculation
-    return Infinity;
+
+  // Private validation methods for 75-ball patterns
+  private validateLine(markedCells: number[], board: number[][]): boolean {
+    // Implementation for line validation in 75-ball
+    return false; // Placeholder
+  }
+
+  private validateLetterX(markedCells: number[], board: number[][]): boolean {
+    // Implementation for X pattern validation
+    return false; // Placeholder
+  }
+
+  private validateCoverall(markedCells: number[], board: number[][]): boolean {
+    // Implementation for coverall validation
+    return markedCells.length >= 24; // 5x5 grid minus the free center space
   }
 }

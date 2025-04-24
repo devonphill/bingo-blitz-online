@@ -312,6 +312,7 @@ export type Database = {
           created_at: string
           created_by: string
           current_game: number
+          current_game_state: Json | null
           game_type: string
           id: string
           name: string
@@ -325,6 +326,7 @@ export type Database = {
           created_at?: string
           created_by: string
           current_game?: number
+          current_game_state?: Json | null
           game_type: string
           id?: string
           name: string
@@ -338,6 +340,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           current_game?: number
+          current_game_state?: Json | null
           game_type?: string
           id?: string
           name?: string
@@ -421,36 +424,6 @@ export type Database = {
           role?: string
           updated_at?: string
           username?: string
-        }
-        Relationships: []
-      }
-      win_patterns: {
-        Row: {
-          created_at: string
-          id: number
-          winline_1_active: boolean
-          winline_2_active: boolean
-          winline_3_active: boolean
-          winline_4_active: boolean
-          winline_5_active: boolean
-        }
-        Insert: {
-          created_at?: string
-          id: number
-          winline_1_active?: boolean
-          winline_2_active?: boolean
-          winline_3_active?: boolean
-          winline_4_active?: boolean
-          winline_5_active?: boolean
-        }
-        Update: {
-          created_at?: string
-          id?: number
-          winline_1_active?: boolean
-          winline_2_active?: boolean
-          winline_3_active?: boolean
-          winline_4_active?: boolean
-          winline_5_active?: boolean
         }
         Relationships: []
       }
