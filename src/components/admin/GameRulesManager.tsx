@@ -44,7 +44,8 @@ export function GameRulesManager() {
         variant: "destructive"
       });
     } else if (data) {
-      setRules(data.rules as GameRules);
+      // Fixed: Cast the JSON data to GameRules with type assertion
+      setRules(data.rules as unknown as GameRules);
     }
     setIsLoading(false);
   };
@@ -55,7 +56,7 @@ export function GameRulesManager() {
     setIsLoading(true);
     const { error } = await supabase
       .from('game_rules_config')
-      .update({ rules })
+      .update({ rules: rules as unknown as Record<string, any> })
       .eq('game_type', selectedType);
 
     if (error) {
