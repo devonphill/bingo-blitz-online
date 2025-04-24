@@ -1,3 +1,4 @@
+
 // src/game-rules/types.ts
 
 // Define the structure for returning the status of a ticket against a pattern
@@ -37,5 +38,4 @@ export interface GameRules {
    * @returns TicketStatus object indicating distance to win and winner status.
    */
   getTicketStatus(ticketData: any, calledItems: Array<any>, activePatternId: string): TicketStatus;
-
 }

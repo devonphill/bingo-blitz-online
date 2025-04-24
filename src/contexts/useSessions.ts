@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { GameSession, GameType, CurrentGameState } from "@/types";
@@ -162,10 +163,13 @@ export function useSessions() {
     let updatedState: CurrentGameState;
     if (newGameState.gameType && newGameState.gameType !== currentSession.current_game_state.gameType) {
       // If game type is changing, initialize a new game state with the new type
-      updatedState = initializeGameState(
-        newGameState.gameType,
-        currentSession.current_game_state.gameNumber + 1 // Increment game number for new game type
-      );
+      updatedState = {
+        ...initializeGameState(
+          newGameState.gameType,
+          currentSession.current_game_state.gameNumber + 1 // Increment game number for new game type
+        ),
+        ...newGameState, // Apply any other changes provided
+      };
     } else {
       // Regular state update
       updatedState = {

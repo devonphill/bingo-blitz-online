@@ -35,8 +35,8 @@ export default function BingoWinProgress({
   
   // Calculate distance to win for each pattern
   patternsToCheck.forEach(pattern => {
-    const distance = gameRules.getTicketStatus(ticketData, calledItems, patternId);
-    result[pattern] = distance;
+    const ticketStatus = gameRules.getTicketStatus(ticket, calledNumbers, pattern);
+    result[pattern] = ticketStatus.distance;
   });
   
   // Get the distance for the current win pattern, or the minimum of all active patterns

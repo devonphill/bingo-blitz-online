@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePlayerGame } from '@/hooks/usePlayerGame';
@@ -11,12 +12,12 @@ export default function PlayerGame() {
   // This ensures we always have the same number of hooks on each render
   const {
     tickets,
-    calledNumbers,
-    currentNumber,
     currentSession,
+    calledItems,
+    lastCalledItem,
     autoMarking,
     setAutoMarking,
-    playerCode,
+    playerName,
     winPrizes,
     activeWinPatterns,
     handleClaimBingo,
@@ -48,12 +49,12 @@ export default function PlayerGame() {
   return (
     <PlayerGameContent
       tickets={tickets || []}
-      calledNumbers={calledNumbers || []}
-      currentNumber={currentNumber}
+      calledNumbers={calledItems || []}
+      currentNumber={lastCalledItem}
       currentSession={currentSession}
       autoMarking={autoMarking}
       setAutoMarking={setAutoMarking}
-      playerCode={playerCode || storedPlayerCode}
+      playerCode={storedPlayerCode}
       winPrizes={winPrizes || {}}
       activeWinPatterns={activeWinPatterns || []}
       onClaimBingo={handleClaimBingo}

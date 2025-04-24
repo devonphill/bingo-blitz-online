@@ -46,7 +46,7 @@ export default function CallerSession() {
     openClaimSheet,
     validateClaim,
     rejectClaim
-  } = useClaimManagement(sessionId);
+  } = useClaimManagement();
 
   // Simple function to handle toggling win line active state
   const handleToggleWinline = (winlineId: number) => {
@@ -195,27 +195,6 @@ export default function CallerSession() {
     return () => {
       supabase.removeChannel(playersChannel);
     };
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (sessionId) {
-      const fetchWinPatterns = async () => {
-        const { data, error } = await supabase
-          .from('win_patterns')
-          .select('*')
-          .eq('id', 1)
-          .maybeSingle();
-
-        if (!error && data) {
-          const patterns: string[] = [];
-          if (data.winline_1_active) patterns.push('oneLine');
-          if (data.winline_2_active) patterns.push('twoLines');
-          if (data.winline_3_active) patterns.push('fullHouse');
-        }
-      };
-
-      fetchWinPatterns();
-    }
   }, [sessionId]);
 
   useEffect(() => {

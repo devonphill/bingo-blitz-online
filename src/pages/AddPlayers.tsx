@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -9,6 +8,7 @@ import { ArrowLeft } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { GameSession, GameType } from '@/types';
 import { useToast } from '@/components/ui/use-toast';
+import { getCurrentGameState } from '@/helpers/gameStateHelper';
 
 export default function AddPlayers() {
   const { user } = useAuth();
@@ -29,7 +29,18 @@ export default function AddPlayers() {
       await fetchSessions();
       const foundSession = sessions.find(s => s.id === sessionId);
       if (foundSession) {
-        setSession(foundSession);
+        setSession({
+          id: foundSession.id,
+          name: foundSession.name,
+          gameType: foundSession.gameType,
+          createdBy: foundSession.createdBy,
+          accessCode: foundSession.accessCode,
+          status: foundSession.status,
+          createdAt: foundSession.createdAt,
+          sessionDate: foundSession.sessionDate || '',
+          numberOfGames: foundSession.numberOfGames || 1,
+          current_game_state: foundSession.current_game_state || getCurrentGameState(foundSession.gameType)
+        });
         setLoading(false);
       } else {
         // Try to fetch directly from Supabase
@@ -49,6 +60,7 @@ export default function AddPlayers() {
             createdAt: data.created_at,
             sessionDate: data.session_date,
             numberOfGames: data.number_of_games,
+            current_game_state: getCurrentGameState(data.game_type as GameType)
           });
         } else {
           toast({

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Check, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -91,7 +92,9 @@ export default function ClaimVerificationSheet({
     // Validate with game rules
     if (currentWinPattern) {
       sortedTickets.forEach(ticket => {
-        const isValid = gameRules.validateWin(currentWinPattern, ticket, calledNumbers);
+        // Use getTicketStatus and check isWinner property
+        const status = gameRules.getTicketStatus(ticket, calledNumbers, currentWinPattern);
+        const isValid = status.isWinner;
         
         if (isValid) {
           valid = true;
