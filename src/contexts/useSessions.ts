@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { GameSession, GameType, CurrentGameState } from "@/types";
+import { Json } from "@supabase/supabase-js";
 
 // Helper function to initialize game state
 const initializeGameState = (gameType: GameType, gameNumber: number): CurrentGameState => ({
@@ -155,33 +156,16 @@ export const useSessions = () => {
     if (!currentSession) return false;
 
     try {
-      // Get the current state to update
       let updatedGameState = { 
         ...(currentSession.current_game_state as CurrentGameState || {}),
         ...newGameState
       };
 
-      // Special handling for gameType changes which should reset the game state
-      if (newGameState.gameType && newGameState.gameType !== (currentSession.current_game_state as CurrentGameState)?.gameType) {
-        // Reset the game state but keep the new gameType and increment gameNumber
-        updatedGameState = {
-          gameType: newGameState.gameType,
-          gameNumber: ((currentSession.current_game_state as CurrentGameState)?.gameNumber || 0) + 1,
-          calledItems: [],
-          lastCalledItem: null,
-          activePatternIds: ['oneLine'], // Default pattern for new games
-          prizes: {}
-        };
-      }
-      
-      // Convert the CurrentGameState to a plain object for JSON compatibility
-      const gameStateAsPlainObject: Record<string, any> = {
-        ...updatedGameState
-      };
-
       const { error } = await supabase
         .from('game_sessions')
-        .update({ current_game_state: gameStateAsPlainObject })
+        .update({ 
+          current_game_state: updatedGameState as unknown as Json 
+        })
         .eq('id', currentSession.id);
 
       if (error) {
@@ -189,14 +173,13 @@ export const useSessions = () => {
         return false;
       }
 
-      // Update the local state
-      setCurrentSession(prev => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          current_game_state: gameStateAsPlainObject
-        };
-      });
+      // Update the local state with proper type casting
+      setCurrentSessionState(currentSession => 
+        currentSession ? {
+          ...currentSession,
+          current_game_state: updatedGameState as unknown as Json
+        } : null
+      );
 
       return true;
     } catch (err) {

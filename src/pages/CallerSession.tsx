@@ -12,6 +12,7 @@ import ClaimVerificationSheet from '@/components/game/ClaimVerificationSheet';
 import { useClaimManagement } from '@/hooks/useClaimManagement';
 import { WinPatternSelector } from '@/components/caller/WinPatternSelector';
 import { Winline } from '@/types/winline';
+import { GameTypeChanger } from '@/components/game/GameTypeChanger';
 
 export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -254,6 +255,18 @@ export default function CallerSession() {
     }
   };
 
+  const handleClaimBingo = () => {
+    if (currentClaim) {
+      validateClaim(currentClaim);
+    }
+  };
+
+  const handleFalseClaim = () => {
+    if (currentClaim) {
+      rejectClaim(currentClaim);
+    }
+  };
+
   const handleValidClaim = async () => {
     console.log("handleValidClaim called");
     if (!currentClaim || !session || isProcessingValidClaim) return;
@@ -291,22 +304,6 @@ export default function CallerSession() {
       });
     } finally {
       setIsProcessingValidClaim(false);
-    }
-  };
-
-  const handleFalseClaim = async () => {
-    console.log("handleFalseClaim called");
-    if (!currentClaim) return;
-
-    try {
-      await rejectClaim();
-    } catch (error) {
-      console.error("Error processing false claim:", error);
-      toast({
-        title: "Error",
-        description: "Failed to process false claim.",
-        variant: "destructive"
-      });
     }
   };
 
@@ -376,6 +373,7 @@ export default function CallerSession() {
         setAutoMarking={setAutoMarking} 
       />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <GameTypeChanger />
         <SessionMainContent
           session={session}
           winLines={winlines}
@@ -390,7 +388,7 @@ export default function CallerSession() {
           remainingNumbers={remainingNumbers}
           sessionId={sessionId || ''}
           claimQueue={claimQueue}
-          openClaimSheet={openClaimSheet}
+          openClaimSheet={() => openClaimSheet()}
           gameType={gameType}
         />
       </main>
@@ -403,8 +401,8 @@ export default function CallerSession() {
         tickets={currentClaim?.tickets || []}
         calledNumbers={calledNumbers}
         currentNumber={currentNumber}
-        onValidClaim={handleValidClaim}
-        onFalseClaim={handleFalseClaim}
+        onValidClaim={() => handleClaimBingo()}
+        onFalseClaim={() => handleFalseClaim()}
         currentWinPattern={String(currentActiveWinline)}
         gameType={gameType}
       />
