@@ -190,14 +190,14 @@ export default function CallerSession() {
         const { data, error } = await supabase
           .from('win_patterns')
           .select('*')
-          .eq('session_id', sessionId)
+          .eq('id', 1)
           .maybeSingle();
 
         if (!error && data) {
           const patterns: string[] = [];
-          if (data.one_line_active) patterns.push('oneLine');
-          if (data.two_lines_active) patterns.push('twoLines');
-          if (data.full_house_active) patterns.push('fullHouse');
+          if (data.winline_1_active) patterns.push('oneLine');
+          if (data.winline_2_active) patterns.push('twoLines');
+          if (data.winline_3_active) patterns.push('fullHouse');
         }
       };
 
@@ -267,10 +267,8 @@ export default function CallerSession() {
     try {
       setIsProcessingValidClaim(true);
       
-      // First validate the claim - this sends notifications to players
       await validateClaim();
       
-      // Then log the win in game_logs
       await supabase
         .from('game_logs')
         .insert({
@@ -286,15 +284,8 @@ export default function CallerSession() {
         });
         
       console.log("Game log created for valid claim");
-
-      // Move to the next pattern or game
       
-      
-      // If there are no more patterns, progress to the next game
-      
-      
-      // Close the claim sheet
-      setShowClaimSheet(true);
+      setShowClaimSheet(false);
       setCurrentClaim(null);
       
     } catch (error) {
@@ -391,7 +382,6 @@ export default function CallerSession() {
         setAutoMarking={setAutoMarking} 
       />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Compose the new props */}
         <SessionMainContent
           session={session}
           winLines={winlines}
@@ -401,8 +391,8 @@ export default function CallerSession() {
           currentNumber={currentNumber}
           sessionPlayers={sessionPlayers}
           handleCallNumber={handleCallNumber}
-          handleEndGame={() => {}}
-          handleGoLive={async () => {}}
+          handleEndGame={handleEndGame}
+          handleGoLive={handleGoLive}
           remainingNumbers={remainingNumbers}
           sessionId={sessionId || ''}
           claimQueue={claimQueue}
@@ -419,8 +409,8 @@ export default function CallerSession() {
         tickets={currentClaim?.tickets || []}
         calledNumbers={calledNumbers}
         currentNumber={currentNumber}
-        onValidClaim={async () => {}}
-        onFalseClaim={async () => {}}
+        onValidClaim={handleValidClaim}
+        onFalseClaim={handleFalseClaim}
         currentWinPattern={String(currentActiveWinline)}
         gameType={gameType}
       />

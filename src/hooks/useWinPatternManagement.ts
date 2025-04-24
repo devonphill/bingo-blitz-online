@@ -11,6 +11,14 @@ export interface Winline {
   active: boolean;
 }
 
+export interface WinPatternConfig {
+  id: string;
+  name: string;
+  active: boolean;
+  prize?: string;
+  order: number;
+}
+
 export function useWinPatternManagement() {
   // Global winlines for config (up to 5 possible, always 1 row)
   const [winlines, setWinlines] = useState<Winline[]>([

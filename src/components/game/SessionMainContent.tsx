@@ -1,10 +1,11 @@
+
 import React from 'react';
 import WinPatternSelector from './WinPatternSelector';
 import CalledNumbers from './CalledNumbers';
 import PlayerList from './PlayerList';
 import TicketsDebugDisplay from './TicketsDebugDisplay';
 import CallerControls from './CallerControls';
-import type { WinPatternConfig } from '@/hooks/useWinPatternManagement';
+import type { Winline } from '@/hooks/useWinPatternManagement';
 
 interface SessionMainContentProps {
   session: any;

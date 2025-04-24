@@ -66,26 +66,26 @@ export function usePlayerGame(playerCode?: string | null) {
         const { data: patternData, error: patternError } = await supabase
           .from('win_patterns')
           .select('*')
-          .eq('session_id', playerData.session_id)
+          .eq('id', 1)
           .single();
 
         if (!patternError && patternData) {
           const patterns: string[] = [];
           const prizes: { [key: string]: string } = {};
           
-          if (patternData.one_line_active) {
+          if (patternData.winline_1_active) {
             patterns.push('oneLine');
-            prizes['oneLine'] = patternData.one_line_prize || '';
+            prizes['oneLine'] = '';
           }
           
-          if (patternData.two_lines_active) {
+          if (patternData.winline_2_active) {
             patterns.push('twoLines');
-            prizes['twoLines'] = patternData.two_lines_prize || '';
+            prizes['twoLines'] = '';
           }
           
-          if (patternData.full_house_active) {
+          if (patternData.winline_3_active) {
             patterns.push('fullHouse');
-            prizes['fullHouse'] = patternData.full_house_prize || '';
+            prizes['fullHouse'] = '';
           }
           
           setActiveWinPatterns(patterns);
