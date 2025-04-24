@@ -117,14 +117,15 @@ export default function CallerSession() {
   }, [sessionId, sessions, session]);
 
   useEffect(() => {
-    setPromptGameType(!session?.gameType);
+    if (!session?.gameType) {
+      setPromptGameType(true);
+    }
   }, [session]);
 
   useEffect(() => {
-    if (gameType === "90-ball" && remainingNumbers.length === 0) {
-      setRemainingNumbers(Array.from({ length: 90 }, (_, i) => i + 1));
-    } else if (gameType === "75-ball" && remainingNumbers.length === 0) {
-      setRemainingNumbers(Array.from({ length: 75 }, (_, i) => i + 1));
+    const maxNumber = gameType === 'mainstage' ? 90 : 75;
+    if (remainingNumbers.length === 0) {
+      setRemainingNumbers(Array.from({ length: maxNumber }, (_, i) => i + 1));
     }
   }, [gameType, remainingNumbers.length]);
 
@@ -248,11 +249,8 @@ export default function CallerSession() {
     setGameType(type);
     setPromptGameType(false);
     
-    if (type === "90-ball") {
-      setRemainingNumbers(Array.from({ length: 90 }, (_, i) => i + 1));
-    } else if (type === "75-ball") {
-      setRemainingNumbers(Array.from({ length: 75 }, (_, i) => i + 1));
-    }
+    const maxNumber = type === 'mainstage' ? 90 : 75;
+    setRemainingNumbers(Array.from({ length: maxNumber }, (_, i) => i + 1));
   };
 
   const handleCallNumber = async (number: number) => {

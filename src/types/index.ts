@@ -1,4 +1,3 @@
-
 // This file defines the core data structures used throughout the application.
 
 export type UserRole = 'superuser' | 'subuser';
@@ -9,8 +8,8 @@ export interface User {
   role: UserRole;
 }
 
-// Updated GameType definition to include '75-ball'
-export type GameType = '90-ball' | '75-ball' | '80-ball' | 'quiz' | 'music' | 'logo' | 'mixed';
+// Updated GameType definition to include 'mainstage', 'party', 'quiz', 'music', and 'logo'
+export type GameType = 'mainstage' | 'party' | 'quiz' | 'music' | 'logo';
 
 // --- New definition for the state of the currently active game ---
 export interface CurrentGameState {

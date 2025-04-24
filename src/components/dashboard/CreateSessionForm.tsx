@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,11 +9,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { GameType } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 
-const ALL_GAME_TYPES: GameType[] = ['90-ball', '80-ball', 'quiz', 'music', 'logo', 'mixed'];
+const ALL_GAME_TYPES: GameType[] = ['mainstage', 'party', 'quiz', 'music', 'logo'];
 
 export default function CreateSessionForm() {
   const [sessionName, setSessionName] = useState('');
-  const [gameType, setGameType] = useState<GameType>('90-ball');
+  const [gameType, setGameType] = useState<GameType>('mainstage');
   const [sessionDate, setSessionDate] = useState('');
   const [sessionTime, setSessionTime] = useState('');
   const [numberOfGames, setNumberOfGames] = useState(1);
@@ -70,7 +69,7 @@ export default function CreateSessionForm() {
       description: 'Game session created successfully',
     });
     setSessionName('');
-    setGameType('90-ball');
+    setGameType('mainstage');
     setSessionDate('');
     setSessionTime('');
     setNumberOfGames(1);

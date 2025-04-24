@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { useSessions } from "@/contexts/useSessions";
@@ -7,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Music, Image, Mic, PartyPopper, Star } from "lucide-react";
 
 interface WinPatternOption {
   id: string;
@@ -17,7 +17,7 @@ interface WinPatternOption {
 export function GameSetup() {
   const { currentSession, updateCurrentGameState } = useSessions();
   
-  const [selectedGameType, setSelectedGameType] = useState<GameType>('90-ball');
+  const [selectedGameType, setSelectedGameType] = useState<GameType>('mainstage');
   const [winPatterns, setWinPatterns] = useState<WinPatternOption[]>([
     { id: 'oneLine', name: 'One Line', active: false },
     { id: 'twoLines', name: 'Two Lines', active: false },
@@ -45,6 +45,14 @@ export function GameSetup() {
   const handleGameTypeChange = (newType: GameType) => {
     setSelectedGameType(newType);
   };
+
+  const gameTypes = [
+    { type: 'mainstage', label: 'Mainstage Bingo', icon: Star },
+    { type: 'party', label: 'Party Bingo', icon: PartyPopper },
+    { type: 'quiz', label: 'Quiz Bingo', icon: Mic },
+    { type: 'music', label: 'Music Bingo', icon: Music },
+    { type: 'logo', label: 'Logo Bingo', icon: Image },
+  ] as const;
 
   const toggleWinPattern = (patternId: string) => {
     setWinPatterns(prev => 
@@ -84,21 +92,18 @@ export function GameSetup() {
       <CardContent className="space-y-6">
         <div className="space-y-2">
           <h3 className="text-sm font-medium">Game Type</h3>
-          <div className="flex gap-2">
-            <Button 
-              variant={selectedGameType === '90-ball' ? 'default' : 'outline'}
-              onClick={() => handleGameTypeChange('90-ball')}
-              className="flex-1"
-            >
-              90 Ball
-            </Button>
-            <Button 
-              variant={selectedGameType === '75-ball' ? 'default' : 'outline'}
-              onClick={() => handleGameTypeChange('75-ball')}
-              className="flex-1"
-            >
-              75 Ball
-            </Button>
+          <div className="flex flex-wrap gap-2">
+            {gameTypes.map(({ type, label, icon: Icon }) => (
+              <Button 
+                key={type}
+                variant={selectedGameType === type ? 'default' : 'outline'}
+                onClick={() => handleGameTypeChange(type as GameType)}
+                className="flex-1"
+              >
+                <Icon className="w-4 h-4 mr-2" />
+                {label}
+              </Button>
+            ))}
           </div>
         </div>
 
