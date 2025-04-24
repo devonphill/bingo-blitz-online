@@ -1,96 +1,233 @@
-
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { GameSession, GameType } from "@/types";
+import { GameSession, GameType, CurrentGameState } from "@/types"; // Import new types
+
+// Helper function to initialize game state if null
+const initializeGameState = (session: Omit<GameSession, 'current_game_state'>): CurrentGameState => ({
+    gameNumber: 1, // Default to game 1
+    gameType: session.gameType, // Default to session's overall type
+    activePatternIds: [], // No patterns active initially
+    calledItems: [],
+    lastCalledItem: null,
+    status: 'pending', // Game starts as pending
+    prizes: {},
+});
 
 export function useSessions() {
-  const [sessions, setSessions] = useState<GameSession[]>([]);
-  const [currentSession, setCurrentSessionState] = useState<GameSession | null>(null);
+    const [sessions, setSessions] = useState<GameSession[]>([]);
+    const [currentSession, setCurrentSessionState] = useState<GameSession | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-  // Fetches sessions from Supabase
-  const fetchSessions = async () => {
-    const { data } = await supabase.from("game_sessions").select("*");
-    if (data) {
-      setSessions(
-        data.map((d: any) => ({
-          id: d.id,
-          name: d.name,
-          gameType: d.game_type as GameType,
-          createdBy: d.created_by,
-          accessCode: d.access_code,
-          status: d.status,
-          createdAt: d.created_at,
-          sessionDate: d.session_date,
-          numberOfGames: d.number_of_games,
-        }))
-      );
-    }
-  };
+    // Fetches all sessions from Supabase
+    const fetchSessions = useCallback(async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            // Select all columns, including the new one
+            const { data, error: fetchError } = await supabase.from("game_sessions").select("*");
 
-  // Subscribes to session changes
-  useEffect(() => {
-    fetchSessions();
+            if (fetchError) {
+                console.error("Error fetching sessions:", fetchError);
+                setError("Failed to fetch sessions.");
+                setSessions([]); // Clear sessions on error
+            } else if (data) {
+                // Map the data, ensuring current_game_state is handled
+                const mappedSessions = data.map((d: any): GameSession => ({
+                    id: d.id,
+                    name: d.name,
+                    gameType: d.game_type as GameType, // Overall session type
+                    createdBy: d.created_by,
+                    accessCode: d.access_code,
+                    status: d.status, // Overall session status
+                    createdAt: d.created_at,
+                    sessionDate: d.session_date,
+                    numberOfGames: d.number_of_games, // Consider how this relates to currentGameNumber
+                    // Handle the new JSONB column, provide default if null/undefined
+                    current_game_state: d.current_game_state
+                        ? (d.current_game_state as CurrentGameState)
+                        : initializeGameState({ // Pass necessary info to initialize
+                            id: d.id,
+                            name: d.name,
+                            gameType: d.game_type as GameType,
+                            createdBy: d.created_by,
+                            accessCode: d.access_code,
+                            status: d.status,
+                            createdAt: d.created_at,
+                            sessionDate: d.session_date,
+                            numberOfGames: d.number_of_games,
+                        }),
+                }));
+                setSessions(mappedSessions);
 
-    const channel = supabase
-      .channel("session-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "game_sessions",
-        },
-        (payload: any) => {
-          fetchSessions();
-          if (
-            currentSession &&
-            payload.new &&
-            currentSession.id === payload.new.id
-          ) {
-            const updatedSession = {
-              id: payload.new.id,
-              name: payload.new.name,
-              gameType: payload.new.game_type as GameType,
-              createdBy: payload.new.created_by,
-              accessCode: payload.new.access_code,
-              status: payload.new.status,
-              createdAt: payload.new.created_at,
-              sessionDate: payload.new.session_date,
-              numberOfGames: payload.new.number_of_games,
-            };
-            setCurrentSessionState(updatedSession);
-          }
+                // If a current session is set, update its state from the newly fetched data
+                if (currentSession) {
+                    const updatedCurrent = mappedSessions.find(s => s.id === currentSession.id);
+                    setCurrentSessionState(updatedCurrent || null);
+                }
+
+            } else {
+                setSessions([]);
+            }
+        } catch (err) {
+            console.error("Exception fetching sessions:", err);
+            setError("An unexpected error occurred while fetching sessions.");
+            setSessions([]);
+        } finally {
+            setIsLoading(false);
         }
-      )
-      .subscribe();
+    }, [currentSession]); // Dependency on currentSession to refresh its state
 
-    return () => {
-      supabase.removeChannel(channel);
+    // Subscribes to session changes (including current_game_state updates)
+    useEffect(() => {
+        // Initial fetch
+        fetchSessions();
+
+        const channel = supabase
+            .channel("session-changes")
+            .on(
+                "postgres_changes",
+                {
+                    event: "*", // Listen for INSERT, UPDATE, DELETE
+                    schema: "public",
+                    table: "game_sessions",
+                },
+                (payload: any) => {
+                    console.log("Session change detected:", payload);
+
+                    // Refetch all sessions to update the list
+                    // Alternatively, smartly update/insert/delete based on payload
+                    fetchSessions();
+
+                    // If the change affects the currently viewed session, update it directly
+                    // Note: fetchSessions() above might already handle this if currentSession dependency works as expected.
+                    // Explicit update here ensures reactivity if fetchSessions updates are batched/delayed.
+                    if (currentSession && payload.new && currentSession.id === payload.new.id) {
+                        const updatedSessionData = payload.new;
+                        const updatedCurrentSession: GameSession = {
+                            id: updatedSessionData.id,
+                            name: updatedSessionData.name,
+                            gameType: updatedSessionData.game_type as GameType,
+                            createdBy: updatedSessionData.created_by,
+                            accessCode: updatedSessionData.access_code,
+                            status: updatedSessionData.status,
+                            createdAt: updatedSessionData.created_at,
+                            sessionDate: updatedSessionData.session_date,
+                            numberOfGames: updatedSessionData.number_of_games,
+                            current_game_state: updatedSessionData.current_game_state
+                                ? (updatedSessionData.current_game_state as CurrentGameState)
+                                : initializeGameState({ // Re-initialize if it somehow becomes null
+                                    id: updatedSessionData.id,
+                                    name: updatedSessionData.name,
+                                    gameType: updatedSessionData.game_type as GameType,
+                                    createdBy: updatedSessionData.created_by,
+                                    accessCode: updatedSessionData.access_code,
+                                    status: updatedSessionData.status,
+                                    createdAt: updatedSessionData.created_at,
+                                    sessionDate: updatedSessionData.session_date,
+                                    numberOfGames: updatedSessionData.number_of_games,
+                                }),
+                        };
+                        console.log("Updating current session state from payload:", updatedCurrentSession);
+                        setCurrentSessionState(updatedCurrentSession);
+                    } else if (currentSession && payload.old && payload.old.id === currentSession.id && payload.eventType === 'DELETE') {
+                        // Handle case where the current session is deleted
+                        setCurrentSessionState(null);
+                    }
+                }
+            )
+            .subscribe((status, err) => {
+                if (status === 'SUBSCRIBED') {
+                    console.log('Subscribed to session changes');
+                }
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    console.error('Session subscription error:', status, err);
+                    setError(`Session subscription failed: ${status}`);
+                }
+            });
+
+        // Cleanup function
+        return () => {
+            console.log("Removing channel subscription for session-changes");
+            supabase.removeChannel(channel).catch(err => console.error("Error removing channel:", err));
+        };
+        // Fetch sessions depends on currentSession now to ensure it updates correctly
+    }, [fetchSessions, currentSession]);
+
+    // Set current session by id
+    const setCurrentSession = useCallback((sessionId: string | null) => {
+        if (!sessionId) {
+            setCurrentSessionState(null);
+            return;
+        }
+        // Find the session from the already fetched list
+        const session = sessions.find((s) => s.id === sessionId);
+        setCurrentSessionState(session || null);
+        if (!session) {
+            console.warn(`Session with ID ${sessionId} not found in local state.`);
+            // Optionally trigger a fetch here if session might exist but isn't loaded
+            // fetchSessions();
+        }
+    }, [sessions]); // Depends on the sessions list
+
+
+    // Function to update the current_game_state for the current session
+    const updateCurrentGameState = useCallback(async (newGameState: Partial<CurrentGameState>) => {
+        if (!currentSession || !currentSession.current_game_state) {
+            console.error("Cannot update game state: No current session or game state initialized.");
+            setError("Cannot update game state: No current session or game state initialized.");
+            return false;
+        }
+
+        // Merge partial updates with the existing state
+        const updatedState = {
+            ...currentSession.current_game_state,
+            ...newGameState,
+        };
+
+        setIsLoading(true); // Indicate loading during update
+        setError(null);
+        try {
+            console.log(`Updating game state for session ${currentSession.id}:`, updatedState);
+            const { error: updateError } = await supabase
+                .from("game_sessions")
+                .update({ current_game_state: updatedState })
+                .eq("id", currentSession.id);
+
+            if (updateError) {
+                console.error("Error updating game state:", updateError);
+                setError(`Failed to update game state: ${updateError.message}`);
+                return false;
+            }
+
+            // Optimistic update locally? Or rely on the realtime listener triggered by fetchSessions?
+            // For now, rely on the listener which calls fetchSessions.
+            // setCurrentSessionState({ ...currentSession, current_game_state: updatedState });
+            console.log("Game state update successful in DB.");
+            return true;
+
+        } catch (err) {
+            console.error("Exception updating game state:", err);
+            setError("An unexpected error occurred while updating game state.");
+            return false;
+        } finally {
+            // setIsLoading(false); // Let the listener/fetchSessions handle final loading state
+        }
+    }, [currentSession]); // Depends on currentSession
+
+    // Look up session by access code
+    const getSessionByCode = useCallback((code: string): GameSession | null => {
+        return sessions.find((s) => s.accessCode === code) || null;
+    }, [sessions]);
+
+    return {
+        sessions, // List of all sessions
+        currentSession, // The currently selected session (includes current_game_state)
+        setCurrentSession, // Function to select a session by ID
+        getSessionByCode, // Function to find a session by access code
+        fetchSessions, // Function to manually refetch all sessions
+        updateCurrentGameState, // Function to update the active game state
+        isLoading, // Loading state indicator
+        error, // Error message state
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSession]);
-
-  // Set current session by id
-  const setCurrentSession = (sessionId: string | null) => {
-    if (!sessionId) {
-      setCurrentSessionState(null);
-      return;
-    }
-    const session = sessions.find((s) => s.id === sessionId);
-    setCurrentSessionState(session || null);
-  };
-
-  // Look up session by code
-  const getSessionByCode = (code: string): GameSession | null => {
-    return sessions.find((s) => s.accessCode === code) || null;
-  };
-
-  return {
-    sessions,
-    currentSession,
-    setCurrentSession,
-    setCurrentSessionState,
-    getSessionByCode,
-    fetchSessions,
-  };
 }
