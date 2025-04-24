@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -11,6 +12,10 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from '@/components/ui/button';
 import { Copy, RefreshCw, UserPlus, Play } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { helpers } from '@/integrations/supabase/customTypes';
+
+// Add missing Json type reference
+type Json = helpers.Json;
 
 export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -21,6 +26,11 @@ export default function CallerSession() {
   const [winPatterns, setWinPatterns] = useState<WinPattern[]>(WIN_PATTERNS.mainstage);
   const [pendingClaims, setPendingClaims] = useState<any[]>([]);
   const { toast } = useToast();
+
+  // Define fetchWinPatterns before using it
+  const fetchWinPatterns = useCallback(async () => {
+    setWinPatterns(WIN_PATTERNS[currentGameType] || []);
+  }, [currentGameType]);
 
   const fetchSession = useCallback(async () => {
     if (!sessionId) return;
@@ -72,10 +82,6 @@ export default function CallerSession() {
     fetchWinPatterns();
   }, [fetchSession, fetchWinPatterns]);
 
-  const fetchWinPatterns = useCallback(async () => {
-    setWinPatterns([]);
-  }, []);
-
   const callNumber = async () => {
     if (!session) return;
     
@@ -106,7 +112,7 @@ export default function CallerSession() {
 
       const { error } = await supabase
         .from('game_sessions')
-        .update({ current_game_state: updatedGameState })
+        .update({ current_game_state: updatedGameState as unknown as Json })
         .eq('id', sessionId);
 
       if (error) {
@@ -145,7 +151,7 @@ export default function CallerSession() {
 
     const { error } = await supabase
       .from('game_sessions')
-      .update({ current_game_state: updatedGameState })
+      .update({ current_game_state: updatedGameState as unknown as Json })
       .eq('id', sessionId);
 
     if (error) {
@@ -267,6 +273,7 @@ export default function CallerSession() {
       <WinPatternSelector 
         patterns={winPatterns}
         selectedPatterns={session?.current_game_state?.activePatternIds || []}
+        onPatternSelect={handlePatternSelect}
       />
       
       <div className="grid grid-cols-2 gap-6">
