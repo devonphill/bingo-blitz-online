@@ -1,54 +1,48 @@
+// src/game-rules/seventyfiveRules.ts
 
-import { DefaultWinPattern, GameRules } from "./types";
+// Correctly import the interfaces from the updated types file
+import type { GameRules, TicketStatus, DefaultWinPattern } from './types';
 
-export class SeventyFiveBallRules implements GameRules {
+// Placeholder implementation for 75-ball rules
+export class SeventyfiveRules implements GameRules {
+  getGameTypeName(): string {
+    return '75-ball'; // Or perhaps 'pattern' or 'blackout' depending on usage
+  }
+
   getDefaultWinPatterns(): DefaultWinPattern[] {
+     // Provide default patterns suitable for 75-ball
     return [
       {
-        id: 'line',
-        name: 'Line',
-        description: 'Complete any horizontal, vertical, or diagonal line',
-        validate: (markedCells, board) => this.validateLine(markedCells, board)
+        id: "pattern", // Example ID
+        name: "Pattern", // User-friendly name
       },
       {
-        id: 'letter-x',
-        name: 'Letter X',
-        description: 'Complete both diagonals to form an X',
-        validate: (markedCells, board) => this.validateLetterX(markedCells, board)
+        id: "blackout",
+        name: "Blackout", // Often called Coverall in 75-ball
       },
-      {
-        id: 'coverall',
-        name: 'Coverall',
-        description: 'Mark all numbers on your card',
-        validate: (markedCells, board) => this.validateCoverall(markedCells, board)
-      }
+      // Add others like 'fourCorners', 'lineHorizontal', 'lineVertical', 'lineDiagonal' etc. as needed
     ];
   }
 
-  validatePattern(
-    patternId: string,
-    markedCells: number[],
-    board: number[][]
-  ): boolean {
-    const patterns = this.getDefaultWinPatterns();
-    const pattern = patterns.find(p => p.id === patternId);
-    if (!pattern) return false;
-    return pattern.validate(markedCells, board);
-  }
+  getTicketStatus(ticketData: any, calledItems: Array<any>, activePatternId: string): TicketStatus {
+    // This remains a placeholder - needs real implementation for 75-ball patterns
+    // Assume calledItems are numbers for now
+    const calledNumbers = calledItems.filter(item => typeof item === 'number') as number[];
+    const numbers = ticketData?.numbers; // Adjust based on actual 75-ball ticket structure
 
-  // Private validation methods for 75-ball patterns
-  private validateLine(markedCells: number[], board: number[][]): boolean {
-    // Implementation for line validation in 75-ball
-    return false; // Placeholder
-  }
+    if (!Array.isArray(numbers)) {
+         console.error("Invalid 75-ball ticket data:", ticketData);
+         return { distance: Infinity, isWinner: false };
+    }
 
-  private validateLetterX(markedCells: number[], board: number[][]): boolean {
-    // Implementation for X pattern validation
-    return false; // Placeholder
-  }
 
-  private validateCoverall(markedCells: number[], board: number[][]): boolean {
-    // Implementation for coverall validation
-    return markedCells.length >= 24; // 5x5 grid minus the free center space
+    if (activePatternId === "blackout") {
+      const uncalledCount = numbers.filter(num => !calledNumbers.includes(num)).length;
+      return { distance: uncalledCount, isWinner: uncalledCount === 0 };
+    }
+
+    // Placeholder for pattern wins - would need complex logic based on pattern definition
+    console.warn(`Pattern validation for "${activePatternId}" not implemented for 75-ball.`);
+    return { distance: Infinity, isWinner: false };
   }
 }
