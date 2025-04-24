@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -8,8 +7,9 @@ import BingoCard from '@/components/caller/BingoCard';
 import { WinPatternSelector } from '@/components/caller/WinPatternSelector';
 import { Button } from '@/components/ui/button';
 import { useToast } from "@/hooks/use-toast";
-import { Copy, RefreshCw, UserPlus } from 'lucide-react';
+import { Copy, RefreshCw, UserPlus, Play } from 'lucide-react';
 import { GameTypeChanger } from '@/components/game/GameTypeChanger';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -33,39 +33,42 @@ export default function CallerSession() {
     if (error) {
       console.error("Error fetching session:", error);
     } else if (data) {
-      // Map database fields to GameSession interface properties
+      const initialGameState: CurrentGameState = {
+        gameNumber: 1,
+        gameType: 'mainstage',
+        activePatternIds: [],
+        calledItems: [],
+        lastCalledItem: null,
+        status: 'pending',
+        prizes: {}
+      };
+
       const sessionData: GameSession = {
         id: data.id,
         name: data.name,
-        gameType: data.game_type as GameType,
+        gameType: data.game_type as GameType || 'mainstage',
         createdBy: data.created_by,
         accessCode: data.access_code,
         status: data.status as "pending" | "active" | "completed",
         createdAt: data.created_at,
         sessionDate: data.session_date,
         numberOfGames: data.number_of_games,
-        current_game_state: data.current_game_state as CurrentGameState
+        current_game_state: (data.current_game_state as CurrentGameState) || initialGameState
       };
       
       setSession(sessionData);
       
-      // Set called numbers if they exist in the current game state
       if (sessionData.current_game_state?.calledItems) {
         setCalledNumbers(sessionData.current_game_state.calledItems as number[]);
       }
       
-      // Set current number if it exists
       if (sessionData.current_game_state?.lastCalledItem) {
         setCurrentNumber(sessionData.current_game_state.lastCalledItem as number);
       }
     }
   }, [sessionId]);
 
-  // Since the win_patterns table has been removed per migration info, we'll 
-  // use the patterns from the game rules based on current game type
   const fetchWinPatterns = useCallback(async () => {
-    // For now, this is a stub as we'll get patterns from the WinPatternSelector component
-    // which uses getGameRulesForType to fetch appropriate patterns
     setWinPatterns([]);
   }, []);
 
@@ -77,12 +80,11 @@ export default function CallerSession() {
   const callNumber = async () => {
     if (!session) return;
     
-    // Using 75 as default if numberRange is not available
-    const numberRange = session.current_game_state?.gameType === '90-ball' ? 90 : 75;
+    const gameType = session.current_game_state?.gameType || 'mainstage';
+    const numberRange = gameType === 'mainstage' ? 90 : 75;
     const newNumber = Math.floor(Math.random() * numberRange) + 1;
     
     if (calledNumbers.includes(newNumber)) {
-      // Number already called, try again
       callNumber();
       return;
     }
@@ -91,15 +93,13 @@ export default function CallerSession() {
     const updatedCalledNumbers = [...calledNumbers, newNumber];
     setCalledNumbers(updatedCalledNumbers);
 
-    // Update the current game state
     if (session.current_game_state) {
-      const updatedGameState = {
+      const updatedGameState: CurrentGameState = {
         ...session.current_game_state,
         calledItems: updatedCalledNumbers,
         lastCalledItem: newNumber
       };
 
-      // Optimistically update the UI
       setSession(prevSession => prevSession ? {
         ...prevSession,
         current_game_state: updatedGameState
@@ -117,7 +117,6 @@ export default function CallerSession() {
           description: "Failed to update the called number. Please try again.",
           variant: "destructive",
         });
-        // Revert the UI update on error
         fetchSession();
       } else {
         toast({
@@ -134,14 +133,12 @@ export default function CallerSession() {
     setCurrentNumber(null);
     setCalledNumbers([]);
 
-    // Update the current game state
     const updatedGameState = {
       ...session.current_game_state,
       calledItems: [],
       lastCalledItem: null
     };
 
-    // Optimistically update the UI
     setSession(prevSession => prevSession ? {
       ...prevSession,
       current_game_state: updatedGameState
@@ -159,7 +156,6 @@ export default function CallerSession() {
         description: "Failed to reset the numbers. Please try again.",
         variant: "destructive",
       });
-      // Revert the UI update on error
       fetchSession();
     } else {
       toast({
@@ -176,7 +172,6 @@ export default function CallerSession() {
   const checkForClaims = async () => {
     if (!sessionId) return;
 
-    // Use bingo_claims table instead of player_claims
     const { data: claims, error } = await supabase
       .from('bingo_claims')
       .select('*')
@@ -221,15 +216,9 @@ export default function CallerSession() {
     }
   };
 
-  // Determine number range based on game type
   const getNumberRange = () => {
-    if (!session) return 75; // Default to 75
-    
-    if (session.current_game_state?.gameType === '90-ball') {
-      return 90;
-    }
-    
-    return 75; // Default for most game types
+    const gameType = session?.current_game_state?.gameType || 'mainstage';
+    return gameType === 'mainstage' ? 90 : 75;
   };
 
   return (
@@ -242,31 +231,44 @@ export default function CallerSession() {
               <UserPlus className="mr-2 h-4 w-4" />
               Copy Access Code
             </Button>
-            <Button variant="outline" onClick={callNumber}>Call Number</Button>
-            <Button variant="destructive" onClick={resetNumbers}>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Reset Numbers
-            </Button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">Current Number</h2>
-          <div className="text-6xl font-extrabold text-bingo-primary">{currentNumber || '-'}</div>
-          <p className="text-gray-600">
-            Called numbers: {calledNumbers.join(', ') || 'None'}
-          </p>
-        </div>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Game Controls</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex space-x-4">
+              <Button onClick={callNumber} className="flex-1">
+                <Play className="mr-2 h-4 w-4" />
+                Call Number
+              </Button>
+              <Button variant="destructive" onClick={resetNumbers} className="flex-1">
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Reset Numbers
+              </Button>
+            </div>
+            
+            <div className="text-center">
+              <div className="text-6xl font-bold text-bingo-primary mb-2">
+                {currentNumber || '-'}
+              </div>
+              <p className="text-gray-600">
+                Called numbers: {calledNumbers.length > 0 ? calledNumbers.join(', ') : 'None'}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
 
         <GameTypeChanger />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <BingoCard numbers={calledNumbers} numberRange={getNumberRange()} />
+          <WinPatternSelector />
         </div>
-
-        <WinPatternSelector />
       </main>
     </div>
   );
