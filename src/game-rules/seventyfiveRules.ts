@@ -1,6 +1,5 @@
 
 import type { GameRules } from './types';
-import type { WinPatternConfig } from '@/hooks/useWinPatternManagement';
 
 export class SevenfiveRules implements GameRules {
   getGameTypeName(): string {
