@@ -1,7 +1,10 @@
+
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { GameSession, GameType, CurrentGameState } from "@/types";
-import { Json } from "@supabase/supabase-js";
+
+// Define a type for the Json value since it's missing from the supabase-js export
+type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
 
 // Helper function to initialize game state
 const initializeGameState = (gameType: GameType, gameNumber: number): CurrentGameState => ({
@@ -174,10 +177,10 @@ export const useSessions = () => {
       }
 
       // Update the local state with proper type casting
-      setCurrentSessionState(currentSession => 
-        currentSession ? {
-          ...currentSession,
-          current_game_state: updatedGameState as unknown as Json
+      setCurrentSessionState(prevSession => 
+        prevSession ? {
+          ...prevSession,
+          current_game_state: updatedGameState
         } : null
       );
 

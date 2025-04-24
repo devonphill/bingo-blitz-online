@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -49,7 +50,7 @@ export default function CallerSession() {
     openClaimSheet,
     validateClaim,
     rejectClaim
-  } = useClaimManagement();
+  } = useClaimManagement(sessionId);
 
   // Simple function to handle toggling win line active state
   const handleToggleWinline = (winlineId: number) => {
@@ -204,7 +205,7 @@ export default function CallerSession() {
     if (sessionId && session?.id) {
       console.log("Initial check for pending claims");
       const timer = setTimeout(() => {
-        checkForClaims(sessionId);
+        checkForClaims();
       }, 2000);
       return () => clearTimeout(timer);
     }
@@ -257,13 +258,13 @@ export default function CallerSession() {
 
   const handleClaimBingo = () => {
     if (currentClaim) {
-      validateClaim(currentClaim);
+      validateClaim();
     }
   };
 
   const handleFalseClaim = () => {
     if (currentClaim) {
-      rejectClaim(currentClaim);
+      rejectClaim();
     }
   };
 
@@ -388,7 +389,7 @@ export default function CallerSession() {
           remainingNumbers={remainingNumbers}
           sessionId={sessionId || ''}
           claimQueue={claimQueue}
-          openClaimSheet={() => openClaimSheet()}
+          openClaimSheet={openClaimSheet}
           gameType={gameType}
         />
       </main>
@@ -401,8 +402,8 @@ export default function CallerSession() {
         tickets={currentClaim?.tickets || []}
         calledNumbers={calledNumbers}
         currentNumber={currentNumber}
-        onValidClaim={() => handleClaimBingo()}
-        onFalseClaim={() => handleFalseClaim()}
+        onValidClaim={handleClaimBingo}
+        onFalseClaim={handleFalseClaim}
         currentWinPattern={String(currentActiveWinline)}
         gameType={gameType}
       />

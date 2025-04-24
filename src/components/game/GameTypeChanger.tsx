@@ -2,11 +2,12 @@
 import React from 'react';
 import { Button } from "@/components/ui/button";
 import { useSessions } from "@/contexts/useSessions";
+import { GameType } from "@/types";
 
 export function GameTypeChanger() {
   const { currentSession, updateCurrentGameState } = useSessions();
   
-  const changeGameType = async (newType: '90-ball' | '75-ball') => {
+  const changeGameType = async (newType: GameType) => {
     if (!currentSession) return;
     
     await updateCurrentGameState({
