@@ -1,11 +1,13 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { GameSession, WinPattern } from '@/types';
+import { GameSession } from '@/types';
+import { WinPattern } from '@/types/winPattern';
 import BingoCard from '@/components/caller/BingoCard';
-import WinPatternSelector from '@/components/caller/WinPatternSelector';
+import { WinPatternSelector } from '@/components/caller/WinPatternSelector';
 import { Button } from '@/components/ui/button';
-import { useToast } from "@/hooks/use-toast"
+import { useToast } from "@/hooks/use-toast";
 import { Copy, RefreshCw, UserPlus } from 'lucide-react';
 
 export default function CallerSession() {
@@ -29,25 +31,42 @@ export default function CallerSession() {
 
     if (error) {
       console.error("Error fetching session:", error);
-    } else {
-      setSession(data);
+    } else if (data) {
+      // Map database fields to GameSession interface properties
+      const sessionData: GameSession = {
+        id: data.id,
+        name: data.name,
+        gameType: data.game_type as any,
+        createdBy: data.created_by,
+        accessCode: data.access_code,
+        status: data.status,
+        createdAt: data.created_at,
+        sessionDate: data.session_date,
+        numberOfGames: data.number_of_games,
+        current_game_state: data.current_game_state
+      };
+      
+      setSession(sessionData);
+      
+      // Set called numbers if they exist in the current game state
+      if (data.current_game_state?.calledItems) {
+        setCalledNumbers(data.current_game_state.calledItems);
+      }
+      
+      // Set current number if it exists
+      if (data.current_game_state?.lastCalledItem) {
+        setCurrentNumber(data.current_game_state.lastCalledItem);
+      }
     }
   }, [sessionId]);
 
+  // Since the win_patterns table has been removed per migration info, we'll 
+  // use the patterns from the game rules based on current game type
   const fetchWinPatterns = useCallback(async () => {
-    if (!sessionId) return;
-
-    const { data, error } = await supabase
-      .from('win_patterns')
-      .select('*')
-      .eq('game_session_id', sessionId);
-
-    if (error) {
-      console.error("Error fetching win patterns:", error);
-    } else {
-      setWinPatterns(data);
-    }
-  }, [sessionId]);
+    // For now, this is a stub as we'll get patterns from the WinPatternSelector component
+    // which uses getGameRulesForType to fetch appropriate patterns
+    setWinPatterns([]);
+  }, []);
 
   useEffect(() => {
     fetchSession();
@@ -56,8 +75,11 @@ export default function CallerSession() {
 
   const callNumber = async () => {
     if (!session) return;
-
-    const newNumber = Math.floor(Math.random() * session.numberRange) + 1;
+    
+    // Using 75 as default if numberRange is not available
+    const numberRange = session.current_game_state?.gameType === '90-ball' ? 90 : 75;
+    const newNumber = Math.floor(Math.random() * numberRange) + 1;
+    
     if (calledNumbers.includes(newNumber)) {
       // Number already called, try again
       callNumber();
@@ -65,52 +87,68 @@ export default function CallerSession() {
     }
 
     setCurrentNumber(newNumber);
-    setCalledNumbers([...calledNumbers, newNumber]);
+    const updatedCalledNumbers = [...calledNumbers, newNumber];
+    setCalledNumbers(updatedCalledNumbers);
 
-    // Optimistically update the UI
-    setSession(prevSession => ({
-      ...prevSession!,
-      calledNumbers: [...calledNumbers, newNumber]
-    }));
+    // Update the current game state
+    if (session.current_game_state) {
+      const updatedGameState = {
+        ...session.current_game_state,
+        calledItems: updatedCalledNumbers,
+        lastCalledItem: newNumber
+      };
 
-    const { error } = await supabase
-      .from('game_sessions')
-      .update({ calledNumbers: [...calledNumbers, newNumber] })
-      .eq('id', sessionId);
+      // Optimistically update the UI
+      setSession(prevSession => prevSession ? {
+        ...prevSession,
+        current_game_state: updatedGameState
+      } : null);
 
-    if (error) {
-      console.error("Error updating called numbers:", error);
-      toast({
-        title: "Error calling number",
-        description: "Failed to update the called number. Please try again.",
-        variant: "destructive",
-      });
-      // Revert the UI update on error
-      setSession(prevSession => ({
-        ...prevSession!,
-        calledNumbers: calledNumbers
-      }));
-    } else {
-      toast({
-        title: "Number called",
-        description: `The number ${newNumber} has been called.`,
-      });
+      const { error } = await supabase
+        .from('game_sessions')
+        .update({ current_game_state: updatedGameState })
+        .eq('id', sessionId);
+
+      if (error) {
+        console.error("Error updating called numbers:", error);
+        toast({
+          title: "Error calling number",
+          description: "Failed to update the called number. Please try again.",
+          variant: "destructive",
+        });
+        // Revert the UI update on error
+        fetchSession();
+      } else {
+        toast({
+          title: "Number called",
+          description: `The number ${newNumber} has been called.`,
+        });
+      }
     }
   };
 
   const resetNumbers = async () => {
+    if (!session?.current_game_state) return;
+    
     setCurrentNumber(null);
     setCalledNumbers([]);
 
+    // Update the current game state
+    const updatedGameState = {
+      ...session.current_game_state,
+      calledItems: [],
+      lastCalledItem: null
+    };
+
     // Optimistically update the UI
-    setSession(prevSession => ({
-      ...prevSession!,
-      calledNumbers: []
-    }));
+    setSession(prevSession => prevSession ? {
+      ...prevSession,
+      current_game_state: updatedGameState
+    } : null);
 
     const { error } = await supabase
       .from('game_sessions')
-      .update({ calledNumbers: [] })
+      .update({ current_game_state: updatedGameState })
       .eq('id', sessionId);
 
     if (error) {
@@ -121,10 +159,7 @@ export default function CallerSession() {
         variant: "destructive",
       });
       // Revert the UI update on error
-      setSession(prevSession => ({
-        ...prevSession!,
-        calledNumbers: calledNumbers
-      }));
+      fetchSession();
     } else {
       toast({
         title: "Numbers reset",
@@ -140,10 +175,11 @@ export default function CallerSession() {
   const checkForClaims = async () => {
     if (!sessionId) return;
 
+    // Use bingo_claims table instead of player_claims
     const { data: claims, error } = await supabase
-      .from('player_claims')
+      .from('bingo_claims')
       .select('*')
-      .eq('game_session_id', sessionId)
+      .eq('session_id', sessionId)
       .eq('status', 'pending');
 
     if (error) {
@@ -172,7 +208,7 @@ export default function CallerSession() {
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [sessionId, session?.id, checkForClaims]);
+  }, [sessionId, session?.id]);
 
   const handleAddPlayers = () => {
     if (session) {
@@ -182,6 +218,17 @@ export default function CallerSession() {
         description: "Share this code with your players!",
       });
     }
+  };
+
+  // Determine number range based on game type
+  const getNumberRange = () => {
+    if (!session) return 75; // Default to 75
+    
+    if (session.current_game_state?.gameType === '90-ball') {
+      return 90;
+    }
+    
+    return 75; // Default for most game types
   };
 
   return (
@@ -213,13 +260,10 @@ export default function CallerSession() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <BingoCard numbers={calledNumbers} numberRange={session?.numberRange || 75} />
+          <BingoCard numbers={calledNumbers} numberRange={getNumberRange()} />
         </div>
 
-        <WinPatternSelector
-          onPatternSelect={handlePatternSelect}
-          currentPattern={currentPattern}
-        />
+        <WinPatternSelector />
       </main>
     </div>
   );
