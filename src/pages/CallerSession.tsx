@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -13,6 +14,9 @@ import { useClaimManagement } from '@/hooks/useClaimManagement';
 import { GameSetup } from '@/components/game/GameSetup';
 import { WinPatternStatusDisplay } from '@/components/game/WinPatternStatusDisplay';
 import { Winline } from '@/types/winline';
+import CallerControls from '@/components/game/CallerControls';
+import PlayerList from '@/components/game/PlayerList';
+import CalledNumbers from '@/components/game/CalledNumbers';
 
 export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();

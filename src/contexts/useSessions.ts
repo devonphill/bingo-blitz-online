@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { GameSession, GameType, CurrentGameState } from "@/types";
@@ -56,7 +57,9 @@ export const useSessions = () => {
         // If a current session is set, update its state from the newly fetched data
         if (currentSession) {
           const updatedCurrent = mappedSessions.find(s => s.id === currentSession.id);
-          setCurrentSessionState(updatedCurrent || null);
+          if (updatedCurrent) {
+            setCurrentSessionState(updatedCurrent);
+          }
         }
 
       } else {
@@ -145,11 +148,10 @@ export const useSessions = () => {
     }
     // Find the session from the already fetched list
     const session = sessions.find((s) => s.id === sessionId);
-    setCurrentSessionState(session || null);
-    if (!session) {
+    if (session) {
+      setCurrentSessionState(session);
+    } else {
       console.warn(`Session with ID ${sessionId} not found in local state.`);
-      // Optionally trigger a fetch here if session might exist but isn't loaded
-      // fetchSessions();
     }
   }, [sessions]);
 
@@ -188,13 +190,12 @@ export const useSessions = () => {
       }
 
       // Update the local state with the properly typed game state
-      setCurrentSessionState((prevSession) => {
-        if (!prevSession) return null;
-        return {
-          ...prevSession,
-          current_game_state: updatedGameState
-        };
-      });
+      // Use a different approach to update the state to avoid TypeScript error
+      const updatedSession = {
+        ...currentSession,
+        current_game_state: updatedGameState
+      };
+      setCurrentSessionState(updatedSession);
 
       return true;
     } catch (err) {
