@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { GameSession, GameType, CurrentGameState } from '@/types';
-import { WinPattern } from '@/types/winPattern';
+import { GameSession, CurrentGameState } from '@/types';
+import { GameType, WIN_PATTERNS, WinPattern } from '@/types/winPattern';
+import { GameTypeSelector } from '@/components/caller/GameTypeSelector';
+import { CallControls } from '@/components/caller/CallControls';
 import BingoCard from '@/components/caller/BingoCard';
 import { WinPatternSelector } from '@/components/caller/WinPatternSelector';
-import { Button } from '@/components/ui/button';
 import { useToast } from "@/hooks/use-toast";
+import { Button } from '@/components/ui/button';
 import { Copy, RefreshCw, UserPlus, Play } from 'lucide-react';
-import { GameTypeChanger } from '@/components/game/GameTypeChanger';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function CallerSession() {
@@ -16,8 +17,8 @@ export default function CallerSession() {
   const [session, setSession] = useState<GameSession | null>(null);
   const [currentNumber, setCurrentNumber] = useState<number | null>(null);
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
-  const [winPatterns, setWinPatterns] = useState<WinPattern[]>([]);
-  const [currentPattern, setCurrentPattern] = useState<WinPattern | null>(null);
+  const [currentGameType, setCurrentGameType] = useState<GameType>('mainstage');
+  const [winPatterns, setWinPatterns] = useState<WinPattern[]>(WIN_PATTERNS.mainstage);
   const [pendingClaims, setPendingClaims] = useState<any[]>([]);
   const { toast } = useToast();
 
@@ -35,7 +36,7 @@ export default function CallerSession() {
     } else if (data) {
       const initialGameState: CurrentGameState = {
         gameNumber: 1,
-        gameType: 'mainstage',
+        gameType: (data.game_type as GameType) || 'mainstage',
         activePatternIds: [],
         calledItems: [],
         lastCalledItem: null,
@@ -43,7 +44,11 @@ export default function CallerSession() {
         prizes: {}
       };
 
-      const sessionData: GameSession = {
+      const gameState = data.current_game_state 
+        ? (data.current_game_state as unknown as CurrentGameState)
+        : initialGameState;
+
+      setSession({
         id: data.id,
         name: data.name,
         gameType: data.game_type as GameType || 'mainstage',
@@ -53,29 +58,23 @@ export default function CallerSession() {
         createdAt: data.created_at,
         sessionDate: data.session_date,
         numberOfGames: data.number_of_games,
-        current_game_state: (data.current_game_state as CurrentGameState) || initialGameState
-      };
-      
-      setSession(sessionData);
-      
-      if (sessionData.current_game_state?.calledItems) {
-        setCalledNumbers(sessionData.current_game_state.calledItems as number[]);
-      }
-      
-      if (sessionData.current_game_state?.lastCalledItem) {
-        setCurrentNumber(sessionData.current_game_state.lastCalledItem as number);
-      }
+        current_game_state: gameState
+      });
+
+      setCurrentGameType(gameState.gameType);
+      setCalledNumbers(gameState.calledItems as number[]);
+      setCurrentNumber(gameState.lastCalledItem as number);
     }
   }, [sessionId]);
-
-  const fetchWinPatterns = useCallback(async () => {
-    setWinPatterns([]);
-  }, []);
 
   useEffect(() => {
     fetchSession();
     fetchWinPatterns();
   }, [fetchSession, fetchWinPatterns]);
+
+  const fetchWinPatterns = useCallback(async () => {
+    setWinPatterns([]);
+  }, []);
 
   const callNumber = async () => {
     if (!session) return;
@@ -166,7 +165,7 @@ export default function CallerSession() {
   };
 
   const handlePatternSelect = (pattern: WinPattern) => {
-    setCurrentPattern(pattern);
+    // setCurrentPattern(pattern);
   };
 
   const checkForClaims = async () => {
@@ -216,60 +215,76 @@ export default function CallerSession() {
     }
   };
 
+  const handleGameTypeChange = async (newType: GameType) => {
+    if (!session) return;
+    
+    const updatedGameState: CurrentGameState = {
+      ...session.current_game_state,
+      gameType: newType,
+      calledItems: [],
+      lastCalledItem: null,
+      activePatternIds: []
+    };
+
+    const { error } = await supabase
+      .from('game_sessions')
+      .update({
+        game_type: newType,
+        current_game_state: updatedGameState as unknown as Json
+      })
+      .eq('id', sessionId);
+
+    if (error) {
+      console.error("Error updating game type:", error);
+      toast({
+        title: "Error changing game type",
+        description: "Failed to update the game type. Please try again.",
+        variant: "destructive",
+      });
+    } else {
+      setCurrentGameType(newType);
+      setWinPatterns(WIN_PATTERNS[newType]);
+      setCalledNumbers([]);
+      setCurrentNumber(null);
+      toast({
+        title: "Game type updated",
+        description: `Changed to ${newType} Bingo`,
+      });
+    }
+  };
+
   const getNumberRange = () => {
-    const gameType = session?.current_game_state?.gameType || 'mainstage';
-    return gameType === 'mainstage' ? 90 : 75;
+    return currentGameType === 'mainstage' ? 90 : 75;
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-bingo-primary">Caller Session</h1>
-          <div className="flex items-center space-x-4">
-            <Button onClick={handleAddPlayers}>
-              <UserPlus className="mr-2 h-4 w-4" />
-              Copy Access Code
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Game Controls</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex space-x-4">
-              <Button onClick={callNumber} className="flex-1">
-                <Play className="mr-2 h-4 w-4" />
-                Call Number
-              </Button>
-              <Button variant="destructive" onClick={resetNumbers} className="flex-1">
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Reset Numbers
-              </Button>
-            </div>
-            
-            <div className="text-center">
-              <div className="text-6xl font-bold text-bingo-primary mb-2">
-                {currentNumber || '-'}
-              </div>
-              <p className="text-gray-600">
-                Called numbers: {calledNumbers.length > 0 ? calledNumbers.join(', ') : 'None'}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <GameTypeChanger />
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <BingoCard numbers={calledNumbers} numberRange={getNumberRange()} />
-          <WinPatternSelector />
-        </div>
-      </main>
+    <div className="min-h-screen bg-gray-50 flex flex-col p-6 space-y-6">
+      <GameTypeSelector
+        currentGameType={currentGameType}
+        onGameTypeChange={handleGameTypeChange}
+      />
+      
+      <WinPatternSelector 
+        patterns={winPatterns}
+        selectedPatterns={session?.current_game_state?.activePatternIds || []}
+      />
+      
+      <div className="grid grid-cols-2 gap-6">
+        <CallControls
+          gameType={currentGameType}
+          onCallNumber={callNumber}
+          onRecall={() => setCurrentNumber(calledNumbers[calledNumbers.length - 1])}
+          lastCalledNumber={currentNumber}
+          totalCalls={calledNumbers.length}
+          pendingClaims={pendingClaims.length}
+          onViewClaims={checkForClaims}
+        />
+        
+        <BingoCard
+          numbers={calledNumbers}
+          numberRange={getNumberRange()}
+        />
+      </div>
     </div>
   );
 }
