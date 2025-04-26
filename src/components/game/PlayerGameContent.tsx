@@ -40,8 +40,14 @@ export default function PlayerGameContent({
   gameType = '90-ball'
 }: PlayerGameContentProps) {
   // Find the current win pattern based on which one is active in the game
-  // This should come from the Supabase realtime updates
   const currentWinPattern = activeWinPatterns.length > 0 ? activeWinPatterns[0] : null;
+
+  // Set autoMarking to true by default for MAINSTAGE
+  React.useEffect(() => {
+    if (gameType === 'MAINSTAGE' && !autoMarking) {
+      setAutoMarking(true);
+    }
+  }, [gameType, autoMarking, setAutoMarking]);
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -58,7 +64,7 @@ export default function PlayerGameContent({
           <BingoWinProgress
             tickets={tickets}
             calledNumbers={calledNumbers}
-            activeWinPatterns={activeWinPatterns}
+            activeWinPatterns={[currentWinPattern].filter(Boolean) as string[]}
             currentWinPattern={currentWinPattern}
             handleClaimBingo={onClaimBingo}
             isClaiming={isClaiming}
@@ -71,7 +77,7 @@ export default function PlayerGameContent({
           tickets={tickets}
           calledNumbers={calledNumbers}
           autoMarking={autoMarking}
-          activeWinPatterns={activeWinPatterns}
+          activeWinPatterns={[currentWinPattern].filter(Boolean) as string[]}
           currentWinPattern={currentWinPattern}
           gameType={gameType}
         />

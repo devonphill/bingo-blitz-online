@@ -14,7 +14,7 @@ import {
 export interface GameHeaderProps {
   sessionName: string;
   accessCode: string;
-  activeWinPattern?: string;
+  activeWinPattern?: string | null;
   autoMarking: boolean;
   setAutoMarking: (value: boolean) => void;
 }
