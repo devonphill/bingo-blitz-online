@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { useSessions } from "@/contexts/useSessions";
@@ -25,7 +24,7 @@ export function GameSetup() {
     { id: 'twoLines', name: 'Two Lines', active: false },
     { id: 'fullHouse', name: 'Full House', active: false },
   ]);
-  const [prizes, setPrizes] = useState<{[key: string]: string}>({});
+  const [prizes, setPrizes] = useState<{[key: string]: { amount?: string; isNonCash: boolean; description?: string }}>({});
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -65,11 +64,11 @@ export function GameSetup() {
     );
   };
 
-  const handlePrizeChange = (patternId: string, value: string) => {
-    console.log(`Prize change handler called for ${patternId}: "${value}"`);
+  const handlePrizeChange = (patternId: string, prizeDetails: { amount?: string; isNonCash: boolean; description?: string }) => {
+    console.log(`Prize change handler called for ${patternId}:`, prizeDetails);
     setPrizes(prev => ({
       ...prev,
-      [patternId]: value
+      [patternId]: prizeDetails
     }));
   };
 
@@ -96,7 +95,7 @@ export function GameSetup() {
         gameType: selectedGameType,
         activePatternIds,
         prizes,
-        status: 'active', // Make sure the game status is set to active
+        status: 'active',
       });
       
       toast({
