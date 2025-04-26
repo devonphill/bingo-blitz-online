@@ -26,11 +26,17 @@ export function GameSetup() {
       const numberOfGames = currentSession.numberOfGames || 1;
       const currentConfigs = currentSession.games_config as GameConfig[] || [];
       
-      // Initialize configs for all games
+      // Initialize configs for all games with a preset prize for One Line
       setGameConfigs(Array.from({ length: numberOfGames }, (_, index) => ({
         gameType: currentConfigs[index]?.gameType || 'mainstage',
-        selectedPatterns: currentConfigs[index]?.selectedPatterns || [],
-        prizes: currentConfigs[index]?.prizes || {}
+        selectedPatterns: ['oneLine'], // Preset One Line pattern
+        prizes: {
+          'oneLine': {
+            amount: '10.00', 
+            isNonCash: false,
+            description: 'One Line Prize'
+          }
+        }
       })));
     }
   }, [currentSession]);
