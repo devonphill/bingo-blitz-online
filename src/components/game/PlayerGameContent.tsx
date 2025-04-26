@@ -44,7 +44,7 @@ export default function PlayerGameContent({
 
   // Set autoMarking to true by default for MAINSTAGE
   React.useEffect(() => {
-    if (gameType === 'MAINSTAGE' && !autoMarking) {
+    if (gameType?.toUpperCase().includes('MAINSTAGE') && !autoMarking) {
       setAutoMarking(true);
     }
   }, [gameType, autoMarking, setAutoMarking]);

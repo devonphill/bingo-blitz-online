@@ -2,7 +2,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Menu } from "lucide-react";
+import { Menu, SlidersHorizontal } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -26,8 +26,20 @@ const GameHeader: React.FC<GameHeaderProps> = ({
   autoMarking,
   setAutoMarking
 }) => {
+  // Format the win pattern for display
+  const formatWinPatternName = (pattern: string): string => {
+    switch(pattern) {
+      case 'oneLine': return 'One Line';
+      case 'twoLines': return 'Two Lines';
+      case 'fullHouse': return 'Full House';
+      case 'pattern': return 'Pattern';
+      case 'blackout': return 'Blackout';
+      default: return pattern;
+    }
+  };
+
   return (
-    <header className="bg-white shadow-sm">
+    <header className="bg-white shadow-sm w-full sticky top-0 z-10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center">
         <Sheet>
           <SheetTrigger asChild>
@@ -53,7 +65,7 @@ const GameHeader: React.FC<GameHeaderProps> = ({
             <div className="text-sm text-gray-500">Session: {sessionName}</div>
             {activeWinPattern && (
               <div className="text-sm font-medium text-bingo-primary bg-bingo-primary/10 px-2 py-0.5 rounded">
-                {activeWinPattern}
+                {formatWinPatternName(activeWinPattern)}
               </div>
             )}
           </div>
@@ -61,6 +73,7 @@ const GameHeader: React.FC<GameHeaderProps> = ({
 
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
+            <SlidersHorizontal className="h-4 w-4 text-gray-500" />
             <Switch
               id="auto-marking"
               checked={autoMarking}
