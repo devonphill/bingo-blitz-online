@@ -3,10 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { usePlayerGame } from '@/hooks/usePlayerGame';
-import { Button } from '@/components/ui/button';
 import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import BingoWinProgress from '@/components/game/BingoWinProgress';
-import { GameType } from '@/types';
 import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 
 export default function PlayerGame() {
@@ -16,13 +14,18 @@ export default function PlayerGame() {
   const { toast } = useToast();
 
   useEffect(() => {
+    // First check URL param, then localStorage
     const storedPlayerCode = localStorage.getItem('playerCode');
+    
     if (urlPlayerCode) {
+      console.log("Found player code in URL:", urlPlayerCode);
       setPlayerCode(urlPlayerCode);
       localStorage.setItem('playerCode', urlPlayerCode);
     } else if (storedPlayerCode) {
+      console.log("Found player code in localStorage:", storedPlayerCode);
       setPlayerCode(storedPlayerCode);
     } else {
+      console.log("No player code found, redirecting to join");
       toast({
         title: 'Player Code Missing',
         description: 'Please enter your player code to join the game.',
@@ -53,12 +56,55 @@ export default function PlayerGame() {
 
   console.log("PlayerGame - Current session:", currentSession);
   console.log("PlayerGame - Session state:", currentSession?.lifecycle_state, "Status:", currentSession?.status);
+  console.log("PlayerGame - Game state:", currentGameState);
+  console.log("PlayerGame - Player details:", {playerId, playerName, tickets: tickets?.length || 0});
 
+  if (isLoading || errorMessage || !currentSession || !currentGameState?.status === 'active') {
+    return (
+      <PlayerGameLoader 
+        isLoading={isLoading} 
+        errorMessage={errorMessage} 
+        currentSession={currentSession} 
+      />
+    );
+  }
+
+  // Show actual game UI when everything is loaded and active
   return (
-    <PlayerGameLoader 
-      isLoading={isLoading} 
-      errorMessage={errorMessage} 
-      currentSession={currentSession} 
-    />
+    <div className="min-h-screen bg-gray-50 pb-20">
+      <div className="container mx-auto px-4 py-6">
+        <header className="mb-6">
+          <h1 className="text-3xl font-bold text-center text-bingo-dark">
+            {currentSession.name || "Bingo Game"}
+          </h1>
+          <div className="text-center text-gray-500 mt-2">
+            Welcome, {playerName || "Player"}
+          </div>
+        </header>
+
+        {activeWinPatterns && activeWinPatterns.length > 0 && (
+          <div className="mb-6">
+            <BingoWinProgress 
+              activePatterns={activeWinPatterns}
+              handleClaimBingo={handleClaimBingo}
+              isClaiming={isClaiming}
+              claimStatus={claimStatus}
+            />
+          </div>
+        )}
+
+        <GameTypePlayspace
+          gameType={gameType || "mainstage"}
+          tickets={tickets || []}
+          calledItems={calledItems || []}
+          lastCalledItem={lastCalledItem}
+          autoMarking={autoMarking}
+          setAutoMarking={setAutoMarking}
+          handleClaimBingo={handleClaimBingo}
+          isClaiming={isClaiming}
+          claimStatus={claimStatus}
+        />
+      </div>
+    </div>
   );
 }

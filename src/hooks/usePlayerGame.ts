@@ -1,4 +1,3 @@
-
 // src/hooks/usePlayerGame.ts
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
@@ -17,7 +16,7 @@ export function usePlayerGame(playerCode?: string | null) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [autoMarking, setAutoMarking] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isClaiming, setIsClaiming] = useState(false);
   const [claimStatus, setClaimStatus] = useState<'pending' | 'validated' | 'rejected' | undefined>(undefined);
 
@@ -31,14 +30,16 @@ export function usePlayerGame(playerCode?: string | null) {
   // Fetch initial player data
   useEffect(() => {
     if (!playerCode) {
+      console.log("No player code provided to usePlayerGame");
       setIsLoading(false);
+      setErrorMessage("Player code is missing");
       return;
     }
 
     let isMounted = true;
     const fetchPlayerData = async () => {
       setIsLoading(true);
-      setErrorMessage('');
+      setErrorMessage(null);
       setTickets([]);
       setPlayerId(null);
       setPlayerName('');
@@ -57,9 +58,16 @@ export function usePlayerGame(playerCode?: string | null) {
 
         if (!isMounted) return;
 
-        if (playerError || !playerData) {
-          console.error("Error fetching player or player not found:", playerError);
-          setErrorMessage(playerError?.message || 'Player not found or invalid code');
+        if (playerError) {
+          console.error("Error fetching player data:", playerError);
+          setErrorMessage(`Error finding player: ${playerError.message}`);
+          setIsLoading(false);
+          return;
+        }
+
+        if (!playerData) {
+          console.error("Player not found with code:", playerCode);
+          setErrorMessage("Player not found. Please check your player code.");
           setIsLoading(false);
           return;
         }
@@ -70,7 +78,7 @@ export function usePlayerGame(playerCode?: string | null) {
         setSessionId(playerData.session_id);
 
         // Manually trigger a session refresh to ensure we have the latest data
-        fetchSessions();
+        await fetchSessions();
 
         const { data: ticketData, error: ticketError } = await supabase
           .from('assigned_tickets')
@@ -82,17 +90,20 @@ export function usePlayerGame(playerCode?: string | null) {
 
         if (ticketError) {
           console.error("Error fetching tickets:", ticketError);
-          setErrorMessage('Could not load your tickets');
-          setIsLoading(false);
-          return;
+          // Don't set error message here, continue with the session data
         }
 
-        const transformedTickets = ticketData?.map(ticket => ({
-          ...ticket,
-          layoutMask: ticket.layout_mask
-        })) || [];
-
-        setTickets(transformedTickets);
+        if (ticketData && ticketData.length > 0) {
+          const transformedTickets = ticketData.map(ticket => ({
+            ...ticket,
+            layoutMask: ticket.layout_mask
+          }));
+          
+          setTickets(transformedTickets);
+          console.log(`Found ${transformedTickets.length} tickets for player`);
+        } else {
+          console.log("No tickets found for player");
+        }
 
         const { data: claimData, error: claimError } = await supabase
           .from('bingo_claims')
@@ -112,11 +123,11 @@ export function usePlayerGame(playerCode?: string | null) {
           }
         }
 
-        setIsLoading(false);
+        // We'll set loading to false in the effect that depends on sessionFromContext
       } catch (error) {
         if (!isMounted) return;
         console.error("Error in fetchPlayerData:", error);
-        setErrorMessage('Failed to load initial player data');
+        setErrorMessage('Failed to load player data. Please try again.');
         setIsLoading(false);
       }
     };
@@ -130,9 +141,17 @@ export function usePlayerGame(playerCode?: string | null) {
 
   // Update local state when session data changes
   useEffect(() => {
+    console.log("sessionFromContext updated:", sessionFromContext?.id, "sessionId:", sessionId);
+    
+    if (!sessionId) {
+      // No session ID set yet, waiting for player data
+      return;
+    }
+    
     if (sessionFromContext && sessionFromContext.id === sessionId) {
       console.log("Player view - Session data updated:", {
         id: sessionFromContext.id,
+        name: sessionFromContext.name,
         lifecycle: sessionFromContext.lifecycle_state,
         status: sessionFromContext.status,
         gameState: sessionFromContext.current_game_state,
@@ -147,11 +166,12 @@ export function usePlayerGame(playerCode?: string | null) {
         setLastCalledItem(null);
       }
       
-      setIsLoading(isSessionLoading);
-      setErrorMessage('');
-    } else if (sessionId && !sessionFromContext && !isSessionLoading) {
-      console.log("Player has sessionId but session not found:", sessionId);
+      setIsLoading(false);
+      setErrorMessage(null);
+    } else {
+      console.log("No matching session found:", sessionId);
       setErrorMessage("Game session not found or no longer available");
+      setIsLoading(false);
     }
   }, [sessionFromContext, sessionId, isSessionLoading]);
 
