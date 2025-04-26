@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -181,12 +182,23 @@ export default function CallerSession() {
     };
 
     try {
+      // Convert the CurrentGameState to a plain JSON-compatible object
+      const gameStateForSupabase = {
+        gameNumber: updatedGameState.gameNumber,
+        gameType: updatedGameState.gameType,
+        activePatternIds: updatedGameState.activePatternIds,
+        calledItems: updatedGameState.calledItems || [],
+        lastCalledItem: updatedGameState.lastCalledItem,
+        status: updatedGameState.status,
+        prizes: JSON.parse(JSON.stringify(updatedGameState.prizes || {}))
+      };
+
       const { error } = await supabase
         .from('game_sessions')
         .update({
           game_type: newType,
-          current_game_state: updatedGameState as unknown as Json,
-          games_config: updatedConfigs as unknown as Json
+          current_game_state: gameStateForSupabase as Json,
+          games_config: updatedConfigs as Json
         })
         .eq('id', sessionId);
 
@@ -367,6 +379,7 @@ export default function CallerSession() {
         prizes: prizes
       };
       
+      // Create a plain JSON-compatible object for Supabase
       const gameStateForSupabase = {
         gameNumber: updatedGameState.gameNumber,
         gameType: updatedGameState.gameType,
@@ -382,7 +395,7 @@ export default function CallerSession() {
         .update({ 
           lifecycle_state: 'live',
           status: 'active', // Update the session status to active
-          current_game_state: gameStateForSupabase as unknown as Json
+          current_game_state: gameStateForSupabase as Json
         })
         .eq('id', sessionId);
 
@@ -452,6 +465,7 @@ export default function CallerSession() {
       } : null);
 
       try {
+        // Create a plain JSON-compatible object for Supabase
         const gameStateForSupabase = {
           gameNumber: updatedGameState.gameNumber,
           gameType: updatedGameState.gameType,
@@ -580,6 +594,54 @@ export default function CallerSession() {
         description: `${currentClaim.playerName}'s claim has been validated.`
       });
       
+      // Save the game log data
+      if (session && session.current_game_state) {
+        const winPatternId = session.current_game_state.activePatternIds[0] || 'unknown';
+        const winPrize = session.current_game_state.prizes?.[winPatternId];
+        
+        try {
+          const ticketData = currentClaim.tickets && currentClaim.tickets.length > 0 
+            ? currentClaim.tickets[0] 
+            : null;
+            
+          if (ticketData) {
+            const logData = {
+              session_id: sessionId,
+              game_number: session.current_game_state.gameNumber,
+              game_type: session.current_game_state.gameType,
+              win_pattern: winPatternId,
+              player_id: currentClaim.playerId,
+              player_name: currentClaim.playerName,
+              player_email: ticketData.player_email || null,
+              ticket_serial: ticketData.serial,
+              ticket_perm: ticketData.perm,
+              ticket_position: ticketData.position,
+              ticket_layout_mask: ticketData.layout_mask,
+              ticket_numbers: ticketData.numbers,
+              called_numbers: session.current_game_state.calledItems || [],
+              total_calls: (session.current_game_state.calledItems || []).length,
+              last_called_number: session.current_game_state.lastCalledItem,
+              prize: winPrize?.description || null,
+              prize_amount: winPrize?.amount || null,
+              prize_shared: winPrize?.isNonCash || false
+            };
+            
+            const { error: logError } = await supabase
+              .from('universal_game_logs')
+              .insert(logData);
+              
+            if (logError) {
+              console.error("Error saving game log:", logError);
+            } else {
+              console.log("Game log saved successfully");
+            }
+          }
+        } catch (logErr) {
+          console.error("Exception saving game log:", logErr);
+        }
+      }
+      
+      // Handle advancing to next pattern or game
       if (session && selectedPatterns.length > 1) {
         const currentPatternIndex = selectedPatterns.findIndex(p => p === selectedPatterns[0]);
         
@@ -599,9 +661,20 @@ export default function CallerSession() {
               activePatternIds: updatedPatterns
             };
             
+            // Create a plain JSON-compatible object for Supabase
+            const gameStateForSupabase = {
+              gameNumber: updatedGameState.gameNumber,
+              gameType: updatedGameState.gameType,
+              activePatternIds: updatedGameState.activePatternIds,
+              calledItems: updatedGameState.calledItems,
+              lastCalledItem: updatedGameState.lastCalledItem,
+              status: updatedGameState.status,
+              prizes: JSON.parse(JSON.stringify(updatedGameState.prizes || {}))
+            };
+            
             await supabase
               .from('game_sessions')
-              .update({ current_game_state: updatedGameState })
+              .update({ current_game_state: gameStateForSupabase as Json })
               .eq('id', sessionId);
               
             setSelectedPatterns(updatedPatterns);
@@ -613,6 +686,62 @@ export default function CallerSession() {
             toast({
               title: "Next Win Pattern",
               description: `Advanced to the next win pattern.`
+            });
+          }
+        } else if (session.current_game_state && 
+                  session.numberOfGames && 
+                  session.current_game_state.gameNumber < session.numberOfGames) {
+          // This was the last pattern and there are more games - prepare for next game
+          const nextGameNumber = session.current_game_state.gameNumber + 1;
+          const nextGameIndex = nextGameNumber - 1;
+          const nextGameConfig = gameConfigs[nextGameIndex];
+          
+          if (nextGameConfig) {
+            // Reset for next game
+            setCalledNumbers([]);
+            setCurrentNumber(null);
+            setCurrentGameType(nextGameConfig.gameType);
+            setSelectedPatterns(nextGameConfig.selectedPatterns || []);
+            setPrizes(nextGameConfig.prizes || {});
+            
+            const nextGameState: CurrentGameState = {
+              gameNumber: nextGameNumber,
+              gameType: nextGameConfig.gameType,
+              activePatternIds: nextGameConfig.selectedPatterns || [],
+              calledItems: [],
+              lastCalledItem: null,
+              status: 'active',
+              prizes: nextGameConfig.prizes || {}
+            };
+            
+            // Create a plain JSON-compatible object for Supabase
+            const gameStateForSupabase = {
+              gameNumber: nextGameState.gameNumber,
+              gameType: nextGameState.gameType,
+              activePatternIds: nextGameState.activePatternIds,
+              calledItems: nextGameState.calledItems,
+              lastCalledItem: nextGameState.lastCalledItem,
+              status: nextGameState.status,
+              prizes: JSON.parse(JSON.stringify(nextGameState.prizes || {}))
+            };
+            
+            await supabase
+              .from('game_sessions')
+              .update({ 
+                current_game_state: gameStateForSupabase as Json,
+                current_game: nextGameNumber
+              })
+              .eq('id', sessionId);
+              
+            setSession(prev => prev ? {
+              ...prev,
+              current_game: nextGameNumber,
+              current_game_state: nextGameState
+            } : null);
+            
+            toast({
+              title: "Next Game",
+              description: `Advanced to Game ${nextGameNumber}`
             });
           }
         }
