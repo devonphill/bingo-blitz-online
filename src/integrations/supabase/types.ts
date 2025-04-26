@@ -142,24 +142,30 @@ export type Database = {
       bingo_claims: {
         Row: {
           claimed_at: string
+          game_number: number
           id: string
           player_id: string
           session_id: string
           status: string
+          win_pattern_id: string | null
         }
         Insert: {
           claimed_at?: string
+          game_number?: number
           id?: string
           player_id: string
           session_id: string
           status?: string
+          win_pattern_id?: string | null
         }
         Update: {
           claimed_at?: string
+          game_number?: number
           id?: string
           player_id?: string
           session_id?: string
           status?: string
+          win_pattern_id?: string | null
         }
         Relationships: [
           {
@@ -306,6 +312,47 @@ export type Database = {
           },
         ]
       }
+      game_progress: {
+        Row: {
+          completed_win_patterns: string[] | null
+          created_at: string | null
+          current_win_pattern_id: string | null
+          game_number: number
+          id: string
+          session_id: string
+          updated_at: string | null
+          validated_claims: string[] | null
+        }
+        Insert: {
+          completed_win_patterns?: string[] | null
+          created_at?: string | null
+          current_win_pattern_id?: string | null
+          game_number: number
+          id?: string
+          session_id: string
+          updated_at?: string | null
+          validated_claims?: string[] | null
+        }
+        Update: {
+          completed_win_patterns?: string[] | null
+          created_at?: string | null
+          current_win_pattern_id?: string | null
+          game_number?: number
+          id?: string
+          session_id?: string
+          updated_at?: string | null
+          validated_claims?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_progress_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "game_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       game_rules_config: {
         Row: {
           created_at: string
@@ -342,6 +389,7 @@ export type Database = {
           current_game_state: Json | null
           game_type: string
           id: string
+          lifecycle_state: string
           name: string
           number_of_games: number
           session_date: string | null
@@ -356,6 +404,7 @@ export type Database = {
           current_game_state?: Json | null
           game_type: string
           id?: string
+          lifecycle_state?: string
           name: string
           number_of_games?: number
           session_date?: string | null
@@ -370,6 +419,7 @@ export type Database = {
           current_game_state?: Json | null
           game_type?: string
           id?: string
+          lifecycle_state?: string
           name?: string
           number_of_games?: number
           session_date?: string | null

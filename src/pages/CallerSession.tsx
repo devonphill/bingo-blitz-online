@@ -1,13 +1,12 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { GameSession, CurrentGameState } from '@/types';
-import { GameType, WIN_PATTERNS, WinPattern } from '@/types/winPattern';
-import { GameTypeSelector } from '@/components/caller/GameTypeSelector';
+import { GameSession } from '@/types';
+import { GameType, WIN_PATTERNS } from '@/types/winPattern';
+import { GameSetup } from '@/components/game/GameSetup';
+import { WinPatternStatusDisplay } from '@/components/game/WinPatternStatusDisplay';
 import { CallControls } from '@/components/caller/CallControls';
 import BingoCard from '@/components/caller/BingoCard';
-import { WinPatternSelector } from '@/components/caller/WinPatternSelector';
 import { useToast } from "@/hooks/use-toast";
 import { Button } from '@/components/ui/button';
 import { Copy, RefreshCw, UserPlus, Play } from 'lucide-react';
@@ -26,7 +25,6 @@ export default function CallerSession() {
   const [pendingClaims, setPendingClaims] = useState<any[]>([]);
   const { toast } = useToast();
 
-  // Define fetchWinPatterns before using it
   const fetchWinPatterns = useCallback(async () => {
     setWinPatterns(WIN_PATTERNS[currentGameType] || []);
   }, [currentGameType]);
@@ -170,22 +168,17 @@ export default function CallerSession() {
   };
 
   const handlePatternSelect = (pattern: WinPattern) => {
-    // setCurrentPattern(pattern);
     if (!session?.current_game_state) return;
     
-    // Check if pattern is already selected
     const selectedPatterns = [...(session.current_game_state.activePatternIds || [])];
     const patternIndex = selectedPatterns.indexOf(pattern.id);
     
     if (patternIndex >= 0) {
-      // Remove pattern if already selected
       selectedPatterns.splice(patternIndex, 1);
     } else {
-      // Add pattern if not selected
       selectedPatterns.push(pattern.id);
     }
     
-    // Update game state with new active patterns
     const updatedGameState = {
       ...session.current_game_state,
       activePatternIds: selectedPatterns
@@ -196,7 +189,6 @@ export default function CallerSession() {
       current_game_state: updatedGameState
     } : null);
     
-    // Update database
     supabase
       .from('game_sessions')
       .update({ current_game_state: updatedGameState as unknown as Json })
@@ -307,35 +299,87 @@ export default function CallerSession() {
     return currentGameType === 'mainstage' ? 90 : 75;
   };
 
+  const handleGoLive = async () => {
+    if (!session || !session.current_game_state?.activePatternIds?.length) {
+      toast({
+        title: "Cannot start game",
+        description: "Please select at least one win pattern before starting the game.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const { error } = await supabase
+      .from('game_sessions')
+      .update({ 
+        lifecycle_state: 'live',
+        current_game_state: {
+          ...session.current_game_state,
+          status: 'active'
+        }
+      })
+      .eq('id', sessionId);
+
+    if (error) {
+      console.error("Error starting game:", error);
+      toast({
+        title: "Error",
+        description: "Failed to start the game. Please try again.",
+        variant: "destructive"
+      });
+    } else {
+      toast({
+        title: "Game Started",
+        description: "The game is now live!",
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col p-6 space-y-6">
-      <GameTypeSelector
-        currentGameType={currentGameType}
-        onGameTypeChange={handleGameTypeChange}
-      />
-      
-      <WinPatternSelector 
-        patterns={winPatterns}
-        selectedPatterns={session?.current_game_state?.activePatternIds || []}
-        onPatternSelect={handlePatternSelect}
-      />
-      
-      <div className="grid grid-cols-2 gap-6">
-        <CallControls
-          gameType={currentGameType}
-          onCallNumber={callNumber}
-          onRecall={() => setCurrentNumber(calledNumbers[calledNumbers.length - 1])}
-          lastCalledNumber={currentNumber}
-          totalCalls={calledNumbers.length}
-          pendingClaims={pendingClaims.length}
-          onViewClaims={checkForClaims}
-        />
-        
-        <BingoCard
-          numbers={calledNumbers}
-          numberRange={getNumberRange()}
-        />
-      </div>
+      {session?.lifecycle_state === 'setup' ? (
+        <GameSetup />
+      ) : (
+        <>
+          <WinPatternStatusDisplay 
+            patterns={winPatterns.map(p => ({
+              id: p.id,
+              name: p.name,
+              active: session?.current_game_state?.activePatternIds?.includes(p.id) || false
+            }))}
+            currentActive={session?.current_game_state?.activePatternIds?.[0] || null}
+            gameIsLive={session?.lifecycle_state === 'live'}
+          />
+          
+          <div className="grid grid-cols-2 gap-6">
+            <CallControls
+              gameType={currentGameType}
+              onCallNumber={callNumber}
+              onRecall={() => setCurrentNumber(calledNumbers[calledNumbers.length - 1])}
+              lastCalledNumber={currentNumber}
+              totalCalls={calledNumbers.length}
+              pendingClaims={pendingClaims.length}
+              onViewClaims={checkForClaims}
+            />
+            
+            <BingoCard
+              numbers={calledNumbers}
+              numberRange={getNumberRange()}
+            />
+          </div>
+        </>
+      )}
+
+      {session?.lifecycle_state === 'setup' && (
+        <Button 
+          onClick={handleGoLive}
+          className="mt-4"
+          disabled={!session?.current_game_state?.activePatternIds?.length}
+        >
+          <Play className="w-4 h-4 mr-2" />
+          Go Live
+        </Button>
+      )}
     </div>
   );
 }
