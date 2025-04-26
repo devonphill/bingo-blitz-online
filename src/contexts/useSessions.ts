@@ -1,4 +1,6 @@
 
+// Add some additional logging inside the subscription handler to better track what's happening
+
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { GameSession, GameType, CurrentGameState } from "@/types";
@@ -28,6 +30,7 @@ export const useSessions = () => {
     setIsLoading(true);
     setError(null);
     try {
+      console.log("Fetching sessions...");
       // Select all columns, including the new one
       const { data, error: fetchError } = await supabase.from("game_sessions").select("*");
 
@@ -49,10 +52,11 @@ export const useSessions = () => {
           numberOfGames: d.number_of_games, // Consider how this relates to currentGameNumber
           // Handle the new JSONB column, provide default if null/undefined
           current_game_state: d.current_game_state
-            ? (d.current_game_state as CurrentGameState)
+            ? (d.current_game_state as unknown as CurrentGameState)
             : initializeGameState(d.game_type as GameType, 1),
           // Include the lifecycle_state property, default to 'setup'
           lifecycle_state: d.lifecycle_state || 'setup',
+          games_config: d.games_config || []
         }));
         
         console.log("Mapped sessions:", mappedSessions);
@@ -62,7 +66,10 @@ export const useSessions = () => {
         if (currentSession) {
           const updatedCurrent = mappedSessions.find(s => s.id === currentSession.id);
           if (updatedCurrent) {
+            console.log("Updating current session from fetch:", updatedCurrent);
             setCurrentSessionState(updatedCurrent);
+          } else {
+            console.log("Current session no longer found in fetched data:", currentSession.id);
           }
         }
 
@@ -83,6 +90,8 @@ export const useSessions = () => {
     // Initial fetch
     fetchSessions();
 
+    console.log("Setting up session changes subscription...");
+    
     const channel = supabase
       .channel("session-changes")
       .on(
@@ -96,14 +105,13 @@ export const useSessions = () => {
           console.log("Session change detected:", payload);
 
           // Refetch all sessions to update the list
-          // Alternatively, smartly update/insert/delete based on payload
           fetchSessions();
 
           // If the change affects the currently viewed session, update it directly
-          // Note: fetchSessions() above might already handle this if currentSession dependency works as expected.
-          // Explicit update here ensures reactivity if fetchSessions updates are batched/delayed.
           if (currentSession && payload.new && currentSession.id === payload.new.id) {
             const updatedSessionData = payload.new;
+            console.log("Direct session update payload:", updatedSessionData);
+            
             const updatedCurrentSession: GameSession = {
               id: updatedSessionData.id,
               name: updatedSessionData.name,
@@ -115,9 +123,10 @@ export const useSessions = () => {
               sessionDate: updatedSessionData.session_date,
               numberOfGames: updatedSessionData.number_of_games,
               current_game_state: updatedSessionData.current_game_state
-                ? (updatedSessionData.current_game_state as CurrentGameState)
+                ? (updatedSessionData.current_game_state as unknown as CurrentGameState)
                 : initializeGameState(updatedSessionData.game_type as GameType, 1),
-              lifecycle_state: updatedSessionData.lifecycle_state || 'setup'
+              lifecycle_state: updatedSessionData.lifecycle_state || 'setup',
+              games_config: updatedSessionData.games_config || []
             };
             console.log("Updating current session state from payload:", updatedCurrentSession);
             setCurrentSessionState(updatedCurrentSession);
@@ -140,9 +149,10 @@ export const useSessions = () => {
     // Cleanup function
     return () => {
       console.log("Removing channel subscription for session-changes");
-      supabase.removeChannel(channel).catch(err => console.error("Error removing channel:", err));
+      supabase.removeChannel(channel)
+        .then(() => console.log(`Unsubscribed from session changes`))
+        .catch(err => console.error("Error removing channel:", err));
     };
-    // Fetch sessions depends on currentSession now to ensure it updates correctly
   }, [fetchSessions, currentSession]);
 
   // Set current session by id
@@ -154,6 +164,7 @@ export const useSessions = () => {
     // Find the session from the already fetched list
     const session = sessions.find((s) => s.id === sessionId);
     if (session) {
+      console.log("Setting current session:", session);
       setCurrentSessionState(session);
     } else {
       console.warn(`Session with ID ${sessionId} not found in local state.`);
@@ -182,6 +193,12 @@ export const useSessions = () => {
         prizes: newGameState.prizes !== undefined ? newGameState.prizes : currentGameState.prizes
       };
 
+      console.log("Updating game state:", {
+        sessionId: currentSession.id,
+        currentState: currentGameState,
+        newState: updatedGameState
+      });
+
       const { error } = await supabase
         .from('game_sessions')
         .update({ 
@@ -195,11 +212,11 @@ export const useSessions = () => {
       }
 
       // Update the local state with the properly typed game state
-      // Use a different approach to update the state to avoid TypeScript error
       const updatedSession = {
         ...currentSession,
         current_game_state: updatedGameState
       };
+      console.log("Updated session with new game state:", updatedSession);
       setCurrentSessionState(updatedSession);
 
       return true;

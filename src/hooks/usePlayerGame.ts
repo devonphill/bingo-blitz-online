@@ -1,3 +1,4 @@
+
 // src/hooks/usePlayerGame.ts
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
@@ -6,7 +7,7 @@ import { useSessions } from '@/contexts/useSessions';
 import { CurrentGameState, GameType, PrizeDetails } from '@/types';
 
 export function usePlayerGame(playerCode?: string | null) {
-  const { currentSession: sessionFromContext, isLoading: isSessionLoading } = useSessions();
+  const { currentSession: sessionFromContext, isLoading: isSessionLoading, fetchSessions } = useSessions();
 
   const [tickets, setTickets] = useState<any[]>([]);
   const [calledItems, setCalledItems] = useState<Array<any>>([]);
@@ -27,6 +28,7 @@ export function usePlayerGame(playerCode?: string | null) {
   const winPrizes: { [key: string]: PrizeDetails } = currentGameState?.prizes ?? {};
   const gameType: GameType | null = currentGameState?.gameType ?? sessionFromContext?.gameType ?? null;
 
+  // Fetch initial player data
   useEffect(() => {
     if (!playerCode) {
       setIsLoading(false);
@@ -66,6 +68,9 @@ export function usePlayerGame(playerCode?: string | null) {
         setPlayerId(playerData.id);
         setPlayerName(playerData.nickname);
         setSessionId(playerData.session_id);
+
+        // Manually trigger a session refresh to ensure we have the latest data
+        fetchSessions();
 
         const { data: ticketData, error: ticketError } = await supabase
           .from('assigned_tickets')
@@ -121,10 +126,19 @@ export function usePlayerGame(playerCode?: string | null) {
     return () => {
       isMounted = false;
     };
-  }, [playerCode]);
+  }, [playerCode, fetchSessions]);
 
+  // Update local state when session data changes
   useEffect(() => {
     if (sessionFromContext && sessionFromContext.id === sessionId) {
+      console.log("Player view - Session data updated:", {
+        id: sessionFromContext.id,
+        lifecycle: sessionFromContext.lifecycle_state,
+        status: sessionFromContext.status,
+        gameState: sessionFromContext.current_game_state,
+        gameStatus: sessionFromContext.current_game_state?.status
+      });
+      
       if (sessionFromContext.current_game_state) {
         setCalledItems(sessionFromContext.current_game_state.calledItems || []);
         setLastCalledItem(sessionFromContext.current_game_state.lastCalledItem ?? null);
@@ -132,22 +146,16 @@ export function usePlayerGame(playerCode?: string | null) {
         setCalledItems([]);
         setLastCalledItem(null);
       }
+      
       setIsLoading(isSessionLoading);
       setErrorMessage('');
-      
-      // Log session state to help debug
-      console.log("Player view - Current session state:", {
-        id: sessionFromContext.id,
-        lifecycle: sessionFromContext.lifecycle_state,
-        gameState: sessionFromContext.current_game_state,
-        status: sessionFromContext.current_game_state?.status
-      });
-    } else if (sessionId && !sessionFromContext) {
-      // Handle case where we have a session ID but no context
-      console.log("Player has sessionId but no context found:", sessionId);
+    } else if (sessionId && !sessionFromContext && !isSessionLoading) {
+      console.log("Player has sessionId but session not found:", sessionId);
+      setErrorMessage("Game session not found or no longer available");
     }
   }, [sessionFromContext, sessionId, isSessionLoading]);
 
+  // Listen for claim results
   useEffect(() => {
     if (!playerId) return;
 

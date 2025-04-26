@@ -10,6 +10,8 @@ interface Props {
 }
 
 export default function PlayerGameLoader({ isLoading, errorMessage, currentSession }: Props) {
+  console.log("PlayerGameLoader - Session data:", currentSession);
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -50,15 +52,17 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
     );
   }
 
-  // Debug the actual values to help trace the issue
+  // Log the session state in more detail
   console.log("Current session state:", {
+    id: currentSession.id,
+    name: currentSession.name,
     lifecycle: currentSession.lifecycle_state,
     status: currentSession.status,
     gameState: currentSession.current_game_state,
     gameStatus: currentSession.current_game_state?.status
   });
 
-  // Fix the game state check with proper null safety and improved condition logic
+  // Refine the game state check with proper null safety and improved condition logic
   const isGameLive = currentSession.lifecycle_state === 'live';
   const isSessionActive = currentSession.status === 'active';
   const hasCurrentGameState = !!currentSession.current_game_state;

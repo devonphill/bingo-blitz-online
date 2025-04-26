@@ -14,6 +14,7 @@ interface CallControlsProps {
   totalCalls: number;
   pendingClaims: number;
   onViewClaims: () => void;
+  sessionStatus?: string; // Make sessionStatus optional with a type string
 }
 
 export function CallControls({
@@ -23,7 +24,8 @@ export function CallControls({
   lastCalledNumber,
   totalCalls,
   pendingClaims,
-  onViewClaims
+  onViewClaims,
+  sessionStatus = 'pending' // Default to 'pending' if not provided
 }: CallControlsProps) {
   if (gameType !== 'mainstage') {
     return (
@@ -74,6 +76,13 @@ export function CallControls({
         <div className="text-center mb-4">
           <span className="text-sm text-gray-500">Total Calls: </span>
           <span className="font-semibold">{totalCalls}</span>
+          {sessionStatus && (
+            <div className="mt-2">
+              <Badge variant={sessionStatus === 'active' ? 'secondary' : 'default'}>
+                {sessionStatus === 'active' ? 'Live' : 'Pending'}
+              </Badge>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-4">
