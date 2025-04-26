@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useSessions } from '@/contexts/useSessions';
@@ -22,6 +22,9 @@ export function usePlayerGame(playerCode?: string | null) {
   const [isClaiming, setIsClaiming] = useState(false);
   const [claimStatus, setClaimStatus] = useState<'pending' | 'validated' | 'rejected' | undefined>(undefined);
   const [loadingStep, setLoadingStep] = useState<string>("initializing");
+  
+  // Add a stable reference to track if data has been fully loaded once
+  const dataFullyLoadedOnce = useRef(false);
 
   const currentGameState: CurrentGameState | null = currentSession?.current_game_state ?? null;
   const activeWinPatterns: string[] = currentGameState?.activePatternIds ?? [];
@@ -110,13 +113,14 @@ export function usePlayerGame(playerCode?: string | null) {
       if (ticketData && ticketData.length > 0) {
         console.log(`Found ${ticketData.length} tickets for player`);
         setTickets(ticketData);
+        // Mark that we've successfully loaded data once
+        dataFullyLoadedOnce.current = true;
+        setLoadingStep("completed");
+        return true;
       } else {
         handleLoadingError('No tickets found for this player');
         return false;
       }
-
-      setLoadingStep("completed");
-      return true;
     } catch (error) {
       handleLoadingError(`Unexpected error: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return false;
@@ -126,14 +130,17 @@ export function usePlayerGame(playerCode?: string | null) {
   }, [playerCode, sessions, fetchSessions, handleLoadingError]);
 
   useEffect(() => {
-    setIsLoading(true);
-    setErrorMessage(null);
-    
-    const timer = setTimeout(() => {
-      fetchPlayerData();
-    }, 500); // Small delay to ensure initial renders complete
-    
-    return () => clearTimeout(timer);
+    // Only run initial data fetching if we haven't successfully loaded data yet
+    if (!dataFullyLoadedOnce.current) {
+      setIsLoading(true);
+      setErrorMessage(null);
+      
+      const timer = setTimeout(() => {
+        fetchPlayerData();
+      }, 500); // Small delay to ensure initial renders complete
+      
+      return () => clearTimeout(timer);
+    }
   }, [fetchPlayerData]);
 
   useEffect(() => {
@@ -142,14 +149,26 @@ export function usePlayerGame(playerCode?: string | null) {
     const matchingSession = findSessionById(sessionId);
     if (matchingSession) {
       console.log("Found updated matching session in sessions array:", matchingSession.id, matchingSession.name);
-      setCurrentSession(matchingSession);
       
-      if (matchingSession.current_game_state) {
-        setCalledItems(matchingSession.current_game_state.calledItems || []);
-        setLastCalledItem(matchingSession.current_game_state.lastCalledItem ?? null);
+      // IMPROVED: Only update state if there's an actual difference to prevent unnecessary renders
+      if (JSON.stringify(currentSession) !== JSON.stringify(matchingSession)) {
+        setCurrentSession(matchingSession);
+        
+        if (matchingSession.current_game_state) {
+          // Only update called items if they've changed
+          const newCalledItems = matchingSession.current_game_state.calledItems || [];
+          if (JSON.stringify(calledItems) !== JSON.stringify(newCalledItems)) {
+            setCalledItems(newCalledItems);
+          }
+          
+          const newLastCalledItem = matchingSession.current_game_state.lastCalledItem ?? null;
+          if (lastCalledItem !== newLastCalledItem) {
+            setLastCalledItem(newLastCalledItem);
+          }
+        }
       }
     }
-  }, [sessions, sessionId, findSessionById]);
+  }, [sessions, sessionId, findSessionById, currentSession, calledItems, lastCalledItem]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -171,11 +190,22 @@ export function usePlayerGame(playerCode?: string | null) {
           if (payload.new) {
             const updatedSession = payload.new as any;
             console.log("Updated session from real-time:", updatedSession);
-            setCurrentSession(updatedSession);
             
-            if (updatedSession.current_game_state) {
-              setCalledItems(updatedSession.current_game_state.calledItems || []);
-              setLastCalledItem(updatedSession.current_game_state.lastCalledItem ?? null);
+            // Only update if we need to - prevents unnecessary renders
+            if (JSON.stringify(currentSession) !== JSON.stringify(updatedSession)) {
+              setCurrentSession(updatedSession);
+              
+              if (updatedSession.current_game_state) {
+                const newCalledItems = updatedSession.current_game_state.calledItems || [];
+                if (JSON.stringify(calledItems) !== JSON.stringify(newCalledItems)) {
+                  setCalledItems(newCalledItems);
+                }
+                
+                const newLastCalledItem = updatedSession.current_game_state.lastCalledItem ?? null;
+                if (lastCalledItem !== newLastCalledItem) {
+                  setLastCalledItem(newLastCalledItem);
+                }
+              }
             }
           }
         }
@@ -188,7 +218,7 @@ export function usePlayerGame(playerCode?: string | null) {
       console.log(`Removing real-time subscription for session ${sessionId}`);
       supabase.removeChannel(channel);
     };
-  }, [sessionId]);
+  }, [sessionId, currentSession, calledItems, lastCalledItem]);
 
   useEffect(() => {
     if (!playerId) return;
@@ -285,6 +315,7 @@ export function usePlayerGame(playerCode?: string | null) {
 
       console.log(`Claim recorded with ID: ${claimData.id}. Broadcasting...`);
 
+      // IMPROVED: Added more notification information for caller
       const broadcastResponse = await supabase
         .channel('caller-claims')
         .send({
@@ -295,7 +326,10 @@ export function usePlayerGame(playerCode?: string | null) {
             playerName,
             sessionId,
             claimId: claimData.id,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            gameType: gameType || 'mainstage',
+            winPatterns: activeWinPatterns,
+            ticketCount: tickets.length
           }
         });
 
@@ -326,7 +360,7 @@ export function usePlayerGame(playerCode?: string | null) {
       });
       return false;
     }
-  }, [playerId, sessionId, playerName, toast, isClaiming, claimStatus]);
+  }, [playerId, sessionId, playerName, toast, isClaiming, claimStatus, gameType, activeWinPatterns, tickets.length]);
 
   return {
     tickets,

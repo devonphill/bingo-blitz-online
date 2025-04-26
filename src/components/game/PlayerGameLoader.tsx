@@ -12,8 +12,12 @@ interface Props {
 }
 
 export default function PlayerGameLoader({ isLoading, errorMessage, currentSession, loadingStep = "initializing" }: Props) {
-  console.log("PlayerGameLoader - Session data:", currentSession);
-  console.log("PlayerGameLoader - Loading step:", loadingStep);
+  // Only log when there's a change to help debug flickering
+  const logCacheKey = `${isLoading}-${!!errorMessage}-${!!currentSession}-${loadingStep}`;
+  React.useEffect(() => {
+    console.log("PlayerGameLoader - Session data:", currentSession);
+    console.log("PlayerGameLoader - Loading step:", loadingStep);
+  }, [logCacheKey]);
 
   // If we're in a loading state, show the loading indicator
   if (isLoading) {

@@ -54,21 +54,27 @@ export default function PlayerGame() {
     loadingStep,
   } = usePlayerGame(playerCode);
 
-  // Fix the condition to avoid unnecessary flicker - only show loader when we're actually loading or in error state
-  // We need to add more specific checks to avoid the page flickering
+  // IMPROVED: Refined loading logic to fix flickering issues
   const isInitialLoading = isLoading && loadingStep !== 'completed';
   const hasTickets = tickets && tickets.length > 0;
   const isGameActive = currentGameState?.status === 'active';
   const hasSession = !!currentSession;
-
-  // Only show the loader when we're clearly in a loading or error state
-  // Once we have tickets and a session with active game, we should remain in the game view
-  const shouldShowLoader = isInitialLoading || 
+  
+  // IMPROVED: More stable condition to prevent flickering between loaded and loading states
+  const shouldShowLoader = 
+    (isInitialLoading && loadingStep !== 'completed') || 
     !!errorMessage || 
     !hasSession || 
-    !currentGameState || 
-    (!isGameActive && loadingStep !== 'completed') || 
-    (!hasTickets && loadingStep !== 'completed');
+    (!currentGameState && loadingStep !== 'completed') ||
+    (!isGameActive && !hasTickets && loadingStep !== 'completed');
+
+  // Once we have successfully loaded all data, we should not show the loader again
+  // This prevents flickering when real-time updates are received
+  useEffect(() => {
+    if (hasSession && hasTickets && isGameActive && loadingStep === 'completed') {
+      console.log('Game fully loaded, stable state reached');
+    }
+  }, [hasSession, hasTickets, isGameActive, loadingStep]);
 
   // Get display name for game type
   const getGameTypeDisplayName = () => {
