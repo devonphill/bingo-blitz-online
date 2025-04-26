@@ -1,6 +1,8 @@
 
 import React from "react";
 import { getGameRulesForType } from '@/game-rules/gameRulesRegistry';
+import { checkMainstageWinPattern } from '@/utils/mainstageWinLogic';
+import { useMainstageAutoMarking } from '@/hooks/useMainstageAutoMarking';
 
 interface BingoWinProgressProps {
   numbers?: number[];
@@ -20,7 +22,7 @@ export default function BingoWinProgress({
   calledNumbers = [],
   activeWinPatterns,
   currentWinPattern,
-  gameType = '90-ball',
+  gameType = 'mainstage',
   handleClaimBingo,
   isClaiming,
   claimStatus
@@ -55,66 +57,68 @@ export default function BingoWinProgress({
       </div>
     );
   }
-  
-  // Create a ticket object to pass to the rules engine
-  const ticket = {
+
+  const { card } = useMainstageAutoMarking({
     numbers,
-    layoutMask
-  };
-  
+    layoutMask,
+    calledNumbers,
+    autoMarking: true
+  });
+
   // We'll prioritize the current win pattern if provided
   const patternsToCheck = currentWinPattern 
     ? [currentWinPattern] 
     : activeWinPatterns;
   
-  const result: { [pattern: string]: number } = {};
+  let minTG = 15; // Default high value
+  let canClaim = false;
   
-  // Calculate distance to win for each pattern
+  // Check each pattern
   patternsToCheck.forEach(pattern => {
-    const ticketStatus = gameRules.getTicketStatus(ticket, calledNumbers, pattern);
-    result[pattern] = ticketStatus.distance;
+    const result = checkMainstageWinPattern(
+      card,
+      calledNumbers,
+      pattern as 'oneLine' | 'twoLines' | 'fullHouse'
+    );
+    
+    if (result.isWinner) {
+      minTG = 0;
+      canClaim = true;
+    } else if (result.tg < minTG) {
+      minTG = result.tg;
+    }
   });
-  
-  // Get the distance for the current win pattern, or the minimum of all active patterns
-  let minToGo = 15; // Default high value
-  
-  if (currentWinPattern && result[currentWinPattern] !== undefined) {
-    minToGo = result[currentWinPattern];
-  } else if (patternsToCheck.length > 0) {
-    const distances = patternsToCheck.map(p => result[p] ?? 15);
-    minToGo = Math.min(...distances);
-  }
   
   return (
     <div className="flex items-center justify-between px-4 py-3 bg-white rounded-lg shadow-sm border border-gray-200">
-      <span className={minToGo <= 3 ? "font-bold text-green-600" : "font-medium text-gray-700"}>
-        {minToGo === 0 
+      <span className={minTG <= 3 ? "font-bold text-green-600" : "font-medium text-gray-700"}>
+        {minTG === 0 
           ? "Bingo!" 
-          : minToGo === 1 
+          : minTG === 1 
             ? "1TG" 
-            : minToGo === 2 
+            : minTG === 2 
               ? "2TG" 
-              : minToGo === 3 
+              : minTG === 3 
                 ? "3TG" 
-                : `${minToGo} to go`}
+                : `${minTG} to go`}
       </span>
       
       {handleClaimBingo && (
         <button
           onClick={handleClaimBingo}
-          disabled={isClaiming || claimStatus === 'validated' || minToGo > 0}
+          disabled={isClaiming || claimStatus === 'validated' || !canClaim}
           className={`px-4 py-2 rounded-md font-medium ${
             claimStatus === 'validated' ? 'bg-green-500 text-white' : 
             claimStatus === 'rejected' ? 'bg-red-500 text-white' :
             isClaiming ? 'bg-yellow-500 text-white' : 
-            minToGo === 0 ? 'bg-bingo-primary text-white hover:bg-bingo-secondary' :
+            canClaim ? 'bg-bingo-primary text-white hover:bg-bingo-secondary' :
             'bg-gray-300 text-gray-500 cursor-not-allowed'
           }`}
         >
           {claimStatus === 'validated' ? 'Win Verified!' : 
            claimStatus === 'rejected' ? 'Claim Rejected' :
            isClaiming ? 'Verifying...' : 
-           minToGo === 0 ? 'Claim Bingo!' : 'Not Bingo Yet'}
+           canClaim ? 'Claim Bingo!' : 'Not Bingo Yet'}
         </button>
       )}
     </div>

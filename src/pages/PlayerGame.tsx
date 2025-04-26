@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -14,18 +13,14 @@ export default function PlayerGame() {
   const { toast } = useToast();
 
   useEffect(() => {
-    // First check URL param, then localStorage
     const storedPlayerCode = localStorage.getItem('playerCode');
     
     if (urlPlayerCode) {
-      console.log("Found player code in URL:", urlPlayerCode);
       setPlayerCode(urlPlayerCode);
       localStorage.setItem('playerCode', urlPlayerCode);
     } else if (storedPlayerCode) {
-      console.log("Found player code in localStorage:", storedPlayerCode);
       setPlayerCode(storedPlayerCode);
     } else {
-      console.log("No player code found, redirecting to join");
       toast({
         title: 'Player Code Missing',
         description: 'Please enter your player code to join the game.',
@@ -33,7 +28,7 @@ export default function PlayerGame() {
       });
       navigate('/join');
     }
-  }, [urlPlayerCode, navigate, toast]);
+  }, []);
 
   const {
     tickets,
@@ -55,13 +50,6 @@ export default function PlayerGame() {
     loadingStep,
   } = usePlayerGame(playerCode);
 
-  console.log("PlayerGame - Current session:", currentSession);
-  console.log("PlayerGame - Session state:", currentSession?.lifecycle_state, "Status:", currentSession?.status);
-  console.log("PlayerGame - Game state:", currentGameState);
-  console.log("PlayerGame - Player details:", {playerId, playerName, tickets: tickets?.length || 0});
-  console.log("PlayerGame - Loading step:", loadingStep);
-
-  // We want to make sure data is fully ready before showing the game view
   const shouldShowLoader = isLoading || 
     errorMessage || 
     !currentSession || 
@@ -79,7 +67,6 @@ export default function PlayerGame() {
     );
   }
 
-  // Show actual game UI when everything is loaded and active
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       <div className="container mx-auto px-4 py-6">
