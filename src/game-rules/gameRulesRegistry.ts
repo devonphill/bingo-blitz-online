@@ -22,7 +22,7 @@ const GAME_RULES: { [key: string]: GameRules } = {
  */
 export function getGameRulesForType(gameType: string): GameRules {
   // Normalize game type string (remove spaces, lowercase)
-  const normalizedType = gameType.toLowerCase().replace(/\s+/g, '-');
+  const normalizedType = gameType?.toLowerCase()?.replace(/\s+/g, '-') || '90-ball';
 
   const rules = GAME_RULES[normalizedType];
 

@@ -15,6 +15,7 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
   console.log("PlayerGameLoader - Session data:", currentSession);
   console.log("PlayerGameLoader - Loading step:", loadingStep);
 
+  // If we're in a loading state, show the loading indicator
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -28,6 +29,7 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
     );
   }
 
+  // If there's an error, show the error message
   if (errorMessage) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -53,6 +55,7 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
     );
   }
 
+  // If there's no session data
   if (!currentSession) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -75,24 +78,13 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
     );
   }
 
-  // Log the session state in more detail
-  console.log("Current session state:", {
-    id: currentSession.id,
-    name: currentSession.name,
-    lifecycle: currentSession.lifecycle_state,
-    status: currentSession.status,
-    gameState: currentSession.current_game_state,
-    gameStatus: currentSession.current_game_state?.status
-  });
-
-  // Refine the game state check with proper null safety and improved condition logic
+  // Check if the game is in an active state
   const isGameLive = currentSession.lifecycle_state === 'live';
   const isSessionActive = currentSession.status === 'active';
   const hasCurrentGameState = !!currentSession.current_game_state;
   const isGameActive = hasCurrentGameState && currentSession.current_game_state.status === 'active';
 
-  console.log("Game state check:", { isGameLive, isSessionActive, hasCurrentGameState, isGameActive });
-
+  // If the game is not active yet, show waiting message
   if (!isGameLive || !isSessionActive || !isGameActive) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
