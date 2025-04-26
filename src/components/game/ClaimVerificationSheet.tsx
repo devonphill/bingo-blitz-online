@@ -128,6 +128,8 @@ export default function ClaimVerificationSheet({
       setShowSharingDialog(true);
     } else {
       await handlePrizeSharing(false);
+      setActionType('valid');
+      setIsProcessing(true);
       onValidClaim();
     }
   };
@@ -168,8 +170,12 @@ export default function ClaimVerificationSheet({
 
       await Promise.all(promises);
       
+      // Check if this is a full house win pattern, and if so, trigger the game progression
       if (currentWinPattern === 'fullHouse' && onNext) {
-        onNext();
+        console.log("Full house win validated, progressing to next game");
+        setTimeout(() => {
+          onNext();
+        }, 500);
       }
 
       onClose();
@@ -305,6 +311,8 @@ export default function ClaimVerificationSheet({
         onConfirm={async (isShared) => {
           setShowSharingDialog(false);
           await handlePrizeSharing(isShared);
+          setActionType('valid');
+          setIsProcessing(true);
           onValidClaim();
         }}
         playerCount={validClaimsCount}

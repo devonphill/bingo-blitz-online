@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -22,9 +21,8 @@ export function usePlayerGame(playerCode?: string | null) {
   const [isClaiming, setIsClaiming] = useState(false);
   const [claimStatus, setClaimStatus] = useState<'pending' | 'validated' | 'rejected' | undefined>(undefined);
   const [loadingStep, setLoadingStep] = useState<string>("initializing");
-  
-  // Add a stable reference to track if data has been fully loaded once
   const dataFullyLoadedOnce = useRef(false);
+  const claimResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentGameState: CurrentGameState | null = currentSession?.current_game_state ?? null;
   const activeWinPatterns: string[] = currentGameState?.activePatternIds ?? [];
@@ -113,7 +111,6 @@ export function usePlayerGame(playerCode?: string | null) {
       if (ticketData && ticketData.length > 0) {
         console.log(`Found ${ticketData.length} tickets for player`);
         setTickets(ticketData);
-        // Mark that we've successfully loaded data once
         dataFullyLoadedOnce.current = true;
         setLoadingStep("completed");
         return true;
@@ -130,14 +127,13 @@ export function usePlayerGame(playerCode?: string | null) {
   }, [playerCode, sessions, fetchSessions, handleLoadingError]);
 
   useEffect(() => {
-    // Only run initial data fetching if we haven't successfully loaded data yet
     if (!dataFullyLoadedOnce.current) {
       setIsLoading(true);
       setErrorMessage(null);
       
       const timer = setTimeout(() => {
         fetchPlayerData();
-      }, 500); // Small delay to ensure initial renders complete
+      }, 500);
       
       return () => clearTimeout(timer);
     }
@@ -150,12 +146,10 @@ export function usePlayerGame(playerCode?: string | null) {
     if (matchingSession) {
       console.log("Found updated matching session in sessions array:", matchingSession.id, matchingSession.name);
       
-      // IMPROVED: Only update state if there's an actual difference to prevent unnecessary renders
       if (JSON.stringify(currentSession) !== JSON.stringify(matchingSession)) {
         setCurrentSession(matchingSession);
         
         if (matchingSession.current_game_state) {
-          // Only update called items if they've changed
           const newCalledItems = matchingSession.current_game_state.calledItems || [];
           if (JSON.stringify(calledItems) !== JSON.stringify(newCalledItems)) {
             setCalledItems(newCalledItems);
@@ -191,7 +185,6 @@ export function usePlayerGame(playerCode?: string | null) {
             const updatedSession = payload.new as any;
             console.log("Updated session from real-time:", updatedSession);
             
-            // Only update if we need to - prevents unnecessary renders
             if (JSON.stringify(currentSession) !== JSON.stringify(updatedSession)) {
               setCurrentSession(updatedSession);
               
@@ -242,6 +235,15 @@ export function usePlayerGame(playerCode?: string | null) {
                 description: "Your bingo win has been verified by the caller.",
                 variant: "default"
               });
+              
+              if (claimResetTimer.current) {
+                clearTimeout(claimResetTimer.current);
+              }
+              
+              claimResetTimer.current = setTimeout(() => {
+                console.log("Resetting claim status from validated");
+                setClaimStatus(undefined);
+              }, 10000);
             } else if (result === 'rejected') {
               setClaimStatus('rejected');
               setIsClaiming(false);
@@ -250,6 +252,15 @@ export function usePlayerGame(playerCode?: string | null) {
                 description: "Your bingo claim was not verified. Please continue playing.",
                 variant: "destructive"
               });
+              
+              if (claimResetTimer.current) {
+                clearTimeout(claimResetTimer.current);
+              }
+              
+              claimResetTimer.current = setTimeout(() => {
+                console.log("Resetting claim status from rejected");
+                setClaimStatus(undefined);
+              }, 10000);
             }
           }
         }
@@ -265,6 +276,9 @@ export function usePlayerGame(playerCode?: string | null) {
 
     return () => {
       console.log(`Removing claim results subscription for player ${playerId}`);
+      if (claimResetTimer.current) {
+        clearTimeout(claimResetTimer.current);
+      }
       supabase.removeChannel(gameUpdatesChannel)
         .then(() => console.log(`Player ${playerId} unsubscribed from claim results`))
         .catch(err => console.error("Error removing player channel:", err));
@@ -315,7 +329,6 @@ export function usePlayerGame(playerCode?: string | null) {
 
       console.log(`Claim recorded with ID: ${claimData.id}. Broadcasting...`);
 
-      // IMPROVED: Added more notification information for caller
       const broadcastResponse = await supabase
         .channel('caller-claims')
         .send({
@@ -362,6 +375,11 @@ export function usePlayerGame(playerCode?: string | null) {
     }
   }, [playerId, sessionId, playerName, toast, isClaiming, claimStatus, gameType, activeWinPatterns, tickets.length]);
 
+  const resetClaimStatus = useCallback(() => {
+    setClaimStatus(undefined);
+    setIsClaiming(false);
+  }, []);
+
   return {
     tickets,
     playerName,
@@ -381,5 +399,6 @@ export function usePlayerGame(playerCode?: string | null) {
     isClaiming,
     claimStatus,
     loadingStep,
+    resetClaimStatus,
   };
 }

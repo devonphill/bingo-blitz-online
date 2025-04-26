@@ -2,6 +2,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useGameProgression } from './useGameProgression';
 
 export function useClaimManagement(sessionId: string | undefined) {
   const [showClaimSheet, setShowClaimSheet] = useState(false);
@@ -19,6 +20,7 @@ export function useClaimManagement(sessionId: string | undefined) {
   const [processingClaim, setProcessingClaim] = useState(false);
   const hasCheckedInitialClaims = useRef(false);
   const { toast } = useToast();
+  const { progressToNextGame } = useGameProgression({ id: sessionId } as any);
 
   // Handle closing the claim sheet
   const handleCloseSheet = useCallback(() => {
@@ -212,7 +214,7 @@ export function useClaimManagement(sessionId: string | undefined) {
   }, [claimQueue, currentClaim, processNextClaim, showClaimSheet, processingClaim]);
 
   // Validate a claim
-  const validateClaim = useCallback(async () => {
+  const validateClaim = useCallback(async (shouldAdvanceGame = false) => {
     if (!currentClaim || !sessionId) return;
     
     console.log("Validating claim for player:", currentClaim.playerName);
@@ -247,6 +249,14 @@ export function useClaimManagement(sessionId: string | undefined) {
         description: `${currentClaim.playerName}'s claim has been validated.`
       });
       
+      // If this is a full house validation, progress to the next game
+      if (shouldAdvanceGame) {
+        console.log("Full house win validated, progressing to next game");
+        setTimeout(() => {
+          progressToNextGame();
+        }, 1000);
+      }
+      
       // The sheet will be closed by the confirmation callback with a delay
       
     } catch (error) {
@@ -258,7 +268,7 @@ export function useClaimManagement(sessionId: string | undefined) {
         variant: "destructive"
       });
     }
-  }, [currentClaim, sessionId, toast]);
+  }, [currentClaim, sessionId, toast, progressToNextGame]);
 
   // Reject a claim
   const rejectClaim = useCallback(async () => {
@@ -309,6 +319,12 @@ export function useClaimManagement(sessionId: string | undefined) {
     }
   }, [currentClaim, sessionId, toast]);
 
+  // Added function to progress to next game
+  const handleNextGame = useCallback(() => {
+    console.log("Handling next game progression");
+    progressToNextGame();
+  }, [progressToNextGame]);
+
   return {
     showClaimSheet,
     setShowClaimSheet: handleCloseSheet,
@@ -319,6 +335,7 @@ export function useClaimManagement(sessionId: string | undefined) {
     validateClaim,
     rejectClaim,
     processNextClaim,
-    checkForClaims
+    checkForClaims,
+    handleNextGame
   };
 }

@@ -9,17 +9,46 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
   const { toast } = useToast();
 
   const progressToNextGame = async () => {
-    if (!session || isProcessingGame) return;
+    if (!session || isProcessingGame || !session.id) return;
     setIsProcessingGame(true);
 
     try {
-      const nextGameNumber = session.numberOfGames + 1;
-      const isLastGame = nextGameNumber > session.numberOfGames;
-
+      console.log("Progressing to next game for session:", session.id);
+      
+      // Calculate next game number
+      const currentGameNumber = session.current_game_state?.gameNumber || 1;
+      const nextGameNumber = currentGameNumber + 1;
+      console.log(`Current game: ${currentGameNumber}, Next game: ${nextGameNumber}`);
+      
+      const isLastGame = nextGameNumber > (session.numberOfGames || 1);
+      console.log(`Is this the last game? ${isLastGame ? 'Yes' : 'No'}`);
+      
+      // Get the next game configuration if available
+      let nextGameConfig = null;
+      if (session.games_config && Array.isArray(session.games_config) && session.games_config.length > 0) {
+        nextGameConfig = session.games_config.find(game => game.gameNumber === nextGameNumber);
+      }
+      
+      console.log("Next game config:", nextGameConfig);
+      
+      // Setup the next game state
+      const nextGameState = {
+        gameNumber: nextGameNumber,
+        gameType: nextGameConfig?.gameType || session.current_game_state?.gameType || session.gameType,
+        activePatternIds: nextGameConfig?.selectedPatterns || [],
+        calledItems: [],
+        lastCalledItem: null,
+        status: 'active',
+        prizes: nextGameConfig?.prizes || {}
+      };
+      
+      console.log("Updating with next game state:", nextGameState);
+      
+      // Update the session with the new game state
       const { error } = await supabase
         .from('game_sessions')
         .update({ 
-          current_game: nextGameNumber,
+          current_game_state: JSON.parse(JSON.stringify(nextGameState)),
           status: isLastGame ? 'completed' : 'active'
         })
         .eq('id', session.id);
@@ -44,6 +73,11 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
       });
     } catch (err) {
       console.error("Game progression error:", err);
+      toast({
+        title: "Error",
+        description: "An error occurred while trying to progress to the next game.",
+        variant: "destructive"
+      });
     } finally {
       setIsProcessingGame(false);
     }
