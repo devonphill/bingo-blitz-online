@@ -9,7 +9,7 @@ import { LiveGameView } from '@/components/caller/LiveGameView';
 import ClaimVerificationSheet from '@/components/game/ClaimVerificationSheet';
 import { useSessionLifecycle } from '@/hooks/useSessionLifecycle';
 
-type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
+type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -367,12 +367,22 @@ export default function CallerSession() {
         prizes: prizes
       };
       
+      const gameStateForSupabase = {
+        gameNumber: updatedGameState.gameNumber,
+        gameType: updatedGameState.gameType,
+        activePatternIds: updatedGameState.activePatternIds,
+        calledItems: updatedGameState.calledItems || [],
+        lastCalledItem: updatedGameState.lastCalledItem,
+        status: updatedGameState.status,
+        prizes: JSON.parse(JSON.stringify(updatedGameState.prizes || {}))
+      };
+      
       const { error } = await supabase
         .from('game_sessions')
         .update({ 
           lifecycle_state: 'live',
           status: 'active', // Update the session status to active
-          current_game_state: updatedGameState as unknown as Json
+          current_game_state: gameStateForSupabase as Json
         })
         .eq('id', sessionId);
 
@@ -442,9 +452,19 @@ export default function CallerSession() {
       } : null);
 
       try {
+        const gameStateForSupabase = {
+          gameNumber: updatedGameState.gameNumber,
+          gameType: updatedGameState.gameType,
+          activePatternIds: updatedGameState.activePatternIds,
+          calledItems: updatedGameState.calledItems,
+          lastCalledItem: updatedGameState.lastCalledItem,
+          status: updatedGameState.status,
+          prizes: JSON.parse(JSON.stringify(updatedGameState.prizes || {}))
+        };
+
         const { error } = await supabase
           .from('game_sessions')
-          .update({ current_game_state: updatedGameState as unknown as Json })
+          .update({ current_game_state: gameStateForSupabase as Json })
           .eq('id', sessionId);
 
         if (error) {
