@@ -34,11 +34,12 @@ export function WinPatternSelector({
                 selectedPatterns.includes(pattern.id) ? 'border-primary bg-primary/5' : 'border-border'
               }`}
             >
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 w-full">
                 <Button
                   onClick={() => onPatternSelect && onPatternSelect(pattern)}
                   variant={selectedPatterns.includes(pattern.id) ? 'default' : 'outline'}
                   disabled={!pattern.available}
+                  className="min-w-[100px]"
                 >
                   {pattern.name}
                 </Button>
@@ -48,7 +49,8 @@ export function WinPatternSelector({
                     placeholder="Enter prize"
                     value={prizes[pattern.id] || ''}
                     onChange={(e) => onPrizeChange && onPrizeChange(pattern.id, e.target.value)}
-                    className="w-48"
+                    className="w-full max-w-xs"
+                    aria-label={`Prize for ${pattern.name}`}
                   />
                 )}
               </div>

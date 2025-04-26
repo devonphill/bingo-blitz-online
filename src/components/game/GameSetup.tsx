@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { useSessions } from "@/contexts/useSessions";
@@ -5,21 +6,13 @@ import { GameType } from "@/types";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Music, Image, Mic, PartyPopper, Star } from "lucide-react";
+import { WinPatternSelector } from "@/components/caller/WinPatternSelector";
 
 interface WinPatternOption {
   id: string;
   name: string;
   active: boolean;
-}
-
-interface WinPatternSelectorProps {
-  patterns: { id: string, name: string, available: boolean }[];
-  selectedPatterns: string[];
-  onPatternSelect: (patternId: string) => void;
-  prizes: {[key: string]: string};
-  onPrizeChange: (patternId: string, value: string) => void;
 }
 
 export function GameSetup() {
@@ -119,7 +112,8 @@ export function GameSetup() {
             patterns={winPatterns.map(wp => ({
               id: wp.id,
               name: wp.name,
-              available: true
+              available: true,
+              gameType: selectedGameType
             }))}
             selectedPatterns={winPatterns.filter(wp => wp.active).map(wp => wp.id)}
             onPatternSelect={(pattern) => toggleWinPattern(pattern.id)}

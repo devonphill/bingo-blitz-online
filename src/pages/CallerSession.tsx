@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -52,11 +51,9 @@ export default function CallerSession() {
         ? (data.current_game_state as unknown as CurrentGameState)
         : initialGameState;
 
-      // Validate lifecycle_state from database to ensure it's one of the allowed values
-      let lifecycleState: 'setup' | 'live' | 'ended' = 'setup'; // Default to 'setup'
+      let lifecycleState: 'setup' | 'live' | 'ended' = 'setup';
       
       if (data.lifecycle_state) {
-        // Check if the value is one of the allowed values
         if (['setup', 'live', 'ended'].includes(data.lifecycle_state)) {
           lifecycleState = data.lifecycle_state as 'setup' | 'live' | 'ended';
         } else {
@@ -183,28 +180,52 @@ export default function CallerSession() {
       return;
     }
 
-    const { error } = await supabase
-      .from('game_sessions')
-      .update({ 
-        lifecycle_state: 'live',
-        current_game_state: {
-          ...session.current_game_state,
-          status: 'active'
-        }
-      })
-      .eq('id', sessionId);
+    try {
+      console.log("Attempting to set session to live state...");
+      
+      const updatedGameState: CurrentGameState = {
+        ...session.current_game_state,
+        status: 'active'
+      };
+      
+      const { error } = await supabase
+        .from('game_sessions')
+        .update({ 
+          lifecycle_state: 'live',
+          current_game_state: updatedGameState as unknown as Json
+        })
+        .eq('id', sessionId);
 
-    if (error) {
-      console.error("Error starting game:", error);
+      if (error) {
+        console.error("Error starting game:", error);
+        toast({
+          title: "Error",
+          description: "Failed to start the game. Please try again.",
+          variant: "destructive"
+        });
+      } else {
+        setSession(prevSession => {
+          if (!prevSession) return null;
+          return {
+            ...prevSession,
+            lifecycle_state: 'live',
+            current_game_state: updatedGameState
+          };
+        });
+        
+        toast({
+          title: "Game Started",
+          description: "The game is now live!",
+        });
+        
+        console.log("Game successfully set to live state");
+      }
+    } catch (err) {
+      console.error("Exception during go live operation:", err);
       toast({
         title: "Error",
-        description: "Failed to start the game. Please try again.",
+        description: "An unexpected error occurred. Please try again.",
         variant: "destructive"
-      });
-    } else {
-      toast({
-        title: "Game Started",
-        description: "The game is now live!",
       });
     }
   };
