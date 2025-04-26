@@ -26,6 +26,7 @@ export function WinPatternSelector({
 }: WinPatternSelectorProps) {
   console.log("WinPatternSelector - prizes:", prizes);
   console.log("WinPatternSelector - selectedPatterns:", selectedPatterns);
+  console.log("WinPatternSelector - available patterns:", patterns);
   
   const handlePrizeChange = (patternId: string, field: keyof PrizeDetails, value: string | boolean) => {
     if (!onPrizeChange) {

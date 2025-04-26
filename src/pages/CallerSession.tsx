@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -27,7 +26,6 @@ export default function CallerSession() {
   const { toast } = useToast();
   const { setSessionLifecycle } = useSessionLifecycle(sessionId);
 
-  // Debug logging for state changes
   useEffect(() => {
     console.log("StateUpdate - currentGameType:", currentGameType);
     console.log("StateUpdate - selectedPatterns:", selectedPatterns);
@@ -58,24 +56,18 @@ export default function CallerSession() {
       
       console.log("Session data received:", data);
       
-      // Parse game configs if they exist
       let configs: GameConfig[] = [];
       if (data.games_config && Array.isArray(data.games_config)) {
-        // Fix: Cast the JSON data to the GameConfig[] type after validation
         const jsonConfigs = data.games_config as Json[];
-        
-        // Validate and map each config to ensure correct typing
         configs = jsonConfigs.map((config: any): GameConfig => ({
           gameNumber: config.gameNumber || 1,
           gameType: (config.gameType as GameType) || 'mainstage',
           selectedPatterns: Array.isArray(config.selectedPatterns) ? config.selectedPatterns : ['oneLine'],
           prizes: config.prizes || {}
         }));
-        
         console.log("Game configs loaded from database:", configs);
       } 
       
-      // If no configs or incorrect number of configs, create new ones based on numberOfGames
       const numberOfGames = data.number_of_games || 1;
       if (configs.length !== numberOfGames) {
         console.log(`Creating ${numberOfGames} default game configs`);
@@ -96,7 +88,6 @@ export default function CallerSession() {
       
       setGameConfigs(configs);
       
-      // Use the first game config
       if (configs.length > 0) {
         const firstConfig = configs[0];
         console.log("Setting state from first game config:", firstConfig);
@@ -106,7 +97,6 @@ export default function CallerSession() {
         fetchWinPatterns(firstConfig.gameType);
       }
 
-      // Set up game state
       const initialGameState: CurrentGameState = {
         gameNumber: 1,
         gameType: (data.game_type as GameType) || 'mainstage',
@@ -168,13 +158,11 @@ export default function CallerSession() {
     
     console.log("Changing game type to:", newType);
     
-    // Update local state
     setCurrentGameType(newType);
     fetchWinPatterns(newType);
     setCalledNumbers([]);
     setCurrentNumber(null);
     
-    // Update the current game config
     const updatedConfigs = [...gameConfigs];
     if (updatedConfigs[currentGameIndex]) {
       updatedConfigs[currentGameIndex].gameType = newType;
@@ -189,7 +177,6 @@ export default function CallerSession() {
       activePatternIds: selectedPatterns
     };
 
-    // Save both to database
     try {
       const { error } = await supabase
         .from('game_sessions')
@@ -221,24 +208,20 @@ export default function CallerSession() {
   const handlePatternSelect = async (pattern: WinPattern) => {
     if (!session?.current_game_state) return;
     
-    // Convert pattern.id to string to ensure consistent handling
     const patternId = String(pattern.id);
     console.log("Toggle pattern:", patternId);
     
-    // Update the local selected patterns
     const newSelectedPatterns = [...selectedPatterns];
     const patternIndex = newSelectedPatterns.indexOf(patternId);
     
     if (patternIndex >= 0) {
       newSelectedPatterns.splice(patternIndex, 1);
-      // Remove prizes for this pattern
       const updatedPrizes = {...prizes};
       delete updatedPrizes[patternId];
       setPrizes(updatedPrizes);
     } else {
       newSelectedPatterns.push(patternId);
       
-      // Set default prize if none exists for this pattern
       if (!prizes[patternId]) {
         const updatedPrizes = {
           ...prizes,
@@ -255,34 +238,29 @@ export default function CallerSession() {
     console.log("New selected patterns:", newSelectedPatterns);
     setSelectedPatterns(newSelectedPatterns);
     
-    // Update the current game config
     const updatedConfigs = [...gameConfigs];
     if (updatedConfigs[currentGameIndex]) {
       updatedConfigs[currentGameIndex].selectedPatterns = newSelectedPatterns;
       updatedConfigs[currentGameIndex].prizes = {...prizes};
       
-      // Handle prize removal if pattern deselected
       if (patternIndex >= 0 && updatedConfigs[currentGameIndex].prizes[patternId]) {
         delete updatedConfigs[currentGameIndex].prizes[patternId];
       }
     }
     setGameConfigs(updatedConfigs);
     
-    // Prepare updated game state
     const updatedGameState = {
       ...session.current_game_state,
       activePatternIds: newSelectedPatterns,
       prizes: prizes
     };
     
-    // Update session state
     setSession(prevSession => prevSession ? {
       ...prevSession,
       current_game_state: updatedGameState,
       games_config: updatedConfigs
     } : null);
     
-    // Save to database
     try {
       const { error } = await supabase
         .from('game_sessions')
@@ -313,14 +291,12 @@ export default function CallerSession() {
   const handlePrizeChange = async (patternId: string, prizeDetails: PrizeDetails) => {
     console.log(`Updating prize for ${patternId}:`, prizeDetails);
     
-    // Update local state
     const updatedPrizes = {
       ...prizes,
       [patternId]: prizeDetails
     };
     setPrizes(updatedPrizes);
     
-    // Update game config
     const updatedConfigs = [...gameConfigs];
     if (updatedConfigs[currentGameIndex]) {
       updatedConfigs[currentGameIndex].prizes = {
@@ -330,7 +306,6 @@ export default function CallerSession() {
       setGameConfigs(updatedConfigs);
     }
     
-    // Update session state
     if (session) {
       const updatedGameState = {
         ...session.current_game_state,
@@ -343,7 +318,6 @@ export default function CallerSession() {
         games_config: updatedConfigs
       } : null);
       
-      // Save to database
       try {
         const { error } = await supabase
           .from('game_sessions')
@@ -367,7 +341,6 @@ export default function CallerSession() {
     
     setIsGoingLive(true);
     
-    // Check if there are any selected patterns from games_config
     const currentConfig = gameConfigs[currentGameIndex];
     const patternsToCheck = currentConfig?.selectedPatterns || session.current_game_state?.activePatternIds;
     

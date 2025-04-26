@@ -45,11 +45,14 @@ export function LiveGameView({
   const activeGameType = currentGameConfig?.gameType || gameType;
   const activePatterns = currentGameConfig?.selectedPatterns || selectedPatterns;
   const activePrizes = currentGameConfig?.prizes || prizes;
+  
+  // Get all win patterns for the active game type
+  const availablePatterns = activeGameType ? winPatterns.filter(p => p.gameType === activeGameType) : winPatterns;
 
   return (
     <div className="space-y-6 p-6">
       <WinPatternStatusDisplay 
-        patterns={winPatterns.map(p => ({
+        patterns={availablePatterns.map(p => ({
           id: p.id,
           name: p.name,
           active: activePatterns.includes(p.id)

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { GameType, PrizeDetails, GameConfig } from '@/types';
-import { WinPattern } from '@/types/winPattern';
+import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { GameTypeSelector } from './GameTypeSelector';
@@ -61,7 +61,7 @@ export function GameSetupView({
         // Create new default config
         return {
           gameNumber: index + 1,
-          gameType: 'mainstage',
+          gameType: 'mainstage' as GameType,
           selectedPatterns: ['oneLine'],
           prizes: {
             'oneLine': {
@@ -197,7 +197,10 @@ export function GameSetupView({
   // Generate tab content for each game
   const gameTabsContent = gameConfigs.map((config, index) => {
     const gameNumber = index + 1;
-    const patterns = config.gameType ? winPatterns.filter(p => p.gameType === config.gameType) : [];
+    
+    // Get win patterns specific to the selected game type
+    const gameType = config.gameType;
+    const patterns = WIN_PATTERNS[gameType] || [];
     
     return (
       <TabsContent key={`game-${gameNumber}-content`} value={`game-${gameNumber}`}>
