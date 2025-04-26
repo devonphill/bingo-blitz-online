@@ -4,9 +4,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { usePlayerGame } from '@/hooks/usePlayerGame';
 import GameTypePlayspace from '@/components/game/GameTypePlayspace';
-import BingoWinProgress from '@/components/game/BingoWinProgress';
 import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 import CurrentNumberDisplay from '@/components/game/CurrentNumberDisplay';
+import { WIN_PATTERNS } from '@/types/winPattern';
+import { Badge } from '@/components/ui/badge';
 
 export default function PlayerGame() {
   const { playerCode: urlPlayerCode } = useParams<{ playerCode: string }>();
@@ -30,7 +31,7 @@ export default function PlayerGame() {
       });
       navigate('/join');
     }
-  }, []);
+  }, [urlPlayerCode, navigate, toast]);
 
   const {
     tickets,
@@ -41,6 +42,7 @@ export default function PlayerGame() {
     calledItems, 
     lastCalledItem,
     activeWinPatterns,
+    winPrizes,
     autoMarking,
     setAutoMarking,
     isLoading,
@@ -52,11 +54,33 @@ export default function PlayerGame() {
     loadingStep,
   } = usePlayerGame(playerCode);
 
+  // Improve the condition to better detect when we should show the loader
   const shouldShowLoader = isLoading || 
     errorMessage || 
     !currentSession || 
     !currentGameState || 
-    currentGameState.status !== 'active';
+    currentGameState.status !== 'active' ||
+    !tickets || 
+    tickets.length === 0;
+
+  // Get display name for game type
+  const getGameTypeDisplayName = () => {
+    switch (gameType) {
+      case 'mainstage': return 'Mainstage Bingo';
+      case 'party': return 'Party Bingo';
+      case 'quiz': return 'Quiz Bingo';
+      case 'music': return 'Music Bingo';
+      case 'logo': return 'Logo Bingo';
+      default: return gameType ? `${gameType} Bingo` : 'Bingo Game';
+    }
+  };
+
+  // Get formatted win pattern name
+  const getWinPatternName = (patternId: string) => {
+    const allPatterns = gameType ? WIN_PATTERNS[gameType] : [];
+    const pattern = allPatterns.find(p => p.id === patternId);
+    return pattern ? pattern.name : patternId;
+  };
 
   if (shouldShowLoader) {
     return (
@@ -81,17 +105,55 @@ export default function PlayerGame() {
             Welcome, {playerName || "Player"}
           </div>
           
+          {/* Game Type Display */}
+          <div className="mb-6 p-3 bg-gray-800 rounded-lg">
+            <h2 className="text-lg font-medium mb-2">Game Type</h2>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline" className="bg-gray-700 text-white border-gray-600">
+                {getGameTypeDisplayName()}
+              </Badge>
+            </div>
+          </div>
+          
+          {/* Active Win Patterns Display */}
           {activeWinPatterns && activeWinPatterns.length > 0 && (
-            <div className="mb-4">
-              <BingoWinProgress 
-                activeWinPatterns={activeWinPatterns}
-                handleClaimBingo={handleClaimBingo}
-                isClaiming={isClaiming}
-                claimStatus={claimStatus}
-                gameType={gameType || "mainstage"}
-              />
+            <div className="mb-6 p-3 bg-gray-800 rounded-lg">
+              <h2 className="text-lg font-medium mb-2">Active Win Patterns</h2>
+              <div className="flex flex-wrap gap-2">
+                {activeWinPatterns.map(patternId => (
+                  <Badge 
+                    key={patternId}
+                    className="bg-bingo-primary text-white"
+                  >
+                    {getWinPatternName(patternId)}
+                  </Badge>
+                ))}
+              </div>
             </div>
           )}
+          
+          {/* Claim Bingo Button */}
+          <button
+            onClick={handleClaimBingo}
+            disabled={isClaiming || claimStatus === 'validated'}
+            className={`w-full py-3 px-4 rounded-lg font-medium mt-2 ${
+              isClaiming || claimStatus === 'pending' 
+                ? 'bg-yellow-500 text-white' 
+                : claimStatus === 'validated'
+                  ? 'bg-green-500 text-white'
+                  : claimStatus === 'rejected'
+                    ? 'bg-red-500 text-white'
+                    : 'bg-bingo-primary text-white hover:bg-bingo-secondary'
+            }`}
+          >
+            {isClaiming || claimStatus === 'pending' 
+              ? 'Verifying Claim...'
+              : claimStatus === 'validated'
+                ? 'Win Verified!'
+                : claimStatus === 'rejected'
+                  ? 'Claim Rejected'
+                  : 'CLAIM BINGO!'}
+          </button>
         </div>
         
         <div className="bg-black text-white p-4 border-t border-gray-700 sticky bottom-0" style={{ height: '30vw', maxHeight: '400px' }}>

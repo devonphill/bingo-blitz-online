@@ -1,17 +1,20 @@
+
 // src/game-rules/gameRulesRegistry.ts
 
 import { NinetyBallRules } from './ninetyBallRules';
-// Ensure the class name exported from seventyfiveRules.ts matches here
 import { SeventyfiveRules } from './seventyfiveRules';
-// Import the *corrected* GameRules interface
 import type { GameRules } from './types';
 
 // Registry of game rules implementations
-// The type constraint { [key: string]: GameRules } will now use the corrected interface
 const GAME_RULES: { [key: string]: GameRules } = {
   '90-ball': new NinetyBallRules(),
-  '75-ball': new SeventyfiveRules(), // Assumes seventyfiveRules.ts exports 'SeventyfiveRules'
-  // Add more game types as needed
+  '75-ball': new SeventyfiveRules(),
+  // Add game type mappings to existing rules
+  'mainstage': new NinetyBallRules(), // Map mainstage to 90-ball rules
+  'party': new NinetyBallRules(),     // Map party to 90-ball rules
+  'music': new SeventyfiveRules(),    // Map music to 75-ball rules
+  'quiz': new SeventyfiveRules(),     // Map quiz to 75-ball rules
+  'logo': new SeventyfiveRules(),     // Map logo to 75-ball rules
 };
 
 /**
