@@ -5,6 +5,7 @@ import { checkMainstageWinPattern } from '@/utils/mainstageWinLogic';
 import { useMainstageAutoMarking } from '@/hooks/useMainstageAutoMarking';
 
 interface BingoWinProgressProps {
+  tickets?: any[];  // Added tickets prop to the interface
   numbers?: number[];
   layoutMask?: number;
   calledNumbers?: number[];
@@ -17,6 +18,7 @@ interface BingoWinProgressProps {
 }
 
 export default function BingoWinProgress({
+  tickets,  // Added tickets to the destructured props
   numbers,
   layoutMask,
   calledNumbers = [],
@@ -30,7 +32,19 @@ export default function BingoWinProgress({
   // Get the game rules for this game type
   const gameRules = getGameRulesForType(gameType);
   
-  // If we don't have ticket data, just show the claim button if provided
+  // If we have tickets but don't have specific card data,
+  // we'll use the first ticket's data or just show the claim button
+  if ((!numbers || !layoutMask) && tickets && tickets.length > 0) {
+    // Use first ticket for checking win pattern
+    const firstTicket = tickets[0];
+    
+    if (firstTicket && firstTicket.numbers && firstTicket.layoutMask) {
+      numbers = firstTicket.numbers;
+      layoutMask = firstTicket.layoutMask;
+    }
+  }
+  
+  // If we still don't have ticket data, just show the claim button if provided
   if (!numbers || !layoutMask) {
     return (
       <div className="flex items-center justify-between px-4 py-3 bg-white rounded-lg shadow-sm border border-gray-200">
