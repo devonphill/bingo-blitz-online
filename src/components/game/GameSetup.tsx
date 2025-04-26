@@ -81,6 +81,7 @@ export function GameSetup() {
       gameType: selectedGameType,
       activePatternIds,
       prizes,
+      status: 'active', // Make sure the game status is set to active
     });
   };
 

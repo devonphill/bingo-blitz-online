@@ -48,7 +48,11 @@ export function WinPatternSelector({
                   <Input
                     placeholder="Enter prize"
                     value={prizes[pattern.id] || ''}
-                    onChange={(e) => onPrizeChange && onPrizeChange(pattern.id, e.target.value)}
+                    onChange={(e) => {
+                      if (onPrizeChange) {
+                        onPrizeChange(pattern.id, e.target.value);
+                      }
+                    }}
                     className="w-full max-w-xs"
                     aria-label={`Prize for ${pattern.name}`}
                     type="text"
