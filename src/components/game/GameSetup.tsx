@@ -8,11 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 import { GameConfigForm } from '@/components/caller/GameConfigForm';
 import { supabase } from "@/integrations/supabase/client";
 
-interface GameConfig {
-  gameType: GameType;
-  selectedPatterns: string[];
-  prizes: { [patternId: string]: PrizeDetails };
-}
+// Ensure we're using the GameConfig from types to avoid type mismatches
+import { GameConfig } from "@/types";
 
 export function GameSetup() {
   const { currentSession, updateCurrentGameState } = useSessions();
@@ -30,7 +27,7 @@ export function GameSetup() {
       const numberOfGames = currentSession.numberOfGames || 1;
       // Check if games_config is already set in the database
       const existingConfigs = Array.isArray(currentSession.games_config) 
-        ? currentSession.games_config as GameConfig[] 
+        ? currentSession.games_config as unknown as GameConfig[] 
         : [];
       
       console.log("Existing configs from database:", existingConfigs);
@@ -40,11 +37,11 @@ export function GameSetup() {
         console.log("Creating new configs with preset prizes");
         
         // Initialize configs for all games with a preset prize for One Line
-        const newConfigs = Array.from({ length: numberOfGames }, (_, index) => {
+        const newConfigs: GameConfig[] = Array.from({ length: numberOfGames }, (_, index) => {
           // Use existing config if available, otherwise create new one
           return existingConfigs[index] || {
-            gameType: 'mainstage',
-            selectedPatterns: ['oneLine'], // Preset One Line pattern
+            gameType: 'mainstage' as GameType,
+            selectedPatterns: ['oneLine'],
             prizes: {
               'oneLine': {
                 amount: '10.00', 
@@ -62,7 +59,7 @@ export function GameSetup() {
       } else {
         // Use existing configs from the database
         console.log("Using existing configs from database");
-        setGameConfigs(existingConfigs);
+        setGameConfigs(existingConfigs as GameConfig[]);
         
         // If we already have configs in the database, mark setup as done
         setInitialSetupDone(true);
@@ -86,7 +83,7 @@ export function GameSetup() {
           const { error: gamesConfigError } = await supabase
             .from('game_sessions')
             .update({ 
-              games_config: gameConfigs
+              games_config: gameConfigs as any // Cast to any to bypass type checking for database update
             })
             .eq('id', currentSession.id);
             
@@ -215,8 +212,8 @@ export function GameSetup() {
       const { error } = await supabase
         .from('game_sessions')
         .update({ 
-          // Send the raw object without JSON conversions
-          games_config: gameConfigs
+          // Cast to any to bypass TypeScript's type checking since we know the structure is compatible
+          games_config: gameConfigs as any
         })
         .eq('id', currentSession.id);
 
