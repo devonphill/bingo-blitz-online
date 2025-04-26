@@ -12,10 +12,9 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from '@/components/ui/button';
 import { Copy, RefreshCw, UserPlus, Play } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { helpers } from '@/integrations/supabase/customTypes';
 
-// Add missing Json type reference
-type Json = helpers.Json;
+// Define Json type directly instead of importing it
+type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
 
 export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -172,6 +171,51 @@ export default function CallerSession() {
 
   const handlePatternSelect = (pattern: WinPattern) => {
     // setCurrentPattern(pattern);
+    if (!session?.current_game_state) return;
+    
+    // Check if pattern is already selected
+    const selectedPatterns = [...(session.current_game_state.activePatternIds || [])];
+    const patternIndex = selectedPatterns.indexOf(pattern.id);
+    
+    if (patternIndex >= 0) {
+      // Remove pattern if already selected
+      selectedPatterns.splice(patternIndex, 1);
+    } else {
+      // Add pattern if not selected
+      selectedPatterns.push(pattern.id);
+    }
+    
+    // Update game state with new active patterns
+    const updatedGameState = {
+      ...session.current_game_state,
+      activePatternIds: selectedPatterns
+    };
+    
+    setSession(prevSession => prevSession ? {
+      ...prevSession,
+      current_game_state: updatedGameState
+    } : null);
+    
+    // Update database
+    supabase
+      .from('game_sessions')
+      .update({ current_game_state: updatedGameState as unknown as Json })
+      .eq('id', sessionId)
+      .then(({ error }) => {
+        if (error) {
+          console.error("Error updating win patterns:", error);
+          toast({
+            title: "Error updating win patterns",
+            description: "Failed to update the win patterns. Please try again.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: pattern.id + (patternIndex >= 0 ? " removed" : " selected"),
+            description: `Win pattern ${patternIndex >= 0 ? "removed from" : "added to"} the game.`,
+          });
+        }
+      });
   };
 
   const checkForClaims = async () => {
