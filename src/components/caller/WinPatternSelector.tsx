@@ -51,6 +51,8 @@ export function WinPatternSelector({
                     onChange={(e) => onPrizeChange && onPrizeChange(pattern.id, e.target.value)}
                     className="w-full max-w-xs"
                     aria-label={`Prize for ${pattern.name}`}
+                    type="text"
+                    autoComplete="off"
                   />
                 )}
               </div>
