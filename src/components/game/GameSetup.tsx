@@ -16,53 +16,59 @@ export function GameSetup() {
   const [isSaving, setIsSaving] = useState(false);
   const [initialSetupDone, setInitialSetupDone] = useState(false);
 
+  // Debug logging for current session
+  useEffect(() => {
+    if (currentSession) {
+      console.log("Current session loaded:", {
+        id: currentSession.id,
+        name: currentSession.name,
+        numberOfGames: currentSession.numberOfGames,
+        games_config: currentSession.games_config,
+      });
+    }
+  }, [currentSession]);
+
   // Initialize game configs when session loads
   useEffect(() => {
-    console.log("Current session updated:", currentSession);
+    if (!currentSession) return;
     
-    if (currentSession) {
-      const numberOfGames = currentSession.numberOfGames || 1;
-      // Check if games_config is already set in the database
-      const existingConfigs = Array.isArray(currentSession.games_config) 
-        ? currentSession.games_config as unknown as GameConfig[] 
-        : [];
+    const numberOfGames = currentSession.numberOfGames || 1;
+    
+    // Check if games_config already exists and is not empty
+    const existingConfigs = Array.isArray(currentSession.games_config) 
+      ? currentSession.games_config as unknown as GameConfig[] 
+      : [];
+    
+    console.log("Existing configs from database:", existingConfigs);
+    
+    if (existingConfigs.length < numberOfGames) {
+      console.log("Creating new configs with preset prizes");
       
-      console.log("Existing configs from database:", existingConfigs);
-      
-      // Only create new configs if we don't have any or they're incomplete
-      if (existingConfigs.length < numberOfGames) {
-        console.log("Creating new configs with preset prizes");
-        
-        // Initialize configs for all games with a preset prize for One Line
-        const newConfigs: GameConfig[] = Array.from({ length: numberOfGames }, (_, index) => {
-          // Use existing config if available, otherwise create new one
-          const existingConfig = existingConfigs[index];
-          return {
-            gameNumber: index + 1,
-            gameType: (existingConfig?.gameType || currentSession.gameType || 'mainstage') as GameType,
-            selectedPatterns: existingConfig?.selectedPatterns || ['oneLine'],
-            prizes: existingConfig?.prizes || {
-              'oneLine': {
-                amount: '10.00', 
-                isNonCash: false,
-                description: 'One Line Prize'
-              }
+      // Initialize configs for all games with a preset prize for One Line
+      const newConfigs: GameConfig[] = Array.from({ length: numberOfGames }, (_, index) => {
+        // Use existing config if available, otherwise create new one
+        const existingConfig = existingConfigs[index];
+        return {
+          gameNumber: index + 1,
+          gameType: (existingConfig?.gameType || currentSession.gameType || 'mainstage') as GameType,
+          selectedPatterns: existingConfig?.selectedPatterns || ['oneLine'],
+          prizes: existingConfig?.prizes || {
+            'oneLine': {
+              amount: '10.00', 
+              isNonCash: false,
+              description: 'One Line Prize'
             }
-          };
-        });
-        
-        setGameConfigs(newConfigs);
-        
-        // Set the initial setup flag to false when creating new configs
-        setInitialSetupDone(false);
-      } else {
-        // Use existing configs from the database
-        console.log("Using existing configs from database");
-        setGameConfigs(existingConfigs as GameConfig[]);
-        
-        // If we already have configs in the database, mark setup as done
-        setInitialSetupDone(true);
-      }
+          }
+        };
+      });
+      
+      setGameConfigs(newConfigs);
+      setInitialSetupDone(false);
+    } else {
+      // Use existing configs from the database
+      console.log("Using existing configs from database");
+      setGameConfigs(existingConfigs);
+      setInitialSetupDone(true);
     }
   }, [currentSession]);
 
@@ -77,14 +83,15 @@ export function GameSetup() {
           setIsSaving(true);
           
           // First update games_config
-          console.log("Saving to games_config:", gameConfigs);
+          console.log("Saving initial games_config:", gameConfigs);
           
-          const { error: gamesConfigError } = await supabase
+          const { data, error: gamesConfigError } = await supabase
             .from('game_sessions')
             .update({ 
-              games_config: gameConfigs as any // Cast to any to bypass type checking for database update
+              games_config: gameConfigs
             })
-            .eq('id', currentSession.id);
+            .eq('id', currentSession.id)
+            .select('games_config');
             
           if (gamesConfigError) {
             console.error("Error saving games_config:", gamesConfigError);
@@ -95,6 +102,8 @@ export function GameSetup() {
             });
             return;
           }
+          
+          console.log("Initial games_config saved response:", data);
           
           // Then update current_game_state
           console.log("Saving to current_game_state");
@@ -166,16 +175,25 @@ export function GameSetup() {
   const handlePrizeChange = (gameIndex: number, patternId: string, prizeDetails: PrizeDetails) => {
     console.log(`Changing prize for game ${gameIndex + 1}, pattern ${patternId}:`, prizeDetails);
     
-    setGameConfigs(prev => prev.map((config, index) => {
-      if (index !== gameIndex) return config;
-      return {
-        ...config,
-        prizes: {
+    setGameConfigs(prev => {
+      const newConfigs = prev.map((config, index) => {
+        if (index !== gameIndex) return config;
+        
+        // Create a new prizes object to ensure React detects the change
+        const updatedPrizes = {
           ...config.prizes,
-          [patternId]: prizeDetails
-        }
-      };
-    }));
+          [patternId]: {...prizeDetails}
+        };
+        
+        return {
+          ...config,
+          prizes: updatedPrizes
+        };
+      });
+      
+      console.log("Updated game configs after prize change:", newConfigs);
+      return newConfigs;
+    });
   };
 
   const saveGameSettings = async () => {
@@ -195,8 +213,7 @@ export function GameSetup() {
     
     try {
       console.log("Saving game settings:");
-      console.log("Game configs:", gameConfigs);
-      console.log("Current game prizes:", gameConfigs[0].prizes);
+      console.log("Game configs to save:", gameConfigs);
       
       // First update the current game state with prizes
       const updateResult = await updateCurrentGameState({
@@ -215,12 +232,17 @@ export function GameSetup() {
       const { data, error } = await supabase
         .from('game_sessions')
         .update({ 
-          // Cast to any to bypass TypeScript's type checking since we know the structure is compatible
-          games_config: gameConfigs as any
+          games_config: gameConfigs
         })
-        .eq('id', currentSession.id);
+        .eq('id', currentSession.id)
+        .select('games_config');
 
-      if (error) throw error;
+      if (error) {
+        console.error("Error saving games_config:", error);
+        throw error;
+      }
+      
+      console.log("Games config saved response:", data);
       
       toast({
         title: "Success",

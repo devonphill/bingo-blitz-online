@@ -28,7 +28,10 @@ export function WinPatternSelector({
   const handlePrizeChange = (patternId: string, field: keyof PrizeDetails, value: string | boolean) => {
     if (!onPrizeChange) return;
     
+    // Always clone the current prize object or create a new one
     const currentPrize = prizes[patternId] || { amount: '', isNonCash: false, description: '' };
+    
+    // Create a completely new object to ensure React detects the change
     const updatedPrize = {
       ...currentPrize,
       [field]: value

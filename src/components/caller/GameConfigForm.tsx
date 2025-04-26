@@ -27,6 +27,8 @@ export function GameConfigForm({
   prizes,
   onPrizeChange,
 }: GameConfigFormProps) {
+  console.log(`GameConfigForm for Game ${gameNumber} - Prizes:`, prizes);
+  
   return (
     <Card className="mb-6">
       <CardHeader>
