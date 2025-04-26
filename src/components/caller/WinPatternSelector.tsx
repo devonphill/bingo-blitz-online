@@ -3,6 +3,8 @@ import React from 'react';
 import { WinPattern } from '@/types/winPattern';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 interface WinPatternSelectorProps {
   patterns: WinPattern[];
@@ -19,10 +21,12 @@ export function WinPatternSelector({
   prizes = {},
   onPrizeChange
 }: WinPatternSelectorProps) {
-  // Create a handler for input changes
-  const handlePrizeChange = (patternId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  
+  // This function directly handles the input change event
+  const handlePrizeInputChange = (patternId: string, value: string) => {
+    console.log(`Prize change attempt for ${patternId}: "${value}"`);
     if (onPrizeChange) {
-      onPrizeChange(patternId, e.target.value);
+      onPrizeChange(patternId, value);
     }
   };
 
@@ -51,14 +55,20 @@ export function WinPatternSelector({
                 </Button>
                 
                 {selectedPatterns.includes(pattern.id) && (
-                  <input
-                    type="text"
-                    placeholder="Enter prize"
-                    value={prizes[pattern.id] || ''}
-                    onChange={(e) => handlePrizeChange(pattern.id, e)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 max-w-xs"
-                    aria-label={`Prize for ${pattern.name}`}
-                  />
+                  <div className="flex-grow max-w-xs">
+                    <Label htmlFor={`prize-${pattern.id}`} className="sr-only">
+                      Prize for {pattern.name}
+                    </Label>
+                    <Input
+                      id={`prize-${pattern.id}`}
+                      type="text"
+                      placeholder="Enter prize"
+                      value={prizes[pattern.id] || ''}
+                      onChange={(e) => handlePrizeInputChange(pattern.id, e.target.value)}
+                      className="w-full"
+                      aria-label={`Prize for ${pattern.name}`}
+                    />
+                  </div>
                 )}
               </div>
             </div>

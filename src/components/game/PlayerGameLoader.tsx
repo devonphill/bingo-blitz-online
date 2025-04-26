@@ -50,7 +50,6 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
     );
   }
 
-  // If we get here, the session exists but the game might not be ready
   // Debug the actual values to help trace the issue
   console.log("Current session state:", {
     lifecycle: currentSession.lifecycle_state,
