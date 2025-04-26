@@ -3,11 +3,10 @@ import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { useSessions } from "@/contexts/useSessions";
 import { GameType } from "@/types";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Music, Image, Mic, PartyPopper, Star } from "lucide-react";
 import { WinPatternSelector } from "@/components/caller/WinPatternSelector";
+import { WinPattern } from '@/types/winPattern';
 
 interface WinPatternOption {
   id: string;
@@ -54,11 +53,11 @@ export function GameSetup() {
     { type: 'logo', label: 'Logo Bingo', icon: Image },
   ] as const;
 
-  const toggleWinPattern = (patternId: string) => {
+  const toggleWinPattern = (pattern: WinPattern) => {
     setWinPatterns(prev => 
-      prev.map(pattern => ({
-        ...pattern,
-        active: pattern.id === patternId ? !pattern.active : pattern.active
+      prev.map(wp => ({
+        ...wp,
+        active: wp.id === pattern.id ? !wp.active : wp.active
       }))
     );
   };
@@ -116,7 +115,7 @@ export function GameSetup() {
               gameType: selectedGameType
             }))}
             selectedPatterns={winPatterns.filter(wp => wp.active).map(wp => wp.id)}
-            onPatternSelect={(pattern) => toggleWinPattern(pattern.id)}
+            onPatternSelect={toggleWinPattern}
             prizes={prizes}
             onPrizeChange={handlePrizeChange}
           />
