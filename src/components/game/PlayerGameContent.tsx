@@ -1,7 +1,8 @@
 
 import React from "react";
-import PlayerGameLayout from "./PlayerGameLayout";
+import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
+import BingoWinProgress from "./BingoWinProgress";
 
 interface PlayerGameContentProps {
   tickets: any[];
@@ -43,32 +44,38 @@ export default function PlayerGameContent({
   const currentWinPattern = activeWinPatterns.length > 0 ? activeWinPatterns[0] : null;
 
   return (
-    <PlayerGameLayout
-      tickets={tickets}
-      calledNumbers={calledNumbers}
-      currentNumber={currentNumber}
-      currentSession={currentSession}
-      autoMarking={autoMarking}
-      setAutoMarking={setAutoMarking}
-      playerCode={playerCode}
-      winPrizes={winPrizes}
-      activeWinPatterns={activeWinPatterns}
-      currentWinPattern={currentWinPattern}
-      onClaimBingo={onClaimBingo}
-      errorMessage={errorMessage}
-      isLoading={isLoading}
-      isClaiming={isClaiming}
-      claimStatus={claimStatus}
-      gameType={gameType}
-    >
-      <BingoCardGrid
-        tickets={tickets}
-        calledNumbers={calledNumbers}
+    <div className="flex flex-col min-h-screen">
+      <GameHeader
+        sessionName={currentSession?.name || "Bingo Game"}
+        accessCode={playerCode}
+        activeWinPattern={currentWinPattern}
         autoMarking={autoMarking}
-        activeWinPatterns={activeWinPatterns}
-        currentWinPattern={currentWinPattern}
-        gameType={gameType}
+        setAutoMarking={setAutoMarking}
       />
-    </PlayerGameLayout>
+      
+      <div className="flex-1 p-4">
+        <div className="mb-4">
+          <BingoWinProgress
+            tickets={tickets}
+            calledNumbers={calledNumbers}
+            activeWinPatterns={activeWinPatterns}
+            currentWinPattern={currentWinPattern}
+            handleClaimBingo={onClaimBingo}
+            isClaiming={isClaiming}
+            claimStatus={claimStatus}
+            gameType={gameType}
+          />
+        </div>
+        
+        <BingoCardGrid
+          tickets={tickets}
+          calledNumbers={calledNumbers}
+          autoMarking={autoMarking}
+          activeWinPatterns={activeWinPatterns}
+          currentWinPattern={currentWinPattern}
+          gameType={gameType}
+        />
+      </div>
+    </div>
   );
 }
