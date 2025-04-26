@@ -4,7 +4,7 @@ import { WinPattern } from '@/types/winPattern';
 import { WinPatternStatusDisplay } from '@/components/game/WinPatternStatusDisplay';
 import { CallControls } from '@/components/caller/CallControls';
 import BingoCard from '@/components/caller/BingoCard';
-import { GameType, PrizeDetails } from '@/types';
+import { GameType, PrizeDetails, GameConfig } from '@/types';
 
 interface LiveGameViewProps {
   gameType: GameType;
@@ -18,6 +18,7 @@ interface LiveGameViewProps {
   pendingClaims: number;
   onViewClaims: () => void;
   prizes?: { [patternId: string]: PrizeDetails };
+  gameConfigs: GameConfig[];
 }
 
 export function LiveGameView({
@@ -31,11 +32,19 @@ export function LiveGameView({
   calledNumbers,
   pendingClaims,
   onViewClaims,
-  prizes = {}
+  prizes = {},
+  gameConfigs = []
 }: LiveGameViewProps) {
   const numberRange = gameType === 'mainstage' ? 90 : 75;
   
   console.log("LiveGameView - prizes:", prizes);
+  console.log("LiveGameView - gameConfigs:", gameConfigs);
+
+  // Use the first game's configurations if available
+  const currentGameConfig = gameConfigs.length > 0 ? gameConfigs[0] : null;
+  const activeGameType = currentGameConfig?.gameType || gameType;
+  const activePatterns = currentGameConfig?.selectedPatterns || selectedPatterns;
+  const activePrizes = currentGameConfig?.prizes || prizes;
 
   return (
     <div className="space-y-6 p-6">
@@ -43,7 +52,7 @@ export function LiveGameView({
         patterns={winPatterns.map(p => ({
           id: p.id,
           name: p.name,
-          active: selectedPatterns.includes(p.id)
+          active: activePatterns.includes(p.id)
         }))}
         currentActive={currentWinPattern}
         gameIsLive={true}
@@ -51,7 +60,7 @@ export function LiveGameView({
       
       <div className="grid grid-cols-2 gap-6">
         <CallControls
-          gameType={gameType}
+          gameType={activeGameType}
           onCallNumber={onCallNumber}
           onRecall={onRecall}
           lastCalledNumber={lastCalledNumber}

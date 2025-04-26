@@ -60,12 +60,24 @@ export default function CallerSession() {
       
       // Parse game configs if they exist
       let configs: GameConfig[] = [];
-      if (data.games_config && Array.isArray(data.games_config) && data.games_config.length > 0) {
-        configs = data.games_config as GameConfig[];
+      if (data.games_config && Array.isArray(data.games_config)) {
+        // Fix: Cast the JSON data to the GameConfig[] type after validation
+        const jsonConfigs = data.games_config as Json[];
+        
+        // Validate and map each config to ensure correct typing
+        configs = jsonConfigs.map((config: any): GameConfig => ({
+          gameNumber: config.gameNumber || 1,
+          gameType: (config.gameType as GameType) || 'mainstage',
+          selectedPatterns: Array.isArray(config.selectedPatterns) ? config.selectedPatterns : ['oneLine'],
+          prizes: config.prizes || {}
+        }));
+        
         console.log("Game configs loaded from database:", configs);
-      } else {
-        // Create default configs based on number_of_games
-        const numberOfGames = data.number_of_games || 1;
+      } 
+      
+      // If no configs or incorrect number of configs, create new ones based on numberOfGames
+      const numberOfGames = data.number_of_games || 1;
+      if (configs.length !== numberOfGames) {
         console.log(`Creating ${numberOfGames} default game configs`);
         
         configs = Array.from({ length: numberOfGames }, (_, index) => ({
@@ -530,6 +542,9 @@ export default function CallerSession() {
           isGoingLive={isGoingLive}
           prizes={prizes}
           onPrizeChange={handlePrizeChange}
+          gameConfigs={gameConfigs}
+          numberOfGames={session.numberOfGames || 1}
+          setGameConfigs={setGameConfigs}
         />
       ) : session.lifecycle_state === 'live' ? (
         <LiveGameView
@@ -544,6 +559,7 @@ export default function CallerSession() {
           pendingClaims={pendingClaims.length}
           onViewClaims={checkForClaims}
           prizes={prizes}
+          gameConfigs={gameConfigs}
         />
       ) : (
         <div className="flex items-center justify-center h-screen">
