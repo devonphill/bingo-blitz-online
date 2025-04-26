@@ -20,14 +20,16 @@ export function GameSetup() {
   
   const [gameConfigs, setGameConfigs] = useState<GameConfig[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [initialSetupDone, setInitialSetupDone] = useState(false);
 
+  // Initialize game configs when session loads
   useEffect(() => {
     if (currentSession) {
       const numberOfGames = currentSession.numberOfGames || 1;
       const currentConfigs = currentSession.games_config as GameConfig[] || [];
       
       // Initialize configs for all games with a preset prize for One Line
-      setGameConfigs(Array.from({ length: numberOfGames }, (_, index) => ({
+      const newConfigs = Array.from({ length: numberOfGames }, (_, index) => ({
         gameType: currentConfigs[index]?.gameType || 'mainstage',
         selectedPatterns: ['oneLine'], // Preset One Line pattern
         prizes: {
@@ -37,9 +39,53 @@ export function GameSetup() {
             description: 'One Line Prize'
           }
         }
-      })));
+      }));
+      
+      setGameConfigs(newConfigs);
+      
+      // Set the initial setup flag to false initially
+      setInitialSetupDone(false);
     }
   }, [currentSession]);
+
+  // Effect to handle the initial save of preset values to the database
+  useEffect(() => {
+    const saveInitialConfig = async () => {
+      // Only run this once when component loads and we have configs and currentSession
+      if (!initialSetupDone && gameConfigs.length > 0 && currentSession) {
+        try {
+          // Save the initial default prize config to current_game_state
+          await updateCurrentGameState({
+            gameType: gameConfigs[0].gameType,
+            activePatternIds: gameConfigs[0].selectedPatterns,
+            prizes: gameConfigs[0].prizes,
+            status: 'pending',
+          });
+          
+          // Save the initial config to games_config as well
+          const { error } = await supabase
+            .from('game_sessions')
+            .update({ 
+              games_config: JSON.parse(JSON.stringify(gameConfigs))
+            })
+            .eq('id', currentSession.id);
+            
+          if (error) {
+            console.error("Error saving initial game config:", error);
+          } else {
+            console.log("Initial game config saved successfully");
+          }
+          
+          // Mark initial setup as done
+          setInitialSetupDone(true);
+        } catch (error) {
+          console.error("Error during initial setup:", error);
+        }
+      }
+    };
+    
+    saveInitialConfig();
+  }, [gameConfigs, currentSession, updateCurrentGameState, initialSetupDone]);
 
   const handleGameTypeChange = (gameIndex: number, newType: GameType) => {
     setGameConfigs(prev => prev.map((config, index) => 
