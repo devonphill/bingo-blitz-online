@@ -51,7 +51,8 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
   }
 
   // If we get here, the session exists but the game might not be ready
-  if (currentSession.lifecycle_state !== 'live' || !currentSession.current_game_state?.status === 'active') {
+  // Fix the type comparison error - the status is "active" (string) not true (boolean)
+  if (currentSession.lifecycle_state !== 'live' || currentSession.current_game_state?.status !== 'active') {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
