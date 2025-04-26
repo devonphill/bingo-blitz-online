@@ -24,27 +24,49 @@ export function GameSetup() {
 
   // Initialize game configs when session loads
   useEffect(() => {
+    console.log("Current session updated:", currentSession);
+    
     if (currentSession) {
       const numberOfGames = currentSession.numberOfGames || 1;
-      const currentConfigs = currentSession.games_config as GameConfig[] || [];
+      // Check if games_config is already set in the database
+      const existingConfigs = Array.isArray(currentSession.games_config) 
+        ? currentSession.games_config as GameConfig[] 
+        : [];
       
-      // Initialize configs for all games with a preset prize for One Line
-      const newConfigs = Array.from({ length: numberOfGames }, (_, index) => ({
-        gameType: currentConfigs[index]?.gameType || 'mainstage',
-        selectedPatterns: ['oneLine'], // Preset One Line pattern
-        prizes: {
-          'oneLine': {
-            amount: '10.00', 
-            isNonCash: false,
-            description: 'One Line Prize'
-          }
-        }
-      }));
+      console.log("Existing configs from database:", existingConfigs);
       
-      setGameConfigs(newConfigs);
-      
-      // Set the initial setup flag to false initially
-      setInitialSetupDone(false);
+      // Only create new configs if we don't have any or they're incomplete
+      if (existingConfigs.length < numberOfGames) {
+        console.log("Creating new configs with preset prizes");
+        
+        // Initialize configs for all games with a preset prize for One Line
+        const newConfigs = Array.from({ length: numberOfGames }, (_, index) => {
+          // Use existing config if available, otherwise create new one
+          return existingConfigs[index] || {
+            gameType: 'mainstage',
+            selectedPatterns: ['oneLine'], // Preset One Line pattern
+            prizes: {
+              'oneLine': {
+                amount: '10.00', 
+                isNonCash: false,
+                description: 'One Line Prize'
+              }
+            }
+          };
+        });
+        
+        setGameConfigs(newConfigs);
+        
+        // Set the initial setup flag to false when creating new configs
+        setInitialSetupDone(false);
+      } else {
+        // Use existing configs from the database
+        console.log("Using existing configs from database");
+        setGameConfigs(existingConfigs);
+        
+        // If we already have configs in the database, mark setup as done
+        setInitialSetupDone(true);
+      }
     }
   }, [currentSession]);
 
@@ -53,39 +75,73 @@ export function GameSetup() {
     const saveInitialConfig = async () => {
       // Only run this once when component loads and we have configs and currentSession
       if (!initialSetupDone && gameConfigs.length > 0 && currentSession) {
+        console.log("Attempting to save initial configuration");
+        
         try {
-          // Save the initial default prize config to current_game_state
-          await updateCurrentGameState({
+          setIsSaving(true);
+          
+          // First update games_config
+          console.log("Saving to games_config:", gameConfigs);
+          
+          const { error: gamesConfigError } = await supabase
+            .from('game_sessions')
+            .update({ 
+              games_config: gameConfigs
+            })
+            .eq('id', currentSession.id);
+            
+          if (gamesConfigError) {
+            console.error("Error saving games_config:", gamesConfigError);
+            toast({
+              title: "Error",
+              description: "Failed to save game configuration.",
+              variant: "destructive"
+            });
+            return;
+          }
+          
+          // Then update current_game_state
+          console.log("Saving to current_game_state");
+          const success = await updateCurrentGameState({
             gameType: gameConfigs[0].gameType,
             activePatternIds: gameConfigs[0].selectedPatterns,
             prizes: gameConfigs[0].prizes,
             status: 'pending',
           });
           
-          // Save the initial config to games_config as well
-          const { error } = await supabase
-            .from('game_sessions')
-            .update({ 
-              games_config: JSON.parse(JSON.stringify(gameConfigs))
-            })
-            .eq('id', currentSession.id);
-            
-          if (error) {
-            console.error("Error saving initial game config:", error);
-          } else {
-            console.log("Initial game config saved successfully");
+          if (!success) {
+            console.error("Error updating current game state");
+            toast({
+              title: "Error",
+              description: "Failed to update current game state.",
+              variant: "destructive"
+            });
+            return;
           }
+            
+          console.log("Initial game config saved successfully");
+          toast({
+            title: "Success",
+            description: "Initial game setup completed.",
+          });
           
           // Mark initial setup as done
           setInitialSetupDone(true);
         } catch (error) {
-          console.error("Error during initial setup:", error);
+          console.error("Exception during initial setup:", error);
+          toast({
+            title: "Error",
+            description: "An unexpected error occurred during setup.",
+            variant: "destructive"
+          });
+        } finally {
+          setIsSaving(false);
         }
       }
     };
     
     saveInitialConfig();
-  }, [gameConfigs, currentSession, updateCurrentGameState, initialSetupDone]);
+  }, [gameConfigs, currentSession, updateCurrentGameState, initialSetupDone, toast]);
 
   const handleGameTypeChange = (gameIndex: number, newType: GameType) => {
     setGameConfigs(prev => prev.map((config, index) => 
@@ -139,22 +195,28 @@ export function GameSetup() {
     setIsSaving(true);
     
     try {
-      // Important: Make sure we pass the prizes when updating the current game state
-      await updateCurrentGameState({
-        gameType: gameConfigs[0].gameType, // Current game type
+      console.log("Saving game settings:");
+      console.log("Game configs:", gameConfigs);
+      console.log("Current game prizes:", gameConfigs[0].prizes);
+      
+      // First update the current game state with prizes
+      const updateResult = await updateCurrentGameState({
+        gameType: gameConfigs[0].gameType,
         activePatternIds: gameConfigs[0].selectedPatterns,
-        prizes: gameConfigs[0].prizes, // Explicitly include prizes here
+        prizes: gameConfigs[0].prizes,
         status: 'pending',
       });
 
-      // Save all game configs to the games_config column
-      // Convert GameConfig[] to Json type by using JSON.stringify and JSON.parse
+      if (!updateResult) {
+        throw new Error("Failed to update current game state");
+      }
+
+      // Then update all game configs
       const { error } = await supabase
         .from('game_sessions')
         .update({ 
-          // Convert the gameConfigs array to a plain object representation
-          // that supabase can handle as JSON
-          games_config: JSON.parse(JSON.stringify(gameConfigs))
+          // Send the raw object without JSON conversions
+          games_config: gameConfigs
         })
         .eq('id', currentSession.id);
 
@@ -164,6 +226,19 @@ export function GameSetup() {
         title: "Success",
         description: "Game settings saved successfully.",
       });
+      
+      // Verify that data was saved correctly
+      const { data: verifyData, error: verifyError } = await supabase
+        .from('game_sessions')
+        .select('games_config, current_game_state')
+        .eq('id', currentSession.id)
+        .single();
+        
+      if (verifyError) {
+        console.error("Error verifying saved data:", verifyError);
+      } else {
+        console.log("Verified saved data:", verifyData);
+      }
     } catch (error) {
       console.error("Error saving game settings:", error);
       toast({
