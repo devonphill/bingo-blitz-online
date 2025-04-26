@@ -29,6 +29,12 @@ export function usePlayerGame(playerCode?: string | null) {
   const winPrizes: { [key: string]: PrizeDetails } = currentGameState?.prizes ?? {};
   const gameType: GameType | null = currentGameState?.gameType ?? currentSession?.gameType ?? null;
 
+  // Helper function to find a session by ID from the sessions array
+  const findSessionById = useCallback((id: string | null) => {
+    if (!id || !sessions || sessions.length === 0) return null;
+    return sessions.find(s => s.id === id) || null;
+  }, [sessions]);
+
   // Fetch initial player data
   useEffect(() => {
     if (!playerCode) {
@@ -83,14 +89,18 @@ export function usePlayerGame(playerCode?: string | null) {
         await fetchSessions();
 
         // Find the session in the sessions array
-        if (sessions && sessions.length > 0) {
-          const matchingSession = sessions.find(s => s.id === playerData.session_id);
-          if (matchingSession) {
-            console.log("Found matching session:", matchingSession);
-            setCurrentSession(matchingSession);
-          } else {
-            console.log("No matching session found in sessions array");
+        const matchingSession = findSessionById(playerData.session_id);
+        if (matchingSession) {
+          console.log("Found matching session:", matchingSession);
+          setCurrentSession(matchingSession);
+          
+          // Set called items and last called item if available
+          if (matchingSession.current_game_state) {
+            setCalledItems(matchingSession.current_game_state.calledItems || []);
+            setLastCalledItem(matchingSession.current_game_state.lastCalledItem ?? null);
           }
+        } else {
+          console.log("No matching session found in sessions array");
         }
 
         const { data: ticketData, error: ticketError } = await supabase
@@ -107,13 +117,8 @@ export function usePlayerGame(playerCode?: string | null) {
         }
 
         if (ticketData && ticketData.length > 0) {
-          const transformedTickets = ticketData.map(ticket => ({
-            ...ticket,
-            layoutMask: ticket.layout_mask
-          }));
-          
-          setTickets(transformedTickets);
-          console.log(`Found ${transformedTickets.length} tickets for player`);
+          console.log(`Found ${ticketData.length} tickets for player`);
+          setTickets(ticketData);
         } else {
           console.log("No tickets found for player");
         }
@@ -150,15 +155,15 @@ export function usePlayerGame(playerCode?: string | null) {
     return () => {
       isMounted = false;
     };
-  }, [playerCode, fetchSessions, sessions]);
+  }, [playerCode, fetchSessions, findSessionById]);
 
   // Update session from sessions array whenever it changes
   useEffect(() => {
-    if (!sessionId || !sessions || sessions.length === 0) return;
+    if (!sessionId) return;
     
-    const matchingSession = sessions.find(s => s.id === sessionId);
+    const matchingSession = findSessionById(sessionId);
     if (matchingSession) {
-      console.log("Found matching session in sessions array:", matchingSession.id, matchingSession.name);
+      console.log("Found updated matching session in sessions array:", matchingSession.id, matchingSession.name);
       setCurrentSession(matchingSession);
       
       if (matchingSession.current_game_state) {
@@ -166,12 +171,14 @@ export function usePlayerGame(playerCode?: string | null) {
         setLastCalledItem(matchingSession.current_game_state.lastCalledItem ?? null);
       }
     }
-  }, [sessions, sessionId]);
+  }, [sessions, sessionId, findSessionById]);
 
   // Listen for session changes with direct subscription
   useEffect(() => {
     if (!sessionId) return;
 
+    console.log(`Setting up real-time subscription for session ${sessionId}`);
+    
     const channel = supabase
       .channel(`game-session-changes-${sessionId}`)
       .on(
@@ -186,6 +193,7 @@ export function usePlayerGame(playerCode?: string | null) {
           console.log("Game session update received:", payload);
           if (payload.new) {
             const updatedSession = payload.new as any;
+            console.log("Updated session from real-time:", updatedSession);
             setCurrentSession(updatedSession);
             
             if (updatedSession.current_game_state) {
@@ -200,6 +208,7 @@ export function usePlayerGame(playerCode?: string | null) {
       });
 
     return () => {
+      console.log(`Removing real-time subscription for session ${sessionId}`);
       supabase.removeChannel(channel);
     };
   }, [sessionId]);
@@ -208,6 +217,8 @@ export function usePlayerGame(playerCode?: string | null) {
   useEffect(() => {
     if (!playerId) return;
 
+    console.log(`Setting up claim results subscription for player ${playerId}`);
+    
     const gameUpdatesChannel = supabase
       .channel(`game-updates-for-player-${playerId}`)
       .on(
@@ -247,6 +258,7 @@ export function usePlayerGame(playerCode?: string | null) {
       });
 
     return () => {
+      console.log(`Removing claim results subscription for player ${playerId}`);
       supabase.removeChannel(gameUpdatesChannel)
         .then(() => console.log(`Player ${playerId} unsubscribed from claim results`))
         .catch(err => console.error("Error removing player channel:", err));

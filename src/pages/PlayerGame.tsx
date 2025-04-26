@@ -89,6 +89,7 @@ export default function PlayerGame() {
               handleClaimBingo={handleClaimBingo}
               isClaiming={isClaiming}
               claimStatus={claimStatus}
+              gameType={gameType || "mainstage"}
             />
           </div>
         )}

@@ -2,7 +2,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { GameSession } from "@/types";
-import { AlertCircle, RefreshCw } from "lucide-react";
+import { AlertCircle, RefreshCw, Info } from "lucide-react";
 
 interface Props {
   isLoading: boolean;
@@ -16,9 +16,10 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin h-8 w-8 border-4 border-bingo-primary border-t-transparent rounded-full mx-auto mb-4"></div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Loading game...</h2>
+        <div className="bg-white shadow-lg rounded-lg p-8 max-w-md w-full text-center">
+          <div className="animate-spin h-12 w-12 border-4 border-bingo-primary border-t-transparent rounded-full mx-auto mb-6"></div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Loading game...</h2>
+          <p className="text-gray-500 mb-4">Please wait while we get everything ready</p>
         </div>
       </div>
     );
@@ -87,6 +88,9 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="bg-white shadow-lg rounded-lg p-6 max-w-md w-full">
+          <div className="flex items-center justify-center mb-4 text-amber-500">
+            <Info size={40} />
+          </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-4 text-center">Waiting for game to start</h2>
           <p className="text-gray-600 mb-4 text-center">
             {!isGameLive 
@@ -98,15 +102,15 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
                   : "The game is being set up..."}
           </p>
           <div className="space-y-4">
-            <div className="bg-gray-50 p-3 rounded-md">
-              <p className="text-sm text-gray-500 mb-1">
-                Session: {currentSession.name || 'Unknown'}
+            <div className="bg-gray-50 p-4 rounded-md">
+              <p className="text-sm text-gray-500 mb-2">
+                <span className="font-semibold">Session:</span> {currentSession.name || 'Unknown'}
               </p>
-              <p className="text-sm text-gray-500 mb-1">
-                Lifecycle state: {currentSession.lifecycle_state || 'unknown'}
+              <p className="text-sm text-gray-500 mb-2">
+                <span className="font-semibold">Lifecycle state:</span> {currentSession.lifecycle_state || 'unknown'}
               </p> 
               <p className="text-sm text-gray-500">
-                Status: {currentSession.status || 'unknown'}
+                <span className="font-semibold">Status:</span> {currentSession.status || 'unknown'}
               </p>
             </div>
             <Button onClick={() => window.location.reload()} className="w-full flex items-center justify-center gap-2">
