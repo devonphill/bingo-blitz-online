@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -5,6 +6,7 @@ import { usePlayerGame } from '@/hooks/usePlayerGame';
 import { Button } from '@/components/ui/button';
 import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import BingoWinProgress from '@/components/game/BingoWinProgress';
+import { GameType } from '@/types';
 
 export default function PlayerGame() {
   const { playerCode } = useParams<{ playerCode: string }>();
@@ -117,7 +119,7 @@ export default function PlayerGame() {
 
         <div className="mt-10">
           <GameTypePlayspace
-            gameType={gameType || 'mainstage'}
+            gameType={(gameType as GameType) || 'mainstage'}
             tickets={tickets}
             calledNumbers={calledItems}
             autoMarking={autoMarking}
