@@ -6,6 +6,7 @@ import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
 import { useToast } from "@/hooks/use-toast";
 import { GameSetupView } from '@/components/caller/GameSetupView';
 import { LiveGameView } from '@/components/caller/LiveGameView';
+import { ClaimVerificationSheet } from '@/components/caller/ClaimVerificationSheet';
 import { useSessionLifecycle } from '@/hooks/useSessionLifecycle';
 
 type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
@@ -23,6 +24,8 @@ export default function CallerSession() {
   const [gameConfigs, setGameConfigs] = useState<GameConfig[]>([]);
   const [currentGameIndex, setCurrentGameIndex] = useState(0);
   const [isGoingLive, setIsGoingLive] = useState(false);
+  const [showClaimSheet, setShowClaimSheet] = useState(false);
+  const [currentClaim, setCurrentClaim] = useState<any>(null);
   const { toast } = useToast();
   const { setSessionLifecycle } = useSessionLifecycle(sessionId);
 
@@ -470,7 +473,7 @@ export default function CallerSession() {
     try {
       const { data: claims, error } = await supabase
         .from('bingo_claims')
-        .select('*')
+        .select('id, player_id, claimed_at, players(nickname)')
         .eq('session_id', sessionId)
         .eq('status', 'pending');
 
@@ -483,11 +486,33 @@ export default function CallerSession() {
         });
       } else {
         setPendingClaims(claims || []);
+        
         if (claims && claims.length > 0) {
-          toast({
-            title: "New claims!",
-            description: `There are ${claims.length} new claims to review.`,
-          });
+          const firstClaim = claims[0];
+          
+          const { data: ticketData, error: ticketError } = await supabase
+            .from('assigned_tickets')
+            .select('*')
+            .eq('player_id', firstClaim.player_id)
+            .eq('session_id', sessionId);
+            
+          if (ticketError) {
+            console.error("Error fetching ticket data:", ticketError);
+          } else {
+            setCurrentClaim({
+              playerName: firstClaim.players?.nickname || 'Unknown',
+              playerId: firstClaim.player_id,
+              tickets: ticketData || [],
+              claimId: firstClaim.id
+            });
+            
+            setShowClaimSheet(true);
+            
+            toast({
+              title: "Claim ready for verification",
+              description: `${firstClaim.players?.nickname || 'A player'} has claimed bingo!`,
+            });
+          }
         } else {
           toast({
             title: "No claims",
@@ -499,6 +524,132 @@ export default function CallerSession() {
       console.error("Exception during claims check:", err);
     }
   };
+
+  const handleValidClaim = async () => {
+    if (!currentClaim || !sessionId) return;
+    
+    try {
+      const { error } = await supabase
+        .from('bingo_claims')
+        .update({ status: 'validated' })
+        .eq('id', currentClaim.claimId);
+        
+      if (error) {
+        console.error("Error validating claim:", error);
+        toast({
+          title: "Error",
+          description: "Failed to validate claim. Please try again.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      await supabase
+        .channel('game-updates')
+        .send({
+          type: 'broadcast',
+          event: 'claim-result',
+          payload: { 
+            playerId: currentClaim.playerId,
+            result: 'valid'
+          }
+        });
+      
+      toast({
+        title: "Claim Validated",
+        description: `${currentClaim.playerName}'s claim has been validated.`
+      });
+      
+      setShowClaimSheet(false);
+      setCurrentClaim(null);
+      
+      checkForClaims();
+    } catch (err) {
+      console.error("Error during claim validation:", err);
+    }
+  };
+
+  const handleRejectClaim = async () => {
+    if (!currentClaim || !sessionId) return;
+    
+    try {
+      const { error } = await supabase
+        .from('bingo_claims')
+        .update({ status: 'rejected' })
+        .eq('id', currentClaim.claimId);
+        
+      if (error) {
+        console.error("Error rejecting claim:", error);
+        toast({
+          title: "Error",
+          description: "Failed to reject claim. Please try again.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      await supabase
+        .channel('game-updates')
+        .send({
+          type: 'broadcast',
+          event: 'claim-result',
+          payload: { 
+            playerId: currentClaim.playerId,
+            result: 'rejected'
+          }
+        });
+      
+      toast({
+        title: "Claim Rejected",
+        description: `${currentClaim.playerName}'s claim has been rejected.`
+      });
+      
+      setShowClaimSheet(false);
+      setCurrentClaim(null);
+      
+      checkForClaims();
+    } catch (err) {
+      console.error("Error during claim rejection:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    console.log("Setting up real-time listener for bingo claims on session", sessionId);
+    
+    const channel = supabase
+      .channel('caller-claims')
+      .on(
+        'broadcast',
+        { event: 'bingo-claim' },
+        async (payload) => {
+          console.log("Received bingo claim broadcast:", payload);
+          
+          if (payload.payload && payload.payload.playerId && payload.payload.playerName) {
+            const claimData = payload.payload;
+            
+            toast({
+              title: "New Bingo Claim!",
+              description: `${claimData.playerName} has claimed bingo! Click 'View Claims' to verify.`,
+              variant: "default",
+            });
+            
+            setPendingClaims(prev => [...prev, { 
+              id: claimData.claimId,
+              player_id: claimData.playerId,
+              players: { nickname: claimData.playerName }
+            }]);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log("Removing channel for bingo claims");
+      supabase.removeChannel(channel);
+    };
+  }, [sessionId, toast]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -522,21 +673,38 @@ export default function CallerSession() {
           setGameConfigs={setGameConfigs}
         />
       ) : session.lifecycle_state === 'live' ? (
-        <LiveGameView
-          gameType={currentGameType}
-          winPatterns={winPatterns}
-          selectedPatterns={selectedPatterns}
-          currentWinPattern={selectedPatterns[0] || null}
-          onCallNumber={callNumber}
-          onRecall={() => setCurrentNumber(calledNumbers[calledNumbers.length - 1])}
-          lastCalledNumber={currentNumber}
-          calledNumbers={calledNumbers}
-          pendingClaims={pendingClaims.length}
-          onViewClaims={checkForClaims}
-          prizes={prizes}
-          gameConfigs={gameConfigs}
-          sessionStatus={session.status} // Pass the session status
-        />
+        <>
+          <LiveGameView
+            gameType={currentGameType}
+            winPatterns={winPatterns}
+            selectedPatterns={selectedPatterns}
+            currentWinPattern={selectedPatterns[0] || null}
+            onCallNumber={callNumber}
+            onRecall={() => setCurrentNumber(calledNumbers[calledNumbers.length - 1])}
+            lastCalledNumber={currentNumber}
+            calledNumbers={calledNumbers}
+            pendingClaims={pendingClaims.length}
+            onViewClaims={checkForClaims}
+            prizes={prizes}
+            gameConfigs={gameConfigs}
+            sessionStatus={session.status}
+          />
+          
+          {currentClaim && (
+            <ClaimVerificationSheet
+              isOpen={showClaimSheet}
+              onClose={() => setShowClaimSheet(false)}
+              playerName={currentClaim.playerName}
+              tickets={currentClaim.tickets || []}
+              calledNumbers={calledNumbers}
+              currentNumber={currentNumber}
+              onValidClaim={handleValidClaim}
+              onFalseClaim={handleRejectClaim}
+              currentWinPattern={selectedPatterns[0] || null}
+              gameType={currentGameType}
+            />
+          )}
+        </>
       ) : (
         <div className="flex items-center justify-center h-screen">
           <p className="text-lg text-gray-500">Session has ended or not found. Current state: {session.lifecycle_state}</p>

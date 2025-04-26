@@ -1,96 +1,84 @@
 
 import React from 'react';
-import { GameType } from '@/types/winPattern';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Bell } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Bell, PlayCircle, RotateCcw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { GameType } from '@/types';
 
 interface CallControlsProps {
-  gameType: GameType;
   onCallNumber: () => void;
   onRecall: () => void;
   lastCalledNumber: number | null;
   totalCalls: number;
   pendingClaims: number;
   onViewClaims: () => void;
-  sessionStatus?: string; // Make sessionStatus optional with a type string
+  gameType?: GameType;
+  sessionStatus?: string;
 }
 
 export function CallControls({
-  gameType,
   onCallNumber,
   onRecall,
   lastCalledNumber,
   totalCalls,
   pendingClaims,
   onViewClaims,
-  sessionStatus = 'pending' // Default to 'pending' if not provided
+  gameType = 'mainstage',
+  sessionStatus = 'pending'
 }: CallControlsProps) {
-  if (gameType !== 'mainstage') {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Call Controls</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center p-4">
-            <p className="text-lg font-semibold">
-              {gameType.charAt(0).toUpperCase() + gameType.slice(1)} Bingo
-            </p>
-            <p className="text-sm text-gray-500">Controls coming soon</p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
+  const gameActive = sessionStatus === 'active';
+  
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle>Call Controls</CardTitle>
-        <Button
-          size="sm"
-          variant="outline"
-          className="relative"
-          onClick={onViewClaims}
-        >
-          <Bell className="h-4 w-4" />
-          {pendingClaims > 0 && (
-            <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center">
-              {pendingClaims}
-            </Badge>
-          )}
-        </Button>
+    <Card className="shadow-md">
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between">
+          <span>Call Controls</span>
+          <Badge variant={gameActive ? "default" : "outline"}>
+            {gameActive ? "Live" : "Pending"}
+          </Badge>
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="text-center space-y-2">
-          <div className="text-4xl font-bold">
-            {lastCalledNumber || '-'}
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="rounded-md border border-gray-200 p-4 text-center">
+            <div className="text-sm text-gray-500">Last Call</div>
+            <div className="text-3xl font-bold mt-1">{lastCalledNumber || '-'}</div>
           </div>
-          <div className="text-sm text-gray-500">
-            Last Called Number
+          <div className="rounded-md border border-gray-200 p-4 text-center">
+            <div className="text-sm text-gray-500">Total Calls</div>
+            <div className="text-3xl font-bold mt-1">{totalCalls}</div>
           </div>
-        </div>
-        
-        <div className="text-center mb-4">
-          <span className="text-sm text-gray-500">Total Calls: </span>
-          <span className="font-semibold">{totalCalls}</span>
-          {sessionStatus && (
-            <div className="mt-2">
-              <Badge variant={sessionStatus === 'active' ? 'secondary' : 'default'}>
-                {sessionStatus === 'active' ? 'Live' : 'Pending'}
-              </Badge>
-            </div>
-          )}
         </div>
 
+        <Button 
+          onClick={onCallNumber}
+          disabled={!gameActive}
+          className="w-full h-14 text-lg" 
+          variant={gameActive ? "default" : "outline"}
+        >
+          <PlayCircle className="mr-2 h-5 w-5" />
+          Call Number
+        </Button>
+        
         <div className="grid grid-cols-2 gap-4">
-          <Button onClick={onCallNumber} className="w-full">
-            Call Number
-          </Button>
-          <Button onClick={onRecall} variant="outline" className="w-full">
+          <Button 
+            onClick={onRecall}
+            disabled={!lastCalledNumber || !gameActive}
+            variant="outline" 
+            className="w-full"
+          >
+            <RotateCcw className="mr-2 h-4 w-4" />
             Recall
+          </Button>
+          
+          <Button 
+            onClick={onViewClaims}
+            variant={pendingClaims > 0 ? "destructive" : "outline"}
+            className="w-full"
+          >
+            <Bell className="mr-2 h-4 w-4" />
+            {pendingClaims > 0 ? `Claims (${pendingClaims})` : 'View Claims'}
           </Button>
         </div>
       </CardContent>
