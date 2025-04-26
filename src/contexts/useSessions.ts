@@ -1,4 +1,3 @@
-
 // Add some additional logging inside the subscription handler to better track what's happening
 
 import { useState, useEffect, useCallback } from "react";
@@ -31,50 +30,72 @@ export const useSessions = () => {
     setError(null);
     try {
       console.log("Fetching sessions...");
-      // Select all columns, including the new one
-      const { data, error: fetchError } = await supabase.from("game_sessions").select("*");
+      const { data, error: fetchError } = await supabase
+        .from("game_sessions")
+        .select(`
+          *,
+          game_progress (
+            completed_win_patterns,
+            current_win_pattern_id
+          )
+        `);
 
       if (fetchError) {
         console.error("Error fetching sessions:", fetchError);
         setError("Failed to fetch sessions.");
-        setSessions([]); // Clear sessions on error
+        setSessions([]);
       } else if (data) {
-        // Map the data, ensuring current_game_state and lifecycle_state are handled
-        const mappedSessions = data.map((d: any): GameSession => ({
-          id: d.id,
-          name: d.name,
-          gameType: d.game_type as GameType, // Overall session type
-          createdBy: d.created_by,
-          accessCode: d.access_code,
-          status: d.status, // Overall session status
-          createdAt: d.created_at,
-          sessionDate: d.session_date,
-          numberOfGames: d.number_of_games, // Consider how this relates to currentGameNumber
-          // Handle the new JSONB column, provide default if null/undefined
-          current_game_state: d.current_game_state
-            ? (d.current_game_state as unknown as CurrentGameState)
-            : initializeGameState(d.game_type as GameType, 1),
-          // Include the lifecycle_state property, default to 'setup'
-          lifecycle_state: d.lifecycle_state || 'setup',
-          games_config: d.games_config || []
-        }));
-        
-        console.log("Mapped sessions:", mappedSessions);
+        const mappedSessions = data.map((d: any): GameSession => {
+          // Get completed patterns from game progress
+          const gameProgress = Array.isArray(d.game_progress) ? d.game_progress[0] : null;
+          const completedPatterns = gameProgress?.completed_win_patterns || [];
+          const currentWinPattern = gameProgress?.current_win_pattern_id;
+
+          // If we have a current game state, update it with the completed patterns
+          let currentGameState = d.current_game_state;
+          if (currentGameState && Array.isArray(currentGameState.activePatternIds)) {
+            // Filter out completed patterns from active patterns
+            const activePatterns = currentGameState.activePatternIds.filter(
+              (p: string) => !completedPatterns.includes(p)
+            );
+            
+            // If we have a current win pattern from progress, ensure it's first
+            if (currentWinPattern && !activePatterns.includes(currentWinPattern)) {
+              activePatterns.unshift(currentWinPattern);
+            }
+            
+            currentGameState = {
+              ...currentGameState,
+              activePatternIds: activePatterns
+            };
+          }
+
+          return {
+            id: d.id,
+            name: d.name,
+            gameType: d.game_type as GameType,
+            createdBy: d.created_by,
+            accessCode: d.access_code,
+            status: d.status,
+            createdAt: d.created_at,
+            sessionDate: d.session_date,
+            numberOfGames: d.number_of_games,
+            current_game_state: currentGameState,
+            lifecycle_state: d.lifecycle_state || 'setup',
+            games_config: d.games_config || []
+          };
+        });
+
+        console.log("Mapped sessions with progress:", mappedSessions);
         setSessions(mappedSessions);
 
-        // If a current session is set, update its state from the newly fetched data
         if (currentSession) {
           const updatedCurrent = mappedSessions.find(s => s.id === currentSession.id);
           if (updatedCurrent) {
-            console.log("Updating current session from fetch:", updatedCurrent);
+            console.log("Updating current session with progress:", updatedCurrent);
             setCurrentSessionState(updatedCurrent);
-          } else {
-            console.log("Current session no longer found in fetched data:", currentSession.id);
           }
         }
-
-      } else {
-        setSessions([]);
       }
     } catch (err) {
       console.error("Exception fetching sessions:", err);
@@ -83,7 +104,7 @@ export const useSessions = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [currentSession]); // Dependency on currentSession to refresh its state
+  }, [currentSession]);
 
   // Subscribes to session changes (including current_game_state updates)
   useEffect(() => {

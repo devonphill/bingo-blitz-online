@@ -1,11 +1,9 @@
-
 import React, { createContext, useContext, ReactNode } from 'react';
-import { useSessions } from './useSessions'; // Import the hook
-import { usePlayers } from './usePlayers'; // Import players hook
-import { useTickets } from './useTickets'; // Import tickets hook
-import type { GameSession, CurrentGameState, Player } from '@/types'; // Import types
+import { useSessions } from './useSessions';
+import { usePlayers } from './usePlayers';
+import { useTickets } from './useTickets';
+import type { GameSession, CurrentGameState, Player } from '@/types';
 
-// Define the shape of the context value
 interface SessionContextType {
   sessions: GameSession[];
   currentSession: GameSession | null;
@@ -15,7 +13,7 @@ interface SessionContextType {
   updateCurrentGameState: (newGameState: Partial<CurrentGameState>) => Promise<boolean>;
   isLoading: boolean;
   error: string | null;
-  // Player methods
+  // Player methods with correct types
   players?: Player[];
   joinSession: (playerCode: string) => Promise<{ player: any | null, error: Error | null }>;
   addPlayer?: (nickname: string, sessionId: string, email?: string) => Promise<any>;
@@ -25,19 +23,14 @@ interface SessionContextType {
   getPlayerAssignedTickets?: (playerId: string, sessionId: string) => Promise<any>;
 }
 
-// Create the context with a default undefined value
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
-// Define the Provider component
 interface SessionProviderProps {
   children: ReactNode;
 }
 
 export function SessionProvider({ children }: SessionProviderProps) {
-  // Use the session hook internally
   const sessionData = useSessions();
-  
-  // Use the player and ticket hooks
   const ticketsHook = useTickets();
   const playersHook = usePlayers(
     sessionData.sessions,
@@ -45,15 +38,19 @@ export function SessionProvider({ children }: SessionProviderProps) {
     ticketsHook.assignTicketsToPlayer
   );
 
-  // The value provided by the context combines sessions with players and tickets functionality
   const contextValue: SessionContextType = {
     ...sessionData,
-    // Player methods
     players: playersHook.players,
-    joinSession: playersHook.joinSession,
+    joinSession: async (playerCode: string) => {
+      try {
+        const result = await playersHook.joinSession(playerCode);
+        return { player: result.player, error: null };
+      } catch (error) {
+        return { player: null, error: error as Error };
+      }
+    },
     addPlayer: playersHook.addPlayer,
     bulkAddPlayers: playersHook.bulkAddPlayers,
-    // Ticket methods
     assignTicketsToPlayer: ticketsHook.assignTicketsToPlayer,
     getPlayerAssignedTickets: ticketsHook.getPlayerAssignedTickets,
   };
@@ -65,7 +62,6 @@ export function SessionProvider({ children }: SessionProviderProps) {
   );
 }
 
-// Custom hook to consume the context easily
 export function useSessionContext(): SessionContextType {
   const context = useContext(SessionContext);
   if (context === undefined) {
