@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -93,7 +92,7 @@ export default function CallerControls({
         <CardTitle className="text-xl font-bold flex items-center justify-between">
           <div className="flex items-center">
             <span>Caller Controls</span>
-            <Badge className="ml-2" variant={sessionStatus === 'active' ? 'success' : 'default'}>
+            <Badge className="ml-2" variant={sessionStatus === 'active' ? 'default' : 'outline'}>
               {sessionStatus === 'active' ? 'Live' : 'Pending'}
             </Badge>
           </div>

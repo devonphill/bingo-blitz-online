@@ -59,7 +59,7 @@ export default function PlayerGame() {
   console.log("PlayerGame - Game state:", currentGameState);
   console.log("PlayerGame - Player details:", {playerId, playerName, tickets: tickets?.length || 0});
 
-  if (isLoading || errorMessage || !currentSession || !currentGameState?.status === 'active') {
+  if (isLoading || errorMessage || !currentSession || currentGameState?.status !== 'active') {
     return (
       <PlayerGameLoader 
         isLoading={isLoading} 
@@ -85,7 +85,7 @@ export default function PlayerGame() {
         {activeWinPatterns && activeWinPatterns.length > 0 && (
           <div className="mb-6">
             <BingoWinProgress 
-              activePatterns={activeWinPatterns}
+              activeWinPatterns={activeWinPatterns}
               handleClaimBingo={handleClaimBingo}
               isClaiming={isClaiming}
               claimStatus={claimStatus}
@@ -96,8 +96,8 @@ export default function PlayerGame() {
         <GameTypePlayspace
           gameType={gameType || "mainstage"}
           tickets={tickets || []}
-          calledItems={calledItems || []}
-          lastCalledItem={lastCalledItem}
+          calledNumbers={calledItems || []}
+          lastCalledNumber={lastCalledItem}
           autoMarking={autoMarking}
           setAutoMarking={setAutoMarking}
           handleClaimBingo={handleClaimBingo}

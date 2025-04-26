@@ -1,3 +1,4 @@
+
 // src/hooks/usePlayerGame.ts
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
@@ -6,7 +7,7 @@ import { useSessions } from '@/contexts/useSessions';
 import { CurrentGameState, GameType, PrizeDetails } from '@/types';
 
 export function usePlayerGame(playerCode?: string | null) {
-  const { currentSession: sessionFromContext, isLoading: isSessionLoading, fetchSessions } = useSessions();
+  const { sessions, isLoading: isSessionLoading, fetchSessions } = useSessions();
 
   const [tickets, setTickets] = useState<any[]>([]);
   const [calledItems, setCalledItems] = useState<Array<any>>([]);
@@ -14,6 +15,7 @@ export function usePlayerGame(playerCode?: string | null) {
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [playerName, setPlayerName] = useState<string>('');
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [currentSession, setCurrentSession] = useState<any | null>(null);
   const [autoMarking, setAutoMarking] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -22,10 +24,10 @@ export function usePlayerGame(playerCode?: string | null) {
 
   const { toast } = useToast();
 
-  const currentGameState: CurrentGameState | null = sessionFromContext?.current_game_state ?? null;
+  const currentGameState: CurrentGameState | null = currentSession?.current_game_state ?? null;
   const activeWinPatterns: string[] = currentGameState?.activePatternIds ?? [];
   const winPrizes: { [key: string]: PrizeDetails } = currentGameState?.prizes ?? {};
-  const gameType: GameType | null = currentGameState?.gameType ?? sessionFromContext?.gameType ?? null;
+  const gameType: GameType | null = currentGameState?.gameType ?? currentSession?.gameType ?? null;
 
   // Fetch initial player data
   useEffect(() => {
@@ -80,6 +82,17 @@ export function usePlayerGame(playerCode?: string | null) {
         // Manually trigger a session refresh to ensure we have the latest data
         await fetchSessions();
 
+        // Find the session in the sessions array
+        if (sessions && sessions.length > 0) {
+          const matchingSession = sessions.find(s => s.id === playerData.session_id);
+          if (matchingSession) {
+            console.log("Found matching session:", matchingSession);
+            setCurrentSession(matchingSession);
+          } else {
+            console.log("No matching session found in sessions array");
+          }
+        }
+
         const { data: ticketData, error: ticketError } = await supabase
           .from('assigned_tickets')
           .select('*')
@@ -123,7 +136,7 @@ export function usePlayerGame(playerCode?: string | null) {
           }
         }
 
-        // We'll set loading to false in the effect that depends on sessionFromContext
+        setIsLoading(false);
       } catch (error) {
         if (!isMounted) return;
         console.error("Error in fetchPlayerData:", error);
@@ -137,43 +150,59 @@ export function usePlayerGame(playerCode?: string | null) {
     return () => {
       isMounted = false;
     };
-  }, [playerCode, fetchSessions]);
+  }, [playerCode, fetchSessions, sessions]);
 
-  // Update local state when session data changes
+  // Update session from sessions array whenever it changes
   useEffect(() => {
-    console.log("sessionFromContext updated:", sessionFromContext?.id, "sessionId:", sessionId);
+    if (!sessionId || !sessions || sessions.length === 0) return;
     
-    if (!sessionId) {
-      // No session ID set yet, waiting for player data
-      return;
-    }
-    
-    if (sessionFromContext && sessionFromContext.id === sessionId) {
-      console.log("Player view - Session data updated:", {
-        id: sessionFromContext.id,
-        name: sessionFromContext.name,
-        lifecycle: sessionFromContext.lifecycle_state,
-        status: sessionFromContext.status,
-        gameState: sessionFromContext.current_game_state,
-        gameStatus: sessionFromContext.current_game_state?.status
-      });
+    const matchingSession = sessions.find(s => s.id === sessionId);
+    if (matchingSession) {
+      console.log("Found matching session in sessions array:", matchingSession.id, matchingSession.name);
+      setCurrentSession(matchingSession);
       
-      if (sessionFromContext.current_game_state) {
-        setCalledItems(sessionFromContext.current_game_state.calledItems || []);
-        setLastCalledItem(sessionFromContext.current_game_state.lastCalledItem ?? null);
-      } else {
-        setCalledItems([]);
-        setLastCalledItem(null);
+      if (matchingSession.current_game_state) {
+        setCalledItems(matchingSession.current_game_state.calledItems || []);
+        setLastCalledItem(matchingSession.current_game_state.lastCalledItem ?? null);
       }
-      
-      setIsLoading(false);
-      setErrorMessage(null);
-    } else {
-      console.log("No matching session found:", sessionId);
-      setErrorMessage("Game session not found or no longer available");
-      setIsLoading(false);
     }
-  }, [sessionFromContext, sessionId, isSessionLoading]);
+  }, [sessions, sessionId]);
+
+  // Listen for session changes with direct subscription
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const channel = supabase
+      .channel(`game-session-changes-${sessionId}`)
+      .on(
+        'postgres_changes',
+        { 
+          event: '*',
+          schema: 'public',
+          table: 'game_sessions',
+          filter: `id=eq.${sessionId}`
+        },
+        (payload) => {
+          console.log("Game session update received:", payload);
+          if (payload.new) {
+            const updatedSession = payload.new as any;
+            setCurrentSession(updatedSession);
+            
+            if (updatedSession.current_game_state) {
+              setCalledItems(updatedSession.current_game_state.calledItems || []);
+              setLastCalledItem(updatedSession.current_game_state.lastCalledItem ?? null);
+            }
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log("Session subscription status:", status);
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [sessionId]);
 
   // Listen for claim results
   useEffect(() => {
@@ -315,7 +344,7 @@ export function usePlayerGame(playerCode?: string | null) {
     tickets,
     playerName,
     playerId,
-    currentSession: sessionFromContext,
+    currentSession,
     currentGameState,
     calledItems,
     lastCalledItem,

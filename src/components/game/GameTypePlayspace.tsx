@@ -7,14 +7,24 @@ interface GameTypePlayspaceProps {
   gameType: GameType;
   tickets: any[];
   calledNumbers: number[];
+  lastCalledNumber?: number | null;
   autoMarking: boolean;
+  setAutoMarking?: (value: boolean) => void;
+  handleClaimBingo?: () => Promise<boolean>;
+  isClaiming?: boolean;
+  claimStatus?: 'pending' | 'validated' | 'rejected';
 }
 
 export default function GameTypePlayspace({
   gameType,
   tickets,
   calledNumbers,
-  autoMarking
+  lastCalledNumber,
+  autoMarking,
+  setAutoMarking,
+  handleClaimBingo,
+  isClaiming,
+  claimStatus
 }: GameTypePlayspaceProps) {
   // If it's 90-ball bingo, show the regular card display
   if (gameType === 'mainstage') {
