@@ -3,17 +3,22 @@ import React from 'react';
 import { WinPattern } from '@/types/winPattern';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 interface WinPatternSelectorProps {
   patterns: WinPattern[];
   selectedPatterns: string[];
   onPatternSelect?: (pattern: WinPattern) => void;
+  prizes?: { [patternId: string]: string };
+  onPrizeChange?: (patternId: string, prize: string) => void;
 }
 
 export function WinPatternSelector({ 
   patterns, 
   selectedPatterns,
-  onPatternSelect 
+  onPatternSelect,
+  prizes = {},
+  onPrizeChange
 }: WinPatternSelectorProps) {
   return (
     <Card className="mb-6">
@@ -21,17 +26,33 @@ export function WinPatternSelector({
         <CardTitle>Win Patterns</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-5 gap-4">
+        <div className="space-y-4">
           {patterns.map((pattern) => (
-            <Button
-              key={pattern.id}
-              onClick={() => onPatternSelect && onPatternSelect(pattern)}
-              variant={selectedPatterns.includes(pattern.id) ? 'default' : 'outline'}
-              className="w-full"
-              disabled={!pattern.available}
+            <div 
+              key={pattern.id} 
+              className={`flex items-center justify-between p-3 rounded-lg border ${
+                selectedPatterns.includes(pattern.id) ? 'border-primary bg-primary/5' : 'border-border'
+              }`}
             >
-              {pattern.name}
-            </Button>
+              <div className="flex items-center gap-4">
+                <Button
+                  onClick={() => onPatternSelect && onPatternSelect(pattern)}
+                  variant={selectedPatterns.includes(pattern.id) ? 'default' : 'outline'}
+                  disabled={!pattern.available}
+                >
+                  {pattern.name}
+                </Button>
+                
+                {selectedPatterns.includes(pattern.id) && (
+                  <Input
+                    placeholder="Enter prize"
+                    value={prizes[pattern.id] || ''}
+                    onChange={(e) => onPrizeChange && onPrizeChange(pattern.id, e.target.value)}
+                    className="w-48"
+                  />
+                )}
+              </div>
+            </div>
           ))}
         </div>
       </CardContent>

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { useSessions } from "@/contexts/useSessions";
@@ -15,6 +14,14 @@ interface WinPatternOption {
   active: boolean;
 }
 
+interface WinPatternSelectorProps {
+  patterns: { id: string, name: string, available: boolean }[];
+  selectedPatterns: string[];
+  onPatternSelect: (patternId: string) => void;
+  prizes: {[key: string]: string};
+  onPrizeChange: (patternId: string, value: string) => void;
+}
+
 export function GameSetup() {
   const { currentSession, updateCurrentGameState } = useSessions();
   
@@ -26,7 +33,6 @@ export function GameSetup() {
   ]);
   const [prizes, setPrizes] = useState<{[key: string]: string}>({});
 
-  // Initialize state from current session
   useEffect(() => {
     if (currentSession?.current_game_state) {
       setSelectedGameType(currentSession.current_game_state.gameType);
@@ -109,30 +115,17 @@ export function GameSetup() {
         </div>
 
         <div className="space-y-2">
-          <h3 className="text-sm font-medium">Win Patterns</h3>
-          <div className="grid gap-3">
-            {winPatterns.map((pattern) => (
-              <div key={pattern.id} className="flex items-center justify-between p-2 border rounded-md">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id={`pattern-${pattern.id}`}
-                    checked={pattern.active}
-                    onCheckedChange={() => toggleWinPattern(pattern.id)}
-                  />
-                  <Label htmlFor={`pattern-${pattern.id}`}>{pattern.name}</Label>
-                </div>
-                <div className="w-24">
-                  <Input
-                    placeholder="Prize"
-                    disabled={!pattern.active}
-                    value={prizes[pattern.id] || ''}
-                    onChange={(e) => handlePrizeChange(pattern.id, e.target.value)}
-                    className="text-xs"
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+          <WinPatternSelector
+            patterns={winPatterns.map(wp => ({
+              id: wp.id,
+              name: wp.name,
+              available: true
+            }))}
+            selectedPatterns={winPatterns.filter(wp => wp.active).map(wp => wp.id)}
+            onPatternSelect={(pattern) => toggleWinPattern(pattern.id)}
+            prizes={prizes}
+            onPrizeChange={handlePrizeChange}
+          />
         </div>
         
         <Button className="w-full" onClick={saveGameSettings}>
