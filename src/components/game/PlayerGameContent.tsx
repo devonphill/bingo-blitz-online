@@ -1,8 +1,8 @@
-
 import React from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
 import BingoWinProgress from "./BingoWinProgress";
+import { useBingoSync } from "@/hooks/useBingoSync";
 
 interface PlayerGameContentProps {
   tickets: any[];
@@ -39,10 +39,10 @@ export default function PlayerGameContent({
   claimStatus,
   gameType = '90-ball'
 }: PlayerGameContentProps) {
-  // Find the current win pattern based on which one is active in the game
+  useBingoSync();
+
   const currentWinPattern = activeWinPatterns.length > 0 ? activeWinPatterns[0] : null;
 
-  // Set autoMarking to true by default for MAINSTAGE
   React.useEffect(() => {
     if (gameType?.toUpperCase().includes('MAINSTAGE') && !autoMarking) {
       setAutoMarking(true);
@@ -50,14 +50,16 @@ export default function PlayerGameContent({
   }, [gameType, autoMarking, setAutoMarking]);
 
   return (
-    <div className="flex flex-col min-h-screen">
-      <GameHeader
-        sessionName={currentSession?.name || "Bingo Game"}
-        accessCode={playerCode}
-        activeWinPattern={currentWinPattern}
-        autoMarking={autoMarking}
-        setAutoMarking={setAutoMarking}
-      />
+    <div className="flex flex-col min-h-screen bg-gray-50">
+      <div className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
+        <GameHeader
+          sessionName={currentSession?.name || "Bingo Game"}
+          accessCode={playerCode}
+          activeWinPattern={currentWinPattern}
+          autoMarking={autoMarking}
+          setAutoMarking={setAutoMarking}
+        />
+      </div>
       
       <div className="flex-1 p-4">
         <div className="mb-4">

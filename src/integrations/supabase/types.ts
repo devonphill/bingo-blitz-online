@@ -507,6 +507,102 @@ export type Database = {
         }
         Relationships: []
       }
+      universal_game_logs: {
+        Row: {
+          called_numbers: number[]
+          caller_id: string | null
+          claimed_at: string
+          created_at: string
+          game_number: number
+          game_type: string
+          id: string
+          last_called_number: number | null
+          player_email: string | null
+          player_id: string
+          player_name: string
+          prize: string | null
+          prize_amount: string | null
+          prize_shared: boolean
+          session_id: string
+          shared_with: number | null
+          ticket_layout_mask: number
+          ticket_numbers: number[]
+          ticket_perm: number
+          ticket_position: number | null
+          ticket_serial: string
+          total_calls: number
+          validated_at: string
+          win_pattern: string
+        }
+        Insert: {
+          called_numbers: number[]
+          caller_id?: string | null
+          claimed_at?: string
+          created_at?: string
+          game_number: number
+          game_type: string
+          id?: string
+          last_called_number?: number | null
+          player_email?: string | null
+          player_id: string
+          player_name: string
+          prize?: string | null
+          prize_amount?: string | null
+          prize_shared?: boolean
+          session_id: string
+          shared_with?: number | null
+          ticket_layout_mask: number
+          ticket_numbers: number[]
+          ticket_perm: number
+          ticket_position?: number | null
+          ticket_serial: string
+          total_calls: number
+          validated_at?: string
+          win_pattern: string
+        }
+        Update: {
+          called_numbers?: number[]
+          caller_id?: string | null
+          claimed_at?: string
+          created_at?: string
+          game_number?: number
+          game_type?: string
+          id?: string
+          last_called_number?: number | null
+          player_email?: string | null
+          player_id?: string
+          player_name?: string
+          prize?: string | null
+          prize_amount?: string | null
+          prize_shared?: boolean
+          session_id?: string
+          shared_with?: number | null
+          ticket_layout_mask?: number
+          ticket_numbers?: number[]
+          ticket_perm?: number
+          ticket_position?: number | null
+          ticket_serial?: string
+          total_calls?: number
+          validated_at?: string
+          win_pattern?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "universal_game_logs_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "universal_game_logs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "game_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

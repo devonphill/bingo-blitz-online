@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Check, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -13,6 +12,8 @@ import CallerTicketDisplay from './CallerTicketDisplay';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import BingoWinProgress from './BingoWinProgress';
 import { getGameRulesForType } from '@/game-rules/gameRulesRegistry';
+import PrizeSharingDialog from './PrizeSharingDialog';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ClaimVerificationSheetProps {
   isOpen: boolean;
@@ -29,6 +30,7 @@ interface ClaimVerificationSheetProps {
   onFalseClaim: () => void;
   currentWinPattern?: string | null;
   gameType?: string;
+  onNext?: () => void;
 }
 
 export default function ClaimVerificationSheet({
@@ -41,7 +43,8 @@ export default function ClaimVerificationSheet({
   onValidClaim,
   onFalseClaim,
   currentWinPattern,
-  gameType = '90-ball'
+  gameType = '90-ball',
+  onNext
 }: ClaimVerificationSheetProps) {
   const [isClaimValid, setIsClaimValid] = useState(false);
   const [rankedTickets, setRankedTickets] = useState<any[]>([]);
@@ -49,9 +52,11 @@ export default function ClaimVerificationSheet({
   const [actionType, setActionType] = useState<'valid' | 'false' | null>(null);
   const [validTickets, setValidTickets] = useState<any[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  
+  const [showSharingDialog, setShowSharingDialog] = useState(false);
+  const [validClaimsCount, setValidClaimsCount] = useState(0);
+
   console.log("ClaimVerificationSheet rendered with isOpen:", isOpen, "playerName:", playerName);
-  
+
   useEffect(() => {
     console.log("ClaimVerificationSheet isOpen changed to:", isOpen);
     
@@ -61,12 +66,11 @@ export default function ClaimVerificationSheet({
       console.log("Current win pattern:", currentWinPattern);
     }
     
-    // Reset processing state when sheet opens/closes
     if (!isOpen) {
       setIsProcessing(false);
     }
   }, [isOpen, playerName, tickets, currentWinPattern]);
-  
+
   useEffect(() => {
     if (!tickets || tickets.length === 0) return;
     
@@ -84,15 +88,12 @@ export default function ClaimVerificationSheet({
     const sortedTickets = [...ticketsWithScore].sort((a, b) => b.score - a.score);
     setRankedTickets(sortedTickets);
     
-    // Get game rules for validation
     const gameRules = getGameRulesForType(gameType);
     let valid = false;
     const validTicketsFound: any[] = [];
     
-    // Validate with game rules
     if (currentWinPattern) {
       sortedTickets.forEach(ticket => {
-        // Use getTicketStatus and check isWinner property
         const status = gameRules.getTicketStatus(ticket, calledNumbers, currentWinPattern);
         const isValid = status.isWinner;
         
@@ -114,11 +115,16 @@ export default function ClaimVerificationSheet({
     }
   }, [tickets, calledNumbers, currentWinPattern, gameType]);
 
-  const handleValidClaim = () => {
+  const handleValidClaim = async () => {
     if (isProcessing) return;
-    console.log("Valid claim button clicked");
-    setActionType('valid');
-    setConfirmDialogOpen(true);
+    
+    if (validTickets.length > 1) {
+      setValidClaimsCount(validTickets.length);
+      setShowSharingDialog(true);
+    } else {
+      await handlePrizeSharing(false);
+      onValidClaim();
+    }
   };
 
   const handleFalseClaim = () => {
@@ -126,6 +132,50 @@ export default function ClaimVerificationSheet({
     console.log("False claim button clicked");
     setActionType('false');
     setConfirmDialogOpen(true);
+  };
+
+  const handlePrizeSharing = async (isShared: boolean) => {
+    if (!currentSession?.id || !validTickets.length) return;
+    
+    try {
+      const promises = validTickets.map(async (ticket) => {
+        const gameLog = {
+          session_id: currentSession.id,
+          game_number: currentSession.current_game_state?.gameNumber || 1,
+          game_type: `MAINSTAGE_${gameType}`,
+          win_pattern: currentWinPattern || 'fullHouse',
+          player_id: ticket.playerId,
+          player_name: playerName,
+          ticket_serial: ticket.serial,
+          ticket_perm: ticket.perm,
+          ticket_layout_mask: ticket.layoutMask,
+          ticket_numbers: ticket.numbers,
+          ticket_position: ticket.position,
+          called_numbers: calledNumbers,
+          total_calls: calledNumbers.length,
+          last_called_number: currentNumber,
+          prize_shared: isShared,
+          shared_with: isShared ? validTickets.length : 1
+        };
+
+        await supabase.from('universal_game_logs').insert([gameLog]);
+      });
+
+      await Promise.all(promises);
+      
+      if (currentWinPattern === 'fullHouse' && onNext) {
+        onNext();
+      }
+
+      onClose();
+    } catch (error) {
+      console.error('Error saving game logs:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save game logs",
+        variant: "destructive"
+      });
+    }
   };
 
   const confirmAction = () => {
@@ -140,8 +190,6 @@ export default function ClaimVerificationSheet({
     } else if (actionType === 'false') {
       onFalseClaim();
     }
-    
-    // The sheet will be closed by the parent component after the action is complete
   };
 
   return (
@@ -245,6 +293,17 @@ export default function ClaimVerificationSheet({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <PrizeSharingDialog
+        isOpen={showSharingDialog}
+        onClose={() => setShowSharingDialog(false)}
+        onConfirm={async (isShared) => {
+          setShowSharingDialog(false);
+          await handlePrizeSharing(isShared);
+          onValidClaim();
+        }}
+        playerCount={validClaimsCount}
+      />
     </>
   );
 }
