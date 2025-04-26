@@ -30,8 +30,9 @@ export interface CurrentGameState {
 }
 // --- End of new definition ---
 
-// Interface for individual game configuration
+// Game configuration interface
 export interface GameConfig {
+  gameNumber: number;
   gameType: GameType;
   selectedPatterns: string[];
   prizes: { [patternId: string]: PrizeDetails };

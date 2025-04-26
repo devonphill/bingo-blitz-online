@@ -1,15 +1,11 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { useSessions } from "@/contexts/useSessions";
-import { GameType, PrizeDetails } from "@/types";
+import { GameType, PrizeDetails, GameConfig } from "@/types";
 import { WinPattern } from '@/types/winPattern';
 import { useToast } from "@/hooks/use-toast";
 import { GameConfigForm } from '@/components/caller/GameConfigForm';
 import { supabase } from "@/integrations/supabase/client";
-
-// Ensure we're using the GameConfig from types to avoid type mismatches
-import { GameConfig } from "@/types";
 
 export function GameSetup() {
   const { currentSession, updateCurrentGameState } = useSessions();
