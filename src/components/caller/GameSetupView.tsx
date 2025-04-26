@@ -3,7 +3,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { WinPattern } from '@/types/winPattern';
-import { GameType } from '@/types';
+import { GameType, PrizeDetails } from '@/types';
 import { WinPatternSelector } from '@/components/caller/WinPatternSelector';
 import { GameTypeSelector } from '@/components/caller/GameTypeSelector';
 import { Play } from 'lucide-react';
@@ -16,6 +16,8 @@ interface GameSetupViewProps {
   onPatternSelect?: (pattern: WinPattern) => void;
   onGoLive: () => void;
   isGoingLive?: boolean;
+  prizes?: { [patternId: string]: PrizeDetails };
+  onPrizeChange?: (patternId: string, prizeDetails: PrizeDetails) => void;
 }
 
 export function GameSetupView({
@@ -25,7 +27,9 @@ export function GameSetupView({
   selectedPatterns,
   onPatternSelect,
   onGoLive,
-  isGoingLive
+  isGoingLive,
+  prizes = {},
+  onPrizeChange
 }: GameSetupViewProps) {
   return (
     <div className="space-y-6 p-6">
@@ -38,6 +42,8 @@ export function GameSetupView({
         patterns={winPatterns}
         selectedPatterns={selectedPatterns}
         onPatternSelect={onPatternSelect}
+        prizes={prizes}
+        onPrizeChange={onPrizeChange}
       />
       
       <Button 

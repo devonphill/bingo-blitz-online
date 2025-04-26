@@ -12,6 +12,13 @@ export interface User {
 // Updated GameType definition to include 'mainstage', 'party', 'quiz', 'music', and 'logo'
 export type GameType = 'mainstage' | 'party' | 'quiz' | 'music' | 'logo';
 
+// Prize details interface
+export interface PrizeDetails {
+  amount?: string;
+  isNonCash: boolean;
+  description?: string;
+}
+
 // --- New definition for the state of the currently active game ---
 export interface CurrentGameState {
   gameNumber: number;
@@ -19,7 +26,7 @@ export interface CurrentGameState {
   activePatternIds: string[]; // IDs/names of patterns selected by the caller for this game
   calledItems: Array<any>; // Array of called numbers, strings, objects, etc., in order
   lastCalledItem: any | null; // The most recently called item for display
-  prizes?: { [patternId: string]: string }; // Optional prize mapping for active patterns
+  prizes?: { [patternId: string]: PrizeDetails }; // Updated prize mapping for active patterns
   status: 'pending' | 'active' | 'paused' | 'finished'; // Status of this specific game instance
 }
 // --- End of new definition ---
