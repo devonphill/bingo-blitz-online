@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -6,7 +7,7 @@ import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
 import { useToast } from "@/hooks/use-toast";
 import { GameSetupView } from '@/components/caller/GameSetupView';
 import { LiveGameView } from '@/components/caller/LiveGameView';
-import { ClaimVerificationSheet } from '@/components/caller/ClaimVerificationSheet';
+import { ClaimVerificationSheet } from '@/components/game/ClaimVerificationSheet'; // Fixed import path
 import { useSessionLifecycle } from '@/hooks/useSessionLifecycle';
 
 type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
