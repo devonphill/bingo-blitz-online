@@ -1,4 +1,3 @@
-
 // This file defines the core data structures used throughout the application.
 
 export type UserRole = 'superuser' | 'subuser';
@@ -31,6 +30,13 @@ export interface CurrentGameState {
 }
 // --- End of new definition ---
 
+// Interface for individual game configuration
+export interface GameConfig {
+  gameType: GameType;
+  selectedPatterns: string[];
+  prizes: { [patternId: string]: PrizeDetails };
+}
+
 // Updated GameSession interface
 export interface GameSession {
   id: string;
@@ -46,6 +52,8 @@ export interface GameSession {
   current_game_state: CurrentGameState | null; // Holds the state of the active game
   // Add the new lifecycle_state property with explicit type definition
   lifecycle_state?: 'setup' | 'live' | 'ended';
+  // Add the games_config property
+  games_config?: GameConfig[];
 }
 
 // Existing Player interface - no changes needed for Phase 1

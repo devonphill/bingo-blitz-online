@@ -3,9 +3,10 @@ import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { useSessions } from "@/contexts/useSessions";
 import { GameType, PrizeDetails } from "@/types";
-import { WinPattern } from '@/types/winPattern';
+import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
 import { useToast } from "@/hooks/use-toast";
 import { GameConfigForm } from '@/components/caller/GameConfigForm';
+import { supabase } from "@/integrations/supabase/client";
 
 interface GameConfig {
   gameType: GameType;
@@ -22,7 +23,7 @@ export function GameSetup() {
 
   useEffect(() => {
     if (currentSession) {
-      const numberOfGames = currentSession.number_of_games || 1;
+      const numberOfGames = currentSession.numberOfGames || 1;
       const currentConfigs = currentSession.games_config as GameConfig[] || [];
       
       // Initialize configs for all games
@@ -93,7 +94,7 @@ export function GameSetup() {
         status: 'pending',
       });
 
-      // Save all game configs to the new games_config column
+      // Save all game configs to the games_config column
       const { error } = await supabase
         .from('game_sessions')
         .update({ games_config: gameConfigs })
@@ -116,8 +117,6 @@ export function GameSetup() {
       setIsSaving(false);
     }
   };
-
-  const winPatterns = WIN_PATTERNS[selectedGameType] || [];
 
   return (
     <div className="space-y-6">
