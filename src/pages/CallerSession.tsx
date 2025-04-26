@@ -50,6 +50,9 @@ export default function CallerSession() {
         ? (data.current_game_state as unknown as CurrentGameState)
         : initialGameState;
 
+      // Set default lifecycle_state to 'setup' if not present
+      const lifecycleState = data.lifecycle_state || 'setup';
+      
       setSession({
         id: data.id,
         name: data.name,
@@ -60,12 +63,16 @@ export default function CallerSession() {
         createdAt: data.created_at,
         sessionDate: data.session_date,
         numberOfGames: data.number_of_games,
-        current_game_state: gameState
+        current_game_state: gameState,
+        lifecycle_state: lifecycleState
       });
 
       setCurrentGameType(gameState.gameType);
       setCalledNumbers(gameState.calledItems as number[]);
       setCurrentNumber(gameState.lastCalledItem as number);
+      
+      console.log("Session fetched:", data);
+      console.log("Lifecycle state:", lifecycleState);
     }
   }, [sessionId]);
 
@@ -270,7 +277,11 @@ export default function CallerSession() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {session?.lifecycle_state === 'setup' ? (
+      {!session ? (
+        <div className="flex items-center justify-center h-screen">
+          <p className="text-lg text-gray-500">Loading session...</p>
+        </div>
+      ) : session.lifecycle_state === 'setup' ? (
         <GameSetupView
           currentGameType={currentGameType}
           onGameTypeChange={handleGameTypeChange}
@@ -280,7 +291,7 @@ export default function CallerSession() {
           onGoLive={handleGoLive}
           isGoingLive={false}
         />
-      ) : session?.lifecycle_state === 'live' ? (
+      ) : session.lifecycle_state === 'live' ? (
         <LiveGameView
           gameType={currentGameType}
           winPatterns={winPatterns}
@@ -295,7 +306,7 @@ export default function CallerSession() {
         />
       ) : (
         <div className="flex items-center justify-center h-screen">
-          <p className="text-lg text-gray-500">Session has ended</p>
+          <p className="text-lg text-gray-500">Session has ended or not found. Current state: {session.lifecycle_state}</p>
         </div>
       )}
     </div>

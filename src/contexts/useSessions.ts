@@ -51,9 +51,11 @@ export const useSessions = () => {
           current_game_state: d.current_game_state
             ? (d.current_game_state as CurrentGameState)
             : initializeGameState(d.game_type as GameType, 1),
-          // Include the lifecycle_state property
+          // Include the lifecycle_state property, default to 'setup'
           lifecycle_state: d.lifecycle_state || 'setup',
         }));
+        
+        console.log("Mapped sessions:", mappedSessions);
         setSessions(mappedSessions);
 
         // If a current session is set, update its state from the newly fetched data
