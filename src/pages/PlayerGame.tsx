@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { usePlayerGame } from '@/hooks/usePlayerGame';
@@ -7,11 +7,31 @@ import { Button } from '@/components/ui/button';
 import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import BingoWinProgress from '@/components/game/BingoWinProgress';
 import { GameType } from '@/types';
+import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 
 export default function PlayerGame() {
-  const { playerCode } = useParams<{ playerCode: string }>();
+  const { playerCode: urlPlayerCode } = useParams<{ playerCode: string }>();
+  const [playerCode, setPlayerCode] = useState<string | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // Use the player code from the URL or localStorage
+  useEffect(() => {
+    const storedPlayerCode = localStorage.getItem('playerCode');
+    if (urlPlayerCode) {
+      setPlayerCode(urlPlayerCode);
+    } else if (storedPlayerCode) {
+      setPlayerCode(storedPlayerCode);
+    } else {
+      // If no player code is found, redirect to join page
+      toast({
+        title: 'Player Code Missing',
+        description: 'Please enter your player code to join the game.',
+        variant: 'destructive'
+      });
+      navigate('/join');
+    }
+  }, [urlPlayerCode, navigate, toast]);
 
   const {
     tickets,
@@ -32,56 +52,14 @@ export default function PlayerGame() {
     gameType,
   } = usePlayerGame(playerCode);
 
-  const calledNumbers = calledItems;
-  const currentNumber = lastCalledItem;
-
-  if (!playerCode) {
+  // Show loader for different states
+  if (!playerCode || isLoading || errorMessage || !currentSession) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Player Code Missing</h2>
-          <Button onClick={() => navigate('/join')}>
-            Return to Join
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Loading Game...</h2>
-        </div>
-      </div>
-    );
-  }
-
-  if (errorMessage) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Error: {errorMessage}</h2>
-          <Button onClick={() => navigate('/join')}>
-            Return to Join
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!currentSession) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Session Not Found</h2>
-          <p>Please ensure you have the correct player code.</p>
-          <Button onClick={() => navigate('/join')}>
-            Return to Join
-          </Button>
-        </div>
-      </div>
+      <PlayerGameLoader 
+        isLoading={isLoading} 
+        errorMessage={errorMessage} 
+        currentSession={currentSession} 
+      />
     );
   }
 
@@ -100,9 +78,9 @@ export default function PlayerGame() {
               Game Type: {gameType}
             </p>
           )}
-          {currentNumber && (
+          {lastCalledItem && (
             <p className="text-md text-gray-500">
-              Last Number Called: {currentNumber}
+              Last Number Called: {lastCalledItem}
             </p>
           )}
           <div className="flex items-center justify-center mt-4">
