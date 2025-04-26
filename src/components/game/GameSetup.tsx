@@ -85,10 +85,13 @@ export function GameSetup() {
           // First update games_config
           console.log("Saving initial games_config:", gameConfigs);
           
+          // Convert gameConfigs to a JSON-compatible object
+          const gameConfigsJson = JSON.stringify(gameConfigs);
+          
           const { data, error: gamesConfigError } = await supabase
             .from('game_sessions')
             .update({ 
-              games_config: gameConfigs
+              games_config: JSON.parse(gameConfigsJson)
             })
             .eq('id', currentSession.id)
             .select('games_config');
@@ -229,10 +232,13 @@ export function GameSetup() {
       }
 
       // Then update all game configs
+      // Convert gameConfigs to a JSON-compatible object
+      const gameConfigsJson = JSON.stringify(gameConfigs);
+      
       const { data, error } = await supabase
         .from('game_sessions')
         .update({ 
-          games_config: gameConfigs
+          games_config: JSON.parse(gameConfigsJson)
         })
         .eq('id', currentSession.id)
         .select('games_config');
