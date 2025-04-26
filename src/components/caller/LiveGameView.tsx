@@ -4,7 +4,7 @@ import { WinPattern } from '@/types/winPattern';
 import { WinPatternStatusDisplay } from '@/components/game/WinPatternStatusDisplay';
 import { CallControls } from '@/components/caller/CallControls';
 import BingoCard from '@/components/caller/BingoCard';
-import { GameType } from '@/types';
+import { GameType, PrizeDetails } from '@/types';
 
 interface LiveGameViewProps {
   gameType: GameType;
@@ -17,6 +17,7 @@ interface LiveGameViewProps {
   calledNumbers: number[];
   pendingClaims: number;
   onViewClaims: () => void;
+  prizes?: { [patternId: string]: PrizeDetails };
 }
 
 export function LiveGameView({
@@ -29,9 +30,12 @@ export function LiveGameView({
   lastCalledNumber,
   calledNumbers,
   pendingClaims,
-  onViewClaims
+  onViewClaims,
+  prizes = {}
 }: LiveGameViewProps) {
   const numberRange = gameType === 'mainstage' ? 90 : 75;
+  
+  console.log("LiveGameView - prizes:", prizes);
 
   return (
     <div className="space-y-6 p-6">

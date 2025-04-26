@@ -23,25 +23,78 @@ export default function CallerSession() {
   const [prizes, setPrizes] = useState<{[patternId: string]: PrizeDetails}>({});
   const [gameConfigs, setGameConfigs] = useState<GameConfig[]>([]);
   const [currentGameIndex, setCurrentGameIndex] = useState(0);
+  const [isGoingLive, setIsGoingLive] = useState(false);
   const { toast } = useToast();
   const { setSessionLifecycle } = useSessionLifecycle(sessionId);
 
-  const fetchWinPatterns = useCallback(async () => {
-    setWinPatterns(WIN_PATTERNS[currentGameType] || []);
-  }, [currentGameType]);
+  // Debug logging for state changes
+  useEffect(() => {
+    console.log("StateUpdate - currentGameType:", currentGameType);
+    console.log("StateUpdate - selectedPatterns:", selectedPatterns);
+    console.log("StateUpdate - prizes:", prizes);
+    console.log("StateUpdate - gameConfigs:", gameConfigs);
+  }, [currentGameType, selectedPatterns, prizes, gameConfigs]);
+  
+  const fetchWinPatterns = useCallback((gameType: GameType) => {
+    console.log("Fetching win patterns for:", gameType);
+    setWinPatterns(WIN_PATTERNS[gameType] || []);
+  }, []);
 
   const fetchSession = useCallback(async () => {
     if (!sessionId) return;
 
-    const { data, error } = await supabase
-      .from('game_sessions')
-      .select('*')
-      .eq('id', sessionId)
-      .single();
+    try {
+      console.log("Fetching session data...");
+      const { data, error } = await supabase
+        .from('game_sessions')
+        .select('*')
+        .eq('id', sessionId)
+        .single();
 
-    if (error) {
-      console.error("Error fetching session:", error);
-    } else if (data) {
+      if (error) {
+        console.error("Error fetching session:", error);
+        return;
+      }
+      
+      console.log("Session data received:", data);
+      
+      // Parse game configs if they exist
+      let configs: GameConfig[] = [];
+      if (data.games_config && Array.isArray(data.games_config) && data.games_config.length > 0) {
+        configs = data.games_config as GameConfig[];
+        console.log("Game configs loaded from database:", configs);
+      } else {
+        // Create default configs based on number_of_games
+        const numberOfGames = data.number_of_games || 1;
+        console.log(`Creating ${numberOfGames} default game configs`);
+        
+        configs = Array.from({ length: numberOfGames }, (_, index) => ({
+          gameNumber: index + 1,
+          gameType: (data.game_type as GameType) || 'mainstage',
+          selectedPatterns: ['oneLine'],
+          prizes: {
+            'oneLine': {
+              amount: '10.00',
+              isNonCash: false,
+              description: 'One Line Prize'
+            }
+          }
+        }));
+      }
+      
+      setGameConfigs(configs);
+      
+      // Use the first game config
+      if (configs.length > 0) {
+        const firstConfig = configs[0];
+        console.log("Setting state from first game config:", firstConfig);
+        setCurrentGameType(firstConfig.gameType);
+        setSelectedPatterns(firstConfig.selectedPatterns || []);
+        setPrizes(firstConfig.prizes || {});
+        fetchWinPatterns(firstConfig.gameType);
+      }
+
+      // Set up game state
       const initialGameState: CurrentGameState = {
         gameNumber: 1,
         gameType: (data.game_type as GameType) || 'mainstage',
@@ -66,18 +119,6 @@ export default function CallerSession() {
         }
       }
       
-      // Load games_config if available
-      const configs = data.games_config ? (data.games_config as unknown as GameConfig[]) : [];
-      setGameConfigs(configs);
-      
-      if (configs.length > 0) {
-        // Use the first game config by default
-        const firstConfig = configs[0];
-        setCurrentGameType(firstConfig.gameType || 'mainstage');
-        setSelectedPatterns(firstConfig.selectedPatterns || []);
-        setPrizes(firstConfig.prizes || {});
-      }
-      
       setSession({
         id: data.id,
         name: data.name,
@@ -93,27 +134,33 @@ export default function CallerSession() {
         games_config: configs
       });
 
-      setCalledNumbers(gameState.calledItems as number[]);
-      setCurrentNumber(gameState.lastCalledItem as number);
+      if (gameState.calledItems && Array.isArray(gameState.calledItems)) {
+        setCalledNumbers(gameState.calledItems as number[]);
+      }
       
-      console.log("Session fetched:", data);
-      console.log("Lifecycle state:", lifecycleState);
-      console.log("Game configs from database:", configs);
+      if (gameState.lastCalledItem) {
+        setCurrentNumber(gameState.lastCalledItem as number);
+      }
+      
+    } catch (err) {
+      console.error("Exception during session fetch:", err);
     }
-  }, [sessionId]);
+  }, [sessionId, fetchWinPatterns]);
 
   useEffect(() => {
     fetchSession();
   }, [fetchSession]);
 
-  useEffect(() => {
-    if (currentGameType) {
-      fetchWinPatterns();
-    }
-  }, [currentGameType, fetchWinPatterns]);
-
   const handleGameTypeChange = async (newType: GameType) => {
     if (!session) return;
+    
+    console.log("Changing game type to:", newType);
+    
+    // Update local state
+    setCurrentGameType(newType);
+    fetchWinPatterns(newType);
+    setCalledNumbers([]);
+    setCurrentNumber(null);
     
     // Update the current game config
     const updatedConfigs = [...gameConfigs];
@@ -127,43 +174,44 @@ export default function CallerSession() {
       gameType: newType,
       calledItems: [],
       lastCalledItem: null,
-      activePatternIds: []
+      activePatternIds: selectedPatterns
     };
 
     // Save both to database
-    const { error } = await supabase
-      .from('game_sessions')
-      .update({
-        game_type: newType,
-        current_game_state: updatedGameState as unknown as Json,
-        games_config: updatedConfigs as unknown as Json
-      })
-      .eq('id', sessionId);
+    try {
+      const { error } = await supabase
+        .from('game_sessions')
+        .update({
+          game_type: newType,
+          current_game_state: updatedGameState as unknown as Json,
+          games_config: updatedConfigs as unknown as Json
+        })
+        .eq('id', sessionId);
 
-    if (error) {
-      console.error("Error updating game type:", error);
-      toast({
-        title: "Error changing game type",
-        description: "Failed to update the game type. Please try again.",
-        variant: "destructive",
-      });
-    } else {
-      setCurrentGameType(newType);
-      setWinPatterns(WIN_PATTERNS[newType]);
-      setCalledNumbers([]);
-      setCurrentNumber(null);
-      toast({
-        title: "Game type updated",
-        description: `Changed to ${newType} Bingo`,
-      });
+      if (error) {
+        console.error("Error updating game type:", error);
+        toast({
+          title: "Error changing game type",
+          description: "Failed to update the game type. Please try again.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Game type updated",
+          description: `Changed to ${newType} Bingo`,
+        });
+      }
+    } catch (err) {
+      console.error("Exception during game type update:", err);
     }
   };
 
-  const handlePatternSelect = (pattern: WinPattern) => {
+  const handlePatternSelect = async (pattern: WinPattern) => {
     if (!session?.current_game_state) return;
     
     // Convert pattern.id to string to ensure consistent handling
     const patternId = String(pattern.id);
+    console.log("Toggle pattern:", patternId);
     
     // Update the local selected patterns
     const newSelectedPatterns = [...selectedPatterns];
@@ -171,22 +219,48 @@ export default function CallerSession() {
     
     if (patternIndex >= 0) {
       newSelectedPatterns.splice(patternIndex, 1);
+      // Remove prizes for this pattern
+      const updatedPrizes = {...prizes};
+      delete updatedPrizes[patternId];
+      setPrizes(updatedPrizes);
     } else {
       newSelectedPatterns.push(patternId);
+      
+      // Set default prize if none exists for this pattern
+      if (!prizes[patternId]) {
+        const updatedPrizes = {
+          ...prizes,
+          [patternId]: {
+            amount: '10.00',
+            isNonCash: false,
+            description: `${pattern.name} Prize`
+          }
+        };
+        setPrizes(updatedPrizes);
+      }
     }
+    
+    console.log("New selected patterns:", newSelectedPatterns);
     setSelectedPatterns(newSelectedPatterns);
     
     // Update the current game config
     const updatedConfigs = [...gameConfigs];
     if (updatedConfigs[currentGameIndex]) {
       updatedConfigs[currentGameIndex].selectedPatterns = newSelectedPatterns;
+      updatedConfigs[currentGameIndex].prizes = {...prizes};
+      
+      // Handle prize removal if pattern deselected
+      if (patternIndex >= 0 && updatedConfigs[currentGameIndex].prizes[patternId]) {
+        delete updatedConfigs[currentGameIndex].prizes[patternId];
+      }
     }
     setGameConfigs(updatedConfigs);
     
     // Prepare updated game state
     const updatedGameState = {
       ...session.current_game_state,
-      activePatternIds: newSelectedPatterns
+      activePatternIds: newSelectedPatterns,
+      prizes: prizes
     };
     
     // Update session state
@@ -197,32 +271,89 @@ export default function CallerSession() {
     } : null);
     
     // Save to database
-    supabase
-      .from('game_sessions')
-      .update({ 
-        current_game_state: updatedGameState as unknown as Json,
-        games_config: updatedConfigs as unknown as Json
-      })
-      .eq('id', sessionId)
-      .then(({ error }) => {
+    try {
+      const { error } = await supabase
+        .from('game_sessions')
+        .update({ 
+          current_game_state: updatedGameState as unknown as Json,
+          games_config: updatedConfigs as unknown as Json
+        })
+        .eq('id', sessionId);
+
+      if (error) {
+        console.error("Error updating win patterns:", error);
+        toast({
+          title: "Error updating win patterns",
+          description: "Failed to update the win patterns. Please try again.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: pattern.id + (patternIndex >= 0 ? " removed" : " selected"),
+          description: `Win pattern ${patternIndex >= 0 ? "removed from" : "added to"} the game.`,
+        });
+      }
+    } catch (err) {
+      console.error("Exception during pattern select:", err);
+    }
+  };
+
+  const handlePrizeChange = async (patternId: string, prizeDetails: PrizeDetails) => {
+    console.log(`Updating prize for ${patternId}:`, prizeDetails);
+    
+    // Update local state
+    const updatedPrizes = {
+      ...prizes,
+      [patternId]: prizeDetails
+    };
+    setPrizes(updatedPrizes);
+    
+    // Update game config
+    const updatedConfigs = [...gameConfigs];
+    if (updatedConfigs[currentGameIndex]) {
+      updatedConfigs[currentGameIndex].prizes = {
+        ...updatedConfigs[currentGameIndex].prizes,
+        [patternId]: prizeDetails
+      };
+      setGameConfigs(updatedConfigs);
+    }
+    
+    // Update session state
+    if (session) {
+      const updatedGameState = {
+        ...session.current_game_state,
+        prizes: updatedPrizes
+      };
+      
+      setSession(prevSession => prevSession ? {
+        ...prevSession,
+        current_game_state: updatedGameState,
+        games_config: updatedConfigs
+      } : null);
+      
+      // Save to database
+      try {
+        const { error } = await supabase
+          .from('game_sessions')
+          .update({
+            current_game_state: updatedGameState as unknown as Json,
+            games_config: updatedConfigs as unknown as Json
+          })
+          .eq('id', sessionId);
+          
         if (error) {
-          console.error("Error updating win patterns:", error);
-          toast({
-            title: "Error updating win patterns",
-            description: "Failed to update the win patterns. Please try again.",
-            variant: "destructive",
-          });
-        } else {
-          toast({
-            title: pattern.id + (patternIndex >= 0 ? " removed" : " selected"),
-            description: `Win pattern ${patternIndex >= 0 ? "removed from" : "added to"} the game.`,
-          });
+          console.error("Error updating prize details:", error);
         }
-      });
+      } catch (err) {
+        console.error("Exception during prize update:", err);
+      }
+    }
   };
 
   const handleGoLive = async () => {
     if (!session) return;
+    
+    setIsGoingLive(true);
     
     // Check if there are any selected patterns from games_config
     const currentConfig = gameConfigs[currentGameIndex];
@@ -234,6 +365,7 @@ export default function CallerSession() {
         description: "Please select at least one win pattern before starting the game.",
         variant: "destructive"
       });
+      setIsGoingLive(false);
       return;
     }
 
@@ -243,7 +375,8 @@ export default function CallerSession() {
       const updatedGameState: CurrentGameState = {
         ...session.current_game_state,
         status: 'active',
-        activePatternIds: patternsToCheck
+        activePatternIds: patternsToCheck,
+        prizes: prizes
       };
       
       const { error } = await supabase
@@ -261,6 +394,7 @@ export default function CallerSession() {
           description: "Failed to start the game. Please try again.",
           variant: "destructive"
         });
+        setIsGoingLive(false);
       } else {
         setSession(prevSession => {
           if (!prevSession) return null;
@@ -285,6 +419,7 @@ export default function CallerSession() {
         description: "An unexpected error occurred. Please try again.",
         variant: "destructive"
       });
+      setIsGoingLive(false);
     }
   };
 
@@ -316,24 +451,28 @@ export default function CallerSession() {
         current_game_state: updatedGameState
       } : null);
 
-      const { error } = await supabase
-        .from('game_sessions')
-        .update({ current_game_state: updatedGameState as unknown as Json })
-        .eq('id', sessionId);
+      try {
+        const { error } = await supabase
+          .from('game_sessions')
+          .update({ current_game_state: updatedGameState as unknown as Json })
+          .eq('id', sessionId);
 
-      if (error) {
-        console.error("Error updating called numbers:", error);
-        toast({
-          title: "Error calling number",
-          description: "Failed to update the called number. Please try again.",
-          variant: "destructive",
-        });
-        fetchSession();
-      } else {
-        toast({
-          title: "Number called",
-          description: `The number ${newNumber} has been called.`,
-        });
+        if (error) {
+          console.error("Error updating called numbers:", error);
+          toast({
+            title: "Error calling number",
+            description: "Failed to update the called number. Please try again.",
+            variant: "destructive",
+          });
+          fetchSession();
+        } else {
+          toast({
+            title: "Number called",
+            description: `The number ${newNumber} has been called.`,
+          });
+        }
+      } catch (err) {
+        console.error("Exception during number calling:", err);
       }
     }
   };
@@ -341,27 +480,36 @@ export default function CallerSession() {
   const checkForClaims = async () => {
     if (!sessionId) return;
 
-    const { data: claims, error } = await supabase
-      .from('bingo_claims')
-      .select('*')
-      .eq('session_id', sessionId)
-      .eq('status', 'pending');
+    try {
+      const { data: claims, error } = await supabase
+        .from('bingo_claims')
+        .select('*')
+        .eq('session_id', sessionId)
+        .eq('status', 'pending');
 
-    if (error) {
-      console.error("Error fetching pending claims:", error);
-      toast({
-        title: "Error checking claims",
-        description: "Failed to check for pending claims. Please try again.",
-        variant: "destructive",
-      });
-    } else {
-      setPendingClaims(claims);
-      if (claims && claims.length > 0) {
+      if (error) {
+        console.error("Error fetching pending claims:", error);
         toast({
-          title: "New claims!",
-          description: `There are ${claims.length} new claims to review.`,
+          title: "Error checking claims",
+          description: "Failed to check for pending claims. Please try again.",
+          variant: "destructive",
         });
+      } else {
+        setPendingClaims(claims || []);
+        if (claims && claims.length > 0) {
+          toast({
+            title: "New claims!",
+            description: `There are ${claims.length} new claims to review.`,
+          });
+        } else {
+          toast({
+            title: "No claims",
+            description: "There are no pending claims at this time.",
+          });
+        }
       }
+    } catch (err) {
+      console.error("Exception during claims check:", err);
     }
   };
 
@@ -379,8 +527,9 @@ export default function CallerSession() {
           selectedPatterns={selectedPatterns}
           onPatternSelect={handlePatternSelect}
           onGoLive={handleGoLive}
-          isGoingLive={false}
+          isGoingLive={isGoingLive}
           prizes={prizes}
+          onPrizeChange={handlePrizeChange}
         />
       ) : session.lifecycle_state === 'live' ? (
         <LiveGameView
