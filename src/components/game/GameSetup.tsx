@@ -95,9 +95,14 @@ export function GameSetup() {
       });
 
       // Save all game configs to the games_config column
+      // Convert GameConfig[] to Json type by using JSON.stringify and JSON.parse
       const { error } = await supabase
         .from('game_sessions')
-        .update({ games_config: gameConfigs })
+        .update({ 
+          // Convert the gameConfigs array to a plain object representation
+          // that supabase can handle as JSON
+          games_config: JSON.parse(JSON.stringify(gameConfigs))
+        })
         .eq('id', currentSession.id);
 
       if (error) throw error;
