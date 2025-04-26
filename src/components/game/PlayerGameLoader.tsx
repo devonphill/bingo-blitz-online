@@ -59,7 +59,10 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
 
   // Fix the game state check with proper null safety and improved condition logic
   const isGameLive = currentSession.lifecycle_state === 'live';
-  const isGameActive = currentSession.current_game_state?.status === 'active';
+  const hasCurrentGameState = !!currentSession.current_game_state;
+  const isGameActive = hasCurrentGameState && currentSession.current_game_state.status === 'active';
+
+  console.log("Game state check:", { isGameLive, hasCurrentGameState, isGameActive });
 
   if (!isGameLive || !isGameActive) {
     return (
@@ -69,7 +72,9 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
           <p className="text-gray-600 mb-4">
             {!isGameLive 
               ? "The caller has not started the game yet." 
-              : "The game is being set up..."}
+              : !isGameActive 
+                ? "The game is waiting to be activated." 
+                : "The game is being set up..."}
           </p>
           <Button onClick={() => window.location.reload()}>
             Refresh

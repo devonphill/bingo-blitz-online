@@ -22,9 +22,9 @@ export function WinPatternSelector({
   onPrizeChange
 }: WinPatternSelectorProps) {
   
-  // This function directly handles the input change event
-  const handlePrizeInputChange = (patternId: string, value: string) => {
-    console.log(`Prize change attempt for ${patternId}: "${value}"`);
+  // Simplify the handler to directly call the callback
+  const handlePrizeChange = (patternId: string, value: string) => {
+    console.log(`Prize change for ${patternId}: "${value}"`);
     if (onPrizeChange) {
       onPrizeChange(patternId, value);
     }
@@ -56,16 +56,13 @@ export function WinPatternSelector({
                 
                 {selectedPatterns.includes(pattern.id) && (
                   <div className="flex-grow max-w-xs">
-                    <Label htmlFor={`prize-${pattern.id}`} className="sr-only">
-                      Prize for {pattern.name}
-                    </Label>
-                    <Input
+                    <input
                       id={`prize-${pattern.id}`}
                       type="text"
                       placeholder="Enter prize"
                       value={prizes[pattern.id] || ''}
-                      onChange={(e) => handlePrizeInputChange(pattern.id, e.target.value)}
-                      className="w-full"
+                      onChange={(e) => handlePrizeChange(pattern.id, e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                       aria-label={`Prize for ${pattern.name}`}
                     />
                   </div>

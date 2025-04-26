@@ -66,7 +66,7 @@ export function GameSetup() {
   };
 
   const handlePrizeChange = (patternId: string, value: string) => {
-    console.log(`Prize updated for ${patternId}: "${value}"`);
+    console.log(`Prize change handler called for ${patternId}: "${value}"`);
     setPrizes(prev => ({
       ...prev,
       [patternId]: value
