@@ -388,6 +388,7 @@ export type Database = {
           current_game: number
           current_game_state: Json | null
           game_type: string
+          games_config: Json | null
           id: string
           lifecycle_state: string
           name: string
@@ -403,6 +404,7 @@ export type Database = {
           current_game?: number
           current_game_state?: Json | null
           game_type: string
+          games_config?: Json | null
           id?: string
           lifecycle_state?: string
           name: string
@@ -418,6 +420,7 @@ export type Database = {
           current_game?: number
           current_game_state?: Json | null
           game_type?: string
+          games_config?: Json | null
           id?: string
           lifecycle_state?: string
           name?: string

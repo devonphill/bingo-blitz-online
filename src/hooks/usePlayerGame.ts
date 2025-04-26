@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useSessions } from '@/contexts/useSessions';
-import { CurrentGameState, GameType } from '@/types';
+import { CurrentGameState, GameType, PrizeDetails } from '@/types';
 
 export function usePlayerGame(playerCode?: string | null) {
   const { currentSession: sessionFromContext, isLoading: isSessionLoading } = useSessions();
@@ -24,7 +24,7 @@ export function usePlayerGame(playerCode?: string | null) {
 
   const currentGameState: CurrentGameState | null = sessionFromContext?.current_game_state ?? null;
   const activeWinPatterns: string[] = currentGameState?.activePatternIds ?? [];
-  const winPrizes: { [key: string]: string } = currentGameState?.prizes ?? {};
+  const winPrizes: { [key: string]: PrizeDetails } = currentGameState?.prizes ?? {};
   const gameType: GameType | null = currentGameState?.gameType ?? sessionFromContext?.gameType ?? null;
 
   useEffect(() => {

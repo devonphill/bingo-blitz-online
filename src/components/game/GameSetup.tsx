@@ -3,87 +3,81 @@ import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { useSessions } from "@/contexts/useSessions";
 import { GameType, PrizeDetails } from "@/types";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Music, Image, Mic, PartyPopper, Star } from "lucide-react";
-import { WinPatternSelector } from "@/components/caller/WinPatternSelector";
 import { WinPattern } from '@/types/winPattern';
 import { useToast } from "@/hooks/use-toast";
+import { GameConfigForm } from '@/components/caller/GameConfigForm';
 
-interface WinPatternOption {
-  id: string;
-  name: string;
-  active: boolean;
+interface GameConfig {
+  gameType: GameType;
+  selectedPatterns: string[];
+  prizes: { [patternId: string]: PrizeDetails };
 }
 
 export function GameSetup() {
   const { currentSession, updateCurrentGameState } = useSessions();
   const { toast } = useToast();
   
-  const [selectedGameType, setSelectedGameType] = useState<GameType>('mainstage');
-  const [winPatterns, setWinPatterns] = useState<WinPatternOption[]>([
-    { id: 'oneLine', name: 'One Line', active: false },
-    { id: 'twoLines', name: 'Two Lines', active: false },
-    { id: 'fullHouse', name: 'Full House', active: false },
-  ]);
-  const [prizes, setPrizes] = useState<{[key: string]: PrizeDetails}>({});
+  const [gameConfigs, setGameConfigs] = useState<GameConfig[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    if (currentSession?.current_game_state) {
-      setSelectedGameType(currentSession.current_game_state.gameType);
+    if (currentSession) {
+      const numberOfGames = currentSession.number_of_games || 1;
+      const currentConfigs = currentSession.games_config as GameConfig[] || [];
       
-      const activePatternIds = currentSession.current_game_state.activePatternIds || [];
-      setWinPatterns(prev => 
-        prev.map(pattern => ({
-          ...pattern,
-          active: activePatternIds.includes(pattern.id)
-        }))
-      );
-      
-      setPrizes(currentSession.current_game_state.prizes || {});
+      // Initialize configs for all games
+      setGameConfigs(Array.from({ length: numberOfGames }, (_, index) => ({
+        gameType: currentConfigs[index]?.gameType || 'mainstage',
+        selectedPatterns: currentConfigs[index]?.selectedPatterns || [],
+        prizes: currentConfigs[index]?.prizes || {}
+      })));
     }
   }, [currentSession]);
 
-  const handleGameTypeChange = (newType: GameType) => {
-    setSelectedGameType(newType);
+  const handleGameTypeChange = (gameIndex: number, newType: GameType) => {
+    setGameConfigs(prev => prev.map((config, index) => 
+      index === gameIndex ? { ...config, gameType: newType } : config
+    ));
   };
 
-  const gameTypes = [
-    { type: 'mainstage', label: 'Mainstage Bingo', icon: Star },
-    { type: 'party', label: 'Party Bingo', icon: PartyPopper },
-    { type: 'quiz', label: 'Quiz Bingo', icon: Mic },
-    { type: 'music', label: 'Music Bingo', icon: Music },
-    { type: 'logo', label: 'Logo Bingo', icon: Image },
-  ] as const;
-
-  const toggleWinPattern = (pattern: WinPattern) => {
-    setWinPatterns(prev => 
-      prev.map(wp => ({
-        ...wp,
-        active: wp.id === pattern.id ? !wp.active : wp.active
-      }))
-    );
+  const handlePatternSelect = (gameIndex: number, pattern: WinPattern) => {
+    setGameConfigs(prev => prev.map((config, index) => {
+      if (index !== gameIndex) return config;
+      
+      const selectedPatterns = [...config.selectedPatterns];
+      const patternIndex = selectedPatterns.indexOf(pattern.id);
+      
+      if (patternIndex >= 0) {
+        selectedPatterns.splice(patternIndex, 1);
+      } else {
+        selectedPatterns.push(pattern.id);
+      }
+      
+      return { ...config, selectedPatterns };
+    }));
   };
 
-  const handlePrizeChange = (patternId: string, prizeDetails: PrizeDetails) => {
-    console.log(`Prize change handler called for ${patternId}:`, prizeDetails);
-    setPrizes(prev => ({
-      ...prev,
-      [patternId]: prizeDetails
+  const handlePrizeChange = (gameIndex: number, patternId: string, prizeDetails: PrizeDetails) => {
+    setGameConfigs(prev => prev.map((config, index) => {
+      if (index !== gameIndex) return config;
+      return {
+        ...config,
+        prizes: {
+          ...config.prizes,
+          [patternId]: prizeDetails
+        }
+      };
     }));
   };
 
   const saveGameSettings = async () => {
     if (!currentSession) return;
     
-    const activePatternIds = winPatterns
-      .filter(pattern => pattern.active)
-      .map(pattern => pattern.id);
-    
-    if (activePatternIds.length === 0) {
+    const hasEmptyPatterns = gameConfigs.some(config => config.selectedPatterns.length === 0);
+    if (hasEmptyPatterns) {
       toast({
         title: "No win patterns selected",
-        description: "Please select at least one win pattern before saving.",
+        description: "Please select at least one win pattern for each game before saving.",
         variant: "destructive"
       });
       return;
@@ -93,11 +87,19 @@ export function GameSetup() {
     
     try {
       await updateCurrentGameState({
-        gameType: selectedGameType,
-        activePatternIds,
-        prizes,
-        status: 'active',
+        gameType: gameConfigs[0].gameType, // Current game type
+        activePatternIds: gameConfigs[0].selectedPatterns,
+        prizes: gameConfigs[0].prizes,
+        status: 'pending',
       });
+
+      // Save all game configs to the new games_config column
+      const { error } = await supabase
+        .from('game_sessions')
+        .update({ games_config: gameConfigs })
+        .eq('id', currentSession.id);
+
+      if (error) throw error;
       
       toast({
         title: "Success",
@@ -115,52 +117,31 @@ export function GameSetup() {
     }
   };
 
-  return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle>Game Setup</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium">Game Type</h3>
-          <div className="flex flex-wrap gap-2">
-            {gameTypes.map(({ type, label, icon: Icon }) => (
-              <Button 
-                key={type}
-                variant={selectedGameType === type ? 'default' : 'outline'}
-                onClick={() => handleGameTypeChange(type as GameType)}
-                className="flex-1"
-              >
-                <Icon className="w-4 h-4 mr-2" />
-                {label}
-              </Button>
-            ))}
-          </div>
-        </div>
+  const winPatterns = WIN_PATTERNS[selectedGameType] || [];
 
-        <div className="space-y-2">
-          <WinPatternSelector
-            patterns={winPatterns.map(wp => ({
-              id: wp.id,
-              name: wp.name,
-              available: true,
-              gameType: selectedGameType
-            }))}
-            selectedPatterns={winPatterns.filter(wp => wp.active).map(wp => wp.id)}
-            onPatternSelect={toggleWinPattern}
-            prizes={prizes}
-            onPrizeChange={handlePrizeChange}
-          />
-        </div>
-        
-        <Button 
-          className="w-full" 
-          onClick={saveGameSettings}
-          disabled={isSaving}
-        >
-          {isSaving ? "Saving..." : "Save Game Settings"}
-        </Button>
-      </CardContent>
-    </Card>
+  return (
+    <div className="space-y-6">
+      {gameConfigs.map((config, index) => (
+        <GameConfigForm
+          key={index}
+          gameNumber={index + 1}
+          gameType={config.gameType}
+          onGameTypeChange={(type) => handleGameTypeChange(index, type)}
+          winPatterns={WIN_PATTERNS[config.gameType] || []}
+          selectedPatterns={config.selectedPatterns}
+          onPatternSelect={(pattern) => handlePatternSelect(index, pattern)}
+          prizes={config.prizes}
+          onPrizeChange={(patternId, details) => handlePrizeChange(index, patternId, details)}
+        />
+      ))}
+      
+      <Button 
+        className="w-full" 
+        onClick={saveGameSettings}
+        disabled={isSaving}
+      >
+        {isSaving ? "Saving..." : "Save Game Settings"}
+      </Button>
+    </div>
   );
 }
