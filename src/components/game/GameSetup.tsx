@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { useSessions } from "@/contexts/useSessions";
 import { GameType, PrizeDetails, GameConfig } from "@/types";
-import { WinPattern } from '@/types/winPattern';
+import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
 import { useToast } from "@/hooks/use-toast";
 import { GameConfigForm } from '@/components/caller/GameConfigForm';
 import { supabase } from "@/integrations/supabase/client";
@@ -36,6 +37,7 @@ export function GameSetup() {
         const newConfigs: GameConfig[] = Array.from({ length: numberOfGames }, (_, index) => {
           // Use existing config if available, otherwise create new one
           return existingConfigs[index] || {
+            gameNumber: index + 1,
             gameType: 'mainstage' as GameType,
             selectedPatterns: ['oneLine'],
             prizes: {
@@ -96,6 +98,7 @@ export function GameSetup() {
           // Then update current_game_state
           console.log("Saving to current_game_state");
           const success = await updateCurrentGameState({
+            gameNumber: gameConfigs[0].gameNumber,
             gameType: gameConfigs[0].gameType,
             activePatternIds: gameConfigs[0].selectedPatterns,
             prizes: gameConfigs[0].prizes,
@@ -160,6 +163,8 @@ export function GameSetup() {
   };
 
   const handlePrizeChange = (gameIndex: number, patternId: string, prizeDetails: PrizeDetails) => {
+    console.log(`Changing prize for game ${gameIndex + 1}, pattern ${patternId}:`, prizeDetails);
+    
     setGameConfigs(prev => prev.map((config, index) => {
       if (index !== gameIndex) return config;
       return {
@@ -194,6 +199,7 @@ export function GameSetup() {
       
       // First update the current game state with prizes
       const updateResult = await updateCurrentGameState({
+        gameNumber: gameConfigs[0].gameNumber,
         gameType: gameConfigs[0].gameType,
         activePatternIds: gameConfigs[0].selectedPatterns,
         prizes: gameConfigs[0].prizes,
@@ -249,10 +255,10 @@ export function GameSetup() {
       {gameConfigs.map((config, index) => (
         <GameConfigForm
           key={index}
-          gameNumber={index + 1}
+          gameNumber={config.gameNumber}
           gameType={config.gameType}
           onGameTypeChange={(type) => handleGameTypeChange(index, type)}
-          winPatterns={config.gameType ? import.meta.env.DEV ? [] : [] : []} // This will be populated by GameConfigForm
+          winPatterns={config.gameType ? WIN_PATTERNS[config.gameType] : []}
           selectedPatterns={config.selectedPatterns}
           onPatternSelect={(pattern) => handlePatternSelect(index, pattern)}
           prizes={config.prizes}

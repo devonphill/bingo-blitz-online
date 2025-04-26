@@ -7,12 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-
-interface PrizeDetails {
-  amount?: string;
-  isNonCash: boolean;
-  description?: string;
-}
+import { PrizeDetails } from '@/types';
 
 interface WinPatternSelectorProps {
   patterns: WinPattern[];
@@ -50,65 +45,71 @@ export function WinPatternSelector({
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {patterns.map((pattern) => (
-            <div 
-              key={pattern.id} 
-              className={`flex items-start justify-between p-3 rounded-lg border ${
-                selectedPatterns.includes(pattern.id) ? 'border-primary bg-primary/5' : 'border-border'
-              }`}
-            >
-              <div className="flex flex-col w-full gap-4">
-                <div className="flex items-center gap-4">
-                  <Button
-                    onClick={() => onPatternSelect && onPatternSelect(pattern)}
-                    variant={selectedPatterns.includes(pattern.id) ? 'default' : 'outline'}
-                    disabled={!pattern.available}
-                    className="min-w-[100px]"
-                  >
-                    {pattern.name}
-                  </Button>
-                </div>
-                
-                {selectedPatterns.includes(pattern.id) && (
-                  <div className="flex flex-col gap-4 pl-4">
-                    <div className="flex items-center gap-4">
-                      <div className="flex-1 max-w-xs">
-                        <Label htmlFor={`prize-${pattern.id}`}>Prize Amount</Label>
-                        <Input
-                          id={`prize-${pattern.id}`}
-                          type="number"
-                          placeholder="Enter prize amount"
-                          value={prizes[pattern.id]?.amount || ''}
-                          onChange={(e) => handlePrizeChange(pattern.id, 'amount', e.target.value)}
+          {patterns.length === 0 ? (
+            <div className="text-muted-foreground text-center py-4">
+              Please select a game type to see available win patterns
+            </div>
+          ) : (
+            patterns.map((pattern) => (
+              <div 
+                key={pattern.id} 
+                className={`flex items-start justify-between p-3 rounded-lg border ${
+                  selectedPatterns.includes(pattern.id) ? 'border-primary bg-primary/5' : 'border-border'
+                }`}
+              >
+                <div className="flex flex-col w-full gap-4">
+                  <div className="flex items-center gap-4">
+                    <Button
+                      onClick={() => onPatternSelect && onPatternSelect(pattern)}
+                      variant={selectedPatterns.includes(pattern.id) ? 'default' : 'outline'}
+                      disabled={!pattern.available}
+                      className="min-w-[100px]"
+                    >
+                      {pattern.name}
+                    </Button>
+                  </div>
+                  
+                  {selectedPatterns.includes(pattern.id) && (
+                    <div className="flex flex-col gap-4 pl-4">
+                      <div className="flex items-center gap-4">
+                        <div className="flex-1 max-w-xs">
+                          <Label htmlFor={`prize-${pattern.id}`}>Prize Amount</Label>
+                          <Input
+                            id={`prize-${pattern.id}`}
+                            type="text"
+                            placeholder="Enter prize amount"
+                            value={prizes[pattern.id]?.amount || ''}
+                            onChange={(e) => handlePrizeChange(pattern.id, 'amount', e.target.value)}
+                            className="w-full"
+                          />
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`nonCash-${pattern.id}`}
+                            checked={prizes[pattern.id]?.isNonCash || false}
+                            onCheckedChange={(checked) => 
+                              handlePrizeChange(pattern.id, 'isNonCash', checked === true)
+                            }
+                          />
+                          <Label htmlFor={`nonCash-${pattern.id}`}>Non-Cash Prize</Label>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <Label htmlFor={`description-${pattern.id}`}>Prize Description</Label>
+                        <Textarea
+                          id={`description-${pattern.id}`}
+                          placeholder="Enter prize description"
+                          value={prizes[pattern.id]?.description || ''}
+                          onChange={(e) => handlePrizeChange(pattern.id, 'description', e.target.value)}
                           className="w-full"
                         />
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`nonCash-${pattern.id}`}
-                          checked={prizes[pattern.id]?.isNonCash || false}
-                          onCheckedChange={(checked) => 
-                            handlePrizeChange(pattern.id, 'isNonCash', checked === true)
-                          }
-                        />
-                        <Label htmlFor={`nonCash-${pattern.id}`}>Non-Cash Prize</Label>
-                      </div>
                     </div>
-                    <div className="flex-1">
-                      <Label htmlFor={`description-${pattern.id}`}>Prize Description</Label>
-                      <Textarea
-                        id={`description-${pattern.id}`}
-                        placeholder="Enter prize description"
-                        value={prizes[pattern.id]?.description || ''}
-                        onChange={(e) => handlePrizeChange(pattern.id, 'description', e.target.value)}
-                        className="w-full"
-                      />
-                    </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </CardContent>
     </Card>
