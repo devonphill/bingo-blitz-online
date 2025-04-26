@@ -4,14 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { useSession } from '@/contexts/SessionContext';
+import { useSessionContext } from '@/contexts/SessionProvider';
 import { useToast } from '@/components/ui/use-toast';
 import { useNavigate } from 'react-router-dom';
 
 export default function PlayerJoinForm() {
   const [playerCode, setPlayerCode] = useState('');
   const [isJoining, setIsJoining] = useState(false);
-  const { joinSession } = useSession();
+  const { joinSession } = useSessionContext();
   const { toast } = useToast();
   const navigate = useNavigate();
 

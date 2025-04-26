@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
@@ -5,7 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const Index = () => {
   const navigate = useNavigate();
-  const { role } = useAuth?.() || {};
+  const { role } = useAuth();
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-bingo-primary/10 to-bingo-secondary/10 p-4 text-center">
@@ -19,7 +20,7 @@ const Index = () => {
       <div className="flex flex-col sm:flex-row gap-4 animate-fade-in">
         <Button 
           className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary text-lg px-6 py-6"
-          onClick={() => navigate('/join')}
+          onClick={() => navigate('/player/join')}
         >
           Join as Player
         </Button>

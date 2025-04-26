@@ -7,7 +7,7 @@ import { GameSession } from '@/types';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { useSession } from '@/contexts/SessionContext';
+import { useSessionContext } from '@/contexts/SessionProvider';
 import { Trash2 } from 'lucide-react';
 import {
   AlertDialog,
@@ -28,14 +28,14 @@ interface SessionCardProps {
 export default function SessionCard({ session }: SessionCardProps) {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { fetchSessions } = useSession();
+  const { fetchSessions } = useSessionContext();
   
   const handleStartCalling = () => {
-    navigate(`/caller/session/${session.id}`);
+    navigate(`/session/${session.id}`);
   };
   
   const handleAddPlayers = () => {
-    navigate(`/add-players/${session.id}`);
+    navigate(`/session/${session.id}/players/add`);
   };
 
   const handleDelete = async () => {

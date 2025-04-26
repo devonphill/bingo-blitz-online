@@ -12,26 +12,29 @@ import CallerSession from "./pages/CallerSession";
 import AdminDashboard from "./pages/AdminDashboard";
 import { Toaster } from './components/ui/toaster';
 import { SessionProvider } from './contexts/SessionProvider';
+import { AuthProvider } from './contexts/AuthContext';
 
 function App() {
   return (
-    <SessionProvider>
-      <Router>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/register/superuser" element={<RegisterSuperuser />} />
-          <Route path="/player/join" element={<PlayerJoin />} />
-          <Route path="/player/game" element={<PlayerGame />} />
-          <Route path="/session/:sessionId" element={<CallerSession />} />
-          <Route path="/session/:sessionId/players/add" element={<AddPlayers />} />
-          <Route path="/admin" element={<AdminDashboard />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-        <Toaster />
-      </Router>
-    </SessionProvider>
+    <AuthProvider>
+      <SessionProvider>
+        <Router>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/register/superuser" element={<RegisterSuperuser />} />
+            <Route path="/player/join" element={<PlayerJoin />} />
+            <Route path="/player/game" element={<PlayerGame />} />
+            <Route path="/session/:sessionId" element={<CallerSession />} />
+            <Route path="/session/:sessionId/players/add" element={<AddPlayers />} />
+            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+          <Toaster />
+        </Router>
+      </SessionProvider>
+    </AuthProvider>
   );
 }
 
