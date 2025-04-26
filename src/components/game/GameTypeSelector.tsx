@@ -1,21 +1,44 @@
 
 import React from 'react';
 import { Button } from '@/components/ui/button';
+import { GameType } from '@/types';
 
 interface GameTypeSelectorProps {
-  onGameTypeSelect: (type: string) => void;
+  onGameTypeSelect: (type: GameType) => void;
+  currentGameType: GameType;
 }
 
-export default function GameTypeSelector({ onGameTypeSelect }: GameTypeSelectorProps) {
+export default function GameTypeSelector({ 
+  onGameTypeSelect, 
+  currentGameType 
+}: GameTypeSelectorProps) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="bg-white shadow p-8 rounded-lg max-w-xs w-full text-center">
-        <h2 className="text-2xl font-bold mb-3">Select Game Type</h2>
+    <div className="space-y-4">
+      <h3 className="font-medium text-base">Game Type</h3>
+      <div className="flex flex-wrap gap-2">
         <Button
-          className="w-full mb-2"
-          onClick={() => onGameTypeSelect('90-ball')}
+          variant={currentGameType === 'mainstage' ? 'default' : 'outline'}
+          onClick={() => onGameTypeSelect('mainstage')}
         >
-          90-Ball Bingo
+          Mainstage Bingo
+        </Button>
+        <Button
+          variant={currentGameType === 'party' ? 'default' : 'outline'}
+          onClick={() => onGameTypeSelect('party')}
+        >
+          Party Bingo
+        </Button>
+        <Button
+          variant={currentGameType === 'quiz' ? 'default' : 'outline'}
+          onClick={() => onGameTypeSelect('quiz')}
+        >
+          Quiz Bingo
+        </Button>
+        <Button
+          variant={currentGameType === 'music' ? 'default' : 'outline'}
+          onClick={() => onGameTypeSelect('music')}
+        >
+          Music Bingo
         </Button>
       </div>
     </div>

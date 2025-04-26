@@ -28,6 +28,7 @@ export function GameConfigForm({
   onPrizeChange,
 }: GameConfigFormProps) {
   console.log(`GameConfigForm for Game ${gameNumber} - Prizes:`, prizes);
+  console.log("Selected patterns:", selectedPatterns);
   
   return (
     <Card className="mb-6">

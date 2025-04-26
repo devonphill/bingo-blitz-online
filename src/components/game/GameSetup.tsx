@@ -36,7 +36,7 @@ export function GameSetup() {
     
     // Check if games_config already exists and is not empty
     const existingConfigs = Array.isArray(currentSession.games_config) 
-      ? currentSession.games_config as unknown as GameConfig[] 
+      ? currentSession.games_config as GameConfig[] 
       : [];
     
     console.log("Existing configs from database:", existingConfigs);

@@ -5,12 +5,14 @@ import CalledNumbers from './CalledNumbers';
 import PlayerList from './PlayerList';
 import TicketsDebugDisplay from './TicketsDebugDisplay';
 import CallerControls from './CallerControls';
+import { WinPattern } from '@/types/winPattern';
+import { PrizeDetails } from '@/types';
 
 interface SessionMainContentProps {
   session: any;
-  winLines: Array<{ id: number; name: string; active: boolean }>;
+  winLines: Array<WinPattern>;
   currentActiveWinline: number;
-  onToggleWinline: (winlineId: number) => void;
+  onToggleWinline: (winline: WinPattern) => void;
   calledNumbers: number[];
   currentNumber: number | null;
   sessionPlayers: any[];
@@ -22,6 +24,8 @@ interface SessionMainContentProps {
   claimQueue?: Array<{ playerName: string; playerId: string; claimId?: string }>;
   openClaimSheet: () => void;
   gameType?: string;
+  selectedPatterns?: string[];
+  prizes?: { [patternId: string]: PrizeDetails };
 }
 
 export default function SessionMainContent({
@@ -39,7 +43,9 @@ export default function SessionMainContent({
   sessionId,
   claimQueue = [],
   openClaimSheet,
-  gameType = '90-ball'
+  gameType = '90-ball',
+  selectedPatterns = [],
+  prizes = {}
 }: SessionMainContentProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -51,6 +57,8 @@ export default function SessionMainContent({
               winLines={winLines}
               currentActiveWinline={currentActiveWinline}
               onToggleWinline={onToggleWinline}
+              selectedPatterns={selectedPatterns}
+              prizes={prizes}
             />
           </div>
           <CalledNumbers 
