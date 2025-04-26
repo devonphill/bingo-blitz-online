@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { useSessions } from "@/contexts/useSessions";
 import { GameType, PrizeDetails } from "@/types";
-import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
+import { WinPattern } from '@/types/winPattern';
 import { useToast } from "@/hooks/use-toast";
 import { GameConfigForm } from '@/components/caller/GameConfigForm';
 import { supabase } from "@/integrations/supabase/client";
@@ -87,10 +87,11 @@ export function GameSetup() {
     setIsSaving(true);
     
     try {
+      // Important: Make sure we pass the prizes when updating the current game state
       await updateCurrentGameState({
         gameType: gameConfigs[0].gameType, // Current game type
         activePatternIds: gameConfigs[0].selectedPatterns,
-        prizes: gameConfigs[0].prizes,
+        prizes: gameConfigs[0].prizes, // Explicitly include prizes here
         status: 'pending',
       });
 
@@ -131,7 +132,7 @@ export function GameSetup() {
           gameNumber={index + 1}
           gameType={config.gameType}
           onGameTypeChange={(type) => handleGameTypeChange(index, type)}
-          winPatterns={WIN_PATTERNS[config.gameType] || []}
+          winPatterns={config.gameType ? import.meta.env.DEV ? [] : [] : []} // This will be populated by GameConfigForm
           selectedPatterns={config.selectedPatterns}
           onPatternSelect={(pattern) => handlePatternSelect(index, pattern)}
           prizes={config.prizes}
