@@ -8,10 +8,12 @@ interface Props {
   isLoading: boolean;
   errorMessage: string | null;
   currentSession: GameSession | null;
+  loadingStep?: string;
 }
 
-export default function PlayerGameLoader({ isLoading, errorMessage, currentSession }: Props) {
+export default function PlayerGameLoader({ isLoading, errorMessage, currentSession, loadingStep = "initializing" }: Props) {
   console.log("PlayerGameLoader - Session data:", currentSession);
+  console.log("PlayerGameLoader - Loading step:", loadingStep);
 
   if (isLoading) {
     return (
@@ -20,6 +22,7 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
           <div className="animate-spin h-12 w-12 border-4 border-bingo-primary border-t-transparent rounded-full mx-auto mb-6"></div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Loading game...</h2>
           <p className="text-gray-500 mb-4">Please wait while we get everything ready</p>
+          <p className="text-xs text-gray-400">{loadingStep || "initializing"}...</p>
         </div>
       </div>
     );
@@ -34,7 +37,13 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
           </div>
           <h2 className="text-2xl font-bold text-red-600 mb-4 text-center">Something went wrong</h2>
           <p className="text-gray-700 mb-6 text-center">{errorMessage}</p>
-          <div className="flex justify-center">
+          <div className="flex flex-col gap-3">
+            <Button onClick={() => window.location.reload()} 
+                    variant="outline" 
+                    className="flex items-center justify-center gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Try Again
+            </Button>
             <Button onClick={() => window.location.href = '/join'}>
               Join a Different Game
             </Button>
@@ -112,6 +121,11 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
               <p className="text-sm text-gray-500">
                 <span className="font-semibold">Status:</span> {currentSession.status || 'unknown'}
               </p>
+              {hasCurrentGameState && (
+                <p className="text-sm text-gray-500 mt-2">
+                  <span className="font-semibold">Game status:</span> {currentSession.current_game_state.status || 'unknown'}
+                </p>
+              )}
             </div>
             <Button onClick={() => window.location.reload()} className="w-full flex items-center justify-center gap-2">
               <RefreshCw className="h-4 w-4" />

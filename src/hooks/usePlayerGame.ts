@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -20,6 +21,7 @@ export function usePlayerGame(playerCode?: string | null) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isClaiming, setIsClaiming] = useState(false);
   const [claimStatus, setClaimStatus] = useState<'pending' | 'validated' | 'rejected' | undefined>(undefined);
+  const [loadingStep, setLoadingStep] = useState<string>("initializing");
 
   const currentGameState: CurrentGameState | null = currentSession?.current_game_state ?? null;
   const activeWinPatterns: string[] = currentGameState?.activePatternIds ?? [];
@@ -49,6 +51,9 @@ export function usePlayerGame(playerCode?: string | null) {
     }
 
     try {
+      setLoadingStep("finding player");
+      console.log(`Finding player with code: ${playerCode}`);
+      
       const { data: playerData, error: playerError } = await supabase
         .from('players')
         .select('id, nickname, session_id')
@@ -68,17 +73,28 @@ export function usePlayerGame(playerCode?: string | null) {
       setPlayerId(playerData.id);
       setPlayerName(playerData.nickname);
       setSessionId(playerData.session_id);
-
+      
+      setLoadingStep("fetching sessions");
+      console.log(`Found player ${playerData.nickname} (${playerData.id}) in session ${playerData.session_id}`);
+      
       await fetchSessions();
 
+      setLoadingStep("finding matching session");
+      console.log("Looking for matching session in loaded sessions...");
+      
       const matchingSession = sessions.find(s => s.id === playerData.session_id);
       
       if (!matchingSession) {
+        console.error("No matching session found in sessions array:", sessions.map(s => s.id));
         handleLoadingError('No matching game session found');
         return false;
       }
 
+      console.log("Found matching session:", matchingSession.id, matchingSession.name);
       setCurrentSession(matchingSession);
+      
+      setLoadingStep("fetching tickets");
+      console.log(`Fetching tickets for player ${playerData.id} in session ${playerData.session_id}`);
       
       const { data: ticketData, error: ticketError } = await supabase
         .from('assigned_tickets')
@@ -92,12 +108,14 @@ export function usePlayerGame(playerCode?: string | null) {
       }
 
       if (ticketData && ticketData.length > 0) {
+        console.log(`Found ${ticketData.length} tickets for player`);
         setTickets(ticketData);
       } else {
         handleLoadingError('No tickets found for this player');
         return false;
       }
 
+      setLoadingStep("completed");
       return true;
     } catch (error) {
       handleLoadingError(`Unexpected error: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -109,7 +127,13 @@ export function usePlayerGame(playerCode?: string | null) {
 
   useEffect(() => {
     setIsLoading(true);
-    fetchPlayerData();
+    setErrorMessage(null);
+    
+    const timer = setTimeout(() => {
+      fetchPlayerData();
+    }, 500); // Small delay to ensure initial renders complete
+    
+    return () => clearTimeout(timer);
   }, [fetchPlayerData]);
 
   useEffect(() => {
@@ -322,5 +346,6 @@ export function usePlayerGame(playerCode?: string | null) {
     handleClaimBingo,
     isClaiming,
     claimStatus,
+    loadingStep,
   };
 }

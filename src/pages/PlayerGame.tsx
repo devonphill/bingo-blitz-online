@@ -52,19 +52,29 @@ export default function PlayerGame() {
     isClaiming,
     claimStatus,
     gameType,
+    loadingStep,
   } = usePlayerGame(playerCode);
 
   console.log("PlayerGame - Current session:", currentSession);
   console.log("PlayerGame - Session state:", currentSession?.lifecycle_state, "Status:", currentSession?.status);
   console.log("PlayerGame - Game state:", currentGameState);
   console.log("PlayerGame - Player details:", {playerId, playerName, tickets: tickets?.length || 0});
+  console.log("PlayerGame - Loading step:", loadingStep);
 
-  if (isLoading || errorMessage || !currentSession || currentGameState?.status !== 'active') {
+  // We want to make sure data is fully ready before showing the game view
+  const shouldShowLoader = isLoading || 
+    errorMessage || 
+    !currentSession || 
+    !currentGameState || 
+    currentGameState.status !== 'active';
+
+  if (shouldShowLoader) {
     return (
       <PlayerGameLoader 
         isLoading={isLoading} 
         errorMessage={errorMessage} 
-        currentSession={currentSession} 
+        currentSession={currentSession}
+        loadingStep={loadingStep}
       />
     );
   }
