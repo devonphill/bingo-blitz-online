@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import BulkAddPlayersForm from '@/components/player/BulkAddPlayersForm';
 import { useAuth } from '@/contexts/AuthContext';
-import { useSession } from '@/contexts/SessionContext';
+import { useSessionContext } from '@/contexts/SessionProvider';
 import { ArrowLeft } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { GameSession, GameType } from '@/types';
@@ -12,7 +13,7 @@ import { getCurrentGameState } from '@/helpers/gameStateHelper';
 
 export default function AddPlayers() {
   const { user } = useAuth();
-  const { sessions, fetchSessions } = useSession();
+  const { sessions, fetchSessions } = useSessionContext();
   const navigate = useNavigate();
   const { sessionId } = useParams();
   const [session, setSession] = useState<GameSession | null>(null);

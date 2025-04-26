@@ -1,18 +1,19 @@
+
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { useSessionContext } from '@/contexts/SessionProvider';
 import { v4 as uuidv4 } from 'uuid';
 
-interface TempPlayer {
+type TempPlayer = {
   playerCode: string;
   nickname: string;
   email: string;
   tickets: number;
-}
+};
 
 function generatePlayerCode(length = 6) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -25,6 +26,7 @@ function generatePlayerCode(length = 6) {
 
 export default function BulkAddPlayersForm({ sessionId }: { sessionId: string }) {
   const { toast } = useToast();
+  const { bulkAddPlayers } = useSessionContext();
   const [players, setPlayers] = useState<TempPlayer[]>([]);
   const [nickname, setNickname] = useState('');
   const [email, setEmail] = useState('');
@@ -64,23 +66,19 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
       toast({ title: 'Nothing to save', description: 'Add at least one player.', variant: 'destructive' });
       return;
     }
+    
+    if (!bulkAddPlayers) {
+      toast({ title: 'Error', description: 'Bulk add players function not available', variant: 'destructive' });
+      return;
+    }
+    
     setSaving(true);
     try {
-      const { error } = await supabase.from('players').insert(
-        players.map(p => ({
-          player_code: p.playerCode,
-          nickname: p.nickname,
-          email: p.email,
-          tickets: p.tickets,
-          session_id: sessionId,
-          joined_at: new Date().toISOString()
-        }))
-      );
-      if (error) {
-        console.error("Bulk add error:", error);
+      const result = await bulkAddPlayers(sessionId, players);
+      if (!result.success) {
         toast({
           title: 'Some players failed',
-          description: error.message || 'There were problems saving some or all players.',
+          description: result.message || 'There were problems saving some or all players.',
           variant: 'destructive'
         });
       } else {
@@ -90,11 +88,11 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
         });
         setPlayers([]);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Unexpected error:", err);
       toast({
         title: 'Error saving players',
-        description: 'An unexpected error occurred.',
+        description: err.message || 'An unexpected error occurred.',
         variant: 'destructive'
       });
     } finally {

@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, ReactNode } from "react";
 import { GameSession, Player } from "@/types";
-import { usePlayers } from "./usePlayers";
+import { usePlayers, AdminTempPlayer } from "./usePlayers";
 import { useTickets } from "./useTickets";
 import { useSessions } from "./useSessions";
 
@@ -16,7 +16,7 @@ interface SessionContextType {
   players: Player[];
   joinSession: ReturnType<typeof usePlayers>["joinSession"];
   addPlayer: ReturnType<typeof usePlayers>["addPlayer"];
-  bulkAddPlayers: ReturnType<typeof usePlayers>["bulkAddPlayers"];
+  bulkAddPlayers: (sessionId: string, newPlayers: AdminTempPlayer[]) => Promise<{ success: boolean; message?: string }>;
   // Ticket logic
   assignTicketsToPlayer: ReturnType<typeof useTickets>["assignTicketsToPlayer"];
   getPlayerAssignedTickets: ReturnType<typeof useTickets>["getPlayerAssignedTickets"];

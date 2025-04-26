@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { GameSession, Player } from "@/types";
 import { useTickets } from "./useTickets";
 
-type AdminTempPlayer = {
+export type AdminTempPlayer = {
   playerCode: string;
   nickname: string;
   email: string;
