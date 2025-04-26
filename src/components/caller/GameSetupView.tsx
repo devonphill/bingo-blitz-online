@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { GameType, PrizeDetails, GameConfig } from '@/types';
 import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
@@ -128,21 +129,25 @@ export function GameSetupView({
     
     setIsSaving(true);
     try {
+      // Convert gameConfigs to a JSON-compatible object
       const gameConfigsJson = JSON.stringify(gameConfigs);
+      
+      // Create a JSON-compatible game state for the first game
+      const gameStateJson = JSON.stringify({
+        gameNumber: gameConfigs[0].gameNumber,
+        gameType: gameConfigs[0].gameType,
+        activePatternIds: gameConfigs[0].selectedPatterns,
+        prizes: gameConfigs[0].prizes,
+        status: 'pending',
+        calledItems: [],
+        lastCalledItem: null
+      });
       
       const { data, error } = await supabase
         .from('game_sessions')
         .update({ 
           games_config: JSON.parse(gameConfigsJson),
-          current_game_state: {
-            gameNumber: gameConfigs[0].gameNumber,
-            gameType: gameConfigs[0].gameType,
-            activePatternIds: gameConfigs[0].selectedPatterns,
-            prizes: gameConfigs[0].prizes,
-            status: 'pending',
-            calledItems: [],
-            lastCalledItem: null
-          }
+          current_game_state: JSON.parse(gameStateJson)
         })
         .eq('id', localStorage.getItem('currentSessionId'))
         .select('games_config');
