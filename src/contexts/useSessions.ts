@@ -117,6 +117,7 @@ export const useSessions = () => {
               current_game_state: updatedSessionData.current_game_state
                 ? (updatedSessionData.current_game_state as CurrentGameState)
                 : initializeGameState(updatedSessionData.game_type as GameType, 1),
+              lifecycle_state: updatedSessionData.lifecycle_state || 'setup'
             };
             console.log("Updating current session state from payload:", updatedCurrentSession);
             setCurrentSessionState(updatedCurrentSession);

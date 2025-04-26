@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { GameType, PrizeDetails, GameConfig } from '@/types';
 import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
@@ -48,17 +47,14 @@ export function GameSetupView({
     console.log("GameSetupView - numberOfGames:", numberOfGames);
   }, [gameConfigs, numberOfGames]);
 
-  // Ensure we have the correct number of game configs
   useEffect(() => {
     if (!gameConfigs || gameConfigs.length !== numberOfGames) {
       const newConfigs = Array.from({ length: numberOfGames }, (_, index) => {
-        // Use existing config if available
         const existingConfig = gameConfigs[index];
         if (existingConfig) {
           return existingConfig;
         }
         
-        // Create new default config
         return {
           gameNumber: index + 1,
           gameType: 'mainstage' as GameType,
@@ -96,14 +92,12 @@ export function GameSetupView({
     
     if (patternIndex >= 0) {
       selectedPatterns.splice(patternIndex, 1);
-      // Remove prizes for this pattern
       const updatedPrizes = {...config.prizes};
       delete updatedPrizes[patternId];
       config.prizes = updatedPrizes;
     } else {
       selectedPatterns.push(patternId);
       
-      // Set default prize if none exists for this pattern
       if (!config.prizes[patternId]) {
         config.prizes[patternId] = {
           amount: '10.00',
@@ -134,14 +128,12 @@ export function GameSetupView({
     
     setIsSaving(true);
     try {
-      // Convert gameConfigs to a JSON-compatible object
       const gameConfigsJson = JSON.stringify(gameConfigs);
       
       const { data, error } = await supabase
         .from('game_sessions')
         .update({ 
           games_config: JSON.parse(gameConfigsJson),
-          // Also update current_game_state with the first game's config
           current_game_state: {
             gameNumber: gameConfigs[0].gameNumber,
             gameType: gameConfigs[0].gameType,
@@ -181,7 +173,6 @@ export function GameSetupView({
     }
   };
   
-  // Generate tabs for each game
   const gameTabs = Array.from({ length: numberOfGames }, (_, index) => {
     const gameNumber = index + 1;
     return (
@@ -194,11 +185,9 @@ export function GameSetupView({
     );
   });
   
-  // Generate tab content for each game
   const gameTabsContent = gameConfigs.map((config, index) => {
     const gameNumber = index + 1;
     
-    // Get win patterns specific to the selected game type
     const gameType = config.gameType;
     const patterns = WIN_PATTERNS[gameType] || [];
     

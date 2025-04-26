@@ -134,8 +134,17 @@ export function usePlayerGame(playerCode?: string | null) {
       }
       setIsLoading(isSessionLoading);
       setErrorMessage('');
+      
+      // Log session state to help debug
+      console.log("Player view - Current session state:", {
+        id: sessionFromContext.id,
+        lifecycle: sessionFromContext.lifecycle_state,
+        gameState: sessionFromContext.current_game_state,
+        status: sessionFromContext.current_game_state?.status
+      });
     } else if (sessionId && !sessionFromContext) {
       // Handle case where we have a session ID but no context
+      console.log("Player has sessionId but no context found:", sessionId);
     }
   }, [sessionFromContext, sessionId, isSessionLoading]);
 
