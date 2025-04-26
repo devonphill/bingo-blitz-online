@@ -51,14 +51,24 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
   }
 
   // If we get here, the session exists but the game might not be ready
-  // Fix the type comparison error - the status is "active" (string) not true (boolean)
-  if (currentSession.lifecycle_state !== 'live' || currentSession.current_game_state?.status !== 'active') {
+  // Debug the actual values to help trace the issue
+  console.log("Current session state:", {
+    lifecycle: currentSession.lifecycle_state,
+    gameState: currentSession.current_game_state,
+    status: currentSession.current_game_state?.status
+  });
+
+  // Fix the game state check with proper null safety and improved condition logic
+  const isGameLive = currentSession.lifecycle_state === 'live';
+  const isGameActive = currentSession.current_game_state?.status === 'active';
+
+  if (!isGameLive || !isGameActive) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-2xl font-bold text-gray-900 mb-4">Waiting for game to start</h2>
           <p className="text-gray-600 mb-4">
-            {currentSession.lifecycle_state === 'setup' 
+            {!isGameLive 
               ? "The caller has not started the game yet." 
               : "The game is being set up..."}
           </p>
