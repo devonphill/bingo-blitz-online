@@ -1,14 +1,15 @@
+
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
-import { useSession } from "@/contexts/SessionContext";
+import { useSessionContext } from "@/contexts/SessionProvider";
 import { useNavigate } from "react-router-dom";
 import BulkAddPlayersForm from "@/components/player/BulkAddPlayersForm";
 import { GameRulesManager } from "@/components/admin/GameRulesManager";
 
 export default function AdminDashboard() {
   const { user, role, logout } = useAuth();
-  const { sessions } = useSession();
+  const { sessions } = useSessionContext();
   const navigate = useNavigate();
   const [selectedSessionId, setSelectedSessionId] = useState(
     sessions.length > 0 ? sessions[0].id : ''

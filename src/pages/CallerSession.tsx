@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -198,7 +197,7 @@ export default function CallerSession() {
         .update({
           game_type: newType,
           current_game_state: gameStateForSupabase as Json,
-          games_config: updatedConfigs as Json
+          games_config: JSON.parse(JSON.stringify(updatedConfigs)) as Json
         })
         .eq('id', sessionId);
 
@@ -395,7 +394,8 @@ export default function CallerSession() {
         .update({ 
           lifecycle_state: 'live',
           status: 'active', // Update the session status to active
-          current_game_state: gameStateForSupabase as Json
+          current_game_state: gameStateForSupabase as Json,
+          games_config: JSON.parse(JSON.stringify(gameConfigs)) as Json
         })
         .eq('id', sessionId);
 

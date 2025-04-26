@@ -5,14 +5,14 @@ import { Button } from '@/components/ui/button';
 import CreateSessionForm from '@/components/dashboard/CreateSessionForm';
 import SessionCard from '@/components/dashboard/SessionCard';
 import { useAuth } from '@/contexts/AuthContext';
-import { useSession } from '@/contexts/SessionContext';
+import { useSessionContext } from '@/contexts/SessionProvider';
 import { Menu } from 'lucide-react';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import DashboardSidebar from '@/components/dashboard/DashboardSidebar';
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
-  const { sessions } = useSession();
+  const { sessions } = useSessionContext();
   const navigate = useNavigate();
 
   const handleLogout = () => {
