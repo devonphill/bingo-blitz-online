@@ -20,6 +20,7 @@ export default function PlayerGame() {
     const storedPlayerCode = localStorage.getItem('playerCode');
     if (urlPlayerCode) {
       setPlayerCode(urlPlayerCode);
+      localStorage.setItem('playerCode', urlPlayerCode);
     } else if (storedPlayerCode) {
       setPlayerCode(storedPlayerCode);
     } else {
@@ -52,14 +53,37 @@ export default function PlayerGame() {
     gameType,
   } = usePlayerGame(playerCode);
 
+  // Custom check for game ready state 
+  const isGameReady = currentSession?.lifecycle_state === 'live' && 
+                     currentGameState?.status === 'active';
+
   // Show loader for different states
-  if (!playerCode || isLoading || errorMessage || !currentSession) {
+  if (!playerCode || isLoading || errorMessage) {
     return (
       <PlayerGameLoader 
         isLoading={isLoading} 
         errorMessage={errorMessage} 
         currentSession={currentSession} 
       />
+    );
+  }
+
+  // If game is not ready yet, show a proper waiting message
+  if (!isGameReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Waiting for game to start</h2>
+          <p className="text-gray-600 mb-4">
+            {currentSession?.lifecycle_state === 'live' 
+              ? "The caller is setting up the game..." 
+              : "The caller has not started the game yet."}
+          </p>
+          <Button onClick={() => window.location.reload()}>
+            Refresh
+          </Button>
+        </div>
+      </div>
     );
   }
 

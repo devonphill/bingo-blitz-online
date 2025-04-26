@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Music, Image, Mic, PartyPopper, Star } from "lucide-react";
 import { WinPatternSelector } from "@/components/caller/WinPatternSelector";
 import { WinPattern } from '@/types/winPattern';
+import { useToast } from "@/hooks/use-toast";
 
 interface WinPatternOption {
   id: string;
@@ -16,6 +17,7 @@ interface WinPatternOption {
 
 export function GameSetup() {
   const { currentSession, updateCurrentGameState } = useSessions();
+  const { toast } = useToast();
   
   const [selectedGameType, setSelectedGameType] = useState<GameType>('mainstage');
   const [winPatterns, setWinPatterns] = useState<WinPatternOption[]>([
@@ -24,6 +26,7 @@ export function GameSetup() {
     { id: 'fullHouse', name: 'Full House', active: false },
   ]);
   const [prizes, setPrizes] = useState<{[key: string]: string}>({});
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (currentSession?.current_game_state) {
@@ -77,12 +80,39 @@ export function GameSetup() {
       .filter(pattern => pattern.active)
       .map(pattern => pattern.id);
     
-    await updateCurrentGameState({
-      gameType: selectedGameType,
-      activePatternIds,
-      prizes,
-      status: 'active', // Make sure the game status is set to active
-    });
+    if (activePatternIds.length === 0) {
+      toast({
+        title: "No win patterns selected",
+        description: "Please select at least one win pattern before saving.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsSaving(true);
+    
+    try {
+      await updateCurrentGameState({
+        gameType: selectedGameType,
+        activePatternIds,
+        prizes,
+        status: 'active', // Make sure the game status is set to active
+      });
+      
+      toast({
+        title: "Success",
+        description: "Game settings saved successfully.",
+      });
+    } catch (error) {
+      console.error("Error saving game settings:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save game settings.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -123,8 +153,12 @@ export function GameSetup() {
           />
         </div>
         
-        <Button className="w-full" onClick={saveGameSettings}>
-          Save Game Settings
+        <Button 
+          className="w-full" 
+          onClick={saveGameSettings}
+          disabled={isSaving}
+        >
+          {isSaving ? "Saving..." : "Save Game Settings"}
         </Button>
       </CardContent>
     </Card>
