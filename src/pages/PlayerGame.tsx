@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -15,7 +14,6 @@ export default function PlayerGame() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // Use the player code from the URL or localStorage
   useEffect(() => {
     const storedPlayerCode = localStorage.getItem('playerCode');
     if (urlPlayerCode) {
@@ -24,7 +22,6 @@ export default function PlayerGame() {
     } else if (storedPlayerCode) {
       setPlayerCode(storedPlayerCode);
     } else {
-      // If no player code is found, redirect to join page
       toast({
         title: 'Player Code Missing',
         description: 'Please enter your player code to join the game.',
@@ -53,11 +50,10 @@ export default function PlayerGame() {
     gameType,
   } = usePlayerGame(playerCode);
 
-  // Custom check for game ready state 
   const isGameReady = currentSession?.lifecycle_state === 'live' && 
-                     currentGameState?.status === 'active';
+                      currentSession?.status === 'active' &&
+                      currentGameState?.status === 'active';
 
-  // Show loader for different states
   if (!playerCode || isLoading || errorMessage) {
     return (
       <PlayerGameLoader 
@@ -68,7 +64,6 @@ export default function PlayerGame() {
     );
   }
 
-  // If game is not ready yet, show a proper waiting message
   if (!isGameReady) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -76,12 +71,20 @@ export default function PlayerGame() {
           <h2 className="text-2xl font-bold text-gray-900 mb-4">Waiting for game to start</h2>
           <p className="text-gray-600 mb-4">
             {currentSession?.lifecycle_state === 'live' 
-              ? "The caller is setting up the game..." 
+              ? currentSession?.status === 'active'
+                ? "The caller is finalizing the game setup..."
+                : "The session is live but the game hasn't been activated yet."
               : "The caller has not started the game yet."}
           </p>
-          <Button onClick={() => window.location.reload()}>
-            Refresh
-          </Button>
+          <div className="space-y-2">
+            <p className="text-sm text-gray-500">
+              Current session state: {currentSession?.lifecycle_state || 'unknown'}, 
+              Status: {currentSession?.status || 'unknown'}
+            </p>
+            <Button onClick={() => window.location.reload()}>
+              Refresh
+            </Button>
+          </div>
         </div>
       </div>
     );

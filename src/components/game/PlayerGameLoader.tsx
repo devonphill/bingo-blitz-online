@@ -53,18 +53,20 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
   // Debug the actual values to help trace the issue
   console.log("Current session state:", {
     lifecycle: currentSession.lifecycle_state,
+    status: currentSession.status,
     gameState: currentSession.current_game_state,
-    status: currentSession.current_game_state?.status
+    gameStatus: currentSession.current_game_state?.status
   });
 
   // Fix the game state check with proper null safety and improved condition logic
   const isGameLive = currentSession.lifecycle_state === 'live';
+  const isSessionActive = currentSession.status === 'active';
   const hasCurrentGameState = !!currentSession.current_game_state;
   const isGameActive = hasCurrentGameState && currentSession.current_game_state.status === 'active';
 
-  console.log("Game state check:", { isGameLive, hasCurrentGameState, isGameActive });
+  console.log("Game state check:", { isGameLive, isSessionActive, hasCurrentGameState, isGameActive });
 
-  if (!isGameLive || !isGameActive) {
+  if (!isGameLive || !isSessionActive || !isGameActive) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -72,13 +74,21 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
           <p className="text-gray-600 mb-4">
             {!isGameLive 
               ? "The caller has not started the game yet." 
-              : !isGameActive 
-                ? "The game is waiting to be activated." 
-                : "The game is being set up..."}
+              : !isSessionActive
+                ? "The session is live but not yet active."
+                : !isGameActive 
+                  ? "The game is waiting to be activated." 
+                  : "The game is being set up..."}
           </p>
-          <Button onClick={() => window.location.reload()}>
-            Refresh
-          </Button>
+          <div className="space-y-2">
+            <p className="text-sm text-gray-500">
+              Session lifecycle: {currentSession.lifecycle_state || 'unknown'}, 
+              Status: {currentSession.status || 'unknown'}
+            </p>
+            <Button onClick={() => window.location.reload()}>
+              Refresh
+            </Button>
+          </div>
         </div>
       </div>
     );

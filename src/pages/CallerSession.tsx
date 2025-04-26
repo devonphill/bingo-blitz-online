@@ -368,6 +368,7 @@ export default function CallerSession() {
         .from('game_sessions')
         .update({ 
           lifecycle_state: 'live',
+          status: 'active', // Update the session status to active
           current_game_state: updatedGameState as unknown as Json
         })
         .eq('id', sessionId);
@@ -386,6 +387,7 @@ export default function CallerSession() {
           return {
             ...prevSession,
             lifecycle_state: 'live',
+            status: 'active', // Update the local session status as well
             current_game_state: updatedGameState
           };
         });
@@ -533,6 +535,7 @@ export default function CallerSession() {
           onViewClaims={checkForClaims}
           prizes={prizes}
           gameConfigs={gameConfigs}
+          sessionStatus={session.status} // Pass the session status
         />
       ) : (
         <div className="flex items-center justify-center h-screen">

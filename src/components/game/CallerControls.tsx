@@ -18,6 +18,7 @@ interface CallerControlsProps {
   claimCount?: number;
   openClaimSheet: () => void;
   gameType?: string;
+  sessionStatus?: string;
 }
 
 export default function CallerControls({ 
@@ -30,6 +31,7 @@ export default function CallerControls({
   claimCount = 0,
   openClaimSheet,
   gameType,
+  sessionStatus = 'pending',
 }: CallerControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
@@ -89,7 +91,12 @@ export default function CallerControls({
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-xl font-bold flex items-center justify-between">
-          <span>Caller Controls</span>
+          <div className="flex items-center">
+            <span>Caller Controls</span>
+            <Badge className="ml-2" variant={sessionStatus === 'active' ? 'success' : 'default'}>
+              {sessionStatus === 'active' ? 'Live' : 'Pending'}
+            </Badge>
+          </div>
           {claimCount > 0 && (
             <Button 
               size="sm" 
@@ -124,7 +131,7 @@ export default function CallerControls({
         <div className="grid grid-cols-1 gap-3">
           <Button
             className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-            disabled={isCallingNumber || remainingNumbers.length === 0}
+            disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active'}
             onClick={handleCallNumber}
           >
             {isCallingNumber ? 'Calling...' : 'Call Next Number'}
@@ -139,7 +146,7 @@ export default function CallerControls({
           
           <Button
             className="bg-green-600 hover:bg-green-700 text-white"
-            disabled={isGoingLive || winPatterns.length === 0}
+            disabled={isGoingLive || winPatterns.length === 0 || sessionStatus === 'active'}
             onClick={handleGoLiveClick}
           >
             {isGoingLive ? 'Going Live...' : 'Go Live'}
