@@ -382,7 +382,7 @@ export default function CallerSession() {
         .update({ 
           lifecycle_state: 'live',
           status: 'active', // Update the session status to active
-          current_game_state: gameStateForSupabase as Json
+          current_game_state: gameStateForSupabase as unknown as Json
         })
         .eq('id', sessionId);
 

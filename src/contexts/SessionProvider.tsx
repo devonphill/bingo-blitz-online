@@ -1,4 +1,4 @@
-// src/contexts/SessionProvider.tsx (Hypothetical structure - adapt to your actual file)
+
 import React, { createContext, useContext, ReactNode } from 'react';
 import { useSessions } from './useSessions'; // Import the hook
 import type { GameSession, CurrentGameState } from '@/types'; // Import types

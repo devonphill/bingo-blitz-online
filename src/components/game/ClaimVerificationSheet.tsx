@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Check, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -14,6 +15,8 @@ import BingoWinProgress from './BingoWinProgress';
 import { getGameRulesForType } from '@/game-rules/gameRulesRegistry';
 import PrizeSharingDialog from './PrizeSharingDialog';
 import { supabase } from '@/integrations/supabase/client';
+import { useToast } from "@/hooks/use-toast";
+import { useSessionContext } from '@/contexts/SessionProvider';
 
 interface ClaimVerificationSheetProps {
   isOpen: boolean;
@@ -46,6 +49,8 @@ export default function ClaimVerificationSheet({
   gameType = '90-ball',
   onNext
 }: ClaimVerificationSheetProps) {
+  const { toast } = useToast();
+  const { currentSession } = useSessionContext();
   const [isClaimValid, setIsClaimValid] = useState(false);
   const [rankedTickets, setRankedTickets] = useState<any[]>([]);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
