@@ -1,3 +1,4 @@
+
 // This file defines the core data structures used throughout the application.
 
 export type UserRole = 'superuser' | 'subuser';
@@ -36,7 +37,7 @@ export interface GameSession {
   numberOfGames?: number; // Total number of games planned for the session (or current game number?) - clarify usage
   // Add the new column representation
   current_game_state: CurrentGameState | null; // Holds the state of the active game
-  // Add the new lifecycle_state property
+  // Add the new lifecycle_state property with explicit type definition
   lifecycle_state?: 'setup' | 'live' | 'ended';
 }
 

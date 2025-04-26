@@ -7,6 +7,7 @@ import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
 import { useToast } from "@/hooks/use-toast";
 import { GameSetupView } from '@/components/caller/GameSetupView';
 import { LiveGameView } from '@/components/caller/LiveGameView';
+import { useSessionLifecycle } from '@/hooks/useSessionLifecycle';
 
 type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
 
@@ -19,6 +20,7 @@ export default function CallerSession() {
   const [winPatterns, setWinPatterns] = useState<WinPattern[]>(WIN_PATTERNS.mainstage);
   const [pendingClaims, setPendingClaims] = useState<any[]>([]);
   const { toast } = useToast();
+  const { setSessionLifecycle } = useSessionLifecycle(sessionId);
 
   const fetchWinPatterns = useCallback(async () => {
     setWinPatterns(WIN_PATTERNS[currentGameType] || []);
@@ -50,8 +52,17 @@ export default function CallerSession() {
         ? (data.current_game_state as unknown as CurrentGameState)
         : initialGameState;
 
-      // Set default lifecycle_state to 'setup' if not present
-      const lifecycleState = data.lifecycle_state || 'setup';
+      // Validate lifecycle_state from database to ensure it's one of the allowed values
+      let lifecycleState: 'setup' | 'live' | 'ended' = 'setup'; // Default to 'setup'
+      
+      if (data.lifecycle_state) {
+        // Check if the value is one of the allowed values
+        if (['setup', 'live', 'ended'].includes(data.lifecycle_state)) {
+          lifecycleState = data.lifecycle_state as 'setup' | 'live' | 'ended';
+        } else {
+          console.warn(`Invalid lifecycle_state value received: ${data.lifecycle_state}, using default 'setup'`);
+        }
+      }
       
       setSession({
         id: data.id,
