@@ -36,11 +36,12 @@ export function GameSetup() {
         // Initialize configs for all games with a preset prize for One Line
         const newConfigs: GameConfig[] = Array.from({ length: numberOfGames }, (_, index) => {
           // Use existing config if available, otherwise create new one
-          return existingConfigs[index] || {
+          const existingConfig = existingConfigs[index];
+          return {
             gameNumber: index + 1,
-            gameType: 'mainstage' as GameType,
-            selectedPatterns: ['oneLine'],
-            prizes: {
+            gameType: (existingConfig?.gameType || currentSession.gameType || 'mainstage') as GameType,
+            selectedPatterns: existingConfig?.selectedPatterns || ['oneLine'],
+            prizes: existingConfig?.prizes || {
               'oneLine': {
                 amount: '10.00', 
                 isNonCash: false,
@@ -211,7 +212,7 @@ export function GameSetup() {
       }
 
       // Then update all game configs
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('game_sessions')
         .update({ 
           // Cast to any to bypass TypeScript's type checking since we know the structure is compatible
