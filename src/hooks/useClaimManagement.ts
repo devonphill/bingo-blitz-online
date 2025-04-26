@@ -68,7 +68,7 @@ export function useClaimManagement(sessionId: string | undefined) {
       setClaimQueue(prev => prev.slice(1));
       
       console.log("Opening sheet for claim verification!");
-      // Open the sheet only after setting current claim
+      // Open the sheet automatically
       setTimeout(() => {
         setShowClaimSheet(true);
         setProcessingClaim(false);
@@ -170,9 +170,18 @@ export function useClaimManagement(sessionId: string | undefined) {
                 }
               ]);
               
-              // Only open claim sheet automatically if there's no current claim being processed
+              toast({
+                title: "New Claim!",
+                description: `${claimData.playerName} has claimed bingo!`,
+                variant: "default",
+              });
+              
+              // Automatically process the next claim if not currently showing or processing one
               if (!showClaimSheet && !processingClaim && !currentClaim) {
-                processNextClaim();
+                // Add slight delay to ensure the queue is updated first
+                setTimeout(() => {
+                  processNextClaim();
+                }, 300);
               }
             } else {
               console.log("Duplicate claim received, ignoring:", claimData.playerName);
@@ -186,7 +195,7 @@ export function useClaimManagement(sessionId: string | undefined) {
       console.log("Removing channel for bingo claims");
       supabase.removeChannel(channel);
     };
-  }, [sessionId, currentClaim, claimQueue, showClaimSheet, processingClaim, processNextClaim]);
+  }, [sessionId, currentClaim, claimQueue, showClaimSheet, processingClaim, processNextClaim, toast]);
 
   // Manually open the claim sheet
   const openClaimSheet = useCallback(() => {

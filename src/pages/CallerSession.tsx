@@ -560,16 +560,57 @@ export default function CallerSession() {
         description: `${currentClaim.playerName}'s claim has been validated.`
       });
       
-      setShowClaimSheet(false);
-      setCurrentClaim(null);
+      if (session && selectedPatterns.length > 1) {
+        const currentPatternIndex = selectedPatterns.findIndex(p => p === selectedPatterns[0]);
+        
+        if (currentPatternIndex !== -1 && currentPatternIndex < selectedPatterns.length - 1) {
+          const updatedPatterns = [...selectedPatterns];
+          const completedPattern = updatedPatterns.shift();
+          
+          if (completedPattern) {
+            console.log(`Win pattern ${completedPattern} completed`);
+          }
+          
+          console.log("Advancing to next win pattern:", updatedPatterns[0]);
+          
+          if (session.current_game_state) {
+            const updatedGameState = {
+              ...session.current_game_state,
+              activePatternIds: updatedPatterns
+            };
+            
+            await supabase
+              .from('game_sessions')
+              .update({ current_game_state: updatedGameState })
+              .eq('id', sessionId);
+              
+            setSelectedPatterns(updatedPatterns);
+            setSession(prev => prev ? {
+              ...prev,
+              current_game_state: updatedGameState
+            } : null);
+            
+            toast({
+              title: "Next Win Pattern",
+              description: `Advanced to the next win pattern.`
+            });
+          }
+        }
+      }
       
-      checkForClaims();
+      setTimeout(() => {
+        setShowClaimSheet(false);
+      }, 500);
+      
+      setTimeout(() => {
+        checkForClaims();
+      }, 2000);
     } catch (err) {
       console.error("Error during claim validation:", err);
     }
   };
 
-  const handleRejectClaim = async () => {
+  const handleFalseClaim = async () => {
     if (!currentClaim || !sessionId) return;
     
     try {
@@ -699,7 +740,7 @@ export default function CallerSession() {
               calledNumbers={calledNumbers}
               currentNumber={currentNumber}
               onValidClaim={handleValidClaim}
-              onFalseClaim={handleRejectClaim}
+              onFalseClaim={handleFalseClaim}
               currentWinPattern={selectedPatterns[0] || null}
               gameType={`MAINSTAGE_${currentGameType}`}
             />
@@ -707,7 +748,7 @@ export default function CallerSession() {
         </>
       ) : (
         <div className="flex items-center justify-center h-screen">
-          <p className="text-lg text-gray-500">Session has ended or not found. Current state: {session.lifecycle_state}</p>
+          <p className="text-lg text-gray-500">Session has ended or not found. Current state: {session?.lifecycle_state}</p>
         </div>
       )}
     </div>

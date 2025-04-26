@@ -141,10 +141,7 @@ export default function ClaimVerificationSheet({
       onFalseClaim();
     }
     
-    // Close the sheet after a short delay to avoid UI freezes
-    setTimeout(() => {
-      onClose();
-    }, 500);
+    // The sheet will be closed by the parent component after the action is complete
   };
 
   return (
@@ -234,7 +231,7 @@ export default function ClaimVerificationSheet({
             </AlertDialogTitle>
             <AlertDialogDescription>
               {actionType === 'valid' 
-                ? 'Are you sure this is a valid claim? This will update the game state and may affect prizes.' 
+                ? 'Are you sure this is a valid claim? This will update the game state and move to the next win pattern.' 
                 : 'Are you sure this is a false call? This will reject the player\'s claim.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
