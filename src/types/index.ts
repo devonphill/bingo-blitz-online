@@ -36,6 +36,8 @@ export interface GameSession {
   numberOfGames?: number; // Total number of games planned for the session (or current game number?) - clarify usage
   // Add the new column representation
   current_game_state: CurrentGameState | null; // Holds the state of the active game
+  // Add the new lifecycle_state property
+  lifecycle_state?: 'setup' | 'live' | 'ended';
 }
 
 // Existing Player interface - no changes needed for Phase 1

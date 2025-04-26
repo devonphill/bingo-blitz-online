@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { GameSession } from '@/types';
-import { GameType, WIN_PATTERNS } from '@/types/winPattern';
+import { GameSession, GameType, CurrentGameState } from '@/types';
+import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
 import { GameSetup } from '@/components/game/GameSetup';
 import { WinPatternStatusDisplay } from '@/components/game/WinPatternStatusDisplay';
 import { CallControls } from '@/components/caller/CallControls';

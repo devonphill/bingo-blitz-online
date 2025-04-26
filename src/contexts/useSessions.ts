@@ -36,7 +36,7 @@ export const useSessions = () => {
         setError("Failed to fetch sessions.");
         setSessions([]); // Clear sessions on error
       } else if (data) {
-        // Map the data, ensuring current_game_state is handled
+        // Map the data, ensuring current_game_state and lifecycle_state are handled
         const mappedSessions = data.map((d: any): GameSession => ({
           id: d.id,
           name: d.name,
@@ -51,6 +51,8 @@ export const useSessions = () => {
           current_game_state: d.current_game_state
             ? (d.current_game_state as CurrentGameState)
             : initializeGameState(d.game_type as GameType, 1),
+          // Include the lifecycle_state property
+          lifecycle_state: d.lifecycle_state || 'setup',
         }));
         setSessions(mappedSessions);
 
