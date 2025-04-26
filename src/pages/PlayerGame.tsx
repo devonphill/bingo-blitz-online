@@ -1,10 +1,9 @@
-
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { usePlayerGame } from '@/hooks/usePlayerGame';
 import { Button } from '@/components/ui/button';
-import BingoCardDisplay from '@/components/game/BingoCardDisplay';
+import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import BingoWinProgress from '@/components/game/BingoWinProgress';
 
 export default function PlayerGame() {
@@ -12,7 +11,6 @@ export default function PlayerGame() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // Inside the component where we destructure usePlayerGame()
   const {
     tickets,
     playerName,
@@ -32,7 +30,6 @@ export default function PlayerGame() {
     gameType,
   } = usePlayerGame(playerCode);
 
-  // Map the generic names to game-specific names for backwards compatibility
   const calledNumbers = calledItems;
   const currentNumber = lastCalledItem;
 
@@ -119,43 +116,12 @@ export default function PlayerGame() {
         </div>
 
         <div className="mt-10">
-          <dl className="space-y-10 md:space-y-0 md:grid md:grid-cols-2 md:gap-x-8 md:gap-y-10">
-            {tickets.map((ticket: any) => (
-              <div key={ticket.id} className="relative">
-                <dt>
-                  <div className="absolute flex items-center justify-center h-12 w-12 rounded-md bg-indigo-500 text-white">
-                    <svg className="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3.055 11H5.5a2.5 2.5 0 012.5 2.5V19a2.5 2.5 0 01-2.5 2.5H3.055a2.5 2.5 0 01-2.5-2.5V13.5a2.5 2.5 0 012.5-2.5zM8.555 11H11a2.5 2.5 0 012.5 2.5V19a2.5 2.5 0 01-2.5 2.5H8.555a2.5 2.5 0 01-2.5-2.5V13.5a2.5 2.5 0 012.5-2.5zM14.055 11H16.5a2.5 2.5 0 012.5 2.5V19a2.5 2.5 0 01-2.5 2.5H14.055a2.5 2.5 0 01-2.5-2.5V13.5a2.5 2.5 0 012.5-2.5z" />
-                    </svg>
-                  </div>
-                  <p className="ml-16 text-lg leading-6 font-medium text-gray-900">Ticket #{ticket.ticket_number}</p>
-                </dt>
-                <dd className="mt-2 ml-16 text-base text-gray-500">
-                  <BingoCardDisplay
-                    numbers={ticket.numbers}
-                    layoutMask={ticket.layout_mask}
-                    calledNumbers={calledNumbers}
-                    autoMarking={autoMarking}
-                  />
-                  <div className="mt-2">
-                    {activeWinPatterns.map(pattern => (
-                      <div key={pattern} className="mb-1">
-                        <span className="font-medium">{pattern}:</span>
-                        <BingoWinProgress
-                          numbers={ticket.numbers}
-                          layoutMask={ticket.layout_mask}
-                          calledNumbers={calledNumbers}
-                          activeWinPatterns={activeWinPatterns}
-                          currentWinPattern={pattern}
-                          gameType={gameType}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </dd>
-              </div>
-            ))}
-          </dl>
+          <GameTypePlayspace
+            gameType={gameType || 'mainstage'}
+            tickets={tickets}
+            calledNumbers={calledItems}
+            autoMarking={autoMarking}
+          />
         </div>
 
         <div className="mt-8 lg:text-center">
