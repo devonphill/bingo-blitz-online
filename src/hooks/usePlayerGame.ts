@@ -1,5 +1,3 @@
-
-// src/hooks/usePlayerGame.ts
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -8,6 +6,7 @@ import { CurrentGameState, GameType, PrizeDetails } from '@/types';
 
 export function usePlayerGame(playerCode?: string | null) {
   const { sessions, isLoading: isSessionLoading, fetchSessions } = useSessions();
+  const { toast } = useToast();
 
   const [tickets, setTickets] = useState<any[]>([]);
   const [calledItems, setCalledItems] = useState<Array<any>>([]);
@@ -22,142 +21,97 @@ export function usePlayerGame(playerCode?: string | null) {
   const [isClaiming, setIsClaiming] = useState(false);
   const [claimStatus, setClaimStatus] = useState<'pending' | 'validated' | 'rejected' | undefined>(undefined);
 
-  const { toast } = useToast();
-
   const currentGameState: CurrentGameState | null = currentSession?.current_game_state ?? null;
   const activeWinPatterns: string[] = currentGameState?.activePatternIds ?? [];
   const winPrizes: { [key: string]: PrizeDetails } = currentGameState?.prizes ?? {};
   const gameType: GameType | null = currentGameState?.gameType ?? currentSession?.gameType ?? null;
 
-  // Helper function to find a session by ID from the sessions array
   const findSessionById = useCallback((id: string | null) => {
     if (!id || !sessions || sessions.length === 0) return null;
     return sessions.find(s => s.id === id) || null;
   }, [sessions]);
 
-  // Fetch initial player data
-  useEffect(() => {
+  const handleLoadingError = useCallback((message: string) => {
+    console.error('PlayerGame Loading Error:', message);
+    setErrorMessage(message);
+    setIsLoading(false);
+    toast({
+      title: 'Game Loading Error',
+      description: message,
+      variant: 'destructive'
+    });
+  }, [toast]);
+
+  const fetchPlayerData = useCallback(async () => {
     if (!playerCode) {
-      console.log("No player code provided to usePlayerGame");
-      setIsLoading(false);
-      setErrorMessage("Player code is missing");
-      return;
+      handleLoadingError('No player code provided');
+      return false;
     }
 
-    let isMounted = true;
-    const fetchPlayerData = async () => {
-      setIsLoading(true);
-      setErrorMessage(null);
-      setTickets([]);
-      setPlayerId(null);
-      setPlayerName('');
-      setSessionId(null);
-      setClaimStatus(undefined);
-      setIsClaiming(false);
+    try {
+      const { data: playerData, error: playerError } = await supabase
+        .from('players')
+        .select('id, nickname, session_id')
+        .eq('player_code', playerCode)
+        .maybeSingle();
 
-      try {
-        console.log("Fetching player data for code:", playerCode);
-
-        const { data: playerData, error: playerError } = await supabase
-          .from('players')
-          .select('id, nickname, session_id')
-          .eq('player_code', playerCode)
-          .maybeSingle();
-
-        if (!isMounted) return;
-
-        if (playerError) {
-          console.error("Error fetching player data:", playerError);
-          setErrorMessage(`Error finding player: ${playerError.message}`);
-          setIsLoading(false);
-          return;
-        }
-
-        if (!playerData) {
-          console.error("Player not found with code:", playerCode);
-          setErrorMessage("Player not found. Please check your player code.");
-          setIsLoading(false);
-          return;
-        }
-
-        console.log("Player found:", playerData.nickname, "session:", playerData.session_id);
-        setPlayerId(playerData.id);
-        setPlayerName(playerData.nickname);
-        setSessionId(playerData.session_id);
-
-        // Manually trigger a session refresh to ensure we have the latest data
-        await fetchSessions();
-
-        // Find the session in the sessions array
-        const matchingSession = findSessionById(playerData.session_id);
-        if (matchingSession) {
-          console.log("Found matching session:", matchingSession);
-          setCurrentSession(matchingSession);
-          
-          // Set called items and last called item if available
-          if (matchingSession.current_game_state) {
-            setCalledItems(matchingSession.current_game_state.calledItems || []);
-            setLastCalledItem(matchingSession.current_game_state.lastCalledItem ?? null);
-          }
-        } else {
-          console.log("No matching session found in sessions array");
-        }
-
-        const { data: ticketData, error: ticketError } = await supabase
-          .from('assigned_tickets')
-          .select('*')
-          .eq('player_id', playerData.id)
-          .eq('session_id', playerData.session_id);
-
-        if (!isMounted) return;
-
-        if (ticketError) {
-          console.error("Error fetching tickets:", ticketError);
-          // Don't set error message here, continue with the session data
-        }
-
-        if (ticketData && ticketData.length > 0) {
-          console.log(`Found ${ticketData.length} tickets for player`);
-          setTickets(ticketData);
-        } else {
-          console.log("No tickets found for player");
-        }
-
-        const { data: claimData, error: claimError } = await supabase
-          .from('bingo_claims')
-          .select('status')
-          .eq('player_id', playerData.id)
-          .eq('session_id', playerData.session_id)
-          .order('claimed_at', { ascending: false })
-          .limit(1);
-
-        if (!isMounted) return;
-
-        if (!claimError && claimData && claimData.length > 0) {
-          const latestStatus = claimData[0].status as 'pending' | 'validated' | 'rejected';
-          setClaimStatus(latestStatus);
-          if (latestStatus === 'pending') {
-            setIsClaiming(true);
-          }
-        }
-
-        setIsLoading(false);
-      } catch (error) {
-        if (!isMounted) return;
-        console.error("Error in fetchPlayerData:", error);
-        setErrorMessage('Failed to load player data. Please try again.');
-        setIsLoading(false);
+      if (playerError) {
+        handleLoadingError(`Error finding player: ${playerError.message}`);
+        return false;
       }
-    };
 
+      if (!playerData) {
+        handleLoadingError('Player not found. Invalid player code.');
+        return false;
+      }
+
+      setPlayerId(playerData.id);
+      setPlayerName(playerData.nickname);
+      setSessionId(playerData.session_id);
+
+      await fetchSessions();
+
+      const matchingSession = sessions.find(s => s.id === playerData.session_id);
+      
+      if (!matchingSession) {
+        handleLoadingError('No matching game session found');
+        return false;
+      }
+
+      setCurrentSession(matchingSession);
+      
+      const { data: ticketData, error: ticketError } = await supabase
+        .from('assigned_tickets')
+        .select('*')
+        .eq('player_id', playerData.id)
+        .eq('session_id', playerData.session_id);
+
+      if (ticketError) {
+        handleLoadingError(`Error fetching tickets: ${ticketError.message}`);
+        return false;
+      }
+
+      if (ticketData && ticketData.length > 0) {
+        setTickets(ticketData);
+      } else {
+        handleLoadingError('No tickets found for this player');
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      handleLoadingError(`Unexpected error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [playerCode, sessions, fetchSessions, handleLoadingError]);
+
+  useEffect(() => {
+    setIsLoading(true);
     fetchPlayerData();
+  }, [fetchPlayerData]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [playerCode, fetchSessions, findSessionById]);
-
-  // Update session from sessions array whenever it changes
   useEffect(() => {
     if (!sessionId) return;
     
@@ -173,7 +127,6 @@ export function usePlayerGame(playerCode?: string | null) {
     }
   }, [sessions, sessionId, findSessionById]);
 
-  // Listen for session changes with direct subscription
   useEffect(() => {
     if (!sessionId) return;
 
@@ -213,7 +166,6 @@ export function usePlayerGame(playerCode?: string | null) {
     };
   }, [sessionId]);
 
-  // Listen for claim results
   useEffect(() => {
     if (!playerId) return;
 
