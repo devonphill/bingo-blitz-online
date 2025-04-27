@@ -43,22 +43,45 @@ export default function PlayerGameLayout({
   calledNumbers,
   isClaiming = false,
   claimStatus,
-  gameType = '90-ball',
+  gameType = 'mainstage',
   currentGameNumber = 1,
   numberOfGames = 1
 }: PlayerGameLayoutProps) {
   const [localClaimValidating, setLocalClaimValidating] = useState(false);
   const [localClaimStatus, setLocalClaimStatus] = useState<'pending' | 'validated' | 'rejected' | null>(null);
+  const [lastWinPattern, setLastWinPattern] = useState<string | null>(null);
   const { toast } = useToast();
 
-  // Reset local claim status when the activeWinPatterns change (new win pattern becomes active)
+  // Track pattern changes to manage claim status
   useEffect(() => {
-    if (currentWinPattern) {
-      console.log("Win pattern changed, resetting claim status");
+    if (currentWinPattern && currentWinPattern !== lastWinPattern) {
+      console.log(`Win pattern changed from ${lastWinPattern} to ${currentWinPattern}, resetting claim status`);
       setLocalClaimStatus(null);
       setLocalClaimValidating(false);
+      setLastWinPattern(currentWinPattern);
+      
+      // Show toast when pattern changes
+      if (lastWinPattern) {
+        const patternName = getPatternDisplayName(currentWinPattern);
+        toast({
+          title: "Pattern Changed",
+          description: `New pattern: ${patternName}`,
+        });
+      }
     }
-  }, [currentWinPattern]);
+  }, [currentWinPattern, lastWinPattern, toast]);
+
+  // Helper function to get display name for patterns
+  const getPatternDisplayName = (pattern: string): string => {
+    switch(pattern) {
+      case 'oneLine': return 'One Line';
+      case 'twoLines': return 'Two Lines';
+      case 'fullHouse': return 'Full House';
+      case 'pattern': return 'Pattern';
+      case 'blackout': return 'Blackout';
+      default: return pattern;
+    }
+  };
 
   // Sync external claim status with local state
   useEffect(() => {
@@ -128,7 +151,7 @@ export default function PlayerGameLayout({
       )
       .subscribe();
       
-    // Also listen for general game updates
+    // Listen for general game updates
     const gameUpdatesChannel = supabase
       .channel('player-game-updates')
       .on(
@@ -154,6 +177,11 @@ export default function PlayerGameLayout({
             console.log("Pattern changed, resetting claim status");
             setLocalClaimStatus(null);
             setLocalClaimValidating(false);
+            
+            // If a new pattern is provided, update lastWinPattern to force re-evaluation
+            if (payload.payload.nextPattern && payload.payload.nextPattern !== lastWinPattern) {
+              setLastWinPattern(null);
+            }
           }
         }
       )
@@ -173,11 +201,25 @@ export default function PlayerGameLayout({
             // Reset claim status when game progresses to new pattern
             setLocalClaimStatus(null);
             setLocalClaimValidating(false);
+            setLastWinPattern(null); // Reset to force update on next render
             
-            toast({
-              title: "Game Progress",
-              description: "The game has progressed to a new pattern!",
-            });
+            // Show specific toast based on what changed
+            if (payload.payload.previousGame !== payload.payload.newGame) {
+              toast({
+                title: "New Game",
+                description: `Game ${payload.payload.newGame} has started!`,
+              });
+            } else {
+                const pattern = payload.payload.nextPattern || 
+                  (currentWinPattern === 'oneLine' ? 'twoLines' : 
+                   currentWinPattern === 'twoLines' ? 'fullHouse' : 'fullHouse');
+                
+                const patternName = getPatternDisplayName(pattern);
+                toast({
+                  title: "Pattern Changed",
+                  description: `New pattern: ${patternName}`,
+                });
+            }
           }
         }
       )
@@ -188,7 +230,7 @@ export default function PlayerGameLayout({
       supabase.removeChannel(gameUpdatesChannel);
       supabase.removeChannel(progressChannel);
     };
-  }, [currentSession?.id, playerCode, toast]);
+  }, [currentSession?.id, playerCode, toast, lastWinPattern, currentWinPattern]);
 
   const handleClaimClick = async () => {
     if (localClaimValidating || isClaiming || localClaimStatus === 'validated') {
@@ -311,17 +353,7 @@ export default function PlayerGameLayout({
             <div className="mt-4 p-2 bg-gray-800 rounded">
               <p className="text-sm text-gray-300">
                 Current Win Pattern: <span className="font-bold text-white">{
-                  currentWinPattern === 'oneLine' 
-                    ? 'One Line' 
-                    : currentWinPattern === 'twoLines'
-                      ? 'Two Lines'
-                      : currentWinPattern === 'fullHouse'
-                        ? 'Full House'
-                        : currentWinPattern === 'pattern'
-                          ? 'Pattern'
-                          : currentWinPattern === 'blackout'
-                            ? 'Blackout'
-                            : currentWinPattern
+                  getPatternDisplayName(currentWinPattern)
                 }</span>
               </p>
               {winPrizes && winPrizes[currentWinPattern] && (

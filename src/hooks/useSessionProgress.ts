@@ -1,14 +1,18 @@
 
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { SessionProgress } from '@/types';
-import { useToast } from '@/hooks/use-toast';
 
-export function useSessionProgress(sessionId?: string) {
-  const [progress, setProgress] = useState<SessionProgress | null>(null);
+type ProgressType = {
+  current_game_number: number;
+  max_game_number: number;
+  current_win_pattern: string | null;
+  current_game_type: string;
+};
+
+export const useSessionProgress = (sessionId: string | undefined) => {
+  const [progress, setProgress] = useState<ProgressType | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { toast } = useToast();
 
   useEffect(() => {
     if (!sessionId) {
@@ -18,53 +22,67 @@ export function useSessionProgress(sessionId?: string) {
 
     const fetchProgress = async () => {
       try {
-        const { data, error: fetchError } = await supabase
+        const { data, error } = await supabase
           .from('sessions_progress')
           .select('*')
           .eq('session_id', sessionId)
           .single();
 
-        if (fetchError) {
-          console.error('Error fetching session progress:', fetchError);
-          setError(fetchError.message);
-          return;
+        if (error) {
+          console.error('Error fetching session progress:', error);
+          setError(error.message);
+        } else if (data) {
+          console.log('Fetched session progress:', data);
+          setProgress(data);
         }
-
-        setProgress(data);
       } catch (err) {
-        console.error('Error in session progress hook:', err);
+        console.error('Exception fetching session progress:', err);
         setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {
         setIsLoading(false);
       }
     };
 
-    // Subscribe to real-time updates
+    fetchProgress();
+
+    // Subscribe to real-time changes
     const channel = supabase
       .channel(`sessions-progress-${sessionId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'sessions_progress',
-          filter: `session_id=eq.${sessionId}`
-        },
-        (payload) => {
-          console.log('Session progress update:', payload);
-          if (payload.eventType === 'UPDATE' && payload.new) {
-            setProgress(payload.new as SessionProgress);
-          }
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'sessions_progress',
+        filter: `session_id=eq.${sessionId}`
+      }, (payload) => {
+        console.log('Session progress changed:', payload);
+        if (payload.new) {
+          setProgress(payload.new as ProgressType);
         }
-      )
+      })
       .subscribe();
 
-    fetchProgress();
+    // Also listen to game progression broadcasts for redundancy
+    const progressChannel = supabase
+      .channel('game-progression-channel')
+      .on('broadcast', { event: 'game-progression' }, (payload) => {
+        console.log("Progress hook received game progression broadcast:", payload);
+        
+        if (payload.payload && payload.payload.sessionId === sessionId) {
+          // Refresh data to get the latest state
+          fetchProgress();
+        }
+      })
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(progressChannel);
     };
   }, [sessionId]);
 
-  return { progress, isLoading, error };
-}
+  return {
+    progress,
+    isLoading,
+    error
+  };
+};

@@ -55,6 +55,17 @@ export function MainstageCallControls({
     }
   }, [isProcessingClose]);
 
+  const getPatternDisplayName = (pattern: string): string => {
+    switch(pattern) {
+      case 'oneLine': return 'One Line';
+      case 'twoLines': return 'Two Lines';
+      case 'fullHouse': return 'Full House';
+      case 'pattern': return 'Pattern';
+      case 'blackout': return 'Blackout';
+      default: return pattern;
+    }
+  };
+
   const confirmCloseGame = () => {
     if (onCloseGame) {
       setIsProcessingClose(true);
@@ -68,6 +79,21 @@ export function MainstageCallControls({
           setIsProcessingClose(false);
           setIsClosingConfirmOpen(false);
           
+          // Get next pattern for display in broadcast
+          let nextPattern: string | null = null;
+          let progressType = "game"; // Default to game progression
+          
+          if (activeWinPatterns && activeWinPatterns.length > 0) {
+            const currentPattern = activeWinPatterns[0];
+            if (currentPattern === 'oneLine' && !isLastGame) {
+              nextPattern = 'twoLines';
+              progressType = "pattern";
+            } else if (currentPattern === 'twoLines' && !isLastGame) {
+              nextPattern = 'fullHouse';
+              progressType = "pattern";
+            }
+          }
+          
           // Broadcast win pattern change to all players
           if (currentSession?.id) {
             console.log("Broadcasting pattern change due to game progression");
@@ -78,6 +104,7 @@ export function MainstageCallControls({
                 payload: {
                   sessionId: currentSession.id,
                   patternChange: true,
+                  nextPattern: nextPattern,
                   timestamp: new Date().toISOString()
                 }
               }).then(() => {
@@ -96,10 +123,16 @@ export function MainstageCallControls({
                   previousGame: currentGameNumber,
                   newGame: isLastGame ? currentGameNumber : currentGameNumber + 1,
                   previousPatterns: activeWinPatterns,
+                  nextPattern: nextPattern,
+                  progressType: progressType,
                   timestamp: new Date().toISOString()
                 }
               }).then(() => {
-                console.log("Game progression broadcast sent");
+                console.log("Game progression broadcast sent with details:", {
+                  previousGame: currentGameNumber,
+                  newGame: isLastGame ? currentGameNumber : currentGameNumber + 1,
+                  nextPattern
+                });
               }).catch(err => {
                 console.error("Error broadcasting game progression:", err);
               });
@@ -107,12 +140,29 @@ export function MainstageCallControls({
         }, 500);
       }, 300);
       
+      // Show toast about progression
+      const displayMessage = isLastGame ? 
+        "The session has been completed successfully." : 
+        nextPatternOrGameMessage(activeWinPatterns);
+        
       toast({
         title: isLastGame ? "Session Completed" : "Game Advanced",
-        description: isLastGame 
-          ? "The session has been completed successfully." 
-          : `Advanced to game ${currentGameNumber + 1}`,
+        description: displayMessage,
       });
+    }
+  };
+  
+  // Helper function to determine next pattern message
+  const nextPatternOrGameMessage = (patterns: string[]) => {
+    if (!patterns || patterns.length === 0) return `Advanced to game ${currentGameNumber + 1}`;
+    
+    const currentPattern = patterns[0];
+    if (currentPattern === 'oneLine') {
+      return "Advanced to Two Lines pattern";
+    } else if (currentPattern === 'twoLines') {
+      return "Advanced to Full House pattern";
+    } else {
+      return `Advanced to game ${currentGameNumber + 1}`;
     }
   };
 
@@ -158,6 +208,15 @@ export function MainstageCallControls({
             <div className="text-sm text-gray-500 mb-1">Called Numbers</div>
             <div className="text-2xl font-bold">{totalCalls}</div>
           </div>
+          
+          {activeWinPatterns && activeWinPatterns.length > 0 && (
+            <div className="bg-gray-100 p-3 rounded-md text-center">
+              <div className="text-sm text-gray-500 mb-1">Current Pattern</div>
+              <div className="text-xl font-semibold">
+                {getPatternDisplayName(activeWinPatterns[0])}
+              </div>
+            </div>
+          )}
           
           <div className="grid grid-cols-1 gap-3">
             <Button

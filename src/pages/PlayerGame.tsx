@@ -58,6 +58,22 @@ export default function PlayerGame() {
     resetClaimStatus,
   } = usePlayerGame(playerCode);
 
+  // Track the current session progress separately
+  const { progress: sessionProgress } = useSessionProgress(currentSession?.id);
+
+  // Force UI refresh when the pattern changes
+  useEffect(() => {
+    if (sessionProgress?.current_win_pattern && 
+        activeWinPatterns.length > 0 && 
+        sessionProgress.current_win_pattern !== activeWinPatterns[0]) {
+      console.log(`Win pattern mismatch - Progress shows ${sessionProgress.current_win_pattern} but state has ${activeWinPatterns[0]}`);
+      
+      // Force a refresh by toggling auto-marking
+      setAutoMarking(prev => !prev);
+      setTimeout(() => setAutoMarking(prev => !prev), 100);
+    }
+  }, [sessionProgress, activeWinPatterns, setAutoMarking]);
+
   useEffect(() => {
     if (claimStatus === 'validated' || claimStatus === 'rejected') {
       const timer = setTimeout(() => {
@@ -107,9 +123,32 @@ export default function PlayerGame() {
       })
       .subscribe();
       
+    // Create a dedicated subscription for game progression events
+    const progressionChannel = supabase.channel('game-progression-listener')
+      .on('broadcast', { event: 'game-progression' }, (payload) => {
+        console.log("Received game progression broadcast in PlayerGame:", payload);
+        if (payload.payload && payload.payload.sessionId === currentSession.id) {
+          // Force refresh of player game data
+          console.log("Forcing refresh due to game progression");
+          setAutoMarking(prev => !prev);
+          setTimeout(() => {
+            setAutoMarking(prev => !prev);
+            
+            // Additional reset/refresh delay to ensure everything is updated
+            setTimeout(() => {
+              console.log("Secondary refresh to ensure pattern update is applied");
+              setAutoMarking(prev => !prev);
+              setTimeout(() => setAutoMarking(prev => !prev), 50);
+            }, 500);
+          }, 50);
+        }
+      })
+      .subscribe();
+      
     return () => {
-      console.log("Cleaning up broadcast channel");
+      console.log("Cleaning up broadcast channels");
       supabase.removeChannel(broadcastChannel);
+      supabase.removeChannel(progressionChannel);
     };
   }, [playerCode, currentSession?.id, isClaiming, resetClaimStatus, toast, setAutoMarking]);
 
@@ -199,11 +238,16 @@ export default function PlayerGame() {
       shouldShowLoader,
       isClaiming,
       claimStatus,
-      activeWinPatterns
+      activeWinPatterns,
+      sessionProgress
     });
-  }, [isLoading, loadingStep, currentSession, currentGameState, tickets, shouldShowLoader, isClaiming, claimStatus, activeWinPatterns]);
-
-  const { progress: sessionProgress } = useSessionProgress(currentSession?.id);
+    
+    // Additional logging to debug pattern mismatch
+    if (sessionProgress?.current_win_pattern && activeWinPatterns.length > 0) {
+      console.log(`Pattern comparison - Progress: ${sessionProgress.current_win_pattern}, State: ${activeWinPatterns[0]}`);
+    }
+  }, [isLoading, loadingStep, currentSession, currentGameState, tickets, shouldShowLoader, 
+      isClaiming, claimStatus, activeWinPatterns, sessionProgress]);
 
   if (shouldShowLoader) {
     return (
@@ -216,7 +260,9 @@ export default function PlayerGame() {
     );
   }
 
-  const currentWinPattern = activeWinPatterns.length > 0 ? activeWinPatterns[0] : null;
+  // Use session progress data if available, otherwise fall back to activeWinPatterns
+  const currentWinPattern = sessionProgress?.current_win_pattern || 
+                           (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
 
   // Convert complex prize objects to strings for the layout component
   const simplifiedPrizes: { [key: string]: string } = {};
@@ -231,6 +277,13 @@ export default function PlayerGame() {
     });
   }
 
+  const currentGameNumber = sessionProgress?.current_game_number || 
+                           currentGameState?.gameNumber || 
+                           1;
+  const numberOfGames = sessionProgress?.max_game_number || 
+                       currentSession?.numberOfGames || 
+                       1;
+
   return (
     <PlayerGameLayout
       tickets={tickets || []}
@@ -241,7 +294,7 @@ export default function PlayerGame() {
       setAutoMarking={setAutoMarking}
       playerCode={playerCode || ''}
       winPrizes={simplifiedPrizes}
-      activeWinPatterns={activeWinPatterns || []}
+      activeWinPatterns={currentWinPattern ? [currentWinPattern] : []}
       currentWinPattern={currentWinPattern}
       onClaimBingo={handleClaimBingo}
       errorMessage={errorMessage || ''}
@@ -249,8 +302,8 @@ export default function PlayerGame() {
       isClaiming={isClaiming}
       claimStatus={claimStatus}
       gameType={gameType || 'mainstage'}
-      currentGameNumber={sessionProgress?.current_game_number || 1}
-      numberOfGames={sessionProgress?.max_game_number || 1}
+      currentGameNumber={currentGameNumber}
+      numberOfGames={numberOfGames}
     >
       <GameTypePlayspace
         gameType={gameType || "mainstage"}
