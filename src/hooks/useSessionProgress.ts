@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 type ProgressType = {
@@ -13,6 +13,7 @@ export const useSessionProgress = (sessionId: string | undefined) => {
   const [progress, setProgress] = useState<ProgressType | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const lastUpdateRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!sessionId) {
@@ -33,7 +34,12 @@ export const useSessionProgress = (sessionId: string | undefined) => {
           setError(error.message);
         } else if (data) {
           console.log('Fetched session progress:', data);
-          setProgress(data);
+          // Create a JSON string representation to compare with previous data
+          const dataString = JSON.stringify(data);
+          if (dataString !== lastUpdateRef.current) {
+            lastUpdateRef.current = dataString;
+            setProgress(data);
+          }
         }
       } catch (err) {
         console.error('Exception fetching session progress:', err);
@@ -56,7 +62,12 @@ export const useSessionProgress = (sessionId: string | undefined) => {
       }, (payload) => {
         console.log('Session progress changed:', payload);
         if (payload.new) {
-          setProgress(payload.new as ProgressType);
+          // Create a JSON string representation to compare with previous data
+          const dataString = JSON.stringify(payload.new);
+          if (dataString !== lastUpdateRef.current) {
+            lastUpdateRef.current = dataString;
+            setProgress(payload.new as ProgressType);
+          }
         }
       })
       .subscribe();
@@ -68,7 +79,17 @@ export const useSessionProgress = (sessionId: string | undefined) => {
         console.log("Progress hook received game progression broadcast:", payload);
         
         if (payload.payload && payload.payload.sessionId === sessionId) {
-          // Refresh data to get the latest state
+          // When receiving a game progression event, immediately update local state
+          // to ensure UI reflects the change without waiting for database
+          if (payload.payload.nextPattern && progress) {
+            console.log(`Updating local progress due to game progression broadcast: ${payload.payload.nextPattern}`);
+            setProgress({
+              ...progress,
+              current_win_pattern: payload.payload.nextPattern,
+            });
+          }
+          
+          // Also refresh from DB to ensure we have all updated fields
           fetchProgress();
         }
       })

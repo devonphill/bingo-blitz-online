@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -45,12 +44,20 @@ export default function PlayerGameLayout({
   claimStatus,
   gameType = 'mainstage',
   currentGameNumber = 1,
-  numberOfGames = 1
+  numberOfGames = 1,
+  tickets
 }: PlayerGameLayoutProps) {
   const [localClaimValidating, setLocalClaimValidating] = useState(false);
   const [localClaimStatus, setLocalClaimStatus] = useState<'pending' | 'validated' | 'rejected' | null>(null);
   const [lastWinPattern, setLastWinPattern] = useState<string | null>(null);
   const { toast } = useToast();
+  const instanceId = useRef(Date.now()); // Create a unique instance ID for this component
+  const resetTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Debug render with unique instance ID
+  useEffect(() => {
+    console.log(`PlayerGameLayout rendered with instance ID: ${instanceId.current}, pattern: ${currentWinPattern}`);
+  }, [currentWinPattern]);
 
   // Track pattern changes to manage claim status
   useEffect(() => {
@@ -73,7 +80,7 @@ export default function PlayerGameLayout({
 
   // Helper function to get display name for patterns
   const getPatternDisplayName = (pattern: string): string => {
-    switch(pattern) {
+    switch(pattern.replace('MAINSTAGE_', '')) {
       case 'oneLine': return 'One Line';
       case 'twoLines': return 'Two Lines';
       case 'fullHouse': return 'Full House';
@@ -85,7 +92,9 @@ export default function PlayerGameLayout({
 
   // Sync external claim status with local state
   useEffect(() => {
-    if (claimStatus) {
+    console.log(`PlayerGameLayout (instance ${instanceId.current}): External claim status updated to:`, claimStatus);
+    
+    if (claimStatus !== undefined) {
       setLocalClaimStatus(claimStatus);
     }
     
@@ -100,20 +109,26 @@ export default function PlayerGameLayout({
 
   // Auto-reset claim status after validation (to allow claiming for next pattern)
   useEffect(() => {
-    let timer: NodeJS.Timeout | null = null;
+    if (resetTimerRef.current) {
+      clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = null;
+    }
     
     if (localClaimStatus === 'validated' || localClaimStatus === 'rejected') {
       console.log(`Setting up auto-reset for claim status: ${localClaimStatus}`);
       
       // Reset status after 5 seconds to allow claiming for next pattern
-      timer = setTimeout(() => {
-        console.log("Auto-resetting claim status");
+      resetTimerRef.current = setTimeout(() => {
+        console.log(`Auto-resetting claim status from ${localClaimStatus}`);
         setLocalClaimStatus(null);
       }, 5000);
     }
     
     return () => {
-      if (timer) clearTimeout(timer);
+      if (resetTimerRef.current) {
+        clearTimeout(resetTimerRef.current);
+        resetTimerRef.current = null;
+      }
     };
   }, [localClaimStatus]);
 
@@ -121,10 +136,10 @@ export default function PlayerGameLayout({
   useEffect(() => {
     if (!currentSession?.id || !playerCode) return;
     
-    console.log("Setting up claim result broadcast listener for player");
+    console.log(`Setting up claim result broadcast listener for player (instance ${instanceId.current})`);
     
     const claimsChannel = supabase
-      .channel('player-claims-listener')
+      .channel(`player-claims-listener-${instanceId.current}`)
       .on(
         'broadcast',
         { event: 'claim-result' },
@@ -153,12 +168,12 @@ export default function PlayerGameLayout({
       
     // Listen for general game updates
     const gameUpdatesChannel = supabase
-      .channel('player-game-updates')
+      .channel(`player-game-updates-${instanceId.current}`)
       .on(
         'broadcast',
         { event: 'claim-update' },
         (payload) => {
-          console.log("Received claim update broadcast:", payload);
+          console.log(`Instance ${instanceId.current} received claim update broadcast:`, payload);
           // Update claim status when any claim is processed
           if (payload.payload && payload.payload.sessionId === currentSession.id && 
               payload.payload.result === 'valid') {
@@ -174,13 +189,18 @@ export default function PlayerGameLayout({
           if (payload.payload && 
               payload.payload.sessionId === currentSession.id && 
               payload.payload.patternChange === true) {
-            console.log("Pattern changed, resetting claim status");
+            console.log(`Instance ${instanceId.current}: Pattern changed, resetting claim status`);
             setLocalClaimStatus(null);
             setLocalClaimValidating(false);
             
             // If a new pattern is provided, update lastWinPattern to force re-evaluation
             if (payload.payload.nextPattern && payload.payload.nextPattern !== lastWinPattern) {
               setLastWinPattern(null);
+            }
+            
+            if (payload.payload.nextPattern) {
+              const patternName = getPatternDisplayName(payload.payload.nextPattern);
+              console.log(`Pattern changed to: ${patternName}`);
             }
           }
         }
@@ -189,12 +209,12 @@ export default function PlayerGameLayout({
     
     // Listen for game progression updates
     const progressChannel = supabase
-      .channel('game-progression-channel')
+      .channel(`game-progression-channel-${instanceId.current}`)
       .on(
         'broadcast',
         { event: 'game-progression' },
         (payload) => {
-          console.log("Received game progression broadcast:", payload);
+          console.log(`Instance ${instanceId.current} received game progression broadcast:`, payload);
           
           if (payload.payload && payload.payload.sessionId === currentSession.id) {
             console.log("Game progressed, resetting claim status");
@@ -226,11 +246,12 @@ export default function PlayerGameLayout({
       .subscribe();
     
     return () => {
+      console.log(`Cleaning up broadcast channels for instance ${instanceId.current}`);
       supabase.removeChannel(claimsChannel);
       supabase.removeChannel(gameUpdatesChannel);
       supabase.removeChannel(progressChannel);
     };
-  }, [currentSession?.id, playerCode, toast, lastWinPattern, currentWinPattern]);
+  }, [currentSession?.id, playerCode, toast, lastWinPattern, currentWinPattern, instanceId]);
 
   const handleClaimClick = async () => {
     if (localClaimValidating || isClaiming || localClaimStatus === 'validated') {
@@ -303,8 +324,11 @@ export default function PlayerGameLayout({
     );
   }
   
-  const isClaimInProgress = localClaimValidating || isClaiming || claimStatus === 'pending';
+  const isClaimInProgress = localClaimValidating || isClaiming || localClaimStatus === 'pending';
   const isClaimValidated = localClaimStatus === 'validated' || claimStatus === 'validated';
+  
+  console.log(`Render state (${instanceId.current}): isClaiming=${isClaiming}, localClaimValidating=${localClaimValidating}, claimStatus=${claimStatus}, localClaimStatus=${localClaimStatus}`);
+  console.log(`Button state (${instanceId.current}): isClaimInProgress=${isClaimInProgress}, isClaimValidated=${isClaimValidated}`);
   
   return (
     <div className="min-h-screen w-full flex bg-gray-50">

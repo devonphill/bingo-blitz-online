@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { usePlayerGame } from '@/hooks/usePlayerGame';
@@ -58,21 +57,31 @@ export default function PlayerGame() {
     resetClaimStatus,
   } = usePlayerGame(playerCode);
 
-  // Track the current session progress separately
   const { progress: sessionProgress } = useSessionProgress(currentSession?.id);
+  const [forceRefreshKey, setForceRefreshKey] = useState(0);
+  
+  const forceRefresh = useCallback(() => {
+    console.log('Forcing refresh of PlayerGame component');
+    setForceRefreshKey(prevKey => prevKey + 1);
+    setAutoMarking(prev => !prev);
+    setTimeout(() => setAutoMarking(prev => !prev), 100);
+  }, [setAutoMarking]);
 
-  // Force UI refresh when the pattern changes
   useEffect(() => {
     if (sessionProgress?.current_win_pattern && 
         activeWinPatterns.length > 0 && 
         sessionProgress.current_win_pattern !== activeWinPatterns[0]) {
       console.log(`Win pattern mismatch - Progress shows ${sessionProgress.current_win_pattern} but state has ${activeWinPatterns[0]}`);
       
-      // Force a refresh by toggling auto-marking
-      setAutoMarking(prev => !prev);
-      setTimeout(() => setAutoMarking(prev => !prev), 100);
+      forceRefresh();
+      
+      const patternName = getWinPatternName(sessionProgress.current_win_pattern);
+      toast({
+        title: "Win Pattern Changed",
+        description: `Now playing for: ${patternName}`,
+      });
     }
-  }, [sessionProgress, activeWinPatterns, setAutoMarking]);
+  }, [sessionProgress, activeWinPatterns, toast, forceRefresh]);
 
   useEffect(() => {
     if (claimStatus === 'validated' || claimStatus === 'rejected') {
@@ -85,6 +94,19 @@ export default function PlayerGame() {
     }
   }, [claimStatus, resetClaimStatus]);
 
+  const getWinPatternName = (patternId: string) => {
+    const displayPatternId = patternId.replace('MAINSTAGE_', '');
+    
+    const allPatterns = gameType ? WIN_PATTERNS[gameType] : [];
+    const pattern = allPatterns.find(p => p.id === displayPatternId);
+    
+    if (displayPatternId === 'oneLine') return 'One Line';
+    if (displayPatternId === 'twoLines') return 'Two Lines';
+    if (displayPatternId === 'fullHouse') return 'Full House';
+    
+    return pattern ? pattern.name : patternId;
+  };
+
   useEffect(() => {
     if (!playerCode || !currentSession?.id) return;
     
@@ -96,11 +118,6 @@ export default function PlayerGame() {
         if (payload.payload && payload.payload.sessionId === currentSession.id) {
           console.log("Refreshing game state due to claim update");
           
-          // Force a refresh of the player game data to get the latest state
-          setAutoMarking(prev => !prev);
-          setTimeout(() => setAutoMarking(prev => !prev), 50);
-          
-          // If we receive a valid claim result and we're currently claiming, reset our claim status
           if ((payload.payload.result === 'valid' || payload.payload.result === 'false') && isClaiming) {
             console.log(`Resetting claim status due to ${payload.payload.result} broadcast result`);
             resetClaimStatus();
@@ -119,28 +136,47 @@ export default function PlayerGame() {
               });
             }
           }
+          
+          if (payload.payload.patternChange === true) {
+            console.log("Pattern change detected in broadcast, forcing refresh");
+            forceRefresh();
+            
+            if (payload.payload.nextPattern) {
+              const patternName = getWinPatternName(payload.payload.nextPattern);
+              toast({
+                title: "Win Pattern Changed",
+                description: `Now playing for: ${patternName}`,
+              });
+            }
+          }
         }
       })
       .subscribe();
       
-    // Create a dedicated subscription for game progression events
     const progressionChannel = supabase.channel('game-progression-listener')
       .on('broadcast', { event: 'game-progression' }, (payload) => {
         console.log("Received game progression broadcast in PlayerGame:", payload);
         if (payload.payload && payload.payload.sessionId === currentSession.id) {
-          // Force refresh of player game data
           console.log("Forcing refresh due to game progression");
-          setAutoMarking(prev => !prev);
-          setTimeout(() => {
-            setAutoMarking(prev => !prev);
-            
-            // Additional reset/refresh delay to ensure everything is updated
-            setTimeout(() => {
-              console.log("Secondary refresh to ensure pattern update is applied");
-              setAutoMarking(prev => !prev);
-              setTimeout(() => setAutoMarking(prev => !prev), 50);
-            }, 500);
-          }, 50);
+          
+          resetClaimStatus();
+          
+          if (payload.payload.nextPattern) {
+            const patternName = getWinPatternName(payload.payload.nextPattern);
+            toast({
+              title: "Pattern Changed",
+              description: `Now playing for: ${patternName}`,
+            });
+          } else if (payload.payload.newGame !== payload.payload.previousGame) {
+            toast({
+              title: "Game Changed",
+              description: `Moving to game ${payload.payload.newGame}`,
+            });
+          }
+          
+          forceRefresh();
+          
+          setTimeout(() => forceRefresh(), 500);
         }
       })
       .subscribe();
@@ -150,7 +186,7 @@ export default function PlayerGame() {
       supabase.removeChannel(broadcastChannel);
       supabase.removeChannel(progressionChannel);
     };
-  }, [playerCode, currentSession?.id, isClaiming, resetClaimStatus, toast, setAutoMarking]);
+  }, [playerCode, currentSession?.id, isClaiming, resetClaimStatus, toast, forceRefresh]);
 
   useEffect(() => {
     if (!currentSession?.id) return;
@@ -170,11 +206,9 @@ export default function PlayerGame() {
         (payload) => {
           console.log("Received direct database update:", payload);
           
-          // Force a refresh to get the latest session state
           if (payload.new && JSON.stringify(payload.new) !== JSON.stringify(payload.old)) {
             console.log("Database change detected, refreshing game state");
-            setAutoMarking(prev => !prev);
-            setTimeout(() => setAutoMarking(prev => !prev), 50);
+            forceRefresh();
           }
         }
       )
@@ -184,7 +218,7 @@ export default function PlayerGame() {
       console.log("Removing database subscription");
       supabase.removeChannel(channel);
     };
-  }, [currentSession?.id, setAutoMarking]);
+  }, [currentSession?.id, forceRefresh]);
 
   const isInitialLoading = isLoading && loadingStep !== 'completed';
   const hasTickets = tickets && tickets.length > 0;
@@ -204,30 +238,6 @@ export default function PlayerGame() {
     }
   }, [hasSession, hasTickets, isGameActive, loadingStep]);
 
-  const getGameTypeDisplayName = () => {
-    switch (gameType) {
-      case 'mainstage': return 'Mainstage Bingo';
-      case 'party': return 'Party Bingo';
-      case 'quiz': return 'Quiz Bingo';
-      case 'music': return 'Music Bingo';
-      case 'logo': return 'Logo Bingo';
-      default: return gameType ? `${gameType} Bingo` : 'Bingo Game';
-    }
-  };
-
-  const getWinPatternName = (patternId: string) => {
-    const displayPatternId = patternId.replace('MAINSTAGE_', '');
-    
-    const allPatterns = gameType ? WIN_PATTERNS[gameType] : [];
-    const pattern = allPatterns.find(p => p.id === displayPatternId);
-    
-    if (displayPatternId === 'oneLine') return 'One Line';
-    if (displayPatternId === 'twoLines') return 'Two Lines';
-    if (displayPatternId === 'fullHouse') return 'Full House';
-    
-    return pattern ? pattern.name : patternId;
-  };
-
   useEffect(() => {
     console.log('Player Game Render State:', {
       isLoading,
@@ -242,7 +252,6 @@ export default function PlayerGame() {
       sessionProgress
     });
     
-    // Additional logging to debug pattern mismatch
     if (sessionProgress?.current_win_pattern && activeWinPatterns.length > 0) {
       console.log(`Pattern comparison - Progress: ${sessionProgress.current_win_pattern}, State: ${activeWinPatterns[0]}`);
     }
@@ -260,11 +269,9 @@ export default function PlayerGame() {
     );
   }
 
-  // Use session progress data if available, otherwise fall back to activeWinPatterns
   const currentWinPattern = sessionProgress?.current_win_pattern || 
                            (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
 
-  // Convert complex prize objects to strings for the layout component
   const simplifiedPrizes: { [key: string]: string } = {};
   if (winPrizes) {
     Object.entries(winPrizes).forEach(([key, prize]) => {
@@ -285,37 +292,39 @@ export default function PlayerGame() {
                        1;
 
   return (
-    <PlayerGameLayout
-      tickets={tickets || []}
-      calledNumbers={calledItems || []}
-      currentNumber={lastCalledItem}
-      currentSession={currentSession}
-      autoMarking={autoMarking}
-      setAutoMarking={setAutoMarking}
-      playerCode={playerCode || ''}
-      winPrizes={simplifiedPrizes}
-      activeWinPatterns={currentWinPattern ? [currentWinPattern] : []}
-      currentWinPattern={currentWinPattern}
-      onClaimBingo={handleClaimBingo}
-      errorMessage={errorMessage || ''}
-      isLoading={isLoading}
-      isClaiming={isClaiming}
-      claimStatus={claimStatus}
-      gameType={gameType || 'mainstage'}
-      currentGameNumber={currentGameNumber}
-      numberOfGames={numberOfGames}
-    >
-      <GameTypePlayspace
-        gameType={gameType || "mainstage"}
+    <React.Fragment key={`player-game-${forceRefreshKey}`}>
+      <PlayerGameLayout
         tickets={tickets || []}
         calledNumbers={calledItems || []}
-        lastCalledNumber={lastCalledItem}
+        currentNumber={lastCalledItem}
+        currentSession={currentSession}
         autoMarking={autoMarking}
         setAutoMarking={setAutoMarking}
-        handleClaimBingo={handleClaimBingo}
+        playerCode={playerCode || ''}
+        winPrizes={simplifiedPrizes}
+        activeWinPatterns={currentWinPattern ? [currentWinPattern] : []}
+        currentWinPattern={currentWinPattern}
+        onClaimBingo={handleClaimBingo}
+        errorMessage={errorMessage || ''}
+        isLoading={isLoading}
         isClaiming={isClaiming}
         claimStatus={claimStatus}
-      />
-    </PlayerGameLayout>
+        gameType={gameType || 'mainstage'}
+        currentGameNumber={currentGameNumber}
+        numberOfGames={numberOfGames}
+      >
+        <GameTypePlayspace
+          gameType={gameType || "mainstage"}
+          tickets={tickets || []}
+          calledNumbers={calledItems || []}
+          lastCalledNumber={lastCalledItem}
+          autoMarking={autoMarking}
+          setAutoMarking={setAutoMarking}
+          handleClaimBingo={handleClaimBingo}
+          isClaiming={isClaiming}
+          claimStatus={claimStatus}
+        />
+      </PlayerGameLayout>
+    </React.Fragment>
   );
 }

@@ -85,13 +85,54 @@ export function MainstageCallControls({
           
           if (activeWinPatterns && activeWinPatterns.length > 0) {
             const currentPattern = activeWinPatterns[0];
-            if (currentPattern === 'oneLine' && !isLastGame) {
+            if (currentPattern === 'oneLine' || currentPattern === 'MAINSTAGE_oneLine') {
               nextPattern = 'twoLines';
               progressType = "pattern";
-            } else if (currentPattern === 'twoLines' && !isLastGame) {
+            } else if (currentPattern === 'twoLines' || currentPattern === 'MAINSTAGE_twoLines') {
               nextPattern = 'fullHouse';
               progressType = "pattern";
             }
+          }
+          
+          // Update session progress in the database directly
+          if (currentSession?.id) {
+            const updateProgress = async () => {
+              try {
+                console.log("Updating session progress for pattern change");
+                let updateData = {};
+                
+                if (progressType === "pattern" && nextPattern) {
+                  updateData = {
+                    current_win_pattern: nextPattern
+                  };
+                  console.log(`Updating win pattern to: ${nextPattern}`);
+                } else if (!isLastGame) {
+                  updateData = {
+                    current_game_number: currentGameNumber + 1,
+                    current_win_pattern: 'oneLine' // Reset to oneLine for new game
+                  };
+                  console.log(`Updating game number to: ${currentGameNumber + 1}`);
+                }
+                
+                // Only update if we have data to update
+                if (Object.keys(updateData).length > 0) {
+                  const { error } = await supabase
+                    .from('sessions_progress')
+                    .update(updateData)
+                    .eq('session_id', currentSession.id);
+                    
+                  if (error) {
+                    console.error('Error updating session progress:', error);
+                  } else {
+                    console.log('Session progress updated successfully');
+                  }
+                }
+              } catch (err) {
+                console.error('Error in updateProgress:', err);
+              }
+            };
+            
+            updateProgress();
           }
           
           // Broadcast win pattern change to all players
@@ -157,9 +198,9 @@ export function MainstageCallControls({
     if (!patterns || patterns.length === 0) return `Advanced to game ${currentGameNumber + 1}`;
     
     const currentPattern = patterns[0];
-    if (currentPattern === 'oneLine') {
+    if (currentPattern === 'oneLine' || currentPattern === 'MAINSTAGE_oneLine') {
       return "Advanced to Two Lines pattern";
-    } else if (currentPattern === 'twoLines') {
+    } else if (currentPattern === 'twoLines' || currentPattern === 'MAINSTAGE_twoLines') {
       return "Advanced to Full House pattern";
     } else {
       return `Advanced to game ${currentGameNumber + 1}`;
