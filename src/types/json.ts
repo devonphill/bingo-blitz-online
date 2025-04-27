@@ -1,5 +1,7 @@
 
 // Define JSON type for the database
+import { GameConfig } from './index';
+
 export type Json =
   | string
   | number
@@ -28,7 +30,7 @@ export function prepareForDatabase(data: any): Json {
 }
 
 // Helper function to safely convert Json to GameConfig[]
-export function parseGameConfigs(json: Json): import('./index').GameConfig[] {
+export function parseGameConfigs(json: Json): GameConfig[] {
   if (!json || !Array.isArray(json)) {
     return [];
   }

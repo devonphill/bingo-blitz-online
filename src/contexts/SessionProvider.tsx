@@ -1,9 +1,10 @@
 
 import React, { createContext, useContext, ReactNode } from 'react';
 import { useSessions } from './useSessions';
-import { usePlayers, AdminTempPlayer } from './usePlayers';
+import { usePlayers } from './usePlayers';
 import { useTickets } from './useTickets';
 import type { GameSession, Player, TempPlayer } from '@/types';
+import { AdminTempPlayer } from '@/types/index';
 
 interface SessionContextType {
   sessions: GameSession[];
@@ -17,8 +18,9 @@ interface SessionContextType {
   // Player methods
   players?: Player[];
   joinSession: (playerCode: string) => Promise<{ success: boolean; playerCode?: string; playerId?: string; error?: string }>;
-  addPlayer?: (sessionId: string, player: TempPlayer) => Promise<string | null>;
-  bulkAddPlayers?: (sessionId: string, newPlayers: AdminTempPlayer[]) => Promise<{ success: boolean; message?: string; count?: number; error?: string }>;
+  addPlayer: (sessionId: string, player: TempPlayer) => Promise<string | null>;
+  bulkAddPlayers: (sessionId: string, newPlayers: AdminTempPlayer[]) => Promise<{ success: boolean; message?: string; count?: number; error?: string }>;
+  fetchPlayers?: (sessionId: string) => Promise<void>;
   // Ticket methods
   assignTicketsToPlayer?: (playerId: string, sessionId: string, ticketCount: number) => Promise<any>;
   getPlayerAssignedTickets?: (playerId: string, sessionId: string) => Promise<any>;
@@ -75,6 +77,7 @@ export function SessionProvider({ children }: SessionProviderProps) {
     },
     addPlayer: playersHook.addPlayer,
     bulkAddPlayers: playersHook.bulkAddPlayers,
+    fetchPlayers: playersHook.fetchPlayers,
     assignTicketsToPlayer: ticketsHook.assignTicketsToPlayer,
     getPlayerAssignedTickets: ticketsHook.getPlayerAssignedTickets,
   };

@@ -8,12 +8,12 @@ interface SessionContextProps {
   sessions: GameSession[];
   currentSession: GameSession | null;
   fetchSessions: () => Promise<void>;
-  createSession: (sessionData: Partial<GameSession>) => Promise<string | null>;
+  createSession?: (sessionData: Partial<GameSession>) => Promise<string | null>;
   updateSession: (sessionId: string, updates: Partial<GameSession>) => Promise<boolean>;
-  deleteSession: (sessionId: string) => Promise<boolean>;
-  fetchSessionById: (sessionId: string) => Promise<GameSession | null>;
-  setCurrentSession: (session: GameSession | null) => void;
-  joinSessionWithCode: (accessCode: string) => Promise<any>;
+  deleteSession?: (sessionId: string) => Promise<boolean>;
+  fetchSessionById?: (sessionId: string) => Promise<GameSession | null>;
+  setCurrentSession: (sessionId: string | null) => void;
+  joinSessionWithCode?: (accessCode: string) => Promise<any>;
   players: Player[];
   fetchPlayers: (sessionId: string) => Promise<void>;
   addPlayer: (sessionId: string, player: TempPlayer) => Promise<string | null>;
@@ -21,7 +21,7 @@ interface SessionContextProps {
   updatePlayer: (playerId: string, updates: Partial<Player>) => Promise<boolean>;
   joinSession: (playerCode: string) => Promise<any>;
   bulkAddPlayers: (sessionId: string, players: AdminTempPlayer[]) => Promise<any>;
-  loading: boolean;
+  loading?: boolean;
   error: string;
   isLoading: boolean;
 }

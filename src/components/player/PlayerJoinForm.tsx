@@ -20,20 +20,20 @@ export default function PlayerJoinForm() {
     setIsJoining(true);
 
     try {
-      const { player } = await joinSession(playerCode.toUpperCase());
-      if (player) {
+      const result = await joinSession(playerCode.toUpperCase());
+      if (result.success && result.playerId) {
         localStorage.setItem('playerCode', playerCode.toUpperCase());
-        localStorage.setItem('playerNickname', player.nickname);
-        localStorage.setItem('tickets', String(player.tickets));
+        localStorage.setItem('playerNickname', result.playerCode || '');
+        localStorage.setItem('tickets', '1'); // Default value or fetch from result if available
         toast({
           title: 'Login successful',
-          description: `Welcome ${player.nickname}, you have ${player.tickets} ticket(s)!`,
+          description: `Welcome, you've joined the game!`,
         });
         navigate('/player/game');
       } else {
         toast({
           title: 'Invalid code',
-          description: 'No player found with this code. Please check and try again.',
+          description: result.error || 'No player found with this code. Please check and try again.',
           variant: 'destructive'
         });
       }

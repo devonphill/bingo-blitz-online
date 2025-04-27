@@ -1,4 +1,3 @@
-
 // src/game-rules/ninetyBallRules.ts
 
 // Correctly import the interfaces from the updated types file
@@ -65,7 +64,6 @@ function parseMainstageBallTicket(ticketData: any): { numbers: number[]; rows: (
     return { numbers: actualTicketNumbers, rows, isValid: true };
 }
 
-
 export class NinetyBallRules implements GameRules {
   getGameTypeName(): string {
     return 'MAINSTAGE_90-ball';
@@ -87,6 +85,29 @@ export class NinetyBallRules implements GameRules {
         name: "MAINSTAGE Full House",
       }
     ];
+  }
+
+  // Implement the getWinPatterns method required by GameRules interface
+  getWinPatterns(): { id: string; name: string; gameType: string; available: boolean; }[] {
+    return [
+      { id: "oneLine", name: "One Line", gameType: "90ball", available: true },
+      { id: "twoLines", name: "Two Lines", gameType: "90ball", available: true },
+      { id: "fullHouse", name: "Full House", gameType: "90ball", available: true }
+    ];
+  }
+  
+  // Implement the generateNewNumber method required by GameRules interface
+  generateNewNumber(calledItems: number[]): number {
+    // Generate a number between 1 and 90 that hasn't been called yet
+    const possibleNumbers = Array.from({ length: 90 }, (_, i) => i + 1)
+      .filter(num => !calledItems.includes(num));
+    
+    if (possibleNumbers.length === 0) {
+      throw new Error("All numbers have been called already");
+    }
+    
+    const randomIndex = Math.floor(Math.random() * possibleNumbers.length);
+    return possibleNumbers[randomIndex];
   }
 
   // Correctly implement getTicketStatus using the interface signature

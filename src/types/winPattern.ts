@@ -6,7 +6,7 @@ export interface WinPattern {
   available: boolean;
 }
 
-// Import GameType from index.ts to ensure consistency
+// Export GameType from index.ts to ensure consistency
 import { GameType } from './index';
 
 export const WIN_PATTERNS: { [key in GameType]: WinPattern[] } = {

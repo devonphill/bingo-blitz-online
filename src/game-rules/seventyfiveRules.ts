@@ -1,3 +1,4 @@
+
 // src/game-rules/seventyfiveRules.ts
 
 // Ensure interfaces are imported correctly
@@ -24,6 +25,28 @@ export class SeventyfiveRules implements GameRules {
       },
       // Add others as needed: 'fourCorners', 'lineHorizontal', etc.
     ];
+  }
+
+  // Implement the getWinPatterns method required by GameRules interface
+  getWinPatterns(): { id: string; name: string; gameType: string; available: boolean; }[] {
+    return [
+      { id: "pattern", name: "Pattern", gameType: "75ball", available: true },
+      { id: "blackout", name: "Blackout / Coverall", gameType: "75ball", available: true }
+    ];
+  }
+  
+  // Implement the generateNewNumber method required by GameRules interface
+  generateNewNumber(calledItems: number[]): number {
+    // Generate a number between 1 and 75 that hasn't been called yet
+    const possibleNumbers = Array.from({ length: 75 }, (_, i) => i + 1)
+      .filter(num => !calledItems.includes(num));
+    
+    if (possibleNumbers.length === 0) {
+      throw new Error("All numbers have been called already");
+    }
+    
+    const randomIndex = Math.floor(Math.random() * possibleNumbers.length);
+    return possibleNumbers[randomIndex];
   }
 
   // Placeholder implementation - needs real logic for 75-ball

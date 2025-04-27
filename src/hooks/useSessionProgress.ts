@@ -1,7 +1,21 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { SessionProgress, GameType } from '@/types';
+import { GameType } from '@/types';
+
+// Define an interface for the SessionProgress type
+export interface SessionProgress {
+  id: string;
+  session_id: string;
+  current_game_number: number;
+  max_game_number: number;
+  current_win_pattern: string | null;
+  current_game_type: GameType;
+  created_at: string;
+  updated_at: string;
+  called_numbers?: number[];
+  game_status?: 'pending' | 'active' | 'completed';
+}
 
 export function useSessionProgress(sessionId?: string) {
   const [progress, setProgress] = useState<SessionProgress | null>(null);
@@ -63,8 +77,8 @@ export function useSessionProgress(sessionId?: string) {
           
           if (!payload.new) return;
           
-          // Safe property access with defaults for database fields that might not exist
-          const newData = payload.new || {};
+          // Safe property access with defaults
+          const newData = payload.new as Record<string, any> || {};
           
           const updatedProgress: SessionProgress = {
             id: newData.id || '',
