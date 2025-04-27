@@ -66,144 +66,163 @@ export function MainstageCallControls({
     }
   };
 
-  const confirmCloseGame = () => {
+  const confirmCloseGame = async () => {
     if (onCloseGame) {
       setIsProcessingClose(true);
       
-      // Call the onCloseGame function with a small delay to allow dialog to close
-      setTimeout(() => {
-        onCloseGame();
+      // Get next pattern and determine progression type
+      let nextPattern: string | null = null;
+      let progressType = "game"; // Default to game progression
+      let updateSessionProgress = true;
+      
+      if (activeWinPatterns && activeWinPatterns.length > 0) {
+        const currentPattern = activeWinPatterns[0].replace('MAINSTAGE_', '');
+        console.log(`Current pattern: ${currentPattern}`);
         
-        // Let UI update before resetting the states
-        setTimeout(() => {
-          setIsProcessingClose(false);
-          setIsClosingConfirmOpen(false);
+        if (currentPattern === 'oneLine') {
+          nextPattern = 'twoLines';
+          progressType = "pattern";
+        } else if (currentPattern === 'twoLines') {
+          nextPattern = 'fullHouse';
+          progressType = "pattern";
+        } else if (currentPattern === 'fullHouse' && !isLastGame) {
+          progressType = "game";
+          nextPattern = 'oneLine'; // Reset to oneLine for next game
+        } else if (isLastGame) {
+          // Last game and last pattern - session complete
+          progressType = "complete";
+          updateSessionProgress = false;
+        }
+      }
+      
+      console.log(`Progression type: ${progressType}, Next pattern: ${nextPattern}, Update progress: ${updateSessionProgress}`);
+      
+      // Update session progress in the database directly
+      if (currentSession?.id && updateSessionProgress) {
+        try {
+          console.log("Updating session progress for pattern/game change");
+          let updateData: any = {};
           
-          // Get next pattern for display in broadcast
-          let nextPattern: string | null = null;
-          let progressType = "game"; // Default to game progression
+          if (progressType === "pattern" && nextPattern) {
+            updateData = {
+              current_win_pattern: nextPattern
+            };
+            console.log(`Updating win pattern to: ${nextPattern}`);
+          } else if (progressType === "game" && !isLastGame) {
+            updateData = {
+              current_game_number: currentGameNumber + 1,
+              current_win_pattern: 'oneLine' // Reset to oneLine for new game
+            };
+            console.log(`Updating game number to: ${currentGameNumber + 1}`);
+          }
           
-          if (activeWinPatterns && activeWinPatterns.length > 0) {
-            const currentPattern = activeWinPatterns[0];
-            if (currentPattern === 'oneLine' || currentPattern === 'MAINSTAGE_oneLine') {
-              nextPattern = 'twoLines';
-              progressType = "pattern";
-            } else if (currentPattern === 'twoLines' || currentPattern === 'MAINSTAGE_twoLines') {
-              nextPattern = 'fullHouse';
-              progressType = "pattern";
+          // Only update if we have data to update
+          if (Object.keys(updateData).length > 0) {
+            const { data, error } = await supabase
+              .from('sessions_progress')
+              .update(updateData)
+              .eq('session_id', currentSession.id)
+              .select();
+              
+            if (error) {
+              console.error('Error updating session progress:', error);
+              toast({
+                title: "Error",
+                description: "Failed to update session progress. Please try again.",
+                variant: "destructive"
+              });
+            } else {
+              console.log('Session progress updated successfully:', data);
             }
           }
-          
-          // Update session progress in the database directly
-          if (currentSession?.id) {
-            const updateProgress = async () => {
-              try {
-                console.log("Updating session progress for pattern change");
-                let updateData = {};
-                
-                if (progressType === "pattern" && nextPattern) {
-                  updateData = {
-                    current_win_pattern: nextPattern
-                  };
-                  console.log(`Updating win pattern to: ${nextPattern}`);
-                } else if (!isLastGame) {
-                  updateData = {
-                    current_game_number: currentGameNumber + 1,
-                    current_win_pattern: 'oneLine' // Reset to oneLine for new game
-                  };
-                  console.log(`Updating game number to: ${currentGameNumber + 1}`);
-                }
-                
-                // Only update if we have data to update
-                if (Object.keys(updateData).length > 0) {
-                  const { error } = await supabase
-                    .from('sessions_progress')
-                    .update(updateData)
-                    .eq('session_id', currentSession.id);
-                    
-                  if (error) {
-                    console.error('Error updating session progress:', error);
-                  } else {
-                    console.log('Session progress updated successfully');
-                  }
-                }
-              } catch (err) {
-                console.error('Error in updateProgress:', err);
+        } catch (err) {
+          console.error('Error in updateProgress:', err);
+          toast({
+            title: "Error",
+            description: "An unexpected error occurred while updating the game.",
+            variant: "destructive"
+          });
+        }
+      }
+      
+      // Call the onCloseGame function after updating progress
+      try {
+        await onCloseGame();
+      } catch (error) {
+        console.error("Error in onCloseGame:", error);
+        toast({
+          title: "Error",
+          description: "Failed to close the game. Please try again.",
+          variant: "destructive"
+        });
+      }
+      
+      // Let UI update before resetting the states
+      setTimeout(() => {
+        setIsProcessingClose(false);
+        setIsClosingConfirmOpen(false);
+        
+        // Broadcast win pattern change to all players
+        if (currentSession?.id) {
+          console.log("Broadcasting pattern/game change");
+          supabase.channel('player-game-updates')
+            .send({
+              type: 'broadcast',
+              event: 'claim-update',
+              payload: {
+                sessionId: currentSession.id,
+                patternChange: true,
+                nextPattern: nextPattern,
+                timestamp: new Date().toISOString()
               }
-            };
-            
-            updateProgress();
-          }
+            }).then(() => {
+              console.log("Pattern change broadcast sent");
+            }).catch(err => {
+              console.error("Error broadcasting pattern change:", err);
+            });
           
-          // Broadcast win pattern change to all players
-          if (currentSession?.id) {
-            console.log("Broadcasting pattern change due to game progression");
-            supabase.channel('player-game-updates')
-              .send({
-                type: 'broadcast',
-                event: 'claim-update',
-                payload: {
-                  sessionId: currentSession.id,
-                  patternChange: true,
-                  nextPattern: nextPattern,
-                  timestamp: new Date().toISOString()
-                }
-              }).then(() => {
-                console.log("Pattern change broadcast sent");
-              }).catch(err => {
-                console.error("Error broadcasting pattern change:", err);
+          // Also send a dedicated game progression event
+          supabase.channel('game-progression-channel')
+            .send({
+              type: 'broadcast',
+              event: 'game-progression',
+              payload: {
+                sessionId: currentSession.id,
+                previousGame: currentGameNumber,
+                newGame: isLastGame ? currentGameNumber : currentGameNumber + 1,
+                previousPatterns: activeWinPatterns,
+                nextPattern: nextPattern,
+                patternProgression: progressType === "pattern",
+                gameProgression: progressType === "game",
+                progressType: progressType,
+                timestamp: new Date().toISOString()
+              }
+            }).then(() => {
+              console.log("Game progression broadcast sent with details:", {
+                previousGame: currentGameNumber,
+                newGame: isLastGame ? currentGameNumber : currentGameNumber + 1,
+                nextPattern,
+                progressType
               });
-            
-            // Also send a dedicated game progression event
-            supabase.channel('game-progression-channel')
-              .send({
-                type: 'broadcast',
-                event: 'game-progression',
-                payload: {
-                  sessionId: currentSession.id,
-                  previousGame: currentGameNumber,
-                  newGame: isLastGame ? currentGameNumber : currentGameNumber + 1,
-                  previousPatterns: activeWinPatterns,
-                  nextPattern: nextPattern,
-                  progressType: progressType,
-                  timestamp: new Date().toISOString()
-                }
-              }).then(() => {
-                console.log("Game progression broadcast sent with details:", {
-                  previousGame: currentGameNumber,
-                  newGame: isLastGame ? currentGameNumber : currentGameNumber + 1,
-                  nextPattern
-                });
-              }).catch(err => {
-                console.error("Error broadcasting game progression:", err);
-              });
-          }
-        }, 500);
-      }, 300);
+            }).catch(err => {
+              console.error("Error broadcasting game progression:", err);
+            });
+        }
+      }, 500);
       
       // Show toast about progression
-      const displayMessage = isLastGame ? 
+      const displayMessage = progressType === "complete" ? 
         "The session has been completed successfully." : 
-        nextPatternOrGameMessage(activeWinPatterns);
-        
+        progressType === "pattern" && nextPattern ? 
+          `Advanced to ${getPatternDisplayName(nextPattern)} pattern` :
+          progressType === "game" ? 
+            `Advanced to game ${currentGameNumber + 1}` :
+            "Game updated";
+            
       toast({
-        title: isLastGame ? "Session Completed" : "Game Advanced",
+        title: progressType === "complete" ? "Session Completed" : "Game Advanced",
         description: displayMessage,
       });
-    }
-  };
-  
-  // Helper function to determine next pattern message
-  const nextPatternOrGameMessage = (patterns: string[]) => {
-    if (!patterns || patterns.length === 0) return `Advanced to game ${currentGameNumber + 1}`;
-    
-    const currentPattern = patterns[0];
-    if (currentPattern === 'oneLine' || currentPattern === 'MAINSTAGE_oneLine') {
-      return "Advanced to Two Lines pattern";
-    } else if (currentPattern === 'twoLines' || currentPattern === 'MAINSTAGE_twoLines') {
-      return "Advanced to Full House pattern";
-    } else {
-      return `Advanced to game ${currentGameNumber + 1}`;
     }
   };
 
@@ -254,7 +273,7 @@ export function MainstageCallControls({
             <div className="bg-gray-100 p-3 rounded-md text-center">
               <div className="text-sm text-gray-500 mb-1">Current Pattern</div>
               <div className="text-xl font-semibold">
-                {getPatternDisplayName(activeWinPatterns[0])}
+                {getPatternDisplayName(activeWinPatterns[0].replace('MAINSTAGE_', ''))}
               </div>
             </div>
           )}

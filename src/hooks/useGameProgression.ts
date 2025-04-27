@@ -86,6 +86,22 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
           });
         } else {
           console.log("Session marked as completed");
+          
+          // Update sessions_progress to mark completion
+          const { error: progressError } = await supabase
+            .from('sessions_progress')
+            .update({
+              current_game_number: totalGames,
+              current_win_pattern: 'fullHouse'  // Set to the final pattern
+            })
+            .eq('session_id', session.id);
+            
+          if (progressError) {
+            console.error("Error updating session progress for completion:", progressError);
+          } else {
+            console.log("Session progress updated for completion");
+          }
+          
           toast({
             title: "Session Completed",
             description: "All games in this session have been completed.",
@@ -104,7 +120,7 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
                     (currentGameState && typeof currentGameState === 'object' && 'gameType' in currentGameState ? 
                       currentGameState.gameType : 
                       latestSessionData.game_type),
-          activePatternIds: nextGameConfig?.selectedPatterns || [],
+          activePatternIds: nextGameConfig?.selectedPatterns || ['oneLine'],  // Default to oneLine for new games
           calledItems: [],
           lastCalledItem: null,
           status: 'active',
@@ -130,45 +146,56 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
             description: "Failed to progress to next game.",
             variant: "destructive"
           });
+          setIsProcessingGame(false);
+          return;
+        }
+        
+        console.log(`Successfully progressed to game ${nextGameNumber}`);
+        
+        // Update session progress for the new game
+        const { error: progressError } = await supabase
+          .from('sessions_progress')
+          .update({
+            current_game_number: nextGameNumber,
+            current_win_pattern: nextGameConfig?.selectedPatterns?.[0] || 'oneLine',
+            current_game_type: nextGameConfig?.gameType || latestSessionData.game_type
+          })
+          .eq('session_id', session.id);
+          
+        if (progressError) {
+          console.error("Error updating session progress:", progressError);
+          toast({
+            title: "Warning",
+            description: "Game state updated but there was a problem updating the session progress.",
+            variant: "destructive"
+          });
         } else {
-          console.log(`Successfully progressed to game ${nextGameNumber}`);
+          console.log("Session progress updated successfully");
           toast({
             title: "Game Progress",
             description: `Moving to game ${nextGameNumber}`,
           });
+        }
+        
+        // Broadcast game progression to all clients
+        try {
+          await supabase.channel('game-progression-channel')
+            .send({
+              type: 'broadcast',
+              event: 'game-progression',
+              payload: {
+                sessionId: session.id,
+                previousGame: currentGameNumber,
+                newGame: nextGameNumber,
+                timestamp: new Date().toISOString(),
+                nextPattern: 'oneLine',  // Reset to oneLine for new games
+                gameProgression: true
+              }
+            });
           
-          // Update session progress for the new game
-          const { error: progressError } = await supabase
-            .from('sessions_progress')
-            .update({
-              current_game_number: nextGameNumber,
-              current_win_pattern: nextGameConfig?.selectedPatterns?.[0] || null,
-              current_game_type: nextGameConfig?.gameType || latestSessionData.game_type
-            })
-            .eq('session_id', session.id);
-            
-          if (progressError) {
-            console.error("Error updating session progress:", progressError);
-          }
-          
-          // Broadcast game progression to all clients
-          try {
-            await supabase.channel('player-game-updates')
-              .send({
-                type: 'broadcast',
-                event: 'game-progression',
-                payload: {
-                  sessionId: session.id,
-                  previousGame: currentGameNumber,
-                  newGame: nextGameNumber,
-                  timestamp: new Date().toISOString()
-                }
-              });
-            
-            console.log("Sent game progression broadcast");
-          } catch (error) {
-            console.error("Error broadcasting game progression:", error);
-          }
+          console.log("Sent game progression broadcast");
+        } catch (error) {
+          console.error("Error broadcasting game progression:", error);
         }
       }
     } catch (err) {

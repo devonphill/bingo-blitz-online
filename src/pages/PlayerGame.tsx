@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -57,6 +58,7 @@ export default function PlayerGame() {
     resetClaimStatus,
   } = usePlayerGame(playerCode);
 
+  // Get session progress from the database for authoritative game state
   const { progress: sessionProgress } = useSessionProgress(currentSession?.id);
   const [forceRefreshKey, setForceRefreshKey] = useState(0);
   
@@ -67,21 +69,40 @@ export default function PlayerGame() {
     setTimeout(() => setAutoMarking(prev => !prev), 100);
   }, [setAutoMarking]);
 
+  // Synchronize with session progress when it changes
   useEffect(() => {
-    if (sessionProgress?.current_win_pattern && 
-        activeWinPatterns.length > 0 && 
-        sessionProgress.current_win_pattern !== activeWinPatterns[0]) {
-      console.log(`Win pattern mismatch - Progress shows ${sessionProgress.current_win_pattern} but state has ${activeWinPatterns[0]}`);
+    if (sessionProgress && currentSession) {
+      console.log(`Session progress synced: Game ${sessionProgress.current_game_number}/${sessionProgress.max_game_number}, Pattern: ${sessionProgress.current_win_pattern}`);
       
-      forceRefresh();
+      // Check if the win pattern from session progress differs from what we have in state
+      const currentPattern = activeWinPatterns.length > 0 ? activeWinPatterns[0] : null;
+      if (sessionProgress.current_win_pattern && 
+          currentPattern !== sessionProgress.current_win_pattern &&
+          currentPattern !== `MAINSTAGE_${sessionProgress.current_win_pattern}`) {
+        
+        console.log(`Win pattern mismatch - Progress shows ${sessionProgress.current_win_pattern} but state has ${currentPattern}`);
+        forceRefresh();
+        
+        const patternName = getWinPatternName(sessionProgress.current_win_pattern);
+        toast({
+          title: "Win Pattern Changed",
+          description: `Now playing for: ${patternName}`,
+        });
+      }
       
-      const patternName = getWinPatternName(sessionProgress.current_win_pattern);
-      toast({
-        title: "Win Pattern Changed",
-        description: `Now playing for: ${patternName}`,
-      });
+      // Check if the game number from session progress differs from what we have in state
+      const currentGameNumber = currentGameState?.gameNumber || 1;
+      if (sessionProgress.current_game_number !== currentGameNumber) {
+        console.log(`Game number mismatch - Progress shows ${sessionProgress.current_game_number} but state has ${currentGameNumber}`);
+        forceRefresh();
+        
+        toast({
+          title: "Game Changed",
+          description: `Now playing game ${sessionProgress.current_game_number} of ${sessionProgress.max_game_number}`,
+        });
+      }
     }
-  }, [sessionProgress, activeWinPatterns, toast, forceRefresh]);
+  }, [sessionProgress, activeWinPatterns, currentGameState, currentSession, toast, forceRefresh]);
 
   useEffect(() => {
     if (claimStatus === 'validated' || claimStatus === 'rejected') {
@@ -95,6 +116,8 @@ export default function PlayerGame() {
   }, [claimStatus, resetClaimStatus]);
 
   const getWinPatternName = (patternId: string) => {
+    if (!patternId) return 'Unknown';
+    
     const displayPatternId = patternId.replace('MAINSTAGE_', '');
     
     const allPatterns = gameType ? WIN_PATTERNS[gameType] : [];
@@ -107,6 +130,7 @@ export default function PlayerGame() {
     return pattern ? pattern.name : patternId;
   };
 
+  // Set up broadcast listener for claim updates and game progression
   useEffect(() => {
     if (!playerCode || !currentSession?.id) return;
     
@@ -153,6 +177,7 @@ export default function PlayerGame() {
       })
       .subscribe();
       
+    // Listen for game progression broadcasts
     const progressionChannel = supabase.channel('game-progression-listener')
       .on('broadcast', { event: 'game-progression' }, (payload) => {
         console.log("Received game progression broadcast in PlayerGame:", payload);
@@ -161,21 +186,24 @@ export default function PlayerGame() {
           
           resetClaimStatus();
           
+          // Show different messages based on what changed
           if (payload.payload.nextPattern) {
             const patternName = getWinPatternName(payload.payload.nextPattern);
             toast({
               title: "Pattern Changed",
               description: `Now playing for: ${patternName}`,
             });
-          } else if (payload.payload.newGame !== payload.payload.previousGame) {
+          } else if (payload.payload.newGame && payload.payload.newGame !== payload.payload.previousGame) {
             toast({
               title: "Game Changed",
               description: `Moving to game ${payload.payload.newGame}`,
             });
           }
           
+          // Force refresh to re-fetch all game state
           forceRefresh();
           
+          // Add a delayed refresh to make sure we get the latest state
           setTimeout(() => forceRefresh(), 500);
         }
       })
@@ -188,6 +216,7 @@ export default function PlayerGame() {
     };
   }, [playerCode, currentSession?.id, isClaiming, resetClaimStatus, toast, forceRefresh]);
 
+  // Add direct database subscription for session updates
   useEffect(() => {
     if (!currentSession?.id) return;
     
@@ -220,6 +249,7 @@ export default function PlayerGame() {
     };
   }, [currentSession?.id, forceRefresh]);
 
+  // Loading and initialization logic
   const isInitialLoading = isLoading && loadingStep !== 'completed';
   const hasTickets = tickets && tickets.length > 0;
   const isGameActive = currentGameState?.status === 'active';
@@ -238,6 +268,7 @@ export default function PlayerGame() {
     }
   }, [hasSession, hasTickets, isGameActive, loadingStep]);
 
+  // Debug logging
   useEffect(() => {
     console.log('Player Game Render State:', {
       isLoading,
@@ -249,15 +280,26 @@ export default function PlayerGame() {
       isClaiming,
       claimStatus,
       activeWinPatterns,
-      sessionProgress
+      sessionProgress: sessionProgress ? 
+        `Game ${sessionProgress.current_game_number}/${sessionProgress.max_game_number}, Pattern: ${sessionProgress.current_win_pattern}` : 
+        'Not loaded'
     });
     
     if (sessionProgress?.current_win_pattern && activeWinPatterns.length > 0) {
       console.log(`Pattern comparison - Progress: ${sessionProgress.current_win_pattern}, State: ${activeWinPatterns[0]}`);
+      
+      // Also log if there's a mismatch
+      const progressPattern = sessionProgress.current_win_pattern;
+      const statePattern = activeWinPatterns[0];
+      
+      if (progressPattern !== statePattern && `MAINSTAGE_${progressPattern}` !== statePattern) {
+        console.warn(`Pattern MISMATCH detected! DB: ${progressPattern}, State: ${statePattern}`);
+      }
     }
   }, [isLoading, loadingStep, currentSession, currentGameState, tickets, shouldShowLoader, 
       isClaiming, claimStatus, activeWinPatterns, sessionProgress]);
 
+  // Show loader if needed
   if (shouldShowLoader) {
     return (
       <PlayerGameLoader 
@@ -269,9 +311,11 @@ export default function PlayerGame() {
     );
   }
 
+  // Prioritize sessionProgress as the source of truth for current win pattern
   const currentWinPattern = sessionProgress?.current_win_pattern || 
                            (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
 
+  // Parse prizes
   const simplifiedPrizes: { [key: string]: string } = {};
   if (winPrizes) {
     Object.entries(winPrizes).forEach(([key, prize]) => {
@@ -284,6 +328,7 @@ export default function PlayerGame() {
     });
   }
 
+  // Get game numbers from session progress or fallback to game state
   const currentGameNumber = sessionProgress?.current_game_number || 
                            currentGameState?.gameNumber || 
                            1;

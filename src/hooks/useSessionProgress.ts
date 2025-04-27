@@ -23,6 +23,7 @@ export const useSessionProgress = (sessionId: string | undefined) => {
 
     const fetchProgress = async () => {
       try {
+        console.log(`Fetching session progress for session ${sessionId}`);
         const { data, error } = await supabase
           .from('sessions_progress')
           .select('*')
@@ -39,6 +40,7 @@ export const useSessionProgress = (sessionId: string | undefined) => {
           if (dataString !== lastUpdateRef.current) {
             lastUpdateRef.current = dataString;
             setProgress(data);
+            console.log(`Updated session progress: Game ${data.current_game_number}/${data.max_game_number}, Pattern: ${data.current_win_pattern}`);
           }
         }
       } catch (err) {
@@ -67,6 +69,7 @@ export const useSessionProgress = (sessionId: string | undefined) => {
           if (dataString !== lastUpdateRef.current) {
             lastUpdateRef.current = dataString;
             setProgress(payload.new as ProgressType);
+            console.log(`Real-time update: Game ${(payload.new as ProgressType).current_game_number}/${(payload.new as ProgressType).max_game_number}, Pattern: ${(payload.new as ProgressType).current_win_pattern}`);
           }
         }
       })
@@ -79,18 +82,27 @@ export const useSessionProgress = (sessionId: string | undefined) => {
         console.log("Progress hook received game progression broadcast:", payload);
         
         if (payload.payload && payload.payload.sessionId === sessionId) {
-          // When receiving a game progression event, immediately update local state
-          // to ensure UI reflects the change without waiting for database
+          // When receiving a game progression event, fetch the latest progress to ensure synchronization
+          console.log(`Received game progression broadcast for session ${sessionId}, refreshing progress`);
+          fetchProgress();
+          
+          // Also update local state immediately if we have pattern information
           if (payload.payload.nextPattern && progress) {
-            console.log(`Updating local progress due to game progression broadcast: ${payload.payload.nextPattern}`);
+            console.log(`Immediate pattern update from broadcast: ${payload.payload.nextPattern}`);
             setProgress({
               ...progress,
               current_win_pattern: payload.payload.nextPattern,
             });
           }
           
-          // Also refresh from DB to ensure we have all updated fields
-          fetchProgress();
+          // If game number changed, update that as well
+          if (payload.payload.newGame && progress && payload.payload.newGame !== progress.current_game_number) {
+            console.log(`Immediate game number update from broadcast: ${payload.payload.newGame}`);
+            setProgress({
+              ...progress,
+              current_game_number: payload.payload.newGame,
+            });
+          }
         }
       })
       .subscribe();
@@ -99,7 +111,7 @@ export const useSessionProgress = (sessionId: string | undefined) => {
       supabase.removeChannel(channel);
       supabase.removeChannel(progressChannel);
     };
-  }, [sessionId]);
+  }, [sessionId, progress]);
 
   return {
     progress,
