@@ -8,6 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
+import { DEFAULT_PATTERN_ORDER } from '@/types';
 
 interface MainstageCallControlsProps {
   onCallNumber: () => void;
@@ -50,6 +51,12 @@ export function MainstageCallControls({
   const handleCloseGame = () => {
     setIsClosingConfirmOpen(true);
   };
+
+  // Get the game type from session progress or fallback to a default
+  const gameType = progress?.current_game_type || 'mainstage';
+
+  // Get standard pattern progression for this game type
+  const standardPatternOrder = DEFAULT_PATTERN_ORDER[gameType] || DEFAULT_PATTERN_ORDER['mainstage'];
 
   useEffect(() => {
     if (isProcessingClose) {
@@ -102,36 +109,61 @@ export function MainstageCallControls({
     }
   };
 
+  // New function to determine the next pattern based on available patterns and standard order
+  const determineNextPattern = (currentPattern: string | null, availablePatterns: string[]): string | null => {
+    if (!currentPattern || availablePatterns.length === 0) {
+      // If no current pattern, use the first available one
+      return availablePatterns[0] || null;
+    }
+    
+    // Normalize patterns by removing any prefixes
+    const normalizedCurrentPattern = currentPattern.replace('MAINSTAGE_', '');
+    const normalizedAvailablePatterns = availablePatterns.map(p => p.replace('MAINSTAGE_', ''));
+    
+    // Find the current pattern's position in the standard order
+    const currentPatternIndex = standardPatternOrder.findIndex(p => p === normalizedCurrentPattern);
+    
+    // If pattern not found in standard order or it's the last one, return null
+    if (currentPatternIndex === -1 || currentPatternIndex === standardPatternOrder.length - 1) {
+      return null; // End of pattern progression, move to next game
+    }
+    
+    // Find the next valid pattern in the standard order
+    for (let i = currentPatternIndex + 1; i < standardPatternOrder.length; i++) {
+      const nextStandardPattern = standardPatternOrder[i];
+      
+      // Check if this pattern is in our available patterns
+      if (normalizedAvailablePatterns.includes(nextStandardPattern)) {
+        // Use the original pattern ID with prefix if it exists
+        const matchingPattern = availablePatterns.find(p => p.replace('MAINSTAGE_', '') === nextStandardPattern);
+        return matchingPattern || nextStandardPattern;
+      }
+    }
+    
+    // If no next pattern found in standard order, we've reached the end of valid patterns
+    return null;
+  };
+
   const confirmCloseGame = async () => {
     if (onCloseGame) {
       setIsProcessingClose(true);
       
+      // Get the normalized current pattern and available patterns
+      const normalizedActivePatterns = activeWinPatterns.map(p => p.replace('MAINSTAGE_', ''));
+      const currentPattern = normalizedActivePatterns[0] || null;
+      
       // Get next pattern and determine progression type
-      let nextPattern: string | null = null;
-      let progressType = "game"; // Default to game progression
+      const nextPattern = determineNextPattern(currentPattern, normalizedActivePatterns);
+      let progressType = nextPattern ? "pattern" : "game"; // Pattern if we have next pattern, otherwise game
       let updateSessionProgress = true;
       
-      if (activeWinPatterns && activeWinPatterns.length > 0) {
-        const currentPattern = activeWinPatterns[0].replace('MAINSTAGE_', '');
-        console.log(`Current pattern: ${currentPattern}`);
-        
-        if (currentPattern === 'oneLine') {
-          nextPattern = 'twoLines';
-          progressType = "pattern";
-        } else if (currentPattern === 'twoLines') {
-          nextPattern = 'fullHouse';
-          progressType = "pattern";
-        } else if (currentPattern === 'fullHouse' && !isLastGame) {
-          progressType = "game";
-          nextPattern = 'oneLine'; // Reset to oneLine for next game
-        } else if (isLastGame) {
-          // Last game and last pattern - session complete
-          progressType = "complete";
-          updateSessionProgress = false;
-        }
+      // If it's the last game and no more patterns, mark as complete
+      if (isLastGame && !nextPattern) {
+        progressType = "complete";
+        updateSessionProgress = false;
       }
       
-      console.log(`Progression type: ${progressType}, Next pattern: ${nextPattern}, Update progress: ${updateSessionProgress}`);
+      console.log(`Progression type: ${progressType}, Current pattern: ${currentPattern}, Next pattern: ${nextPattern}, Update progress: ${updateSessionProgress}`);
       
       // Update session progress in the database directly
       if (currentSession?.id && updateSessionProgress) {
@@ -145,11 +177,16 @@ export function MainstageCallControls({
             };
             console.log(`Updating win pattern to: ${nextPattern}`);
           } else if (progressType === "game" && !isLastGame) {
+            // Reset to first pattern for new game
+            // Check if the next game has specific configured patterns
+            const nextGamePatterns = await fetchNextGamePatterns(currentSession.id, currentGameNumber + 1);
+            const firstPattern = nextGamePatterns.length > 0 ? nextGamePatterns[0] : 'oneLine';
+            
             updateData = {
               current_game_number: currentGameNumber + 1,
-              current_win_pattern: 'oneLine' // Reset to oneLine for new game
+              current_win_pattern: firstPattern
             };
-            console.log(`Updating game number to: ${currentGameNumber + 1}`);
+            console.log(`Updating game number to: ${currentGameNumber + 1} with pattern: ${firstPattern}`);
           }
           
           // Only update if we have data to update
@@ -259,6 +296,35 @@ export function MainstageCallControls({
         title: progressType === "complete" ? "Session Completed" : "Game Advanced",
         description: displayMessage,
       });
+    }
+  };
+  
+  // Helper function to fetch configured patterns for the next game
+  const fetchNextGamePatterns = async (sessionId: string, nextGameNumber: number): Promise<string[]> => {
+    try {
+      const { data: sessionData, error } = await supabase
+        .from('game_sessions')
+        .select('games_config')
+        .eq('id', sessionId)
+        .single();
+      
+      if (error || !sessionData?.games_config) {
+        console.error("Error fetching next game patterns:", error);
+        return [];
+      }
+      
+      // Extract patterns for the next game
+      const gamesConfig = Array.isArray(sessionData.games_config) ? sessionData.games_config : [];
+      const nextGameConfig = gamesConfig.find((config: any) => config?.gameNumber === nextGameNumber);
+      
+      if (nextGameConfig?.selectedPatterns && Array.isArray(nextGameConfig.selectedPatterns)) {
+        return nextGameConfig.selectedPatterns;
+      }
+      
+      return [];
+    } catch (err) {
+      console.error("Exception fetching next game patterns:", err);
+      return [];
     }
   };
 

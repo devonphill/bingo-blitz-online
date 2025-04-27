@@ -2,7 +2,7 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { GameSession } from '@/types';
+import { GameSession, DEFAULT_PATTERN_ORDER } from '@/types';
 
 // Define a recursive Json type for Supabase JSON data
 type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
@@ -10,6 +10,35 @@ type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
 export function useGameProgression(session: GameSession | null, onGameComplete?: () => void) {
   const [isProcessingGame, setIsProcessingGame] = useState(false);
   const { toast } = useToast();
+
+  // Helper to get the appropriate first pattern for a game based on available patterns
+  const getFirstPatternForGame = async (sessionId: string, gameNumber: number, gameType: string) => {
+    try {
+      // Try to get the game-specific configuration
+      const { data: sessionData } = await supabase
+        .from('game_sessions')
+        .select('games_config')
+        .eq('id', sessionId)
+        .single();
+        
+      if (sessionData?.games_config) {
+        const gamesConfig = Array.isArray(sessionData.games_config) ? sessionData.games_config : [];
+        const gameConfig = gamesConfig.find((config: any) => config?.gameNumber === gameNumber);
+        
+        if (gameConfig?.selectedPatterns?.length > 0) {
+          console.log(`Found specific patterns for game ${gameNumber}:`, gameConfig.selectedPatterns);
+          return gameConfig.selectedPatterns[0];
+        }
+      }
+      
+      // Fallback to the standard first pattern for this game type
+      const standardPatterns = DEFAULT_PATTERN_ORDER[gameType] || DEFAULT_PATTERN_ORDER['mainstage'];
+      return standardPatterns[0] || 'oneLine';
+    } catch (err) {
+      console.error(`Error getting patterns for game ${gameNumber}:`, err);
+      return 'oneLine'; // Default fallback
+    }
+  };
 
   const progressToNextGame = useCallback(async () => {
     if (!session || isProcessingGame || !session.id) {
@@ -121,6 +150,10 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
           }
         }
       } else {
+        // Get the appropriate first pattern for this new game
+        const gameType = nextGameConfig?.gameType || latestSessionData.game_type || 'mainstage';
+        const firstPattern = await getFirstPatternForGame(session.id, nextGameNumber, gameType);
+        
         // Setup the next game state with proper default values
         const nextGameState = {
           gameNumber: nextGameNumber,
@@ -128,7 +161,7 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
                     (currentGameState && typeof currentGameState === 'object' && 'gameType' in currentGameState ? 
                       currentGameState.gameType : 
                       latestSessionData.game_type),
-          activePatternIds: nextGameConfig?.selectedPatterns || ['oneLine'],  // Default to oneLine for new games
+          activePatternIds: nextGameConfig?.selectedPatterns || [firstPattern],
           calledItems: [],
           lastCalledItem: null,
           status: 'active',
@@ -165,7 +198,7 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
           .from('sessions_progress')
           .update({
             current_game_number: nextGameNumber,
-            current_win_pattern: nextGameConfig?.selectedPatterns?.[0] || 'oneLine'  // Start with first pattern for new game
+            current_win_pattern: firstPattern
           })
           .eq('session_id', session.id);
           
@@ -177,7 +210,7 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
             variant: "destructive"
           });
         } else {
-          console.log("Session progress updated for new game");
+          console.log(`Session progress updated for new game with pattern ${firstPattern}`);
         }
         
         toast({

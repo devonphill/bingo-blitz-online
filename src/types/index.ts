@@ -99,3 +99,17 @@ export interface SessionProgress {
   created_at: string;
   updated_at: string;
 }
+
+// New interface for pattern order definition
+export interface PatternOrder {
+  [gameType: string]: string[];  // Maps game type to ordered array of pattern IDs
+}
+
+// Default pattern progression order for each game type
+export const DEFAULT_PATTERN_ORDER: PatternOrder = {
+  'mainstage': ['oneLine', 'twoLines', 'fullHouse'],
+  'party': ['corners', 'oneLine', 'twoLines', 'threeLines', 'fullHouse'],
+  'quiz': ['oneLine', 'twoLines', 'fullHouse'],
+  'music': ['oneLine', 'twoLines', 'fullHouse'],
+  'logo': ['oneLine', 'twoLines', 'fullHouse']
+};
