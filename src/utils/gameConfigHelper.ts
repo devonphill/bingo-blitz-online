@@ -26,7 +26,7 @@ export function normalizeGameConfig(config: any): GameConfig {
     
     // If config has selectedPatterns, use them to populate patterns
     if (config.selectedPatterns && Array.isArray(config.selectedPatterns)) {
-      config.selectedPatterns.forEach(patternId => {
+      config.selectedPatterns.forEach((patternId: string) => {
         const prize = config.prizes?.[patternId] || {};
         patterns[patternId] = {
           active: true,

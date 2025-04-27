@@ -31,8 +31,9 @@ export function useSessions() {
           gameConfigs = configs.map(config => normalizeGameConfig(config as any));
         }
         
-        // Handle the active_pattern_id if it exists, otherwise it will be null
-        const activePatternId = session.active_pattern_id ?? null;
+        // Handle the active_pattern_id - add this as a custom field, even if it's not in the DB schema
+        // This will be used for UI purposes to track active patterns
+        const activePatternId = 'active_pattern_id' in session ? session.active_pattern_id : null;
         
         return {
           id: session.id,
@@ -143,7 +144,7 @@ export function useSessions() {
   return { 
     sessions, 
     currentSession, 
-    setCurrentSession: setCurrentSessionState,
+    setCurrentSession, 
     getSessionByCode, 
     fetchSessions,
     updateSession,
