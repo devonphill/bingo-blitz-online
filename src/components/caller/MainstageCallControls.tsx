@@ -27,7 +27,10 @@ interface MainstageCallControlsProps {
   currentGameNumber?: number;
   numberOfGames?: number;
   activeWinPatterns: string[] | number[];
-  currentSession: { id: string | undefined };
+  currentSession: { 
+    id: string | undefined; 
+    active_pattern_id?: string;
+  };
 }
 
 export function MainstageCallControls({
@@ -50,7 +53,6 @@ export function MainstageCallControls({
   const isLastGame = currentGameNumber >= numberOfGames;
   const { progress } = useSessionProgress(currentSession?.id);
 
-  // Fix the type here to ensure activeWinPatterns is always a string array
   const safeActiveWinPatterns: string[] = Array.isArray(activeWinPatterns) 
     ? activeWinPatterns.map(pattern => String(pattern)) 
     : [];
@@ -64,7 +66,6 @@ export function MainstageCallControls({
   const gameProgressPercentage = ((currentGameNumber - 1) / Math.max(1, numberOfGames - 1)) * 100;
   const patternProgressPercentage = ((patternProgressStep - 1) / Math.max(1, totalPatternSteps - 1)) * 100;
   
-  // Get the names of the patterns for the dropdown
   const getPatternName = (patternId: string) => {
     if (patternId === 'oneLine') return 'One Line';
     if (patternId === 'twoLines') return 'Two Lines';
@@ -74,7 +75,6 @@ export function MainstageCallControls({
     if (patternId === 'pattern') return 'Pattern';
     if (patternId === 'blackout') return 'Blackout';
     
-    // Handle prefixed patterns (e.g. MAINSTAGE_oneLine)
     if (patternId.includes('_')) {
       const [_, name] = patternId.split('_');
       return getPatternName(name);
@@ -84,13 +84,15 @@ export function MainstageCallControls({
   };
   
   useEffect(() => {
-    // Set the current pattern from activeWinPatterns when available
-    if (safeActiveWinPatterns.length > 0 && !currentPattern) {
+    const sessionActivePattern = currentSession.active_pattern_id;
+    
+    if (sessionActivePattern) {
+      setCurrentPattern(sessionActivePattern);
+    } else if (safeActiveWinPatterns.length > 0 && !currentPattern) {
       setCurrentPattern(safeActiveWinPatterns[0]);
     }
-  }, [safeActiveWinPatterns, currentPattern]);
+  }, [currentSession.active_pattern_id, safeActiveWinPatterns, currentPattern]);
   
-  // Update currentPattern if the session progress has a different current_win_pattern
   useEffect(() => {
     if (progress?.current_win_pattern && progress.current_win_pattern !== currentPattern) {
       setCurrentPattern(progress.current_win_pattern);
@@ -109,7 +111,6 @@ export function MainstageCallControls({
   const handleNextPattern = async () => {
     setIsPatternEndLoading(true);
     try {
-      // Find the current pattern in the list
       if (!currentPattern || safeActiveWinPatterns.length <= 1) return;
       
       const currentIndex = safeActiveWinPatterns.indexOf(currentPattern);
@@ -117,7 +118,6 @@ export function MainstageCallControls({
       
       const nextPattern = safeActiveWinPatterns[currentIndex + 1];
       
-      // Update session progress with the next pattern
       const { error: progressError } = await supabase
         .from('sessions_progress')
         .update({
@@ -130,7 +130,6 @@ export function MainstageCallControls({
         return;
       }
       
-      // Update game session with the new pattern
       const { error: sessionError } = await supabase
         .from('game_sessions')
         .update({
@@ -145,7 +144,6 @@ export function MainstageCallControls({
       
       setCurrentPattern(nextPattern);
       
-      // Send a broadcast to let all players know the pattern changed
       await supabase
         .channel('player-game-updates')
         .send({
@@ -184,12 +182,10 @@ export function MainstageCallControls({
     try {
       const nextGameNumber = currentGameNumber + 1;
       
-      // Update session progress
       const { error: progressError } = await supabase
         .from('sessions_progress')
         .update({
           current_game_number: nextGameNumber,
-          // Reset pattern to first if available
           current_win_pattern: null
         })
         .eq('session_id', currentSession.id);
@@ -199,7 +195,6 @@ export function MainstageCallControls({
         return;
       }
       
-      // Update game session
       const { error: sessionError } = await supabase
         .from('game_sessions')
         .update({
@@ -213,7 +208,6 @@ export function MainstageCallControls({
         return;
       }
       
-      // Send a broadcast to let all players know the game changed
       await supabase
         .channel('player-game-updates')
         .send({
@@ -239,7 +233,6 @@ export function MainstageCallControls({
           }
         });
         
-      // Force page reload to update all state
       if (typeof window !== 'undefined') {
         window.location.reload();
       }

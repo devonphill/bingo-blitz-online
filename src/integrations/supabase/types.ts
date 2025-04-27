@@ -564,7 +564,10 @@ export type Database = {
           prize: string | null
           prize_amount: string | null
           prize_shared: boolean
+          session_date: string | null
           session_id: string
+          session_name: string | null
+          session_time: string | null
           shared_with: number | null
           ticket_layout_mask: number
           ticket_numbers: number[]
@@ -590,7 +593,10 @@ export type Database = {
           prize?: string | null
           prize_amount?: string | null
           prize_shared?: boolean
+          session_date?: string | null
           session_id: string
+          session_name?: string | null
+          session_time?: string | null
           shared_with?: number | null
           ticket_layout_mask: number
           ticket_numbers: number[]
@@ -616,7 +622,10 @@ export type Database = {
           prize?: string | null
           prize_amount?: string | null
           prize_shared?: boolean
+          session_date?: string | null
           session_id?: string
+          session_name?: string | null
+          session_time?: string | null
           shared_with?: number | null
           ticket_layout_mask?: number
           ticket_numbers?: number[]
