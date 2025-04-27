@@ -59,6 +59,7 @@ export default function ClaimVerificationSheet({
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSharingDialog, setShowSharingDialog] = useState(false);
   const [validClaimsCount, setValidClaimsCount] = useState(0);
+  const [isFullHouse, setIsFullHouse] = useState(false);
 
   console.log("ClaimVerificationSheet rendered with isOpen:", isOpen, "playerName:", playerName);
 
@@ -69,6 +70,9 @@ export default function ClaimVerificationSheet({
       console.log("SHEET IS OPEN NOW with player:", playerName);
       console.log("Ticket data:", tickets);
       console.log("Current win pattern:", currentWinPattern);
+      
+      // Determine if this is a full house win pattern
+      setIsFullHouse(currentWinPattern === 'fullHouse');
     }
     
     if (!isOpen) {
@@ -127,10 +131,18 @@ export default function ClaimVerificationSheet({
       setValidClaimsCount(validTickets.length);
       setShowSharingDialog(true);
     } else {
-      await handlePrizeSharing(false);
       setActionType('valid');
       setIsProcessing(true);
+      await handlePrizeSharing(false);
       onValidClaim();
+      
+      // If this is fullHouse, progress to next game
+      if (isFullHouse && onNext) {
+        console.log("Full house validated, will progress to next game");
+        setTimeout(() => {
+          onNext();
+        }, 1500);
+      }
     }
   };
 
@@ -171,11 +183,8 @@ export default function ClaimVerificationSheet({
       await Promise.all(promises);
       
       // Check if this is a full house win pattern, and if so, trigger the game progression
-      if (currentWinPattern === 'fullHouse' && onNext) {
-        console.log("Full house win validated, progressing to next game");
-        setTimeout(() => {
-          onNext();
-        }, 500);
+      if (isFullHouse && onNext) {
+        console.log("Full house win validated, will progress to next game");
       }
 
       onClose();
@@ -198,6 +207,14 @@ export default function ClaimVerificationSheet({
     
     if (actionType === 'valid') {
       onValidClaim();
+      
+      // If this is a full house win pattern, trigger the game progression
+      if (isFullHouse && onNext) {
+        console.log("Full house validated in confirmAction, will progress to next game");
+        setTimeout(() => {
+          onNext();
+        }, 1500);
+      }
     } else if (actionType === 'false') {
       onFalseClaim();
     }
@@ -216,6 +233,9 @@ export default function ClaimVerificationSheet({
             </SheetTitle>
             <div className="text-sm text-gray-500">
               Current win pattern: <span className="font-semibold">{currentWinPattern || 'Full House'}</span>
+              {isFullHouse && (
+                <span className="ml-2 text-blue-600">(Full House - will advance game)</span>
+              )}
             </div>
             {validTickets.length > 0 && (
               <div className="text-sm text-green-600 font-medium mt-1">
@@ -290,7 +310,7 @@ export default function ClaimVerificationSheet({
             </AlertDialogTitle>
             <AlertDialogDescription>
               {actionType === 'valid' 
-                ? 'Are you sure this is a valid claim? This will update the game state and move to the next win pattern.' 
+                ? `Are you sure this is a valid claim? This will ${isFullHouse ? 'complete the game and move to the next one' : 'update the game state and move to the next win pattern'}.` 
                 : 'Are you sure this is a false call? This will reject the player\'s claim.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -314,6 +334,14 @@ export default function ClaimVerificationSheet({
           setActionType('valid');
           setIsProcessing(true);
           onValidClaim();
+          
+          // If this is a full house win pattern, trigger the game progression
+          if (isFullHouse && onNext) {
+            console.log("Full house win validated in sharing dialog, will progress to next game");
+            setTimeout(() => {
+              onNext();
+            }, 1500);
+          }
         }}
         playerCount={validClaimsCount}
       />

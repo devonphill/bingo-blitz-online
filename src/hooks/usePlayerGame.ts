@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -227,15 +228,19 @@ export function usePlayerGame(playerCode?: string | null) {
           console.log("Received claim result:", payload);
           if (payload.payload && payload.payload.playerId === playerId) {
             const result = payload.payload.result as 'valid' | 'rejected';
+            
+            // Immediately update claiming status
+            setIsClaiming(false);
+            
             if (result === 'valid') {
               setClaimStatus('validated');
-              setIsClaiming(false);
               toast({
                 title: "Win Verified!",
                 description: "Your bingo win has been verified by the caller.",
                 variant: "default"
               });
               
+              // Reset claim status after delay
               if (claimResetTimer.current) {
                 clearTimeout(claimResetTimer.current);
               }
@@ -243,16 +248,16 @@ export function usePlayerGame(playerCode?: string | null) {
               claimResetTimer.current = setTimeout(() => {
                 console.log("Resetting claim status from validated");
                 setClaimStatus(undefined);
-              }, 10000);
+              }, 5000);
             } else if (result === 'rejected') {
               setClaimStatus('rejected');
-              setIsClaiming(false);
               toast({
                 title: "Claim Rejected",
                 description: "Your bingo claim was not verified. Please continue playing.",
                 variant: "destructive"
               });
               
+              // Reset claim status after delay
               if (claimResetTimer.current) {
                 clearTimeout(claimResetTimer.current);
               }
@@ -260,7 +265,7 @@ export function usePlayerGame(playerCode?: string | null) {
               claimResetTimer.current = setTimeout(() => {
                 console.log("Resetting claim status from rejected");
                 setClaimStatus(undefined);
-              }, 10000);
+              }, 5000);
             }
           }
         }

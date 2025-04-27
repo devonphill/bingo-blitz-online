@@ -52,7 +52,19 @@ export default function PlayerGame() {
     claimStatus,
     gameType,
     loadingStep,
+    resetClaimStatus,
   } = usePlayerGame(playerCode);
+
+  // Reset claim status when user has been validated or rejected after 5s
+  useEffect(() => {
+    if (claimStatus === 'validated' || claimStatus === 'rejected') {
+      const timer = setTimeout(() => {
+        resetClaimStatus();
+      }, 5000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [claimStatus, resetClaimStatus]);
 
   // IMPROVED: Refined loading logic to fix flickering issues
   const isInitialLoading = isLoading && loadingStep !== 'completed';
@@ -103,9 +115,11 @@ export default function PlayerGame() {
       hasSession,
       isGameActive: currentGameState?.status,
       hasTickets: tickets?.length,
-      shouldShowLoader
+      shouldShowLoader,
+      isClaiming,
+      claimStatus
     });
-  }, [isLoading, loadingStep, currentSession, currentGameState, tickets, shouldShowLoader]);
+  }, [isLoading, loadingStep, currentSession, currentGameState, tickets, shouldShowLoader, isClaiming, claimStatus]);
 
   if (shouldShowLoader) {
     return (
