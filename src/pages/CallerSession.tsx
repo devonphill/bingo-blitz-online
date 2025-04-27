@@ -10,8 +10,6 @@ import ClaimVerificationSheet from '@/components/game/ClaimVerificationSheet';
 import { useSessionLifecycle } from '@/hooks/useSessionLifecycle';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
 
-type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
-
 export default function CallerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const [session, setSession] = useState<GameSession | null>(null);
@@ -688,27 +686,41 @@ export default function CallerSession() {
               prizes: JSON.parse(JSON.stringify(updatedGameState.prizes || {}))
             };
             
-            const [sessionUpdate, progressUpdate] = await Promise.all([
-              supabase
-                .from('game_sessions')
-                .update({ current_game_state: gameStateForSupabase as Json })
-                .eq('id', sessionId),
+            const { error: sessionError } = await supabase
+              .from('game_sessions')
+              .update({ current_game_state: gameStateForSupabase })
+              .eq('id', sessionId);
                 
-              supabase
+            if (sessionError) {
+              console.error("Error updating game state:", sessionError);
+            }
+            
+            const { data: progressData, error: fetchError } = await supabase
+              .from('sessions_progress')
+              .select('completed_win_patterns')
+              .eq('session_id', sessionId)
+              .single();
+              
+            if (fetchError) {
+              console.error("Error fetching session progress:", fetchError);
+            } else {
+              const completedPatterns = progressData?.completed_win_patterns || [];
+              
+              if (completedPattern && !completedPatterns.includes(completedPattern)) {
+                completedPatterns.push(completedPattern);
+              }
+              
+              const { error: updateError } = await supabase
                 .from('sessions_progress')
                 .update({ 
                   current_win_pattern: updatedPatterns[0],
-                  completed_win_patterns: supabase.sql`array_append(completed_win_patterns, ${completedPattern})`
+                  completed_win_patterns: completedPatterns
                 })
-                .eq('session_id', sessionId)
-            ]);
-              
-            if (sessionUpdate.error) {
-              console.error("Error updating game state:", sessionUpdate.error);
-            }
-            
-            if (progressUpdate.error) {
-              console.error("Error updating session progress:", progressUpdate.error);
+                .eq('session_id', sessionId);
+                
+              if (updateError) {
+                console.error("Error updating session progress:", updateError);
+              }
             }
             
             setSelectedPatterns(updatedPatterns);
@@ -760,7 +772,7 @@ export default function CallerSession() {
               supabase
                 .from('game_sessions')
                 .update({ 
-                  current_game_state: gameStateForSupabase as Json,
+                  current_game_state: gameStateForSupabase,
                   current_game: nextGameNumber
                 })
                 .eq('id', sessionId),
