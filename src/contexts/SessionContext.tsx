@@ -12,6 +12,9 @@ interface SessionContextType {
   setCurrentSession: (sessionId: string | null) => void;
   getSessionByCode: (code: string) => GameSession | null;
   fetchSessions: () => Promise<void>;
+  updateSession: (sessionId: string, updates: Partial<GameSession>) => Promise<boolean>;
+  isLoading: boolean;
+  error: string | null;
   // Player logic
   players: Player[];
   joinSession: ReturnType<typeof usePlayers>["joinSession"];
@@ -32,6 +35,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setCurrentSession: setSessionById,
     getSessionByCode,
     fetchSessions,
+    updateSession,
+    isLoading,
+    error
   } = useSessions();
 
   // Create a wrapper function for setCurrentSession that accepts a string
@@ -55,6 +61,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setCurrentSession,
         getSessionByCode,
         fetchSessions,
+        updateSession,
+        isLoading,
+        error,
         players: playerHook.players,
         joinSession: playerHook.joinSession,
         addPlayer: playerHook.addPlayer,

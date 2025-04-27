@@ -137,6 +137,8 @@ export interface AdminTempPlayer {
   nickname: string;
   email?: string;
   ticketCount: number;
+  playerCode?: string;
+  tickets?: number;
 }
 
 // Helper functions for getting default patterns

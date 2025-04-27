@@ -1,16 +1,9 @@
 
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Player, GameSession } from '@/types';
+import { Player, GameSession, AdminTempPlayer } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import { generateAccessCode } from '@/utils/accessCodeGenerator';
-
-type AdminTempPlayer = {
-  playerCode: string;
-  nickname: string;
-  email: string;
-  tickets: number;
-};
 
 export function usePlayers(
   sessions: GameSession[],
@@ -33,7 +26,20 @@ export function usePlayers(
         
       if (error) throw new Error(error.message);
       
-      setPlayers(data as Player[]);
+      if (data) {
+        // Map database fields to Player interface fields
+        const mappedPlayers: Player[] = data.map(item => ({
+          id: item.id,
+          nickname: item.nickname,
+          sessionId: item.session_id,
+          joinedAt: item.joined_at,
+          playerCode: item.player_code,
+          tickets: item.tickets,
+          email: item.email
+        }));
+        
+        setPlayers(mappedPlayers);
+      }
     } catch (err) {
       console.error('Error fetching players:', err);
       setError((err as Error).message);
@@ -99,7 +105,7 @@ export function usePlayers(
         email: player.email,
         session_id: sessionId,
         player_code: player.playerCode || generateAccessCode(6),
-        tickets: player.tickets || 1
+        tickets: player.tickets || player.ticketCount || 1
       }));
       
       // Insert players
@@ -186,3 +192,6 @@ export function usePlayers(
     joinSession
   };
 }
+
+// Export AdminTempPlayer interface to resolve the error in SessionContext
+export type { AdminTempPlayer };

@@ -1,8 +1,40 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { GameState, GameType, CurrentGameState } from '@/types';
 import { Json } from '@/types/json';
 import { getGameRulesForType } from '@/game-rules/gameRulesRegistry';
+import { GameConfig } from '@/types';
+
+/**
+ * Converts legacy game config format to the current format
+ */
+export function convertFromLegacyConfig(config: any): GameConfig {
+  // If it already has a patterns property, assume it's already in the new format
+  if (config && config.patterns) {
+    return config as GameConfig;
+  }
+
+  // Convert from legacy format
+  const patterns: Record<string, any> = {};
+  
+  if (config.selectedPatterns && Array.isArray(config.selectedPatterns)) {
+    config.selectedPatterns.forEach((patternId: string) => {
+      const prize = config.prizes && config.prizes[patternId];
+      patterns[patternId] = {
+        active: true,
+        isNonCash: prize?.isNonCash || false,
+        prizeAmount: prize?.amount || '10.00',
+        description: prize?.description || `${patternId} Prize`
+      };
+    });
+  }
+  
+  return {
+    gameNumber: config.gameNumber || 1,
+    gameType: config.gameType || 'mainstage',
+    patterns,
+    session_id: config.session_id
+  };
+}
 
 /**
  * Updates the session progress with the current game state

@@ -1,17 +1,9 @@
 
 import React, { createContext, useContext, ReactNode } from 'react';
 import { useSessions } from './useSessions';
-import { usePlayers } from './usePlayers';
+import { usePlayers, AdminTempPlayer } from './usePlayers';
 import { useTickets } from './useTickets';
 import type { GameSession, Player } from '@/types';
-
-// Define the AdminTempPlayer type to match the one in usePlayers
-type AdminTempPlayer = {
-  playerCode: string;
-  nickname: string;
-  email: string;
-  tickets: number;
-};
 
 interface SessionContextType {
   sessions: GameSession[];
@@ -22,7 +14,7 @@ interface SessionContextType {
   updateSession: (sessionId: string, updates: Partial<GameSession>) => Promise<boolean>;
   isLoading: boolean;
   error: string | null;
-  // Player methods with correct types
+  // Player methods
   players?: Player[];
   joinSession: (playerCode: string) => Promise<{ player: any | null, error: Error | null }>;
   addPlayer?: (nickname: string, sessionId: string, email?: string) => Promise<any>;

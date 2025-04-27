@@ -1,6 +1,3 @@
-
-// This is a very large file, so we'll focus on fixing specific sections
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -155,19 +152,29 @@ export default function CallerSession() {
             .eq('session_id', sessionId)
             .single();
             
-          if (progressData && progressData.called_numbers && Array.isArray(progressData.called_numbers)) {
-            setCalledNumbers(progressData.called_numbers);
+          if (progressData) {
+            // Check if session progress has called numbers (may not have in all databases)
+            const progressCalledNumbers = progressData.called_numbers || [];
             
-            if (progressData.called_numbers.length > 0) {
-              setCurrentNumber(progressData.called_numbers[progressData.called_numbers.length - 1]);
-            }
-          } else {
-            // If called_numbers doesn't exist in sessions_progress, check the session's current_game_state
-            if (data.current_game_state && 
-                data.current_game_state.calledItems && 
-                Array.isArray(data.current_game_state.calledItems)) {
-              setCalledNumbers(data.current_game_state.calledItems);
-              setCurrentNumber(data.current_game_state.lastCalledItem);
+            if (Array.isArray(progressCalledNumbers) && progressCalledNumbers.length > 0) {
+              setCalledNumbers(progressCalledNumbers);
+              setCurrentNumber(progressCalledNumbers[progressCalledNumbers.length - 1]);
+            } else {
+              // Fallback to session's called_items if available
+              if (data.called_items) {
+                try {
+                  const parsedItems = typeof data.called_items === 'string' ? 
+                    JSON.parse(data.called_items) : data.called_items;
+                  
+                  if (Array.isArray(parsedItems)) {
+                    const numbers = parsedItems.map((item: any) => item.value);
+                    setCalledNumbers(numbers);
+                    setCurrentNumber(numbers.length > 0 ? numbers[numbers.length - 1] : null);
+                  }
+                } catch (e) {
+                  console.error("Error parsing called items:", e);
+                }
+              }
             }
           }
         } catch (err) {
@@ -475,7 +482,7 @@ export default function CallerSession() {
           .from('game_sessions')
           .update({ 
             lifecycle_state: 'live',
-            status: 'active', // Update the session status to active
+            status: 'active',
             current_game_state: gameStateForSupabase as unknown as Json,
             games_config: JSON.parse(JSON.stringify(gameConfigs)) as unknown as Json
           })
@@ -509,7 +516,7 @@ export default function CallerSession() {
         return {
           ...prevSession,
           lifecycle_state: 'live',
-          status: 'active', // Update the local session status as well
+          status: 'active',
           current_game_state: updatedGameState
         };
       });
@@ -600,7 +607,6 @@ export default function CallerSession() {
     if (!sessionId) return;
 
     try {
-      // Changed from 'bingo_claims' to 'universal_game_logs'
       const { data: claims, error } = await supabase
         .from('universal_game_logs')
         .select('id, player_id, claimed_at, player_name')

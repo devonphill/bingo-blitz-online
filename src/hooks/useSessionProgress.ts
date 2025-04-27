@@ -21,7 +21,22 @@ export function useSessionProgress(sessionId?: string) {
           .single();
           
         if (error) throw error;
-        setProgress(data as unknown as SessionProgress);
+        
+        // Create a sessions_progress record if it doesn't exist
+        const progressData: SessionProgress = {
+          id: data.id,
+          session_id: data.session_id,
+          current_game_number: data.current_game_number || 1,
+          max_game_number: data.max_game_number || 1,
+          current_win_pattern: data.current_win_pattern || null,
+          current_game_type: data.current_game_type || 'mainstage',
+          created_at: data.created_at,
+          updated_at: data.updated_at,
+          called_numbers: data.called_numbers || [],
+          game_status: data.game_status || 'pending'
+        };
+        
+        setProgress(progressData);
       } catch (err) {
         setError(err as Error);
         console.error('Error fetching session progress:', err);
@@ -45,7 +60,23 @@ export function useSessionProgress(sessionId?: string) {
         },
         payload => {
           console.log('Progress update received:', payload);
-          setProgress(payload.new as unknown as SessionProgress);
+          
+          if (!payload.new) return;
+          
+          const updatedProgress: SessionProgress = {
+            id: payload.new.id,
+            session_id: payload.new.session_id,
+            current_game_number: payload.new.current_game_number || 1,
+            max_game_number: payload.new.max_game_number || 1,
+            current_win_pattern: payload.new.current_win_pattern || null,
+            current_game_type: payload.new.current_game_type || 'mainstage',
+            created_at: payload.new.created_at,
+            updated_at: payload.new.updated_at,
+            called_numbers: payload.new.called_numbers || [],
+            game_status: payload.new.game_status || 'pending'
+          };
+          
+          setProgress(updatedProgress);
         }
       )
       .subscribe();

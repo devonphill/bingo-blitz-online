@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { GameSession, GameType } from '@/types';
+import { GameSession, GameType, GameConfig } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,19 +55,13 @@ export default function AddPlayers() {
           return;
         }
         
+        const sessionData = data || {};
         setSession({
-          id: data.id,
-          name: data.name,
-          gameType: data.game_type as GameType,
-          createdBy: data.created_by,
-          accessCode: data.access_code,
-          status: data.status as "pending" | "active" | "completed",
-          createdAt: data.created_at,
-          sessionDate: data.session_date,
-          numberOfGames: data.number_of_games,
-          current_game: data.current_game,
-          lifecycle_state: data.lifecycle_state as 'setup' | 'live' | 'ended' | 'completed',
-          games_config: data.games_config || []
+          ...sessionData,
+          gameType: sessionData.game_type as GameType,
+          games_config: Array.isArray(sessionData.games_config) ? 
+            sessionData.games_config as GameConfig[] : 
+            []
         });
       } catch (err) {
         console.error("Exception loading session:", err);
