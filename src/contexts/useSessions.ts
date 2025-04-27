@@ -29,24 +29,34 @@ export function useSessions() {
 
       if (data) {
         // Convert raw data to GameSession objects
-        const sessionObjects: GameSession[] = data.map(session => ({
-          id: session.id,
-          name: session.name,
-          gameType: session.game_type as any,
-          createdBy: session.created_by,
-          accessCode: session.access_code,
-          status: session.status as any,
-          createdAt: session.created_at,
-          sessionDate: session.session_date,
-          numberOfGames: session.number_of_games,
-          current_game: session.current_game,
-          lifecycle_state: session.lifecycle_state as any,
-          games_config: session.games_config ? 
-            (Array.isArray(session.games_config) ? 
-              session.games_config.map(convertFromLegacyConfig) : 
-              [convertFromLegacyConfig(session.games_config)]) : 
-            []
-        }));
+        const sessionObjects: GameSession[] = data.map(session => {
+          // Process games_config to ensure it's in the correct format
+          let processedGamesConfig = [];
+          
+          if (session.games_config) {
+            if (Array.isArray(session.games_config)) {
+              processedGamesConfig = session.games_config.map(config => convertFromLegacyConfig(config));
+            } else {
+              processedGamesConfig = [convertFromLegacyConfig(session.games_config)];
+            }
+          }
+          
+          return {
+            id: session.id,
+            name: session.name,
+            gameType: session.game_type as any,
+            createdBy: session.created_by,
+            accessCode: session.access_code,
+            status: session.status as any,
+            createdAt: session.created_at,
+            sessionDate: session.session_date,
+            numberOfGames: session.number_of_games,
+            current_game: session.current_game,
+            lifecycle_state: session.lifecycle_state as any,
+            games_config: processedGamesConfig
+          };
+        });
+        
         setSessions(sessionObjects);
       }
     } catch (err) {
@@ -84,8 +94,8 @@ export function useSessions() {
       const dbUpdates: Record<string, any> = {};
       if ('gameType' in updates) dbUpdates.game_type = updates.gameType;
       if ('games_config' in updates) {
-        const jsonConfig = JSON.parse(JSON.stringify(updates.games_config));
-        dbUpdates.games_config = jsonConfig;
+        // Convert the GameConfig[] to JSON for storage
+        dbUpdates.games_config = updates.games_config || [];
       }
       if ('status' in updates) dbUpdates.status = updates.status;
       if ('lifecycle_state' in updates) dbUpdates.lifecycle_state = updates.lifecycle_state;

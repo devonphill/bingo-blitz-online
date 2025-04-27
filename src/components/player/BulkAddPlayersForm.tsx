@@ -1,180 +1,174 @@
 
-import React, { useState } from 'react';
+import React, { useState, ChangeEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/components/ui/use-toast';
-import { useSessionContext } from '@/contexts/SessionProvider';
-import { v4 as uuidv4 } from 'uuid';
-import { AdminTempPlayer } from '@/types';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { AdminTempPlayer, TempPlayer } from '@/types';
+import { generateAccessCode } from '@/utils/accessCodeGenerator';
+import { useToast } from '@/hooks/use-toast';
 
-type TempPlayer = {
-  playerCode: string;
-  nickname: string;
-  email: string;
-  tickets: number;
-  ticketCount: number; // Added to match AdminTempPlayer
-};
-
-function generatePlayerCode(length = 6) {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let code = '';
-  for (let i = 0; i < length; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
+interface BulkAddPlayersFormProps {
+  onSubmit: (players: AdminTempPlayer[]) => Promise<boolean>;
+  isLoading: boolean;
 }
 
-export default function BulkAddPlayersForm({ sessionId }: { sessionId: string }) {
+export function BulkAddPlayersForm({ onSubmit, isLoading }: BulkAddPlayersFormProps) {
+  const [players, setPlayers] = useState<AdminTempPlayer[]>([
+    { nickname: "", email: "", ticketCount: 1, playerCode: generateAccessCode(6), tickets: 1 }
+  ]);
   const { toast } = useToast();
-  const { bulkAddPlayers } = useSessionContext();
-  const [players, setPlayers] = useState<TempPlayer[]>([]);
-  const [nickname, setNickname] = useState('');
-  const [email, setEmail] = useState('');
-  const [tickets, setTickets] = useState(1);
-  const [saving, setSaving] = useState(false);
-
-  const handleAdd = (e: React.FormEvent) => {
-    e.preventDefault();
-    const ticketsCount = Number(tickets) || 1;
-    setPlayers((prev) => [
-      ...prev,
-      {
-        playerCode: generatePlayerCode(),
-        nickname,
-        email,
-        tickets: ticketsCount,
-        ticketCount: ticketsCount, // Set both properties
-      }
+  
+  const handleAddRow = () => {
+    setPlayers([
+      ...players,
+      { nickname: "", email: "", ticketCount: 1, playerCode: generateAccessCode(6), tickets: 1 }
     ]);
-    setNickname('');
-    setEmail('');
-    setTickets(1);
   };
-
-  const handleEdit = (index: number, field: keyof TempPlayer, value: string | number) => {
-    setPlayers(players =>
-      players.map((p, i) => {
-        if (i !== index) return p;
-        
-        // If updating tickets, also update ticketCount
-        if (field === 'tickets') {
-          return { ...p, [field]: value, ticketCount: Number(value) };
-        }
-        return { ...p, [field]: value };
-      })
-    );
-  };
-
-  const handleDelete = (index: number) => {
-    setPlayers(players => players.filter((_, i) => i !== index));
-  };
-
-  const handleSaveAll = async () => {
-    if (players.length === 0) {
-      toast({ title: 'Nothing to save', description: 'Add at least one player.', variant: 'destructive' });
-      return;
-    }
-    
-    if (!bulkAddPlayers) {
-      toast({ title: 'Error', description: 'Bulk add players function not available', variant: 'destructive' });
-      return;
-    }
-    
-    setSaving(true);
-    try {
-      const result = await bulkAddPlayers(sessionId, players as AdminTempPlayer[]);
-      if (!result.success) {
-        toast({
-          title: 'Some players failed',
-          description: result.message || 'There were problems saving some or all players.',
-          variant: 'destructive'
-        });
-      } else {
-        toast({
-          title: 'Players added successfully!',
-          description: `${players.length} players committed to the database.`,
-        });
-        setPlayers([]);
-      }
-    } catch (err: any) {
-      console.error("Unexpected error:", err);
+  
+  const handleRemoveRow = (index: number) => {
+    if (players.length <= 1) {
       toast({
-        title: 'Error saving players',
-        description: err.message || 'An unexpected error occurred.',
-        variant: 'destructive'
+        title: "Cannot remove",
+        description: "You must have at least one player",
+        variant: "destructive"
       });
-    } finally {
-      setSaving(false);
+      return;
+    }
+    
+    const updatedPlayers = [...players];
+    updatedPlayers.splice(index, 1);
+    setPlayers(updatedPlayers);
+  };
+  
+  const handleInputChange = (index: number, field: keyof AdminTempPlayer, value: string | number) => {
+    const updatedPlayers = [...players];
+    
+    if (field === 'ticketCount') {
+      // Ensure ticket count is between 1 and 10
+      const numValue = typeof value === 'string' ? parseInt(value, 10) : value;
+      updatedPlayers[index][field] = Math.max(1, Math.min(10, isNaN(numValue) ? 1 : numValue));
+      updatedPlayers[index].tickets = updatedPlayers[index].ticketCount; // Keep tickets in sync
+    } else if (field === 'playerCode') {
+      // Force uppercase for player code
+      updatedPlayers[index][field] = typeof value === 'string' ? value.toUpperCase() : value;
+    } else {
+      updatedPlayers[index][field] = value;
+    }
+    
+    setPlayers(updatedPlayers);
+  };
+  
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validate all players have names
+    const invalidPlayers = players.filter(p => !p.nickname.trim());
+    if (invalidPlayers.length > 0) {
+      toast({
+        title: "Missing information",
+        description: "All players must have a name",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Try to submit the players
+    const success = await onSubmit(players);
+    
+    if (success) {
+      toast({
+        title: "Success",
+        description: `Added ${players.length} players to the session`,
+      });
+      
+      // Reset the form with one empty row
+      setPlayers([
+        { nickname: "", email: "", ticketCount: 1, playerCode: generateAccessCode(6), tickets: 1 }
+      ]);
     }
   };
-
+  
   return (
-    <Card className="w-full max-w-2xl mx-auto my-6 animate-fade-in">
+    <Card>
       <CardHeader>
         <CardTitle>Add Multiple Players</CardTitle>
-        <CardDescription>
-          Enter nickname, email, tickets, then add to the table. Edit/delete before committing.
-        </CardDescription>
       </CardHeader>
       <CardContent>
-        <form className="flex flex-col md:flex-row md:items-end gap-2" onSubmit={handleAdd}>
-          <div>
-            <Label>Nickname</Label>
-            <Input type="text" value={nickname} onChange={e => setNickname(e.target.value)} required />
+        <form onSubmit={handleSubmit}>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email (Optional)</TableHead>
+                  <TableHead>Ticket Count</TableHead>
+                  <TableHead>Player Code</TableHead>
+                  <TableHead className="w-24">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {players.map((player, index) => (
+                  <TableRow key={index}>
+                    <TableCell>
+                      <Input
+                        value={player.nickname}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) => handleInputChange(index, 'nickname', e.target.value)}
+                        placeholder="Player name"
+                        required
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="email"
+                        value={player.email || ''}
+                        onChange={(e) => handleInputChange(index, 'email', e.target.value)}
+                        placeholder="Email (optional)"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={player.ticketCount}
+                        onChange={(e) => handleInputChange(index, 'ticketCount', e.target.value)}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        value={player.playerCode}
+                        onChange={(e) => handleInputChange(index, 'playerCode', e.target.value)}
+                        maxLength={6}
+                        minLength={6}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleRemoveRow(index)}
+                      >
+                        Delete
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
-          <div>
-            <Label>Email</Label>
-            <Input type="email" value={email} onChange={e => setEmail(e.target.value)} required />
+          
+          <div className="flex justify-between mt-4">
+            <Button type="button" variant="outline" onClick={handleAddRow}>
+              + Add Player
+            </Button>
+            <Button type="submit" disabled={isLoading}>
+              {isLoading ? "Adding Players..." : "Save All Players"}
+            </Button>
           </div>
-          <div>
-            <Label>Tickets</Label>
-            <Input type="number" min={1} value={tickets} onChange={e => setTickets(Number(e.target.value))} required />
-          </div>
-          <Button type="submit" variant="secondary">Add</Button>
         </form>
-        <div className="mt-5 overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead>
-              <tr>
-                <th>Player Code</th>
-                <th>Nickname</th>
-                <th>Email</th>
-                <th>Tickets</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {players.map((p, i) => (
-                <tr key={i} className="border-b">
-                  <td>{p.playerCode}</td>
-                  <td>
-                    <Input value={p.nickname} onChange={e => handleEdit(i, 'nickname', e.target.value)} />
-                  </td>
-                  <td>
-                    <Input value={p.email} type="email" onChange={e => handleEdit(i, 'email', e.target.value)} />
-                  </td>
-                  <td>
-                    <Input value={p.tickets} type="number" min={1} onChange={e => handleEdit(i, 'tickets', Number(e.target.value))} />
-                  </td>
-                  <td>
-                    <Button variant="destructive" size="sm" onClick={() => handleDelete(i)}>Delete</Button>
-                  </td>
-                </tr>
-              ))}
-              {players.length === 0 && (
-                <tr><td colSpan={5} className="text-center text-muted-foreground">No players added yet</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
       </CardContent>
-      <CardFooter className="flex justify-end">
-        <Button disabled={saving || players.length === 0} onClick={handleSaveAll}>
-          {saving ? 'Saving...' : 'Save All Players'}
-        </Button>
-      </CardFooter>
     </Card>
   );
 }

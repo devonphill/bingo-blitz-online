@@ -1,15 +1,15 @@
 
-import { WinPattern, GameType as WinPatternGameType } from './winPattern';
-import { GameRules } from '@/game-rules/types';
+// Any additional types needed for the app that aren't covered by the other interfaces
+import { Json } from './json';
 
-// Use the same GameType from winPattern.ts
-export type GameType = WinPatternGameType;
+export type GameType = 'mainstage' | '75ball' | '90ball' | 'quickfire';
 
-export interface PrizeDetails {
-  amount: string;
-  isNonCash: boolean;
-  description: string;
-}
+export const DEFAULT_PATTERN_ORDER: Record<GameType, string[]> = {
+  'mainstage': ['oneLine', 'twoLines', 'fullHouse'],
+  '75ball': ['pattern1', 'pattern2', 'pattern3'],
+  '90ball': ['oneLine', 'twoLines', 'fullHouse'],
+  'quickfire': ['oneNumber', 'twoNumbers', 'threeNumbers']
+};
 
 export interface WinPatternConfig {
   active: boolean;
@@ -18,42 +18,45 @@ export interface WinPatternConfig {
   description: string;
 }
 
-// GameConfig interface supporting both legacy and new formats
 export interface GameConfig {
   gameNumber: number;
   gameType: GameType;
   patterns: Record<string, WinPatternConfig>;
   session_id?: string;
-  
-  // Support for legacy properties, marked as optional
-  selectedPatterns?: string[];
-  prizes?: { [patternId: string]: PrizeDetails };
 }
 
 export interface LegacyGameConfig {
   gameNumber: number;
   gameType: GameType;
   selectedPatterns: string[];
-  prizes: { [patternId: string]: PrizeDetails };
+  prizes: {
+    [patternId: string]: {
+      amount: string;
+      isNonCash: boolean;
+      description: string;
+    };
+  };
 }
 
-export function isLegacyGameConfig(config: any): config is LegacyGameConfig {
-  return config && Array.isArray(config.selectedPatterns) && typeof config.prizes === 'object';
+export function isLegacyGameConfig(config: any): boolean {
+  return config && 
+    typeof config === 'object' && 
+    'selectedPatterns' in config && 
+    'prizes' in config;
 }
 
 export function convertLegacyGameConfig(config: LegacyGameConfig): GameConfig {
   const patterns: Record<string, WinPatternConfig> = {};
-  if (config.selectedPatterns && Array.isArray(config.selectedPatterns)) {
-    config.selectedPatterns.forEach(patternId => {
-      const prize = config.prizes && config.prizes[patternId] || {};
-      patterns[patternId] = {
-        active: true,
-        isNonCash: prize.isNonCash || false,
-        prizeAmount: prize.amount || '10.00',
-        description: prize.description || `${patternId} Prize`
-      };
-    });
-  }
+  
+  config.selectedPatterns.forEach(patternId => {
+    const prize = config.prizes[patternId] || {};
+    patterns[patternId] = {
+      active: true,
+      isNonCash: prize.isNonCash || false,
+      prizeAmount: prize.amount || '0.00',
+      description: prize.description || ''
+    };
+  });
   
   return {
     gameNumber: config.gameNumber,
@@ -62,24 +65,60 @@ export function convertLegacyGameConfig(config: LegacyGameConfig): GameConfig {
   };
 }
 
-export interface GameState {
-  gameNumber: number;
-  gameType: GameType;
-  activePatternIds: string[];
-  calledItems: number[];
-  lastCalledItem: number | null;
-  status: 'pending' | 'active' | 'completed';
-  prizes: { [patternId: string]: PrizeDetails };
+export interface PrizeDetails {
+  amount: string;
+  isNonCash: boolean;
+  description: string;
 }
 
-export interface CurrentGameState {
-  gameNumber: number;
-  gameType: GameType;
-  activePatternIds: string[];
-  calledItems: number[];
-  lastCalledItem: number | null;
-  status: 'pending' | 'active' | 'completed';
-  prizes: { [patternId: string]: PrizeDetails };
+export interface Ticket {
+  id: string;
+  playerId: string;
+  sessionId: string;
+  serial: string; 
+  perm: number;
+  position: number;
+  layoutMask: number;
+  numbers: number[];
+  timeStamp?: string;
+}
+
+export interface SessionProgress {
+  id: string;
+  session_id: string;
+  current_game_number: number;
+  max_game_number: number;
+  current_win_pattern: string | null;
+  current_game_type: GameType;
+  created_at: string;
+  updated_at: string;
+  called_numbers: number[];
+  game_status: 'pending' | 'active' | 'completed';
+}
+
+export interface Player {
+  id: string;
+  nickname: string;
+  sessionId: string;
+  tickets: number;
+  playerCode: string;
+  joinedAt: string;
+  email?: string;
+}
+
+export interface TempPlayer {
+  nickname: string;
+  email: string;
+  tickets: number;
+  playerCode: string;
+}
+
+export interface AdminTempPlayer {
+  nickname: string;
+  email: string;
+  ticketCount: number;
+  playerCode: string;
+  tickets: number;
 }
 
 export interface GameSession {
@@ -95,81 +134,4 @@ export interface GameSession {
   current_game: number;
   lifecycle_state: 'setup' | 'live' | 'ended' | 'completed';
   games_config: GameConfig[];
-  current_game_state?: CurrentGameState;
 }
-
-export interface Player {
-  id: string;
-  nickname: string;
-  sessionId: string;
-  joinedAt: string;
-  tickets: number;
-  playerCode: string;
-  email?: string;
-}
-
-export interface Ticket {
-  id: string;
-  playerId: string;
-  sessionId: string;
-  numbers: number[];
-  serial: string;
-  position: number;
-  layoutMask: number;
-  perm?: number;
-}
-
-export interface SessionProgress {
-  id: string;
-  session_id: string;
-  current_game_number: number;
-  max_game_number: number;
-  current_win_pattern?: string | null;
-  current_game_type: GameType;
-  created_at: string;
-  updated_at: string;
-  called_numbers?: number[];
-  game_status?: 'pending' | 'active' | 'completed';
-}
-
-// Types for player admin
-export interface AdminTempPlayer {
-  nickname: string;
-  email?: string;
-  ticketCount: number;
-  playerCode?: string;
-  tickets?: number;
-}
-
-// Helper functions for getting default patterns
-export function getDefaultPatternsForType(gameType: GameType): string[] {
-  switch (gameType) {
-    case 'party':
-      return ['corners', 'oneLine', 'twoLines', 'threeLines', 'fullHouse'];
-    case 'quiz':
-    case 'music':
-    case 'logo':
-    case 'mainstage':
-    case '90-ball':
-      return ['oneLine', 'twoLines', 'fullHouse'];
-    case '75-ball':
-      return ['oneLine', 'coverAll'];
-    case 'speed':
-      return ['oneLine', 'fullHouse'];
-    default:
-      return ['oneLine', 'twoLines', 'fullHouse'];
-  }
-}
-
-// Export for backward compatibility
-export const DEFAULT_PATTERN_ORDER: Record<GameType, string[]> = {
-  'mainstage': ['oneLine', 'twoLines', 'fullHouse'],
-  'party': ['corners', 'oneLine', 'twoLines', 'threeLines', 'fullHouse'],
-  'quiz': ['oneLine', 'twoLines', 'fullHouse'],
-  'music': ['oneLine', 'twoLines', 'fullHouse'],
-  'logo': ['oneLine', 'twoLines', 'fullHouse'],
-  '90-ball': ['oneLine', 'twoLines', 'fullHouse'],
-  '75-ball': ['oneLine', 'coverAll'],
-  'speed': ['oneLine', 'fullHouse'],
-  'custom': ['oneLine', 'twoLines', 'fullHouse']
-};

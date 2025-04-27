@@ -13,15 +13,6 @@ export const sampleGameConfig: GameConfig[] = [
         prizeAmount: '10.00',
         description: 'One Line Prize'
       }
-    },
-    // Legacy format support
-    selectedPatterns: ['oneLine'],
-    prizes: {
-      'oneLine': {
-        amount: '10.00',
-        isNonCash: false,
-        description: 'One Line Prize'
-      }
     }
   }
 ];
