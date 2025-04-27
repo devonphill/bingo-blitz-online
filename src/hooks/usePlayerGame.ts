@@ -14,6 +14,8 @@ export function usePlayerGame(playerId: string | undefined, sessionId: string | 
       serial: string;
       numbers: number[];
       layoutMask?: number;
+      perm?: number;
+      position?: number;
     }
   ) => {
     if (!playerId || !sessionId) return false;
@@ -43,7 +45,7 @@ export function usePlayerGame(playerId: string | undefined, sessionId: string | 
       // Get current session information
       const { data: sessionData, error: sessionError } = await supabase
         .from('game_sessions')
-        .select('current_game, current_game_state')
+        .select('current_game, game_type, called_items')
         .eq('id', sessionId)
         .single();
         
@@ -55,6 +57,25 @@ export function usePlayerGame(playerId: string | undefined, sessionId: string | 
           variant: "destructive"
         });
         return false;
+      }
+
+      // Parse called items
+      let calledNumbers: number[] = [];
+      let lastCalledNumber: number | null = null;
+      
+      try {
+        if (sessionData.called_items) {
+          const parsedItems = typeof sessionData.called_items === 'string' 
+            ? JSON.parse(sessionData.called_items) 
+            : sessionData.called_items;
+          
+          if (Array.isArray(parsedItems) && parsedItems.length > 0) {
+            calledNumbers = parsedItems.map(item => item.value);
+            lastCalledNumber = parsedItems[parsedItems.length - 1].value;
+          }
+        }
+      } catch (err) {
+        console.error("Error parsing called items:", err);
       }
 
       // Broadcast the claim to the caller
@@ -75,9 +96,6 @@ export function usePlayerGame(playerId: string | undefined, sessionId: string | 
       
       // Log the claim in universal_game_logs
       const gameNumber = sessionData.current_game || 1;
-      const currentGameState = sessionData.current_game_state || {};
-      const calledNumbers = currentGameState.calledItems || [];
-      const lastCalledNumber = currentGameState.lastCalledItem || null;
       
       await supabase
         .from('universal_game_logs')
@@ -90,8 +108,10 @@ export function usePlayerGame(playerId: string | undefined, sessionId: string | 
           ticket_serial: ticketData.serial,
           ticket_numbers: ticketData.numbers,
           ticket_layout_mask: ticketData.layoutMask || 0,
+          ticket_perm: ticketData.perm || 0,
+          ticket_position: ticketData.position || 0,
           claimed_at: new Date().toISOString(),
-          game_type: currentGameState.gameType || 'mainstage',
+          game_type: sessionData.game_type || 'mainstage',
           called_numbers: calledNumbers,
           last_called_number: lastCalledNumber,
           total_calls: calledNumbers.length

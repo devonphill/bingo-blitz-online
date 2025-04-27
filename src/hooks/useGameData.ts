@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { GameType, CalledItem, GameConfig, WinPatternConfig } from '@/types';
@@ -83,7 +84,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
                 .forEach(([patternId, configValue], index) => {
                   if (!configValue || typeof configValue !== 'object') return;
                   
-                  const config = configValue as Record<string, any>;
+                  const config = configValue as WinPatternConfig;
                   extractedPatterns.push({
                     id: `pattern-${patternId}`,
                     game_config_id: 'legacy',
@@ -127,7 +128,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
               return {
                 gameNumber: oldConfig.gameNumber,
                 gameType: oldConfig.gameType,
-                patterns: patterns
+                patterns
               };
             });
             
