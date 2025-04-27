@@ -5,7 +5,7 @@ import { checkMainstageWinPattern } from '@/utils/mainstageWinLogic';
 import { useMainstageAutoMarking } from '@/hooks/useMainstageAutoMarking';
 
 interface BingoWinProgressProps {
-  tickets?: any[];  // Added tickets prop to the interface
+  tickets?: any[];
   numbers?: number[];
   layoutMask?: number;
   calledNumbers?: number[];
@@ -18,7 +18,7 @@ interface BingoWinProgressProps {
 }
 
 export default function BingoWinProgress({
-  tickets,  // Added tickets to the destructured props
+  tickets,
   numbers,
   layoutMask,
   calledNumbers = [],

@@ -50,27 +50,22 @@ export interface CalledItem {
   call_order: number;
 }
 
-// Current game state interface kept for backwards compatibility during migration
-export interface CurrentGameState {
-  gameNumber: number;
-  gameType: GameType; 
-  activePatternIds: string[]; 
-  calledItems: Array<any>; 
-  lastCalledItem: any | null; 
-  prizes?: { [patternId: string]: PrizeDetails };
-  status: 'pending' | 'active' | 'paused' | 'finished';
-}
-
-// Game configuration interface - updated to include session_id
+// Updated game configuration interface with new pattern structure
 export interface GameConfig {
   gameNumber: number;
   gameType: GameType;
-  selectedPatterns: string[];
-  prizes: { [patternId: string]: PrizeDetails };
+  patterns: {
+    [patternId: string]: {
+      active: boolean;
+      isNonCash: boolean;
+      prizeAmount: string;
+      description: string;
+    }
+  };
   session_id?: string;
 }
 
-// Updated GameSession interface
+// Game session interface without current_game_state
 export interface GameSession {
   id: string;
   name: string;
@@ -81,7 +76,6 @@ export interface GameSession {
   createdAt: string;
   sessionDate?: string;
   numberOfGames?: number;
-  current_game_state: CurrentGameState | null;
   lifecycle_state?: 'setup' | 'live' | 'ended';
   games_config?: GameConfig[];
   active_pattern_id?: string;

@@ -9,7 +9,7 @@ import { GameConfigForm } from '@/components/caller/GameConfigForm';
 import { supabase } from "@/integrations/supabase/client";
 
 export function GameSetup() {
-  const { currentSession, updateCurrentGameState } = useSessions();
+  const { currentSession } = useSessions();
   const { toast } = useToast();
   
   const [gameConfigs, setGameConfigs] = useState<GameConfig[]>([]);
@@ -44,30 +44,76 @@ export function GameSetup() {
     if (existingConfigs.length < numberOfGames) {
       console.log("Creating new configs with preset prizes");
       
-      // Initialize configs for all games with a preset prize for One Line
+      // Initialize configs for all games with a new pattern structure
       const newConfigs: GameConfig[] = Array.from({ length: numberOfGames }, (_, index) => {
         // Use existing config if available, otherwise create new one
         const existingConfig = existingConfigs[index];
+        const gameType = (existingConfig?.gameType || currentSession.gameType || 'mainstage') as GameType;
+        
+        // Set up pattern defaults according to the game type
+        const patternIds = WIN_PATTERNS[gameType].map(pattern => pattern.id);
+        const patterns: GameConfig['patterns'] = {};
+        
+        // Initialize each pattern with default values
+        patternIds.forEach(patternId => {
+          patterns[patternId] = {
+            active: patternId === 'oneLine' || patternId === 'fullHouse', // Default active patterns
+            isNonCash: false,
+            prizeAmount: '10.00',
+            description: `${patternId} Prize`
+          };
+        });
+        
         return {
           gameNumber: index + 1,
-          gameType: (existingConfig?.gameType || currentSession.gameType || 'mainstage') as GameType,
-          selectedPatterns: existingConfig?.selectedPatterns || ['oneLine'],
-          prizes: existingConfig?.prizes || {
-            'oneLine': {
-              amount: '10.00', 
-              isNonCash: false,
-              description: 'One Line Prize'
-            }
-          }
+          gameType: gameType,
+          patterns: patterns
         };
       });
       
       setGameConfigs(newConfigs);
       setInitialSetupDone(false);
     } else {
-      // Use existing configs from the database
-      console.log("Using existing configs from database");
-      setGameConfigs(existingConfigs);
+      // If the old format exists, convert it to new format
+      if (existingConfigs.length > 0 && 'selectedPatterns' in existingConfigs[0]) {
+        console.log("Converting old config format to new format");
+        
+        const convertedConfigs: GameConfig[] = existingConfigs.map((oldConfig: any) => {
+          const patterns: GameConfig['patterns'] = {};
+          
+          // Get all possible patterns for this game type
+          const gameType = oldConfig.gameType || 'mainstage';
+          const allPatterns = WIN_PATTERNS[gameType].map(pattern => pattern.id);
+          
+          // Set up each pattern with values from the old format
+          allPatterns.forEach(patternId => {
+            const isSelected = Array.isArray(oldConfig.selectedPatterns) && 
+                              oldConfig.selectedPatterns.includes(patternId);
+            
+            const prizeInfo = oldConfig.prizes && oldConfig.prizes[patternId];
+            
+            patterns[patternId] = {
+              active: isSelected,
+              isNonCash: prizeInfo?.isNonCash || false,
+              prizeAmount: prizeInfo?.amount || '10.00',
+              description: prizeInfo?.description || `${patternId} Prize`
+            };
+          });
+          
+          return {
+            gameNumber: oldConfig.gameNumber,
+            gameType: oldConfig.gameType,
+            patterns: patterns
+          };
+        });
+        
+        setGameConfigs(convertedConfigs);
+      } else {
+        // Use existing configs from the database if they match the new structure
+        console.log("Using existing configs from database");
+        setGameConfigs(existingConfigs);
+      }
+      
       setInitialSetupDone(true);
     }
   }, [currentSession]);
@@ -85,13 +131,11 @@ export function GameSetup() {
           // First update games_config
           console.log("Saving initial games_config:", gameConfigs);
           
-          // Convert gameConfigs to a JSON-compatible object
-          const gameConfigsJson = JSON.stringify(gameConfigs);
-          
+          // Save to game_sessions table
           const { data, error: gamesConfigError } = await supabase
             .from('game_sessions')
             .update({ 
-              games_config: JSON.parse(gameConfigsJson)
+              games_config: gameConfigs 
             })
             .eq('id', currentSession.id)
             .select('games_config');
@@ -108,24 +152,29 @@ export function GameSetup() {
           
           console.log("Initial games_config saved response:", data);
           
-          // Then update current_game_state
-          console.log("Saving to current_game_state");
-          const success = await updateCurrentGameState({
-            gameNumber: gameConfigs[0].gameNumber,
-            gameType: gameConfigs[0].gameType,
-            activePatternIds: gameConfigs[0].selectedPatterns,
-            prizes: gameConfigs[0].prizes,
-            status: 'pending',
-          });
-          
-          if (!success) {
-            console.error("Error updating current game state");
-            toast({
-              title: "Error",
-              description: "Failed to update current game state.",
-              variant: "destructive"
-            });
-            return;
+          // Update the session_progress with first game's first active pattern
+          if (gameConfigs.length > 0) {
+            const firstGame = gameConfigs[0];
+            const activePatternId = Object.entries(firstGame.patterns)
+              .find(([_, config]) => config.active)?.[0] || 'oneLine';
+            
+            const { error: progressError } = await supabase
+              .from('sessions_progress')
+              .update({
+                current_win_pattern: activePatternId,
+                current_game_type: firstGame.gameType
+              })
+              .eq('session_id', currentSession.id);
+              
+            if (progressError) {
+              console.error("Error updating session progress:", progressError);
+              toast({
+                title: "Error",
+                description: "Failed to update session progress.",
+                variant: "destructive"
+              });
+              return;
+            }
           }
             
           console.log("Initial game config saved successfully");
@@ -150,28 +199,59 @@ export function GameSetup() {
     };
     
     saveInitialConfig();
-  }, [gameConfigs, currentSession, updateCurrentGameState, initialSetupDone, toast]);
+  }, [gameConfigs, currentSession, initialSetupDone, toast]);
 
   const handleGameTypeChange = (gameIndex: number, newType: GameType) => {
-    setGameConfigs(prev => prev.map((config, index) => 
-      index === gameIndex ? { ...config, gameType: newType } : config
-    ));
+    setGameConfigs(prev => prev.map((config, index) => {
+      if (index !== gameIndex) return config;
+      
+      // Get patterns for the new game type
+      const patternIds = WIN_PATTERNS[newType].map(pattern => pattern.id);
+      const patterns: GameConfig['patterns'] = {};
+      
+      // Initialize patterns with default values or carry over existing ones
+      patternIds.forEach(patternId => {
+        // If this pattern existed in previous config, use its values
+        if (config.patterns[patternId]) {
+          patterns[patternId] = config.patterns[patternId];
+        } else {
+          patterns[patternId] = {
+            active: ['oneLine', 'fullHouse'].includes(patternId), // Default active patterns
+            isNonCash: false,
+            prizeAmount: '10.00',
+            description: `${patternId} Prize`
+          };
+        }
+      });
+      
+      return { ...config, gameType: newType, patterns };
+    }));
   };
 
   const handlePatternSelect = (gameIndex: number, pattern: WinPattern) => {
     setGameConfigs(prev => prev.map((config, index) => {
       if (index !== gameIndex) return config;
       
-      const selectedPatterns = [...config.selectedPatterns];
-      const patternIndex = selectedPatterns.indexOf(pattern.id);
+      const patternId = pattern.id;
+      const patterns = { ...config.patterns };
       
-      if (patternIndex >= 0) {
-        selectedPatterns.splice(patternIndex, 1);
+      // Toggle the active state of the pattern
+      if (patterns[patternId]) {
+        patterns[patternId] = {
+          ...patterns[patternId],
+          active: !patterns[patternId].active
+        };
       } else {
-        selectedPatterns.push(pattern.id);
+        // Create the pattern if it doesn't exist
+        patterns[patternId] = {
+          active: true,
+          isNonCash: false,
+          prizeAmount: '10.00',
+          description: `${pattern.name} Prize`
+        };
       }
       
-      return { ...config, selectedPatterns };
+      return { ...config, patterns };
     }));
   };
 
@@ -182,15 +262,20 @@ export function GameSetup() {
       const newConfigs = prev.map((config, index) => {
         if (index !== gameIndex) return config;
         
-        // Create a new prizes object to ensure React detects the change
-        const updatedPrizes = {
-          ...config.prizes,
-          [patternId]: {...prizeDetails}
+        // Ensure the patterns object exists
+        const patterns = { ...config.patterns };
+        
+        // Update the prize details for this pattern
+        patterns[patternId] = {
+          ...patterns[patternId],
+          isNonCash: !!prizeDetails.isNonCash,
+          prizeAmount: prizeDetails.amount || '10.00',
+          description: prizeDetails.description || ''
         };
         
         return {
           ...config,
-          prizes: updatedPrizes
+          patterns
         };
       });
       
@@ -202,8 +287,11 @@ export function GameSetup() {
   const saveGameSettings = async () => {
     if (!currentSession) return;
     
-    const hasEmptyPatterns = gameConfigs.some(config => config.selectedPatterns.length === 0);
-    if (hasEmptyPatterns) {
+    const hasNoActivePatterns = gameConfigs.some(config => {
+      return !Object.values(config.patterns).some(pattern => pattern.active);
+    });
+    
+    if (hasNoActivePatterns) {
       toast({
         title: "No win patterns selected",
         description: "Please select at least one win pattern for each game before saving.",
@@ -218,27 +306,31 @@ export function GameSetup() {
       console.log("Saving game settings:");
       console.log("Game configs to save:", gameConfigs);
       
-      // First update the current game state with prizes
-      const updateResult = await updateCurrentGameState({
-        gameNumber: gameConfigs[0].gameNumber,
-        gameType: gameConfigs[0].gameType,
-        activePatternIds: gameConfigs[0].selectedPatterns,
-        prizes: gameConfigs[0].prizes,
-        status: 'pending',
-      });
-
-      if (!updateResult) {
-        throw new Error("Failed to update current game state");
+      // First update the session_progress with first game's first active pattern
+      if (gameConfigs.length > 0) {
+        const firstGame = gameConfigs[0];
+        const activePatternId = Object.entries(firstGame.patterns)
+          .find(([_, config]) => config.active)?.[0] || 'oneLine';
+        
+        const { error: progressError } = await supabase
+          .from('sessions_progress')
+          .update({
+            current_win_pattern: activePatternId,
+            current_game_type: firstGame.gameType
+          })
+          .eq('session_id', currentSession.id);
+          
+        if (progressError) {
+          console.error("Error updating session progress:", progressError);
+          throw progressError;
+        }
       }
-
-      // Then update all game configs
-      // Convert gameConfigs to a JSON-compatible object
-      const gameConfigsJson = JSON.stringify(gameConfigs);
       
+      // Then update all game configs
       const { data, error } = await supabase
         .from('game_sessions')
         .update({ 
-          games_config: JSON.parse(gameConfigsJson)
+          games_config: gameConfigs
         })
         .eq('id', currentSession.id)
         .select('games_config');
@@ -258,7 +350,7 @@ export function GameSetup() {
       // Verify that data was saved correctly
       const { data: verifyData, error: verifyError } = await supabase
         .from('game_sessions')
-        .select('games_config, current_game_state')
+        .select('games_config')
         .eq('id', currentSession.id)
         .single();
         
@@ -279,9 +371,31 @@ export function GameSetup() {
     }
   };
 
+  // Adapt game configs to pass down the pattern information correctly
+  const adaptedGameConfigsForForms = gameConfigs.map(config => {
+    const activePatterns = Object.entries(config.patterns)
+      .filter(([_, patternConfig]) => patternConfig.active)
+      .map(([patternId]) => patternId);
+      
+    const prizes: Record<string, PrizeDetails> = {};
+    Object.entries(config.patterns).forEach(([patternId, patternConfig]) => {
+      prizes[patternId] = {
+        amount: patternConfig.prizeAmount,
+        description: patternConfig.description,
+        isNonCash: patternConfig.isNonCash
+      };
+    });
+    
+    return {
+      ...config,
+      selectedPatterns: activePatterns,
+      prizes
+    };
+  });
+
   return (
     <div className="space-y-6">
-      {gameConfigs.map((config, index) => (
+      {adaptedGameConfigsForForms.map((config, index) => (
         <GameConfigForm
           key={index}
           gameNumber={config.gameNumber}

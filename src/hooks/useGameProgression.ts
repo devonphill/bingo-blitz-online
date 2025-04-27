@@ -3,16 +3,15 @@ import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { GameSession } from '@/types';
-import { Json, SessionWithActivePattern } from '@/types/json';
 
 export function useGameProgression(session: GameSession | null, onGameComplete?: () => void) {
   const [isProcessingGame, setIsProcessingGame] = useState(false);
   const { toast } = useToast();
 
   // Helper to get the appropriate first pattern for a game based on available patterns
-  const getFirstPatternForGame = async (sessionId: string, gameNumber: number, gameType: string) => {
+  const getFirstPatternForGame = async (sessionId: string, gameNumber: number) => {
     try {
-      // Get patterns for this game from the session configuration
+      // Get game config from the session configuration
       const { data: sessionData } = await supabase
         .from('game_sessions')
         .select('games_config')
@@ -23,12 +22,23 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
         const gamesConfig = Array.isArray(sessionData.games_config) ? sessionData.games_config : [];
         const gameConfig = gamesConfig.find((config: any) => config?.gameNumber === gameNumber);
         
-        if (gameConfig && typeof gameConfig === 'object' && 
-            'selectedPatterns' in gameConfig && 
-            Array.isArray(gameConfig.selectedPatterns) &&
-            gameConfig.selectedPatterns.length > 0) {
-          console.log(`Found specific patterns for game ${gameNumber}:`, gameConfig.selectedPatterns);
-          return String(gameConfig.selectedPatterns[0]);
+        if (gameConfig) {
+          // Check if we're using the new format with 'patterns'
+          if ('patterns' in gameConfig && typeof gameConfig.patterns === 'object') {
+            // Find the first active pattern
+            const firstActivePattern = Object.entries(gameConfig.patterns)
+              .find(([_, config]) => config.active && typeof config === 'object');
+              
+            if (firstActivePattern) {
+              return firstActivePattern[0]; // Return the pattern ID
+            }
+          } 
+          // Check if we're using the old format with 'selectedPatterns'
+          else if ('selectedPatterns' in gameConfig && 
+              Array.isArray(gameConfig.selectedPatterns) &&
+              gameConfig.selectedPatterns.length > 0) {
+            return String(gameConfig.selectedPatterns[0]);
+          }
         }
       }
       
@@ -55,18 +65,18 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
     try {
       console.log("Progressing to next game for session:", session.id);
       
-      // Fetch the latest session data to ensure we have current state
-      const { data: latestSessionData, error: fetchError } = await supabase
-        .from('game_sessions')
-        .select('*, current_game_state')
-        .eq('id', session.id)
+      // Fetch the latest session progress data
+      const { data: progressData, error: progressError } = await supabase
+        .from('sessions_progress')
+        .select('current_game_number, max_game_number')
+        .eq('session_id', session.id)
         .single();
         
-      if (fetchError) {
-        console.error("Error fetching latest session data:", fetchError);
+      if (progressError) {
+        console.error("Error fetching latest progress data:", progressError);
         toast({
           title: "Error",
-          description: "Failed to fetch latest session data for game progression.",
+          description: "Failed to fetch latest session progress data.",
           variant: "destructive"
         });
         setIsProcessingGame(false);
@@ -74,15 +84,12 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
       }
       
       // Calculate next game number using the fetched data
-      const currentGameState = latestSessionData.current_game_state as Record<string, any> || {};
-      const currentGameNumber = typeof currentGameState === 'object' && currentGameState && 'gameNumber' in currentGameState 
-        ? (currentGameState.gameNumber as number) || 1 
-        : latestSessionData.current_game || 1;
+      const currentGameNumber = progressData.current_game_number || 1;
       const nextGameNumber = currentGameNumber + 1;
       console.log(`Current game: ${currentGameNumber}, Next game: ${nextGameNumber}`);
       
-      // Get total number of games from the session
-      const totalGames = latestSessionData.number_of_games || 1;
+      // Get total number of games from the progress data
+      const totalGames = progressData.max_game_number || 1;
       const isLastGame = nextGameNumber > totalGames;
       console.log(`Total games: ${totalGames}, Is this the last game? ${isLastGame ? 'Yes' : 'No'}`);
       
@@ -140,37 +147,38 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
         }
       } else {
         // Get the appropriate first pattern for this new game
-        const gameType = latestSessionData.game_type || 'mainstage';
-        const firstPattern = await getFirstPatternForGame(session.id, nextGameNumber, gameType);
+        const gameType = session.gameType || 'mainstage';
+        const firstPattern = await getFirstPatternForGame(session.id, nextGameNumber);
         
-        // Setup the next game state with proper default values
-        const nextGameState: Record<string, any> = {
-          gameNumber: nextGameNumber,
-          gameType: latestSessionData.game_type,
-          activePatternIds: [String(firstPattern)], // Ensure we have strings
-          calledItems: [],
-          lastCalledItem: null,
-          status: 'active',
-          prizes: {}
-        };
-        
-        console.log("Updating with next game state:", nextGameState);
-        
-        // Update the session with the new game state
-        const updateData: Record<string, any> = {
-          current_game_state: nextGameState as Json,
-          status: 'active',
-          current_game: nextGameNumber
-        };
-        
-        // Add active_pattern_id to the session
-        if (typeof updateData === 'object') {
-          (updateData as SessionWithActivePattern).active_pattern_id = String(firstPattern);
+        // Update sessions_progress with the new game data
+        const { error: progressError } = await supabase
+          .from('sessions_progress')
+          .update({
+            current_game_number: nextGameNumber,
+            current_win_pattern: String(firstPattern),
+            current_game_type: gameType
+          })
+          .eq('session_id', session.id);
+          
+        if (progressError) {
+          console.error("Error updating session progress:", progressError);
+          toast({
+            title: "Error",
+            description: "Failed to update session progress.",
+            variant: "destructive"
+          });
+          setIsProcessingGame(false);
+          return;
         }
         
+        // Update the game_sessions table with current game number and active pattern
         const { error } = await supabase
           .from('game_sessions')
-          .update(updateData)
+          .update({
+            status: 'active',
+            current_game: nextGameNumber,
+            active_pattern_id: String(firstPattern)
+          })
           .eq('id', session.id);
 
         if (error) {
@@ -185,26 +193,6 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
         }
         
         console.log(`Successfully progressed to game ${nextGameNumber}`);
-        
-        // Update session progress for the new game
-        const { error: progressError } = await supabase
-          .from('sessions_progress')
-          .update({
-            current_game_number: nextGameNumber,
-            current_win_pattern: String(firstPattern)
-          })
-          .eq('session_id', session.id);
-          
-        if (progressError) {
-          console.error("Error updating session progress:", progressError);
-          toast({
-            title: "Error",
-            description: "Failed to update session progress.",
-            variant: "destructive"
-          });
-        } else {
-          console.log(`Session progress updated for new game with pattern ${firstPattern}`);
-        }
         
         toast({
           title: "Game Advanced",

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { GameConfiguration, GamePattern, CalledItem, GameType } from '@/types';
-import { Json, isOfType, GameConfigurationType, GamePatternType, CalledItemType, SessionWithActivePattern, CurrentGameStateType, isCurrentGameState } from '@/types/json';
+import { GameConfiguration, GamePattern, CalledItem, GameType, GameConfig } from '@/types';
+import { Json, isOfType, GameConfigurationType, GamePatternType, CalledItemType, SessionWithActivePattern, WinPatternConfig, isGameConfigItem } from '@/types/json';
 
 // Existing type guard functions
 const isGamePattern = (obj: any): obj is GamePattern => {
@@ -20,6 +20,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activePattern, setActivePattern] = useState<string | null>(null);
+  const [gameConfigs, setGameConfigs] = useState<GameConfig[]>([]);
   
   const fetchGameData = useCallback(async () => {
     if (!sessionId) {
@@ -31,11 +32,10 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
       setLoading(true);
       setError(null);
 
-      // Get the current game number from sessions_progress
-      let currentGameNumber = gameNumber;
+      // Get the current game number and active pattern from sessions_progress
       const { data: progressData, error: progressError } = await supabase
         .from('sessions_progress')
-        .select('current_game_number')
+        .select('current_game_number, current_win_pattern, current_game_type, max_game_number')
         .eq('session_id', sessionId)
         .single();
 
@@ -43,12 +43,13 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
         throw new Error(`Error fetching current game: ${progressError.message}`);
       }
 
-      currentGameNumber = progressData?.current_game_number || gameNumber || 1;
+      const currentGameNumber = progressData?.current_game_number || gameNumber || 1;
+      setActivePattern(progressData?.current_win_pattern || null);
 
-      // Fetch game configuration from session data since we don't have the game_configurations table
+      // Fetch game configuration from game_sessions
       const { data: sessionData, error: sessionError } = await supabase
         .from('game_sessions')
-        .select('game_type, current_game_state, current_game')
+        .select('game_type, games_config, current_game')
         .eq('id', sessionId)
         .single();
           
@@ -66,125 +67,107 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
         updated_at: new Date().toISOString()
       });
       
-      // Get active pattern from session progress
-      const { data: currentProgress, error: currentProgressError } = await supabase
-        .from('sessions_progress')
-        .select('current_win_pattern')
-        .eq('session_id', sessionId)
-        .single();
-      
-      if (!currentProgressError && currentProgress && currentProgress.current_win_pattern) {
-        setActivePattern(currentProgress.current_win_pattern);
-      } else if (sessionData?.current_game_state && 
-                typeof sessionData.current_game_state === 'object') {
-        // Type-safe handling of current_game_state
-        const gameState = sessionData.current_game_state as any;
+      // Parse game configs
+      if (sessionData?.games_config && Array.isArray(sessionData.games_config)) {
+        const configs = sessionData.games_config as any[];
         
-        if (gameState && 'activePatternIds' in gameState && Array.isArray(gameState.activePatternIds)) {
-          const activePatterns = gameState.activePatternIds;
-          if (activePatterns && activePatterns.length > 0) {
-            setActivePattern(activePatterns[0]);
-          }
-        }
-      }
-      
-      // Extract patterns from the session's current_game_state
-      if (sessionData?.current_game_state && 
-          typeof sessionData.current_game_state === 'object') {
-        
-        // Type-safe handling using explicit checks
-        const gameState = sessionData.current_game_state as any;
-        
-        if (gameState && 'activePatternIds' in gameState && 'prizes' in gameState) {
-          const activePatterns = Array.isArray(gameState.activePatternIds) ? gameState.activePatternIds : [];
-          const prizes = typeof gameState.prizes === 'object' ? gameState.prizes : {};
-          
-          const extractedPatterns: GamePattern[] = activePatterns.map((patternId: string, index: number) => {
-            const prizeDetails = prizes[patternId] || {};
+        // Check if we're using the new or old format
+        if (configs.length > 0) {
+          if ('patterns' in configs[0]) {
+            // New format
+            setGameConfigs(configs as GameConfig[]);
             
-            return {
-              id: `legacy-${patternId}`,
-              game_config_id: 'legacy',
-              pattern_id: patternId,
-              pattern_order: index,
-              prize_amount: prizeDetails.amount,
-              prize_description: prizeDetails.description,
-              is_non_cash: !!prizeDetails.isNonCash,
-              created_at: new Date().toISOString()
-            };
-          });
-          
-          setPatterns(extractedPatterns);
+            // Extract pattern info for current game from new format
+            const currentGameConfig = configs.find(c => c.gameNumber === currentGameNumber);
+            if (currentGameConfig && currentGameConfig.patterns) {
+              const extractedPatterns: GamePattern[] = [];
+              
+              Object.entries(currentGameConfig.patterns)
+                .filter(([_, config]) => config.active)
+                .forEach(([patternId, config], index) => {
+                  extractedPatterns.push({
+                    id: `pattern-${patternId}`,
+                    game_config_id: 'legacy',
+                    pattern_id: patternId,
+                    pattern_order: index,
+                    prize_amount: config.prizeAmount,
+                    prize_description: config.description,
+                    is_non_cash: config.isNonCash,
+                    created_at: new Date().toISOString()
+                  });
+                });
+              
+              setPatterns(extractedPatterns);
+            }
+          } else if ('selectedPatterns' in configs[0]) {
+            // Old format - convert to new format
+            const convertedConfigs: GameConfig[] = configs.map((oldConfig: any) => {
+              const patterns: Record<string, WinPatternConfig> = {};
+              
+              // Get all possible patterns for this game type
+              const gameType = oldConfig.gameType || 'mainstage';
+              const allPatterns = (oldConfig.selectedPatterns || []).concat(
+                Object.keys(oldConfig.prizes || {})
+              );
+              
+              // Set up each pattern
+              const uniquePatterns = [...new Set(allPatterns)];
+              uniquePatterns.forEach(patternId => {
+                const prizeInfo = oldConfig.prizes && oldConfig.prizes[patternId];
+                const isSelected = Array.isArray(oldConfig.selectedPatterns) && 
+                                  oldConfig.selectedPatterns.includes(patternId);
+                
+                patterns[patternId] = {
+                  active: isSelected,
+                  isNonCash: prizeInfo?.isNonCash || false,
+                  prizeAmount: prizeInfo?.amount || '10.00',
+                  description: prizeInfo?.description || `${patternId} Prize`
+                };
+              });
+              
+              return {
+                gameNumber: oldConfig.gameNumber,
+                gameType: oldConfig.gameType,
+                patterns: patterns
+              };
+            });
+            
+            setGameConfigs(convertedConfigs);
+            
+            // Extract pattern info for current game from converted format
+            const currentGameConfig = convertedConfigs.find(c => c.gameNumber === currentGameNumber);
+            if (currentGameConfig) {
+              const extractedPatterns: GamePattern[] = [];
+              
+              Object.entries(currentGameConfig.patterns)
+                .filter(([_, config]) => config.active)
+                .forEach(([patternId, config], index) => {
+                  extractedPatterns.push({
+                    id: `pattern-${patternId}`,
+                    game_config_id: 'legacy',
+                    pattern_id: patternId,
+                    pattern_order: index,
+                    prize_amount: config.prizeAmount,
+                    prize_description: config.description,
+                    is_non_cash: config.isNonCash,
+                    created_at: new Date().toISOString()
+                  });
+                });
+              
+              setPatterns(extractedPatterns);
+            }
+          }
         }
       }
 
-      // Fetch called items from the legacy game state
-      if (sessionData?.current_game_state && 
-          typeof sessionData.current_game_state === 'object') {
-          
-        const gameState = sessionData.current_game_state as any;
-        
-        if (gameState && 'calledItems' in gameState) {
-          const existingCalls = Array.isArray(gameState.calledItems) ? gameState.calledItems : [];
-          
-          const legacyCalledItems: CalledItem[] = existingCalls.map((item: any, index: number) => {
-            if (typeof item === 'number') {
-              // Simple number array
-              return {
-                id: `legacy-${index}`,
-                session_id: sessionId,
-                game_number: currentGameNumber || 1,
-                item_value: item,
-                called_at: new Date().toISOString(),
-                call_order: index + 1
-              };
-            } else if (typeof item === 'object' && item !== null) {
-              // Object array with more details
-              return {
-                id: item.id || `legacy-${index}`,
-                session_id: sessionId,
-                game_number: currentGameNumber || 1,
-                item_value: item.value || item.number || 0,
-                called_at: item.called_at || new Date().toISOString(),
-                call_order: index + 1
-              };
-            }
-            
-            // Fallback
-            return {
-              id: `legacy-${index}`,
-              session_id: sessionId,
-              game_number: currentGameNumber || 1,
-              item_value: 0,
-              called_at: new Date().toISOString(),
-              call_order: index + 1
-            };
-          });
-          
-          setCalledItems(legacyCalledItems);
-          
-          if (legacyCalledItems.length > 0) {
-            setLastCalledItem(legacyCalledItems[legacyCalledItems.length - 1].item_value);
-          }
-          
-          if ('lastCalledItem' in gameState && gameState.lastCalledItem !== null) {
-            if (typeof gameState.lastCalledItem === 'number') {
-              setLastCalledItem(gameState.lastCalledItem);
-            } else if (typeof gameState.lastCalledItem === 'object' && gameState.lastCalledItem !== null) {
-              setLastCalledItem(gameState.lastCalledItem.value || gameState.lastCalledItem.number || null);
-            }
-          }
-        }
-      }
-      
-      // Fetch called numbers from called_numbers table as a fallback
+      // Fetch called items from the called_numbers table
       const { data: calledNumbersData, error: calledNumbersError } = await supabase
         .from('called_numbers')
         .select('*')
         .eq('session_id', sessionId)
         .order('called_at', { ascending: true });
         
-      if (!calledNumbersError && calledNumbersData && calledNumbersData.length > 0 && calledItems.length === 0) {
+      if (!calledNumbersError && calledNumbersData && calledNumbersData.length > 0) {
         const mappedCalledItems: CalledItem[] = calledNumbersData.map((item: any, index: number) => ({
           id: item.id,
           session_id: item.session_id,
@@ -206,7 +189,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
     } finally {
       setLoading(false);
     }
-  }, [sessionId, gameNumber, calledItems.length]);
+  }, [sessionId, gameNumber]);
 
   // Call number function
   const callNumber = useCallback(async (gameType: GameType): Promise<number | null> => {
@@ -240,45 +223,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
         
       if (error) {
         console.error("Error calling number:", error);
-        // Legacy fallback - update the current_game_state JSON
-        const { data: sessionData } = await supabase
-          .from('game_sessions')
-          .select('current_game_state')
-          .eq('id', sessionId)
-          .single();
-          
-        let currentGameState = sessionData?.current_game_state || {};
-
-        // Safely handle the game state update with proper type checking
-        if (typeof currentGameState === 'object') {
-          // Safe handling of game state update
-          let updatedGameState: Record<string, any> = { ...currentGameState as Record<string, any> };
-          
-          // Initialize calledItems if it doesn't exist
-          if (!('calledItems' in updatedGameState)) {
-            updatedGameState.calledItems = [];
-          }
-          
-          // Ensure calledItems is an array
-          if (!Array.isArray(updatedGameState.calledItems)) {
-            updatedGameState.calledItems = [];
-          }
-          
-          // Add the new number
-          updatedGameState.calledItems = [...updatedGameState.calledItems, newNumber];
-          updatedGameState.lastCalledItem = newNumber;
-          
-          // Update the session with properly typed game state
-          const { error: updateError } = await supabase
-            .from('game_sessions')
-            .update({ current_game_state: updatedGameState as Json })
-            .eq('id', sessionId);
-            
-          if (updateError) {
-            console.error("Error in legacy call number update:", updateError);
-            return null;
-          }
-        }
+        return null;
       }
       
       // Update local state
@@ -307,22 +252,30 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
     if (!sessionId || !configuration || !activePattern) return false;
     
     try {
+      const currentGameConfig = gameConfigs.find(config => config.gameNumber === configuration.game_number);
+      if (!currentGameConfig) return false;
+      
+      // Get active patterns for this game
+      const activePatternIds = Object.entries(currentGameConfig.patterns)
+        .filter(([_, config]) => config.active)
+        .map(([patternId]) => patternId);
+      
       // Find the current pattern index
-      const currentPatternIndex = patterns.findIndex(p => p.pattern_id === activePattern);
+      const currentPatternIndex = activePatternIds.indexOf(activePattern);
       
       // Check if there is a next pattern
-      if (currentPatternIndex < 0 || currentPatternIndex >= patterns.length - 1) {
+      if (currentPatternIndex < 0 || currentPatternIndex >= activePatternIds.length - 1) {
         console.log("No next pattern available");
         return false;
       }
       
-      const nextPattern = patterns[currentPatternIndex + 1];
+      const nextPattern = activePatternIds[currentPatternIndex + 1];
       
       // Update the active pattern in the sessions_progress table
       const { error: progressError } = await supabase
         .from('sessions_progress')
         .update({
-          current_win_pattern: nextPattern.pattern_id
+          current_win_pattern: nextPattern
         })
         .eq('session_id', sessionId);
         
@@ -333,7 +286,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
       
       // Update session with active pattern
       const updateData: Partial<SessionWithActivePattern> = {
-        active_pattern_id: nextPattern.pattern_id
+        active_pattern_id: nextPattern
       };
       
       const { error: sessionError } = await supabase
@@ -347,21 +300,21 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
       }
       
       // Update local state
-      setActivePattern(nextPattern.pattern_id);
+      setActivePattern(nextPattern);
       
       return true;
     } catch (err) {
       console.error("Error in progressToNextPattern:", err);
       return false;
     }
-  }, [sessionId, configuration, activePattern, patterns]);
+  }, [sessionId, configuration, activePattern, gameConfigs]);
 
   // Progress to next game
   const progressToNextGame = useCallback(async (): Promise<boolean> => {
     if (!sessionId || !configuration) return false;
     
     try {
-      // Get the current max game number
+      // Get the current progress data
       const { data: progressData, error: progressError } = await supabase
         .from('sessions_progress')
         .select('current_game_number, max_game_number')
@@ -399,23 +352,17 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
       
       const nextGameNumber = currentGameNumber + 1;
       
-      // Get the first pattern for the next game from the session configuration
-      const { data: sessionData } = await supabase
-        .from('game_sessions')
-        .select('games_config')
-        .eq('id', sessionId)
-        .single();
-        
+      // Get the first active pattern for the next game
+      const nextGameConfig = gameConfigs.find(config => config.gameNumber === nextGameNumber);
       let firstPatternId = 'oneLine'; // Default pattern
       
-      if (sessionData?.games_config) {
-        const gamesConfig = Array.isArray(sessionData.games_config) ? sessionData.games_config : [];
-        const nextGameConfig = gamesConfig.find((config: any) => config?.gameNumber === nextGameNumber);
+      if (nextGameConfig) {
+        const activePatterns = Object.entries(nextGameConfig.patterns)
+          .filter(([_, config]) => config.active)
+          .map(([patternId]) => patternId);
         
-        if (nextGameConfig && 'selectedPatterns' in nextGameConfig && 
-            Array.isArray(nextGameConfig.selectedPatterns) && 
-            nextGameConfig.selectedPatterns.length > 0) {
-          firstPatternId = nextGameConfig.selectedPatterns[0];
+        if (activePatterns.length > 0) {
+          firstPatternId = activePatterns[0];
         }
       }
       
@@ -424,7 +371,8 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
         .from('sessions_progress')
         .update({
           current_game_number: nextGameNumber,
-          current_win_pattern: firstPatternId
+          current_win_pattern: firstPatternId,
+          current_game_type: nextGameConfig?.gameType || 'mainstage'
         })
         .eq('session_id', sessionId);
         
@@ -459,7 +407,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
       console.error("Error in progressToNextGame:", err);
       return false;
     }
-  }, [sessionId, configuration]);
+  }, [sessionId, configuration, gameConfigs]);
 
   // Set up real-time subscription for changes to called items
   useEffect(() => {
@@ -546,6 +494,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
     callNumber,
     progressToNextPattern,
     progressToNextGame,
-    fetchGameData
+    fetchGameData,
+    gameConfigs
   };
 }

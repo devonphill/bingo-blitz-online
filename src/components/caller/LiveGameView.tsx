@@ -1,3 +1,4 @@
+
 import React, { useEffect } from 'react';
 import { WinPattern } from '@/types/winPattern';
 import { WinPatternStatusDisplay } from '@/components/game/WinPatternStatusDisplay';
@@ -57,16 +58,23 @@ export function LiveGameView({
   console.log("LiveGameView - sessionId:", sessionId);
   
   // Use the first game's configurations if available
-  const currentGameConfig = gameConfigs.length > 0 ? 
-    gameConfigs.find(config => config.gameNumber === currentGameNumber) || gameConfigs[0] 
-    : null;
-    
+  const currentGameConfig = gameConfigs.find(config => config.gameNumber === (progress?.current_game_number || currentGameNumber));
   const activeGameType = currentGameConfig?.gameType || gameType;
   
-  // Prioritize win pattern from session progress if available
-  let activePatterns = currentGameConfig?.selectedPatterns || selectedPatterns;
-  let actualCurrentWinPattern = currentWinPattern;
+  // Get active patterns from new game config format
+  let activePatterns = selectedPatterns;
+  if (currentGameConfig && 'patterns' in currentGameConfig) {
+    // Use new format - get active patterns from patterns property
+    activePatterns = Object.entries(currentGameConfig.patterns)
+      .filter(([_, config]) => config.active)
+      .map(([patternId]) => patternId);
+  } else if (currentGameConfig && 'selectedPatterns' in currentGameConfig) {
+    // Use old format
+    activePatterns = currentGameConfig.selectedPatterns;
+  }
   
+  // Prioritize win pattern from session progress if available
+  let actualCurrentWinPattern = currentWinPattern;
   if (progress && progress.current_win_pattern) {
     // If we have progress data, use that pattern as the active one
     console.log("Using win pattern from session progress:", progress.current_win_pattern);
@@ -78,7 +86,22 @@ export function LiveGameView({
     }
   }
   
-  const activePrizes = currentGameConfig?.prizes || prizes;
+  // Get the prizes from the new or old format
+  let activePrizes: Record<string, PrizeDetails> = prizes;
+  if (currentGameConfig && 'patterns' in currentGameConfig) {
+    // New format
+    activePrizes = Object.entries(currentGameConfig.patterns).reduce((acc, [patternId, config]) => {
+      acc[patternId] = {
+        amount: config.prizeAmount,
+        description: config.description,
+        isNonCash: config.isNonCash
+      };
+      return acc;
+    }, {} as Record<string, PrizeDetails>);
+  } else if (currentGameConfig && 'prizes' in currentGameConfig) {
+    // Old format
+    activePrizes = currentGameConfig.prizes;
+  }
   
   // Get all win patterns for the active game type
   const availablePatterns = activeGameType ? winPatterns.filter(p => p.gameType === activeGameType) : winPatterns;

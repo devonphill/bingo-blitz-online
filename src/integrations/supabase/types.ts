@@ -386,7 +386,6 @@ export type Database = {
           created_at: string
           created_by: string
           current_game: number
-          current_game_state: Json | null
           game_type: string
           games_config: Json | null
           id: string
@@ -402,7 +401,6 @@ export type Database = {
           created_at?: string
           created_by: string
           current_game?: number
-          current_game_state?: Json | null
           game_type: string
           games_config?: Json | null
           id?: string
@@ -418,7 +416,6 @@ export type Database = {
           created_at?: string
           created_by?: string
           current_game?: number
-          current_game_state?: Json | null
           game_type?: string
           games_config?: Json | null
           id?: string

@@ -55,23 +55,28 @@ export interface SessionWithActivePattern {
   current_game?: number;
 }
 
-// Type for current game state to better handle the JSON structure
-export interface CurrentGameStateType {
-  gameNumber: number;
-  gameType: string;
-  activePatternIds: string[];
-  calledItems: Array<number | Record<string, any>>;
-  lastCalledItem: number | Record<string, any> | null;
-  status: string;
-  prizes?: Record<string, any>;
+// Updated game config structure that matches our new JSON format
+export interface WinPatternConfig {
+  active: boolean;
+  isNonCash: boolean;
+  prizeAmount: string;
+  description: string;
 }
 
-// Helper function to check if an object has the structure of a CurrentGameStateType
-export function isCurrentGameState(obj: any): obj is CurrentGameStateType {
+export interface GameConfigItem {
+  gameNumber: number;
+  gameType: string;
+  patterns: {
+    [patternId: string]: WinPatternConfig;
+  };
+}
+
+// Helper function to check if an object has the structure of a GameConfigItem
+export function isGameConfigItem(obj: any): obj is GameConfigItem {
   return obj && 
     typeof obj === 'object' &&
     'gameNumber' in obj &&
     'gameType' in obj &&
-    'activePatternIds' in obj &&
-    'calledItems' in obj;
+    'patterns' in obj &&
+    typeof obj.patterns === 'object';
 }
