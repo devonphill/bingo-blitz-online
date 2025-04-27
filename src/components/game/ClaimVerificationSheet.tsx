@@ -46,7 +46,7 @@ export default function ClaimVerificationSheet({
   onValidClaim,
   onFalseClaim,
   currentWinPattern,
-  gameType = '90-ball',
+  gameType = 'mainstage',
   onNext
 }: ClaimVerificationSheetProps) {
   const { toast } = useToast();
@@ -63,27 +63,33 @@ export default function ClaimVerificationSheet({
 
   console.log("ClaimVerificationSheet rendered with isOpen:", isOpen, "playerName:", playerName);
 
+  // Normalize the currentWinPattern to include MAINSTAGE prefix if needed
+  const normalizedWinPattern = currentWinPattern && !currentWinPattern.includes('_') && 
+    (gameType === 'mainstage' || gameType === '90-ball') 
+      ? `MAINSTAGE_${currentWinPattern}` 
+      : currentWinPattern;
+
   useEffect(() => {
     console.log("ClaimVerificationSheet isOpen changed to:", isOpen);
     
     if (isOpen) {
       console.log("SHEET IS OPEN NOW with player:", playerName);
       console.log("Ticket data:", tickets);
-      console.log("Current win pattern:", currentWinPattern);
+      console.log("Current win pattern:", normalizedWinPattern);
       
       // Determine if this is a full house win pattern
-      setIsFullHouse(currentWinPattern === 'fullHouse');
+      setIsFullHouse(normalizedWinPattern === 'MAINSTAGE_fullHouse' || normalizedWinPattern === 'fullHouse');
     }
     
     if (!isOpen) {
       setIsProcessing(false);
     }
-  }, [isOpen, playerName, tickets, currentWinPattern]);
+  }, [isOpen, playerName, tickets, normalizedWinPattern]);
 
   useEffect(() => {
     if (!tickets || tickets.length === 0) return;
     
-    console.log("Validating claim against pattern:", currentWinPattern);
+    console.log("Validating claim against pattern:", normalizedWinPattern);
     
     const ticketsWithScore = tickets.map(ticket => {
       const matchedNumbers = ticket.numbers.filter(num => calledNumbers.includes(num));
@@ -101,19 +107,19 @@ export default function ClaimVerificationSheet({
     let valid = false;
     const validTicketsFound: any[] = [];
     
-    if (currentWinPattern) {
+    if (normalizedWinPattern) {
       sortedTickets.forEach(ticket => {
-        const status = gameRules.getTicketStatus(ticket, calledNumbers, currentWinPattern);
+        const status = gameRules.getTicketStatus(ticket, calledNumbers, normalizedWinPattern);
         const isValid = status.isWinner;
         
         if (isValid) {
           valid = true;
-          validTicketsFound.push({...ticket, validPattern: currentWinPattern});
+          validTicketsFound.push({...ticket, validPattern: normalizedWinPattern});
         }
       });
     }
     
-    console.log("Claim validity:", valid, "for pattern:", currentWinPattern);
+    console.log("Claim validity:", valid, "for pattern:", normalizedWinPattern);
     setIsClaimValid(valid);
     setValidTickets(validTicketsFound);
     
@@ -122,7 +128,7 @@ export default function ClaimVerificationSheet({
         ticket => !validTicketsFound.some(vt => vt.serial === ticket.serial)
       )]);
     }
-  }, [tickets, calledNumbers, currentWinPattern, gameType]);
+  }, [tickets, calledNumbers, normalizedWinPattern, gameType]);
 
   const handleValidClaim = async () => {
     if (isProcessing) return;
@@ -143,6 +149,23 @@ export default function ClaimVerificationSheet({
           onNext();
         }, 1500);
       }
+
+      // Send broadcast to update players' UI
+      try {
+        await supabase.channel('player-game-updates')
+          .send({
+            type: 'broadcast',
+            event: 'claim-update',
+            payload: {
+              sessionId: currentSession?.id,
+              result: 'valid',
+              timestamp: new Date().toISOString(),
+              pattern: normalizedWinPattern
+            }
+          });
+      } catch (error) {
+        console.error('Error broadcasting claim update:', error);
+      }
     }
   };
 
@@ -157,12 +180,16 @@ export default function ClaimVerificationSheet({
     if (!currentSession?.id || !validTickets.length) return;
     
     try {
+      const gameTypePrefix = gameType === 'mainstage' ? 'MAINSTAGE_' : 
+                            gameType === '90-ball' ? 'MAINSTAGE_' : 
+                            gameType ? `${gameType.toUpperCase()}_` : '';
+      
       const promises = validTickets.map(async (ticket) => {
         const gameLog = {
           session_id: currentSession.id,
           game_number: currentSession.current_game_state?.gameNumber || 1,
-          game_type: `MAINSTAGE_${gameType}`,
-          win_pattern: currentWinPattern || 'fullHouse',
+          game_type: `${gameTypePrefix}${gameType || '90-ball'}`,
+          win_pattern: normalizedWinPattern || 'MAINSTAGE_fullHouse',
           player_id: ticket.playerId,
           player_name: playerName,
           ticket_serial: ticket.serial,
@@ -181,6 +208,19 @@ export default function ClaimVerificationSheet({
       });
 
       await Promise.all(promises);
+      
+      // Broadcast the claim result to update all player UIs
+      await supabase.channel('player-game-updates')
+        .send({
+          type: 'broadcast',
+          event: 'claim-update',
+          payload: {
+            sessionId: currentSession.id,
+            result: 'valid',
+            timestamp: new Date().toISOString(),
+            pattern: normalizedWinPattern
+          }
+        });
       
       // Check if this is a full house win pattern, and if so, trigger the game progression
       if (isFullHouse && onNext) {
@@ -215,8 +255,49 @@ export default function ClaimVerificationSheet({
           onNext();
         }, 1500);
       }
+
+      // Broadcast the claim result
+      supabase.channel('player-game-updates')
+        .send({
+          type: 'broadcast',
+          event: 'claim-update',
+          payload: {
+            sessionId: currentSession?.id,
+            result: 'valid',
+            timestamp: new Date().toISOString(),
+            pattern: normalizedWinPattern
+          }
+        });
     } else if (actionType === 'false') {
       onFalseClaim();
+      
+      // Broadcast the claim result for false claims too
+      supabase.channel('player-game-updates')
+        .send({
+          type: 'broadcast',
+          event: 'claim-update',
+          payload: {
+            sessionId: currentSession?.id,
+            result: 'false',
+            timestamp: new Date().toISOString(),
+            pattern: normalizedWinPattern
+          }
+        });
+    }
+  };
+
+  // Get a display friendly name for the win pattern
+  const getWinPatternDisplayName = (patternId: string | null | undefined): string => {
+    if (!patternId) return 'Full House';
+    
+    // Remove any prefix like MAINSTAGE_ for display
+    const normalizedId = patternId.replace(/^[A-Z]+_/, '');
+    
+    switch (normalizedId) {
+      case 'oneLine': return 'One Line';
+      case 'twoLines': return 'Two Lines';
+      case 'fullHouse': return 'Full House';
+      default: return patternId;
     }
   };
 
@@ -232,7 +313,7 @@ export default function ClaimVerificationSheet({
               {isClaimValid ? 'CLAIM VALID' : 'CLAIM INVALID'} - {playerName}
             </SheetTitle>
             <div className="text-sm text-gray-500">
-              Current win pattern: <span className="font-semibold">{currentWinPattern || 'Full House'}</span>
+              Current win pattern: <span className="font-semibold">{getWinPatternDisplayName(normalizedWinPattern)}</span>
               {isFullHouse && (
                 <span className="ml-2 text-blue-600">(Full House - will advance game)</span>
               )}
@@ -269,8 +350,8 @@ export default function ClaimVerificationSheet({
                         numbers={ticket.numbers}
                         layoutMask={ticket.layoutMask}
                         calledNumbers={calledNumbers}
-                        activeWinPatterns={currentWinPattern ? [currentWinPattern] : ["fullHouse"]}
-                        currentWinPattern={currentWinPattern}
+                        activeWinPatterns={normalizedWinPattern ? [normalizedWinPattern] : ["MAINSTAGE_fullHouse"]}
+                        currentWinPattern={normalizedWinPattern}
                         gameType={gameType}
                       />
                     </div>

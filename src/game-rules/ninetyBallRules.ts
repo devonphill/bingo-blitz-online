@@ -1,29 +1,29 @@
+
 // src/game-rules/ninetyBallRules.ts
 
 // Correctly import the interfaces from the updated types file
 import type { GameRules, TicketStatus, DefaultWinPattern } from './types';
 
-// Helper function to parse 90-ball ticket data (assuming layoutMask and numbers array)
-// (Keep the improved helper function from the previous step)
-function parseNinetyBallTicket(ticketData: any): { numbers: number[]; rows: (number | null)[][]; isValid: boolean } {
+// Helper function to parse MAINSTAGE/90-ball ticket data
+function parseMainstageBallTicket(ticketData: any): { numbers: number[]; rows: (number | null)[][]; isValid: boolean } {
     const layoutMask = ticketData?.layout_mask;
     const numbers = ticketData?.numbers;
 
     // Ensure the ticket data has the expected structure
     if (typeof layoutMask !== 'number' || !Array.isArray(numbers) || numbers.some(n => typeof n !== 'number' && n !== null)) {
-      console.error("Invalid 90-ball ticket data format:", ticketData);
+      console.error("Invalid MAINSTAGE ticket data format:", ticketData);
       return { numbers: [], rows: [[], [], []], isValid: false };
     }
 
     // Ensure numbers array isn't empty if layout mask expects numbers
     const expectedNumberCount = layoutMask.toString(2).split('').filter(bit => bit === '1').length;
     if (expectedNumberCount > 0 && numbers.length === 0) {
-        console.error("Ticket numbers array is empty but layout mask expects numbers:", ticketData);
+        console.error("MAINSTAGE ticket numbers array is empty but layout mask expects numbers:", ticketData);
         return { numbers: [], rows: [[], [], []], isValid: false };
     }
      // Ensure the number of actual numbers matches the expectation from the mask
     if (numbers.filter(n => n !== null).length !== expectedNumberCount) {
-        console.error(`Number count mismatch: Mask expects ${expectedNumberCount}, but received ${numbers.filter(n => n !== null).length} numbers.`, ticketData);
+        console.error(`MAINSTAGE number count mismatch: Mask expects ${expectedNumberCount}, but received ${numbers.filter(n => n !== null).length} numbers.`, ticketData);
         // Allow processing if length matches total slots (including nulls potentially?) - needs review based on data source
         // For now, let's treat it as invalid if counts don't match exactly for non-null numbers
         // return { numbers: [], rows: [[], [], []], isValid: false };
@@ -46,7 +46,7 @@ function parseNinetyBallTicket(ticketData: any): { numbers: number[]; rows: (num
           placedCount++;
         } else {
            // This case should ideally be caught by the initial length check
-           console.error(`Mask processing error: Not enough numbers in array for mask at index ${i}`, ticketData);
+           console.error(`MAINSTAGE mask processing error: Not enough numbers in array for mask at index ${i}`, ticketData);
            return { numbers: [], rows: [[], [], []], isValid: false };
         }
       }
@@ -55,7 +55,7 @@ function parseNinetyBallTicket(ticketData: any): { numbers: number[]; rows: (num
 
     // Final check: Did we place the expected number of items based on the mask?
     if (placedCount !== expectedNumberCount) {
-       console.error(`Mask processing error: Placed ${placedCount} numbers, but mask expected ${expectedNumberCount}.`, ticketData);
+       console.error(`MAINSTAGE mask processing error: Placed ${placedCount} numbers, but mask expected ${expectedNumberCount}.`, ticketData);
        return { numbers: [], rows: [[], [], []], isValid: false };
     }
 
@@ -68,24 +68,23 @@ function parseNinetyBallTicket(ticketData: any): { numbers: number[]; rows: (num
 
 export class NinetyBallRules implements GameRules {
   getGameTypeName(): string {
-    return '90-ball';
+    return 'MAINSTAGE_90-ball';
   }
 
   // Correctly implement the return type DefaultWinPattern[]
   getDefaultWinPatterns(): DefaultWinPattern[] {
-    // No description or validate needed based on corrected type
     return [
       {
-        id: "oneLine",
-        name: "One Line",
+        id: "MAINSTAGE_oneLine",
+        name: "MAINSTAGE One Line",
       },
       {
-        id: "twoLines",
-        name: "Two Lines",
+        id: "MAINSTAGE_twoLines",
+        name: "MAINSTAGE Two Lines",
       },
       {
-        id: "fullHouse",
-        name: "Full House",
+        id: "MAINSTAGE_fullHouse",
+        name: "MAINSTAGE Full House",
       }
     ];
   }
@@ -96,12 +95,15 @@ export class NinetyBallRules implements GameRules {
     const calledNumbers = calledItems.filter(item => typeof item === 'number') as number[];
 
     // Use the parsing helper
-    const { numbers: ticketNumbers, rows, isValid } = parseNinetyBallTicket(ticketData);
+    const { numbers: ticketNumbers, rows, isValid } = parseMainstageBallTicket(ticketData);
 
     // Handle invalid ticket structure gracefully
     if (!isValid || ticketNumbers.length === 0) {
       return { distance: Infinity, isWinner: false };
     }
+
+    // Normalize pattern ID to handle both prefixed and non-prefixed pattern IDs
+    const normalizedPatternId = activePatternId.replace('MAINSTAGE_', '');
 
     // --- Calculate Line Status ---
     const lineDetails = rows.map(line => {
@@ -122,7 +124,7 @@ export class NinetyBallRules implements GameRules {
     const totalNumbersOnTicket = ticketNumbers.length; // Should be 15 for a standard 90-ball ticket
 
     // --- Determine Status Based on Active Pattern ---
-    switch (activePatternId) {
+    switch (normalizedPatternId) {
       case "oneLine": {
         // If 1 or more lines are complete, it's a winner
         if (completedLines >= 1) return { distance: 0, isWinner: true };
@@ -151,7 +153,7 @@ export class NinetyBallRules implements GameRules {
         return { distance: distance, isWinner: distance === 0 };
       }
       default:
-        console.warn(`Unknown pattern ID "${activePatternId}" for 90-ball calculation.`);
+        console.warn(`Unknown pattern ID "${activePatternId}" for MAINSTAGE calculation.`);
         return { distance: Infinity, isWinner: false }; // Unknown pattern
     }
   }

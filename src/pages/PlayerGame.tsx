@@ -8,6 +8,7 @@ import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 import CurrentNumberDisplay from '@/components/game/CurrentNumberDisplay';
 import { WIN_PATTERNS } from '@/types/winPattern';
 import { Badge } from '@/components/ui/badge';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function PlayerGame() {
   const { playerCode: urlPlayerCode } = useParams<{ playerCode: string }>();
@@ -66,6 +67,31 @@ export default function PlayerGame() {
     }
   }, [claimStatus, resetClaimStatus]);
 
+  // Setup a broadcast channel listener for real-time claim updates
+  useEffect(() => {
+    if (!playerCode || !currentSession?.id) return;
+    
+    console.log("Setting up broadcast channel for player claim updates");
+    
+    const broadcastChannel = supabase.channel('player-game-updates')
+      .on('broadcast', { event: 'claim-update' }, (payload) => {
+        console.log("Received claim update broadcast:", payload);
+        // Force refreshing game state when claim updates are received
+        if (payload.payload && payload.payload.sessionId === currentSession.id) {
+          console.log("Refreshing game state due to claim update");
+          // This will trigger a refresh of game state in usePlayerGame
+          setAutoMarking(prev => !prev); // Toggle to force update
+          setTimeout(() => setAutoMarking(prev => !prev), 50); // Toggle back
+        }
+      })
+      .subscribe();
+      
+    return () => {
+      console.log("Cleaning up broadcast channel");
+      supabase.removeChannel(broadcastChannel);
+    };
+  }, [playerCode, currentSession?.id]);
+
   // IMPROVED: Refined loading logic to fix flickering issues
   const isInitialLoading = isLoading && loadingStep !== 'completed';
   const hasTickets = tickets && tickets.length > 0;
@@ -102,8 +128,17 @@ export default function PlayerGame() {
 
   // Get formatted win pattern name
   const getWinPatternName = (patternId: string) => {
+    // Remove MAINSTAGE_ prefix for display if present
+    const displayPatternId = patternId.replace('MAINSTAGE_', '');
+    
     const allPatterns = gameType ? WIN_PATTERNS[gameType] : [];
-    const pattern = allPatterns.find(p => p.id === patternId);
+    const pattern = allPatterns.find(p => p.id === displayPatternId);
+    
+    // Display friendly names for common patterns
+    if (displayPatternId === 'oneLine') return 'One Line';
+    if (displayPatternId === 'twoLines') return 'Two Lines';
+    if (displayPatternId === 'fullHouse') return 'Full House';
+    
     return pattern ? pattern.name : patternId;
   };
 
@@ -117,9 +152,10 @@ export default function PlayerGame() {
       hasTickets: tickets?.length,
       shouldShowLoader,
       isClaiming,
-      claimStatus
+      claimStatus,
+      activeWinPatterns
     });
-  }, [isLoading, loadingStep, currentSession, currentGameState, tickets, shouldShowLoader, isClaiming, claimStatus]);
+  }, [isLoading, loadingStep, currentSession, currentGameState, tickets, shouldShowLoader, isClaiming, claimStatus, activeWinPatterns]);
 
   if (shouldShowLoader) {
     return (
@@ -174,7 +210,7 @@ export default function PlayerGame() {
           {/* Claim Bingo Button */}
           <button
             onClick={handleClaimBingo}
-            disabled={isClaiming || claimStatus === 'validated'}
+            disabled={isClaiming || claimStatus === 'validated' || claimStatus === 'pending'}
             className={`w-full py-3 px-4 rounded-lg font-medium mt-2 ${
               isClaiming || claimStatus === 'pending' 
                 ? 'bg-yellow-500 text-white' 
@@ -193,6 +229,13 @@ export default function PlayerGame() {
                   ? 'Claim Rejected'
                   : 'CLAIM BINGO!'}
           </button>
+          
+          {/* Show a message when claim is being verified */}
+          {(isClaiming || claimStatus === 'pending') && (
+            <p className="text-xs text-center text-yellow-400 mt-1">
+              Your claim is being verified by the caller
+            </p>
+          )}
         </div>
         
         <div className="bg-black text-white p-4 border-t border-gray-700 sticky bottom-0" style={{ height: '30vw', maxHeight: '400px' }}>

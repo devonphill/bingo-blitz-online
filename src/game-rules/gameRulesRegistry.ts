@@ -9,8 +9,9 @@ import type { GameRules } from './types';
 const GAME_RULES: { [key: string]: GameRules } = {
   '90-ball': new NinetyBallRules(),
   '75-ball': new SeventyfiveRules(),
-  // Add game type mappings to existing rules
+  // Add game type mappings to existing rules with MAINSTAGE prefix
   'mainstage': new NinetyBallRules(), // Map mainstage to 90-ball rules
+  'MAINSTAGE_90-ball': new NinetyBallRules(), // Explicit MAINSTAGE prefix mapping
   'party': new NinetyBallRules(),     // Map party to 90-ball rules
   'music': new SeventyfiveRules(),    // Map music to 75-ball rules
   'quiz': new SeventyfiveRules(),     // Map quiz to 75-ball rules
@@ -23,6 +24,15 @@ const GAME_RULES: { [key: string]: GameRules } = {
 export function getGameRulesForType(gameType: string): GameRules {
   // Normalize game type string (remove spaces, lowercase)
   const normalizedType = gameType?.toLowerCase()?.replace(/\s+/g, '-') || '90-ball';
+  
+  // Try with MAINSTAGE prefix first if it doesn't already have it
+  if (!normalizedType.startsWith('mainstage_') && 
+      (normalizedType === 'mainstage' || normalizedType === '90-ball')) {
+    const mainstageKey = `mainstage_${normalizedType === 'mainstage' ? '90-ball' : normalizedType}`;
+    if (GAME_RULES[mainstageKey]) {
+      return GAME_RULES[mainstageKey];
+    }
+  }
 
   const rules = GAME_RULES[normalizedType];
 

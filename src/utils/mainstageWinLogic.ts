@@ -7,7 +7,7 @@ interface WinCheckResult {
 export function checkMainstageWinPattern(
   card: (number | null)[][],
   calledNumbers: number[],
-  pattern: 'oneLine' | 'twoLines' | 'fullHouse'
+  pattern: 'oneLine' | 'twoLines' | 'fullHouse' | 'MAINSTAGE_oneLine' | 'MAINSTAGE_twoLines' | 'MAINSTAGE_fullHouse'
 ): WinCheckResult {
   const rows = card.map(row => 
     row.filter((num): num is number => num !== null)
@@ -28,10 +28,13 @@ export function checkMainstageWinPattern(
       .sort((a, b) => a - b)
       .slice(0, requiredLines - completedLines);
 
-    return Math.min(...remainingLines) || 0;
+    return remainingLines.length > 0 ? Math.min(...remainingLines) : 0;
   };
 
-  switch (pattern) {
+  // Normalize pattern by removing MAINSTAGE_ prefix if present
+  const normalizedPattern = pattern.replace('MAINSTAGE_', '') as 'oneLine' | 'twoLines' | 'fullHouse';
+
+  switch (normalizedPattern) {
     case 'oneLine':
       return { 
         isWinner: completedLines >= 1,
