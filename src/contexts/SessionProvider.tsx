@@ -3,7 +3,7 @@ import React, { createContext, useContext, ReactNode } from 'react';
 import { useSessions } from './useSessions';
 import { usePlayers } from './usePlayers';
 import { useTickets } from './useTickets';
-import type { GameSession, CurrentGameState, Player } from '@/types';
+import type { GameSession, Player } from '@/types';
 
 // Define the AdminTempPlayer type to match the one in usePlayers
 type AdminTempPlayer = {
@@ -19,7 +19,7 @@ interface SessionContextType {
   setCurrentSession: (sessionId: string | null) => void;
   getSessionByCode: (code: string) => GameSession | null;
   fetchSessions: () => Promise<void>;
-  updateCurrentGameState: (newGameState: Partial<CurrentGameState>) => Promise<boolean>;
+  updateSession: (sessionId: string, updates: Partial<GameSession>) => Promise<boolean>;
   isLoading: boolean;
   error: string | null;
   // Player methods with correct types

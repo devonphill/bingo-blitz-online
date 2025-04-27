@@ -2,14 +2,15 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { useSessions } from "@/contexts/useSessions";
-import { GameType, PrizeDetails, GameConfig } from "@/types";
+import { GameType, PrizeDetails, GameConfig, WinPatternConfig } from "@/types";
 import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
 import { useToast } from "@/hooks/use-toast";
 import { GameConfigForm } from '@/components/caller/GameConfigForm';
 import { supabase } from "@/integrations/supabase/client";
+import { toJsonSafe } from '@/utils/jsonUtils';
 
 export function GameSetup() {
-  const { currentSession } = useSessions();
+  const { currentSession, updateSession } = useSessions();
   const { toast } = useToast();
   
   const [gameConfigs, setGameConfigs] = useState<GameConfig[]>([]);
@@ -128,29 +129,14 @@ export function GameSetup() {
         try {
           setIsSaving(true);
           
-          // First update games_config
-          console.log("Saving initial games_config:", gameConfigs);
+          // Save directly using the updateSession function
+          const success = await updateSession(currentSession.id, {
+            games_config: gameConfigs
+          });
           
-          // Save to game_sessions table
-          const { data, error: gamesConfigError } = await supabase
-            .from('game_sessions')
-            .update({ 
-              games_config: gameConfigs 
-            })
-            .eq('id', currentSession.id)
-            .select('games_config');
-            
-          if (gamesConfigError) {
-            console.error("Error saving games_config:", gamesConfigError);
-            toast({
-              title: "Error",
-              description: "Failed to save game configuration.",
-              variant: "destructive"
-            });
-            return;
+          if (!success) {
+            throw new Error("Failed to update session with game configs");
           }
-          
-          console.log("Initial games_config saved response:", data);
           
           // Update the session_progress with first game's first active pattern
           if (gameConfigs.length > 0) {
@@ -199,7 +185,7 @@ export function GameSetup() {
     };
     
     saveInitialConfig();
-  }, [gameConfigs, currentSession, initialSetupDone, toast]);
+  }, [gameConfigs, currentSession, initialSetupDone, toast, updateSession]);
 
   const handleGameTypeChange = (gameIndex: number, newType: GameType) => {
     setGameConfigs(prev => prev.map((config, index) => {
@@ -306,6 +292,15 @@ export function GameSetup() {
       console.log("Saving game settings:");
       console.log("Game configs to save:", gameConfigs);
       
+      // Save directly using the updateSession function
+      const success = await updateSession(currentSession.id, {
+        games_config: gameConfigs
+      });
+      
+      if (!success) {
+        throw new Error("Failed to update session with game configs");
+      }
+      
       // First update the session_progress with first game's first active pattern
       if (gameConfigs.length > 0) {
         const firstGame = gameConfigs[0];
@@ -326,39 +321,11 @@ export function GameSetup() {
         }
       }
       
-      // Then update all game configs
-      const { data, error } = await supabase
-        .from('game_sessions')
-        .update({ 
-          games_config: gameConfigs
-        })
-        .eq('id', currentSession.id)
-        .select('games_config');
-
-      if (error) {
-        console.error("Error saving games_config:", error);
-        throw error;
-      }
-      
-      console.log("Games config saved response:", data);
-      
       toast({
         title: "Success",
         description: "Game settings saved successfully.",
       });
       
-      // Verify that data was saved correctly
-      const { data: verifyData, error: verifyError } = await supabase
-        .from('game_sessions')
-        .select('games_config')
-        .eq('id', currentSession.id)
-        .single();
-        
-      if (verifyError) {
-        console.error("Error verifying saved data:", verifyError);
-      } else {
-        console.log("Verified saved data:", verifyData);
-      }
     } catch (error) {
       console.error("Error saving game settings:", error);
       toast({

@@ -55,7 +55,7 @@ export interface SessionWithActivePattern {
   current_game?: number;
 }
 
-// Updated game config structure that matches our new JSON format
+// WinPattern config structure to match our new JSON format
 export interface WinPatternConfig {
   active: boolean;
   isNonCash: boolean;
@@ -63,6 +63,7 @@ export interface WinPatternConfig {
   description: string;
 }
 
+// Updated game config structure that matches our new JSON format
 export interface GameConfigItem {
   gameNumber: number;
   gameType: string;
@@ -79,4 +80,94 @@ export function isGameConfigItem(obj: any): obj is GameConfigItem {
     'gameType' in obj &&
     'patterns' in obj &&
     typeof obj.patterns === 'object';
+}
+
+// Helper function to check if a pattern has the structure of WinPatternConfig
+export function isWinPatternConfig(obj: any): obj is WinPatternConfig {
+  return obj && 
+    typeof obj === 'object' &&
+    'active' in obj &&
+    'isNonCash' in obj &&
+    'prizeAmount' in obj &&
+    'description' in obj;
+}
+
+// Helper function to safely access patterns data
+export function getPatternConfig(patterns: unknown, patternId: string): WinPatternConfig | null {
+  if (!patterns || typeof patterns !== 'object') return null;
+  
+  const patternsObj = patterns as Record<string, unknown>;
+  const patternConfig = patternsObj[patternId];
+  
+  if (!patternConfig || typeof patternConfig !== 'object') return null;
+  
+  const config = patternConfig as Record<string, unknown>;
+  
+  if (
+    'active' in config && 
+    'isNonCash' in config && 
+    'prizeAmount' in config && 
+    'description' in config
+  ) {
+    return {
+      active: Boolean(config.active),
+      isNonCash: Boolean(config.isNonCash),
+      prizeAmount: String(config.prizeAmount || ''),
+      description: String(config.description || '')
+    };
+  }
+  
+  return null;
+}
+
+// Convert JSON to typed GameConfigItem
+export function parseGameConfigItem(json: Json): GameConfigItem | null {
+  if (typeof json !== 'object' || json === null) return null;
+  
+  const obj = json as Record<string, unknown>;
+  
+  if (!('gameNumber' in obj) || !('gameType' in obj) || !('patterns' in obj)) return null;
+  if (typeof obj.patterns !== 'object' || obj.patterns === null) return null;
+  
+  const gameNumber = Number(obj.gameNumber);
+  const gameType = String(obj.gameType);
+  const patternsObj = obj.patterns as Record<string, unknown>;
+  
+  const patterns: Record<string, WinPatternConfig> = {};
+  
+  Object.entries(patternsObj).forEach(([patternId, value]) => {
+    if (typeof value !== 'object' || value === null) return;
+    
+    const configObj = value as Record<string, unknown>;
+    
+    if (
+      'active' in configObj && 
+      'isNonCash' in configObj && 
+      'prizeAmount' in configObj && 
+      'description' in configObj
+    ) {
+      patterns[patternId] = {
+        active: Boolean(configObj.active),
+        isNonCash: Boolean(configObj.isNonCash),
+        prizeAmount: String(configObj.prizeAmount || ''),
+        description: String(configObj.description || '')
+      };
+    }
+  });
+  
+  return {
+    gameNumber,
+    gameType,
+    patterns
+  };
+}
+
+// Helper function to safely convert JSON data to GameConfigItem array
+export function parseGameConfigs(json: Json | null | undefined): GameConfigItem[] {
+  if (!json) return [];
+  if (!Array.isArray(json)) return [];
+  
+  return json
+    .map(item => parseGameConfigItem(item))
+    .filter((item): item is GameConfigItem => item !== null);
 }

@@ -29,7 +29,7 @@ interface LiveGameViewProps {
 export function LiveGameView({
   gameType,
   winPatterns,
-  selectedPatterns,
+  selectedPatterns = [],
   currentWinPattern,
   onCallNumber,
   onRecall,
@@ -62,15 +62,12 @@ export function LiveGameView({
   const activeGameType = currentGameConfig?.gameType || gameType;
   
   // Get active patterns from new game config format
-  let activePatterns = selectedPatterns;
-  if (currentGameConfig && 'patterns' in currentGameConfig) {
+  let activePatterns: string[] = selectedPatterns;
+  if (currentGameConfig && currentGameConfig.patterns) {
     // Use new format - get active patterns from patterns property
     activePatterns = Object.entries(currentGameConfig.patterns)
       .filter(([_, config]) => config.active)
       .map(([patternId]) => patternId);
-  } else if (currentGameConfig && 'selectedPatterns' in currentGameConfig) {
-    // Use old format
-    activePatterns = currentGameConfig.selectedPatterns;
   }
   
   // Prioritize win pattern from session progress if available
@@ -86,9 +83,9 @@ export function LiveGameView({
     }
   }
   
-  // Get the prizes from the new or old format
+  // Get the prizes from the new format
   let activePrizes: Record<string, PrizeDetails> = prizes;
-  if (currentGameConfig && 'patterns' in currentGameConfig) {
+  if (currentGameConfig && currentGameConfig.patterns) {
     // New format
     activePrizes = Object.entries(currentGameConfig.patterns).reduce((acc, [patternId, config]) => {
       acc[patternId] = {
@@ -98,9 +95,6 @@ export function LiveGameView({
       };
       return acc;
     }, {} as Record<string, PrizeDetails>);
-  } else if (currentGameConfig && 'prizes' in currentGameConfig) {
-    // Old format
-    activePrizes = currentGameConfig.prizes;
   }
   
   // Get all win patterns for the active game type

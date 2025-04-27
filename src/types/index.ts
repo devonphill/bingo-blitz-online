@@ -1,3 +1,4 @@
+
 // This file defines the core data structures used throughout the application.
 
 export type UserRole = 'superuser' | 'subuser';
@@ -16,6 +17,14 @@ export interface PrizeDetails {
   amount?: string;
   description?: string;
   isNonCash?: boolean;
+}
+
+// Define win pattern configuration with active flag
+export interface WinPatternConfig {
+  active: boolean;
+  isNonCash: boolean;
+  prizeAmount: string;
+  description: string;
 }
 
 // --- New definition for game configuration and patterns ---
@@ -55,14 +64,19 @@ export interface GameConfig {
   gameNumber: number;
   gameType: GameType;
   patterns: {
-    [patternId: string]: {
-      active: boolean;
-      isNonCash: boolean;
-      prizeAmount: string;
-      description: string;
-    }
+    [patternId: string]: WinPatternConfig;
   };
   session_id?: string;
+}
+
+// Legacy game configuration interface to support migration
+export interface LegacyGameConfig {
+  gameNumber: number;
+  gameType: GameType;
+  selectedPatterns: string[];
+  prizes: {
+    [patternId: string]: PrizeDetails;
+  };
 }
 
 // Game session interface without current_game_state
@@ -136,3 +150,62 @@ export const DEFAULT_PATTERN_ORDER: PatternOrder = {
   'music': ['oneLine', 'twoLines', 'fullHouse'],
   'logo': ['oneLine', 'twoLines', 'fullHouse']
 };
+
+// Helper function to convert legacy game config to new format
+export function convertLegacyGameConfig(legacy: LegacyGameConfig): GameConfig {
+  const patterns: { [patternId: string]: WinPatternConfig } = {};
+  
+  // Add all patterns from selected patterns array
+  if (legacy.selectedPatterns && Array.isArray(legacy.selectedPatterns)) {
+    legacy.selectedPatterns.forEach(patternId => {
+      const prizeDetails = legacy.prizes && legacy.prizes[patternId];
+      
+      patterns[patternId] = {
+        active: true,
+        isNonCash: prizeDetails?.isNonCash || false,
+        prizeAmount: prizeDetails?.amount || '10.00',
+        description: prizeDetails?.description || `${patternId} Prize`
+      };
+    });
+  }
+  
+  // Add any other patterns that have prizes but weren't in selectedPatterns
+  if (legacy.prizes) {
+    Object.entries(legacy.prizes).forEach(([patternId, prizeDetails]) => {
+      if (!patterns[patternId]) {
+        patterns[patternId] = {
+          active: false,
+          isNonCash: prizeDetails.isNonCash || false,
+          prizeAmount: prizeDetails.amount || '10.00',
+          description: prizeDetails.description || `${patternId} Prize`
+        };
+      }
+    });
+  }
+  
+  return {
+    gameNumber: legacy.gameNumber,
+    gameType: legacy.gameType,
+    patterns
+  };
+}
+
+// Helper function to check if game config is in legacy format
+export function isLegacyGameConfig(config: any): config is LegacyGameConfig {
+  return config && 
+    typeof config === 'object' &&
+    'selectedPatterns' in config &&
+    Array.isArray(config.selectedPatterns) &&
+    'prizes' in config &&
+    typeof config.prizes === 'object';
+}
+
+// Helper function to check if an object is a valid GameConfig
+export function isGameConfig(config: any): config is GameConfig {
+  return config && 
+    typeof config === 'object' &&
+    'gameNumber' in config &&
+    'gameType' in config &&
+    'patterns' in config &&
+    typeof config.patterns === 'object';
+}

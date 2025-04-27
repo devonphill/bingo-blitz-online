@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { GameType, PrizeDetails, GameConfig } from '@/types';
+import { GameType, PrizeDetails, GameConfig, WinPatternConfig, isLegacyGameConfig, convertLegacyGameConfig } from '@/types';
 import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,6 +8,7 @@ import { WinPatternSelector } from './WinPatternSelector';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { Json, parseGameConfigs } from '@/types/json';
 
 interface GameSetupViewProps {
   currentGameType: GameType;
@@ -56,17 +56,22 @@ export function GameSetupView({
           return existingConfig;
         }
         
+        const patterns: Record<string, WinPatternConfig> = {};
+        const gameType = 'mainstage' as GameType;
+        
+        WIN_PATTERNS[gameType].forEach(pattern => {
+          patterns[pattern.id] = {
+            active: ['oneLine'].includes(pattern.id),
+            isNonCash: false,
+            prizeAmount: '10.00',
+            description: `${pattern.name} Prize`
+          };
+        });
+        
         return {
           gameNumber: index + 1,
-          gameType: 'mainstage' as GameType,
-          selectedPatterns: ['oneLine'],
-          prizes: {
-            'oneLine': {
-              amount: '10.00',
-              isNonCash: false,
-              description: 'One Line Prize'
-            }
-          }
+          gameType: gameType,
+          patterns: patterns
         };
       });
       
@@ -76,49 +81,62 @@ export function GameSetupView({
   
   const handleGameTypeChange = (gameIndex: number, type: GameType) => {
     const updatedConfigs = [...gameConfigs];
+    const oldGameType = updatedConfigs[gameIndex].gameType;
+    
+    const patterns: Record<string, WinPatternConfig> = {};
+    
+    WIN_PATTERNS[type].forEach(pattern => {
+      const existingPattern = updatedConfigs[gameIndex].patterns[pattern.id];
+      if (existingPattern) {
+        patterns[pattern.id] = existingPattern;
+      } else {
+        patterns[pattern.id] = {
+          active: ['oneLine'].includes(pattern.id),
+          isNonCash: false,
+          prizeAmount: '10.00',
+          description: `${pattern.name} Prize`
+        };
+      }
+    });
+    
     updatedConfigs[gameIndex] = {
       ...updatedConfigs[gameIndex],
-      gameType: type
+      gameType: type,
+      patterns
     };
+    
     setGameConfigs(updatedConfigs);
   };
   
   const handlePatternSelect = (gameIndex: number, pattern: WinPattern) => {
     const updatedConfigs = [...gameConfigs];
-    const config = updatedConfigs[gameIndex];
-    
-    const selectedPatterns = [...config.selectedPatterns];
     const patternId = pattern.id;
-    const patternIndex = selectedPatterns.indexOf(patternId);
     
-    if (patternIndex >= 0) {
-      selectedPatterns.splice(patternIndex, 1);
-      const updatedPrizes = {...config.prizes};
-      delete updatedPrizes[patternId];
-      config.prizes = updatedPrizes;
+    if (updatedConfigs[gameIndex].patterns[patternId]) {
+      updatedConfigs[gameIndex].patterns[patternId] = {
+        ...updatedConfigs[gameIndex].patterns[patternId],
+        active: !updatedConfigs[gameIndex].patterns[patternId].active
+      };
     } else {
-      selectedPatterns.push(patternId);
-      
-      if (!config.prizes[patternId]) {
-        config.prizes[patternId] = {
-          amount: '10.00',
-          isNonCash: false,
-          description: `${pattern.name} Prize`
-        };
-      }
+      updatedConfigs[gameIndex].patterns[patternId] = {
+        active: true,
+        isNonCash: false,
+        prizeAmount: '10.00',
+        description: `${pattern.name} Prize`
+      };
     }
     
-    config.selectedPatterns = selectedPatterns;
     setGameConfigs(updatedConfigs);
   };
   
   const handlePrizeChange = (gameIndex: number, patternId: string, prizeDetails: PrizeDetails) => {
     const updatedConfigs = [...gameConfigs];
-    const config = updatedConfigs[gameIndex];
     
-    config.prizes = {
-      ...config.prizes,
-      [patternId]: prizeDetails
+    updatedConfigs[gameIndex].patterns[patternId] = {
+      ...updatedConfigs[gameIndex].patterns[patternId],
+      isNonCash: !!prizeDetails.isNonCash,
+      prizeAmount: prizeDetails.amount || '10.00',
+      description: prizeDetails.description || ''
     };
     
     setGameConfigs(updatedConfigs);
@@ -129,25 +147,12 @@ export function GameSetupView({
     
     setIsSaving(true);
     try {
-      // Convert gameConfigs to a JSON-compatible object
       const gameConfigsJson = JSON.stringify(gameConfigs);
-      
-      // Create a JSON-compatible game state for the first game
-      const gameStateJson = JSON.stringify({
-        gameNumber: gameConfigs[0].gameNumber,
-        gameType: gameConfigs[0].gameType,
-        activePatternIds: gameConfigs[0].selectedPatterns,
-        prizes: gameConfigs[0].prizes,
-        status: 'pending',
-        calledItems: [],
-        lastCalledItem: null
-      });
       
       const { data, error } = await supabase
         .from('game_sessions')
         .update({ 
-          games_config: JSON.parse(gameConfigsJson),
-          current_game_state: JSON.parse(gameStateJson)
+          games_config: JSON.parse(gameConfigsJson)
         })
         .eq('id', localStorage.getItem('currentSessionId'))
         .select('games_config');
@@ -192,9 +197,21 @@ export function GameSetupView({
   
   const gameTabsContent = gameConfigs.map((config, index) => {
     const gameNumber = index + 1;
-    
     const gameType = config.gameType;
     const patterns = WIN_PATTERNS[gameType] || [];
+    
+    const activePatterns = Object.entries(config.patterns)
+      .filter(([_, patternConfig]) => patternConfig.active)
+      .map(([patternId]) => patternId);
+      
+    const prizeDetails: Record<string, PrizeDetails> = {};
+    Object.entries(config.patterns).forEach(([patternId, patternConfig]) => {
+      prizeDetails[patternId] = {
+        amount: patternConfig.prizeAmount,
+        description: patternConfig.description,
+        isNonCash: patternConfig.isNonCash
+      };
+    });
     
     return (
       <TabsContent key={`game-${gameNumber}-content`} value={`game-${gameNumber}`}>
@@ -210,9 +227,9 @@ export function GameSetupView({
             
             <WinPatternSelector
               patterns={patterns}
-              selectedPatterns={config.selectedPatterns}
+              selectedPatterns={activePatterns}
               onPatternSelect={(pattern) => handlePatternSelect(index, pattern)}
-              prizes={config.prizes}
+              prizes={prizeDetails}
               onPrizeChange={(patternId, details) => handlePrizeChange(index, patternId, details)}
             />
           </CardContent>
@@ -246,7 +263,7 @@ export function GameSetupView({
             
             <Button 
               onClick={onGoLive}
-              disabled={isGoingLive || (gameConfigs.length > 0 && gameConfigs[0].selectedPatterns.length === 0)}
+              disabled={isGoingLive || (gameConfigs.length > 0 && !Object.values(gameConfigs[0].patterns).some(p => p.active))}
               variant="default"
               className="flex-1"
             >
