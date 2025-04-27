@@ -1,8 +1,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { GameConfig, WinPatternConfig, GameType, DEFAULT_PATTERN_ORDER } from '@/types';
+import { GameConfig, WinPatternConfig, GameType } from '@/types';
 import { normalizeGameConfig } from '@/utils/gameConfigHelper';
+import { getDefaultPatternsForType } from '@/types';
 import { Json } from '@/types/json';
 
 export function useGameData(sessionId: string | undefined) {
@@ -51,11 +52,14 @@ export function useGameData(sessionId: string | undefined) {
 
     try {
       // Convert GameConfig[] to a JSON-compatible format
-      const jsonConfigs = JSON.parse(JSON.stringify(configs));
+      const jsonConfigs = configs.map(config => ({
+        ...config,
+        patterns: { ...config.patterns }
+      }));
       
       const { error } = await supabase
         .from('game_sessions')
-        .update({ games_config: jsonConfigs })
+        .update({ games_config: jsonConfigs as unknown as Json })
         .eq('id', sessionId);
 
       if (error) throw error;
@@ -141,7 +145,7 @@ export function useGameData(sessionId: string | undefined) {
   function createDefaultGameConfig(gameNumber: number, gameType: GameType = 'mainstage'): GameConfig {
     const patterns: Record<string, WinPatternConfig> = {};
     
-    const defaultPatterns = DEFAULT_PATTERN_ORDER[gameType] || ['oneLine', 'twoLines', 'fullHouse'];
+    const defaultPatterns = getDefaultPatternsForType(gameType);
     defaultPatterns.forEach(patternId => {
       patterns[patternId] = {
         active: patternId === 'oneLine', // Only activate first pattern by default

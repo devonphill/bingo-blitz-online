@@ -12,7 +12,20 @@ import { useSessionContext } from '@/contexts/SessionProvider';
 
 export default function AddPlayers() {
   const { sessionId } = useParams<{ sessionId: string }>();
-  const [session, setSession] = useState<GameSession | null>(null);
+  const [session, setSession] = useState<GameSession>({
+    id: '',
+    name: '',
+    gameType: 'mainstage',
+    createdBy: '',
+    accessCode: '',
+    status: 'pending',
+    createdAt: '',
+    sessionDate: '',
+    numberOfGames: 1,
+    current_game: 1,
+    lifecycle_state: 'setup',
+    games_config: []
+  });
   const [players, setPlayers] = useState<any[]>([]);
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerEmail, setNewPlayerEmail] = useState('');

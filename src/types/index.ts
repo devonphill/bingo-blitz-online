@@ -1,9 +1,9 @@
 
-import { WinPattern } from './winPattern';
+import { WinPattern, GameType as WinPatternGameType } from './winPattern';
 import { GameRules } from '@/game-rules/types';
 
-// Add other common types here
-export type GameType = 'mainstage' | '90-ball' | '75-ball' | 'speed' | 'custom' | 'party' | 'quiz' | 'music' | 'logo';
+// Use the same GameType from winPattern.ts
+export type GameType = WinPatternGameType;
 
 export interface PrizeDetails {
   amount: string;
@@ -129,6 +129,7 @@ export interface SessionProgress {
   created_at: string;
   updated_at: string;
   called_numbers?: number[];
+  game_status?: 'pending' | 'active' | 'completed';
 }
 
 // Types for player admin
@@ -138,59 +139,27 @@ export interface AdminTempPlayer {
   ticketCount: number;
 }
 
-// Add GAME_RULES constant
-export const GAME_RULES: Record<string, any> = {
-  mainstage: {
-    minPlayers: 1,
-    maxPlayers: 500,
-    patterns: ['oneLine', 'twoLines', 'fullHouse']
-  },
-  'party': {
-    minPlayers: 5,
-    maxPlayers: 100,
-    patterns: ['corners', 'oneLine', 'twoLines', 'threeLines', 'fullHouse']
-  },
-  'quiz': {
-    minPlayers: 2,
-    maxPlayers: 50,
-    patterns: ['oneLine', 'twoLines', 'fullHouse'],
-    questionTime: 30
-  },
-  'music': {
-    minPlayers: 5,
-    maxPlayers: 100,
-    patterns: ['oneLine', 'twoLines', 'fullHouse'],
-    songDuration: 15
-  },
-  'logo': {
-    minPlayers: 5,
-    maxPlayers: 100,
-    patterns: ['oneLine', 'twoLines', 'fullHouse'],
-    logoDisplayTime: 10
-  },
-  '90-ball': {
-    minPlayers: 1,
-    maxPlayers: 500,
-    patterns: ['oneLine', 'twoLines', 'fullHouse']
-  },
-  '75-ball': {
-    minPlayers: 1,
-    maxPlayers: 500,
-    patterns: ['oneLine', 'coverAll']
-  },
-  'speed': {
-    minPlayers: 1,
-    maxPlayers: 200,
-    patterns: ['oneLine', 'fullHouse']
-  },
-  'custom': {
-    minPlayers: 1,
-    maxPlayers: 500,
-    patterns: ['oneLine', 'twoLines', 'fullHouse']
+// Helper functions for getting default patterns
+export function getDefaultPatternsForType(gameType: GameType): string[] {
+  switch (gameType) {
+    case 'party':
+      return ['corners', 'oneLine', 'twoLines', 'threeLines', 'fullHouse'];
+    case 'quiz':
+    case 'music':
+    case 'logo':
+    case 'mainstage':
+    case '90-ball':
+      return ['oneLine', 'twoLines', 'fullHouse'];
+    case '75-ball':
+      return ['oneLine', 'coverAll'];
+    case 'speed':
+      return ['oneLine', 'fullHouse'];
+    default:
+      return ['oneLine', 'twoLines', 'fullHouse'];
   }
-};
+}
 
-// Add DEFAULT_PATTERN_ORDER constant
+// Export for backward compatibility
 export const DEFAULT_PATTERN_ORDER: Record<GameType, string[]> = {
   'mainstage': ['oneLine', 'twoLines', 'fullHouse'],
   'party': ['corners', 'oneLine', 'twoLines', 'threeLines', 'fullHouse'],

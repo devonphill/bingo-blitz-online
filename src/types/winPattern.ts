@@ -2,10 +2,11 @@
 export interface WinPattern {
   id: string;
   name: string;
-  gameType: 'mainstage' | 'party' | 'quiz' | 'music' | 'logo' | '90-ball' | '75-ball' | 'speed' | 'custom';
+  gameType: GameType;
   available: boolean;
 }
 
+// Define GameType to include all possible game types
 export type GameType = 'mainstage' | 'party' | 'quiz' | 'music' | 'logo' | '90-ball' | '75-ball' | 'speed' | 'custom';
 
 export const WIN_PATTERNS: { [key in GameType]: WinPattern[] } = {
@@ -55,3 +56,10 @@ export const WIN_PATTERNS: { [key in GameType]: WinPattern[] } = {
     { id: 'fullHouse', name: 'Full House', gameType: 'custom', available: true }
   ]
 };
+
+// Helper function to get default patterns for a game type
+export function getDefaultPatternsForGameType(gameType: GameType): string[] {
+  const patterns = WIN_PATTERNS[gameType];
+  if (!patterns) return ['oneLine', 'twoLines', 'fullHouse'];
+  return patterns.map(p => p.id);
+}
