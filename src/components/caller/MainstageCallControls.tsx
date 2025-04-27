@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -131,12 +130,11 @@ export function MainstageCallControls({
         return;
       }
       
-      // Update game session - use type assertion to fix TypeScript error
+      // Update game session with the new pattern
       const { error: sessionError } = await supabase
         .from('game_sessions')
         .update({
-          // Type assertion to handle the TypeScript error
-          active_pattern_id: nextPattern as any
+          active_pattern_id: nextPattern
         })
         .eq('id', currentSession.id);
         
@@ -201,12 +199,12 @@ export function MainstageCallControls({
         return;
       }
       
-      // Update game session - use type assertion for active_pattern_id
+      // Update game session
       const { error: sessionError } = await supabase
         .from('game_sessions')
         .update({
           current_game: nextGameNumber,
-          active_pattern_id: null as any // Type assertion to fix TypeScript error
+          active_pattern_id: null
         })
         .eq('id', currentSession.id);
         

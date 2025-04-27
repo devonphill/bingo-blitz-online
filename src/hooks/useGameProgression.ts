@@ -3,9 +3,7 @@ import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { GameSession } from '@/types';
-
-// Define a recursive Json type for Supabase JSON data
-type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
+import { Json } from '@/types/json';
 
 export function useGameProgression(session: GameSession | null, onGameComplete?: () => void) {
   const [isProcessingGame, setIsProcessingGame] = useState(false);
@@ -110,21 +108,25 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
       const isLastGame = nextGameNumber > totalGames;
       console.log(`Total games: ${totalGames}, Is this the last game? ${isLastGame ? 'Yes' : 'No'}`);
       
-      // Get the next game configuration from the new tables
+      // Get the next game configuration
       let nextGameConfig = null;
-      const { data: configData, error: configError } = await supabase
-        .from('game_configurations')
-        .select('id, game_type')
-        .eq('session_id', session.id)
-        .eq('game_number', nextGameNumber)
-        .single();
-        
-      if (!configError && configData) {
-        nextGameConfig = {
-          gameNumber: nextGameNumber,
-          gameType: configData.game_type
-        };
-      } else {
+      
+      try {
+        const { data: configData } = await supabase
+          .from('game_configurations')
+          .select('id, game_type')
+          .eq('session_id', session.id)
+          .eq('game_number', nextGameNumber)
+          .single();
+
+        if (configData) {
+          nextGameConfig = {
+            gameNumber: nextGameNumber,
+            gameType: configData.game_type
+          };
+        }
+      } catch (configErr) {
+        console.log("Could not find game configuration in new table, falling back to legacy", configErr);
         // Fallback to legacy config
         if (latestSessionData.games_config && Array.isArray(latestSessionData.games_config)) {
           nextGameConfig = latestSessionData.games_config.find((game: any) => 
@@ -142,7 +144,7 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
           .update({ 
             status: 'completed',
             lifecycle_state: 'completed',
-            current_game: totalGames, // Ensure current_game is set to the total
+            current_game: totalGames // Ensure current_game is set to the total
           })
           .eq('id', session.id);
 
@@ -212,7 +214,7 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
         const { error } = await supabase
           .from('game_sessions')
           .update({ 
-            current_game_state: nextGameState,
+            current_game_state: nextGameState as Json,
             status: 'active',
             current_game: nextGameNumber,
             active_pattern_id: String(firstPattern)

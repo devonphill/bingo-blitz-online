@@ -85,6 +85,7 @@ export interface GameSession {
   lifecycle_state?: 'setup' | 'live' | 'ended';
   games_config?: GameConfig[];
   active_pattern_id?: string;
+  current_game?: number;
 }
 
 // Existing Player interface - no changes needed for Phase 1
