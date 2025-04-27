@@ -10,6 +10,10 @@ interface AuthContextType {
   role: string | null;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  error: string | null;
+  // Add aliases for compatibility
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -19,6 +23,7 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [role, setRole] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     // Set up auth state listener FIRST
@@ -75,19 +80,32 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
   }
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    });
-    
-    if (error) {
-      throw error;
+    setError(null);
+    try {
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+      
+      if (authError) {
+        setError(authError.message);
+        throw authError;
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      setError(errorMessage);
+      throw err;
     }
   };
 
   const signOut = async () => {
+    setError(null);
     await supabase.auth.signOut();
   };
+
+  // Create alias functions for compatibility
+  const login = signIn;
+  const logout = signOut;
 
   const value = {
     user,
@@ -95,7 +113,11 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     isLoading,
     role,
     signIn,
-    signOut
+    signOut,
+    error,
+    // Add aliases
+    login,
+    logout
   };
 
   return (

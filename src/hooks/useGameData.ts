@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { GameConfig, DEFAULT_PATTERN_ORDER, WinPatternConfig, GameType } from '@/types';
 import { normalizeGameConfig } from '@/utils/gameConfigHelper';
+import { Json } from '@/types/json';
 
 export function useGameData(sessionId: string | undefined) {
   const [gameConfigs, setGameConfigs] = useState<GameConfig[]>([]);
@@ -49,9 +50,12 @@ export function useGameData(sessionId: string | undefined) {
     if (!sessionId || !configs.length) return false;
 
     try {
+      // Convert GameConfig[] to a JSON-compatible format
+      const jsonConfigs: Json = JSON.parse(JSON.stringify(configs));
+      
       const { error } = await supabase
         .from('game_sessions')
-        .update({ games_config: configs })
+        .update({ games_config: jsonConfigs })
         .eq('id', sessionId);
 
       if (error) throw error;

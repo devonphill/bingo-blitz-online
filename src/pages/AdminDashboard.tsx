@@ -1,72 +1,29 @@
-
-import React, { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { useAuth } from "@/contexts/AuthContext";
-import { useSessionContext } from "@/contexts/SessionProvider";
-import { useNavigate } from "react-router-dom";
-import BulkAddPlayersForm from "@/components/player/BulkAddPlayersForm";
+import React from 'react';
+import { Button } from '@/components/ui/button';
+import { useAuth } from '@/contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 export default function AdminDashboard() {
-  const { user, role, logout } = useAuth();
-  const { sessions } = useSessionContext();
+  const { signOut } = useAuth();
   const navigate = useNavigate();
-  const [selectedSessionId, setSelectedSessionId] = useState(
-    sessions.length > 0 ? sessions[0].id : ''
-  );
 
-  if (role !== "superuser") {
-    navigate("/dashboard");
-    return null;
-  }
+  const handleLogout = async () => {
+    await signOut();
+    navigate('/login');
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="bg-white shadow rounded-lg mb-8 p-8">
-          <h1 className="text-3xl font-bold mb-4 text-bingo-primary">Admin Dashboard</h1>
-          <div className="mb-6">
-            <p>Welcome <span className="font-bold">{user?.email}</span> (Superuser)</p>
-            <p className="mt-2 text-gray-600">Site owner/admin panel: manage users and game settings.</p>
-          </div>
-
-          {/* Bulk Add Players Section */}
-          {sessions.length > 0 && (
-            <div className="mb-8">
-              <h2 className="text-2xl font-semibold mb-4">Bulk Add Players</h2>
-              <div className="mb-6">
-                <p>Select a session to add players:</p>
-                <select
-                  id="admin-session-select"
-                  className="border rounded px-2 py-1 bg-white"
-                  value={selectedSessionId}
-                  onChange={(e) => setSelectedSessionId(e.target.value)}
-                >
-                  {sessions.map(session => (
-                    <option key={session.id} value={session.id}>
-                      {session.name} ({session.accessCode})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {selectedSessionId && (
-                <BulkAddPlayersForm sessionId={selectedSessionId} />
-              )}
-            </div>
-          )}
-
-          <div className="flex flex-col sm:flex-row gap-4 mt-8">
-            <Button
-              className="bg-gradient-to-r from-bingo-secondary to-bingo-primary"
-              onClick={() => navigate("/dashboard")}
-            >
-              Go to Sessions
-            </Button>
-            <Button variant="outline" onClick={() => { logout(); navigate("/login"); }}>
-              Logout
-            </Button>
-          </div>
-        </div>
+    <div className="container mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-6">Admin Dashboard</h1>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        {/* Dashboard content here */}
+        <div>Welcome to the admin dashboard</div>
       </div>
+      
+      <Button onClick={handleLogout} variant="outline" className="mt-6">
+        Logout
+      </Button>
     </div>
   );
 }

@@ -1,0 +1,20 @@
+
+-- Migration to add bingo_claims table
+
+CREATE TABLE IF NOT EXISTS public.bingo_claims (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id uuid NOT NULL,
+  player_id uuid NOT NULL,
+  claimed_at timestamp with time zone NOT NULL DEFAULT now(),
+  status text NOT NULL DEFAULT 'pending',
+  win_pattern_id text NOT NULL,
+  validated_at timestamp with time zone,
+  ticket_id uuid
+);
+
+-- Add indexes for performance
+CREATE INDEX IF NOT EXISTS idx_bingo_claims_session_id ON public.bingo_claims (session_id);
+CREATE INDEX IF NOT EXISTS idx_bingo_claims_player_id ON public.bingo_claims (player_id);
+CREATE INDEX IF NOT EXISTS idx_bingo_claims_status ON public.bingo_claims (status);
+
+-- Note: This SQL script needs to be run manually in the Supabase SQL editor

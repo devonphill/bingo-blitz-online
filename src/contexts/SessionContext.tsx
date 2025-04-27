@@ -29,19 +29,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const {
     sessions,
     currentSession,
-    setCurrentSession: setCurrentSessionState,
+    setCurrentSession: setSessionById,
     getSessionByCode,
     fetchSessions,
   } = useSessions();
 
   // Create a wrapper function for setCurrentSession that accepts a string
   const setCurrentSession = (sessionId: string | null) => {
-    if (sessionId) {
-      const session = sessions.find(s => s.id === sessionId);
-      setCurrentSessionState(session || null);
-    } else {
-      setCurrentSessionState(null);
-    }
+    setSessionById(sessionId);
   };
 
   // Ticket and player hooks (delegated)

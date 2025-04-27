@@ -11,20 +11,23 @@ import { useNavigate } from "react-router-dom";
 export default function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const { login, isLoading, error, role } = useAuth();
+  const { signIn, isLoading, error, role } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const result = await login(email, password);
-    if (!result.error) {
+    try {
+      await signIn(email, password);
       toast({ title: "Login successful", description: "Welcome back!" });
       if (role === "superuser") {
         navigate("/admin");
       } else {
         navigate("/dashboard");
       }
+    } catch (err) {
+      // Error is handled in the AuthContext
+      // No need to do anything here as it will be displayed from the error state
     }
   };
 

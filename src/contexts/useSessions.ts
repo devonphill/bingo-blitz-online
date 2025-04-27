@@ -33,7 +33,7 @@ export function useSessions() {
         
         // Handle the active_pattern_id - add this as a custom field, even if it's not in the DB schema
         // This will be used for UI purposes to track active patterns
-        const activePatternId = 'active_pattern_id' in session ? session.active_pattern_id : null;
+        const activePatternId = session.active_pattern_id !== undefined ? session.active_pattern_id : null;
         
         return {
           id: session.id,
@@ -108,7 +108,7 @@ export function useSessions() {
           ? updates.games_config.map(config => normalizeGameConfig(config))
           : [normalizeGameConfig(updates.games_config)];
           
-        dbUpdates.games_config = normalizedConfigs;
+        dbUpdates.games_config = normalizedConfigs as Json;
       }
 
       const { error } = await supabase

@@ -49,12 +49,7 @@ export function SessionProvider({ children }: SessionProviderProps) {
 
   // Create a wrapper function for setCurrentSession that accepts a string
   const setCurrentSession = (sessionId: string | null) => {
-    if (sessionId) {
-      const session = sessionData.sessions.find(s => s.id === sessionId);
-      sessionData.setCurrentSession(session || null);
-    } else {
-      sessionData.setCurrentSession(null);
-    }
+    sessionData.setCurrentSession(sessionId);
   };
 
   const contextValue: SessionContextType = {

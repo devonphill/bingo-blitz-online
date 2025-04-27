@@ -71,6 +71,8 @@ export interface GameConfig {
   gameType: GameType;
   patterns: Record<string, WinPatternConfig>;
   session_id?: string;
+  // Allow accessing old properties for backwards compatibility during migration
+  [key: string]: any;
 }
 
 // Legacy game configuration format to support older data
@@ -192,6 +194,18 @@ export interface GameState {
   calledItems: CalledItem[];
   lastCalledItem: CalledItem | null;
   status: 'pending' | 'active' | 'completed';
+}
+
+// Bingo claim type
+export interface BingoClaim {
+  id: string;
+  session_id: string;
+  player_id: string;
+  claimed_at: string;
+  status: 'pending' | 'validated' | 'rejected';
+  win_pattern_id: string;
+  validated_at?: string;
+  ticket_id?: string;
 }
 
 // Export the initial game state helper
