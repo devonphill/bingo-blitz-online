@@ -157,52 +157,31 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
           .from('sessions_progress')
           .update({
             current_game_number: nextGameNumber,
-            current_win_pattern: nextGameConfig?.selectedPatterns?.[0] || 'oneLine',
-            current_game_type: nextGameConfig?.gameType || latestSessionData.game_type
+            current_win_pattern: 'oneLine'  // Start with oneLine for new game
           })
           .eq('session_id', session.id);
           
         if (progressError) {
           console.error("Error updating session progress:", progressError);
           toast({
-            title: "Warning",
-            description: "Game state updated but there was a problem updating the session progress.",
+            title: "Error",
+            description: "Failed to update session progress.",
             variant: "destructive"
           });
         } else {
-          console.log("Session progress updated successfully");
-          toast({
-            title: "Game Progress",
-            description: `Moving to game ${nextGameNumber}`,
-          });
+          console.log("Session progress updated for new game");
         }
         
-        // Broadcast game progression to all clients
-        try {
-          await supabase.channel('game-progression-channel')
-            .send({
-              type: 'broadcast',
-              event: 'game-progression',
-              payload: {
-                sessionId: session.id,
-                previousGame: currentGameNumber,
-                newGame: nextGameNumber,
-                timestamp: new Date().toISOString(),
-                nextPattern: 'oneLine',  // Reset to oneLine for new games
-                gameProgression: true
-              }
-            });
-          
-          console.log("Sent game progression broadcast");
-        } catch (error) {
-          console.error("Error broadcasting game progression:", error);
-        }
+        toast({
+          title: "Game Advanced",
+          description: `Successfully advanced to game ${nextGameNumber}`,
+        });
       }
     } catch (err) {
-      console.error("Game progression error:", err);
+      console.error("Error in progressToNextGame:", err);
       toast({
         title: "Error",
-        description: "An error occurred while trying to progress to the next game.",
+        description: "An unexpected error occurred while progressing the game.",
         variant: "destructive"
       });
     } finally {
@@ -211,7 +190,7 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
   }, [session, isProcessingGame, toast, onGameComplete]);
 
   return {
-    isProcessingGame,
-    progressToNextGame
+    progressToNextGame,
+    isProcessingGame
   };
 }

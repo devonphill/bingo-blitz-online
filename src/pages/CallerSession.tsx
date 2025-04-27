@@ -158,6 +158,57 @@ export default function CallerSession() {
     fetchSession();
   }, [fetchSession]);
 
+  useEffect(() => {
+    if (sessionProgress && sessionId && session) {
+      console.log("Syncing CallerSession with sessionProgress:", sessionProgress);
+      
+      if (sessionProgress.current_game_number !== session.current_game_state?.gameNumber) {
+        console.log(`Updating game number from ${session.current_game_state?.gameNumber} to ${sessionProgress.current_game_number}`);
+        
+        if (session.current_game_state) {
+          const updatedGameState = {
+            ...session.current_game_state,
+            gameNumber: sessionProgress.current_game_number
+          };
+          
+          setSession(prev => prev ? {
+            ...prev,
+            current_game_state: updatedGameState
+          } : null);
+        }
+      }
+      
+      if (sessionProgress.current_win_pattern && 
+          (!session.current_game_state?.activePatternIds?.includes(sessionProgress.current_win_pattern))) {
+        console.log(`Updating win pattern to ${sessionProgress.current_win_pattern}`);
+        
+        const matchingConfig = gameConfigs.find(c => c.gameNumber === sessionProgress.current_game_number);
+        if (matchingConfig) {
+          const newPatterns = [sessionProgress.current_win_pattern];
+          if (matchingConfig.selectedPatterns) {
+            const currentPatternIndex = matchingConfig.selectedPatterns.indexOf(sessionProgress.current_win_pattern);
+            if (currentPatternIndex >= 0 && currentPatternIndex < matchingConfig.selectedPatterns.length - 1) {
+              newPatterns.push(...matchingConfig.selectedPatterns.slice(currentPatternIndex + 1));
+            }
+          }
+          setSelectedPatterns(newPatterns);
+          
+          if (session.current_game_state) {
+            const updatedGameState = {
+              ...session.current_game_state,
+              activePatternIds: newPatterns
+            };
+            
+            setSession(prev => prev ? {
+              ...prev,
+              current_game_state: updatedGameState
+            } : null);
+          }
+        }
+      }
+    }
+  }, [sessionProgress, sessionId, session, gameConfigs]);
+
   const handleGameTypeChange = async (newType: GameType) => {
     if (!session) return;
     
@@ -863,6 +914,165 @@ export default function CallerSession() {
     }
   };
 
+  const handleCloseGame = async () => {
+    try {
+      console.log("Handling Close Game...");
+      
+      if (!session || !sessionId) {
+        toast({
+          title: "Error",
+          description: "Session data not found. Please reload the page.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      if (!sessionProgress) {
+        console.error("No session progress data found");
+        return;
+      }
+      
+      const currentWinPattern = sessionProgress.current_win_pattern;
+      const currentGameNumber = sessionProgress.current_game_number;
+      const maxGameNumber = sessionProgress.max_game_number;
+      const isLastGame = currentGameNumber >= maxGameNumber;
+      
+      if (isLastGame && currentWinPattern === 'fullHouse') {
+        console.log("Last game and pattern - marking session as completed");
+        
+        const { error } = await supabase
+          .from('game_sessions')
+          .update({ 
+            status: 'completed',
+            lifecycle_state: 'completed'
+          })
+          .eq('id', sessionId);
+          
+        if (error) {
+          console.error("Error completing session:", error);
+          toast({
+            title: "Error",
+            description: "Failed to complete the session.",
+            variant: "destructive"
+          });
+        } else {
+          toast({
+            title: "Session Completed",
+            description: "The session has been successfully completed.",
+          });
+        }
+        
+        return;
+      }
+      
+      let nextPattern: string | null = null;
+      let nextGameNumber = currentGameNumber;
+      
+      if (currentWinPattern === 'oneLine') {
+        nextPattern = 'twoLines';
+      } else if (currentWinPattern === 'twoLines') {
+        nextPattern = 'fullHouse';
+      } else if (currentWinPattern === 'fullHouse' && !isLastGame) {
+        nextPattern = 'oneLine';
+        nextGameNumber = currentGameNumber + 1;
+      }
+      
+      console.log(`Advancing: Current game: ${currentGameNumber}, Next game: ${nextGameNumber}, Next pattern: ${nextPattern}`);
+      
+      const matchingConfig = gameConfigs.find(config => config.gameNumber === nextGameNumber);
+      
+      const newGameState: CurrentGameState = {
+        ...session.current_game_state,
+        gameNumber: nextGameNumber,
+        calledItems: nextGameNumber > currentGameNumber ? [] : session.current_game_state.calledItems,
+        lastCalledItem: nextGameNumber > currentGameNumber ? null : session.current_game_state.lastCalledItem,
+        activePatternIds: nextPattern ? [nextPattern] : session.current_game_state.activePatternIds,
+      };
+      
+      if (matchingConfig) {
+        newGameState.gameType = matchingConfig.gameType;
+        newGameState.prizes = matchingConfig.prizes;
+        
+        if (nextGameNumber > currentGameNumber) {
+          setCurrentGameType(matchingConfig.gameType);
+          setPrizes(matchingConfig.prizes || {});
+          setSelectedPatterns(matchingConfig.selectedPatterns || []);
+          setCalledNumbers([]);
+          setCurrentNumber(null);
+        } else if (nextPattern) {
+          setSelectedPatterns([nextPattern]);
+        }
+      }
+      
+      const gameStateForSupabase = {
+        gameNumber: newGameState.gameNumber,
+        gameType: newGameState.gameType,
+        activePatternIds: newGameState.activePatternIds,
+        calledItems: newGameState.calledItems,
+        lastCalledItem: newGameState.lastCalledItem,
+        status: newGameState.status,
+        prizes: JSON.parse(JSON.stringify(newGameState.prizes || {}))
+      };
+      
+      const { error: progressError } = await supabase
+        .from('sessions_progress')
+        .update({
+          current_game_number: nextGameNumber,
+          current_win_pattern: nextPattern
+        })
+        .eq('session_id', sessionId);
+          
+      if (progressError) {
+        console.error("Error updating session progress:", progressError);
+        toast({
+          title: "Error",
+          description: "Failed to update session progress.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      const { error: sessionError } = await supabase
+        .from('game_sessions')
+        .update({ 
+          current_game_state: gameStateForSupabase as unknown as Json,
+          current_game: nextGameNumber
+        })
+        .eq('id', sessionId);
+          
+      if (sessionError) {
+        console.error("Error updating session:", sessionError);
+        toast({
+          title: "Error",
+          description: "Failed to update game session.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      setSession(prev => prev ? {
+        ...prev,
+        current_game: nextGameNumber,
+        current_game_state: newGameState
+      } : null);
+      
+      const actionType = nextGameNumber > currentGameNumber ? "Game" : "Pattern";
+      toast({
+        title: `${actionType} Advanced`,
+        description: nextGameNumber > currentGameNumber ? 
+          `Advanced to Game ${nextGameNumber}` : 
+          `Advanced to ${nextPattern === 'twoLines' ? 'Two Lines' : nextPattern === 'fullHouse' ? 'Full House' : nextPattern}`
+      });
+    } catch (err) {
+      console.error("Error in handleCloseGame:", err);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred while closing the game.",
+        variant: "destructive"
+      });
+    }
+  };
+
   useEffect(() => {
     if (!sessionId) return;
     
@@ -938,7 +1148,7 @@ export default function CallerSession() {
             prizes={prizes}
             gameConfigs={gameConfigs}
             sessionStatus={session.status}
-            onCloseGame={handleValidClaim}
+            onCloseGame={handleCloseGame}
             currentGameNumber={sessionProgress?.current_game_number || session.current_game_state?.gameNumber || 1}
             numberOfGames={sessionProgress?.max_game_number || session.numberOfGames || 1}
           />

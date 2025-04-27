@@ -1,10 +1,11 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { WinPattern } from '@/types/winPattern';
 import { WinPatternStatusDisplay } from '@/components/game/WinPatternStatusDisplay';
 import { MainstageCallControls } from '@/components/caller/MainstageCallControls';
 import BingoCard from '@/components/caller/BingoCard';
 import { GameType, PrizeDetails, GameConfig } from '@/types';
+import { useSessionProgress } from '@/hooks/useSessionProgress';
 
 interface LiveGameViewProps {
   gameType: GameType;
@@ -49,9 +50,13 @@ export function LiveGameView({
   console.log("LiveGameView - gameConfigs:", gameConfigs);
   console.log("LiveGameView - sessionStatus:", sessionStatus);
   console.log("LiveGameView - game numbers:", {currentGameNumber, numberOfGames});
-
+  console.log("LiveGameView - selectedPatterns:", selectedPatterns);
+  
   // Use the first game's configurations if available
-  const currentGameConfig = gameConfigs.length > 0 ? gameConfigs[0] : null;
+  const currentGameConfig = gameConfigs.length > 0 ? 
+    gameConfigs.find(config => config.gameNumber === currentGameNumber) || gameConfigs[0] 
+    : null;
+    
   const activeGameType = currentGameConfig?.gameType || gameType;
   const activePatterns = currentGameConfig?.selectedPatterns || selectedPatterns;
   const activePrizes = currentGameConfig?.prizes || prizes;
@@ -82,6 +87,7 @@ export function LiveGameView({
           onCloseGame={onCloseGame}
           currentGameNumber={currentGameNumber}
           numberOfGames={numberOfGames}
+          activeWinPatterns={activePatterns}
         />
         
         <BingoCard
