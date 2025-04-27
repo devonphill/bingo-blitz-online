@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -9,7 +8,7 @@ import { ArrowLeft } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { GameSession, GameType } from '@/types';
 import { useToast } from '@/components/ui/use-toast';
-import { getCurrentGameState } from '@/helpers/gameStateHelper';
+import { getInitialGameState } from '@/helpers/gameStateHelper';
 
 export default function AddPlayers() {
   const { user } = useAuth();
@@ -39,8 +38,7 @@ export default function AddPlayers() {
           status: foundSession.status,
           createdAt: foundSession.createdAt,
           sessionDate: foundSession.sessionDate || '',
-          numberOfGames: foundSession.numberOfGames || 1,
-          current_game_state: foundSession.current_game_state || getCurrentGameState(foundSession.gameType)
+          numberOfGames: foundSession.numberOfGames || 1
         });
         setLoading(false);
       } else {
@@ -60,8 +58,7 @@ export default function AddPlayers() {
             status: data.status as 'pending' | 'active' | 'completed',
             createdAt: data.created_at,
             sessionDate: data.session_date,
-            numberOfGames: data.number_of_games,
-            current_game_state: getCurrentGameState(data.game_type as GameType)
+            numberOfGames: data.number_of_games
           });
         } else {
           toast({

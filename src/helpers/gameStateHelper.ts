@@ -1,8 +1,8 @@
 
-import { GameType } from '@/types';
+import { GameState, GameType } from '@/types';
 
 // Basic state initialization function for handling database interactions
-export const getInitialGameState = (gameType: GameType) => ({
+export const getInitialGameState = (gameType: GameType): GameState => ({
   gameNumber: 1,
   gameType,
   calledItems: [],

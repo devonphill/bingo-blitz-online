@@ -3,7 +3,6 @@ import React from 'react';
 import { Button } from "@/components/ui/button";
 import { useSessions } from "@/contexts/useSessions";
 import { GameType } from "@/types";
-import { useSessionProgress } from "@/hooks/useSessionProgress";
 
 export function GameTypeChanger() {
   const { currentSession, updateSession } = useSessions();

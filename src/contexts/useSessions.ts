@@ -1,8 +1,7 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { GameSession, GameConfig } from '@/types';
-import { Json, parseGameConfigs } from '@/types/json';
+import { GameSession, GameType, GameConfig } from '@/types';
+import { Json } from '@/types/json';
 import { normalizeGameConfig } from '@/utils/gameConfigHelper';
 
 export function useSessions() {
@@ -24,7 +23,12 @@ export function useSessions() {
 
       const formattedSessions = data.map((session): GameSession => {
         // Parse games_config to ensure proper format
-        const gameConfigs = parseGameConfigs(session.games_config);
+        const configs = session.games_config as unknown[];
+        let gameConfigs: GameConfig[] = [];
+        
+        if (Array.isArray(configs)) {
+          gameConfigs = configs.map(config => normalizeGameConfig(config as any));
+        }
         
         return {
           id: session.id,
@@ -135,7 +139,7 @@ export function useSessions() {
   return { 
     sessions, 
     currentSession, 
-    setCurrentSession,
+    setCurrentSession: setCurrentSessionState,
     getSessionByCode, 
     fetchSessions,
     updateSession,
