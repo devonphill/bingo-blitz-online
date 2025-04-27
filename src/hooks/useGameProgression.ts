@@ -1,4 +1,3 @@
-
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -147,9 +146,8 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
           
           // Force refresh the page
           if (typeof window !== 'undefined') {
-            setTimeout(() => {
-              window.location.reload();
-            }, 1000);
+            console.log('Forcing page refresh after game completion');
+            window.location.reload();
           }
         }
       } else {
@@ -177,7 +175,7 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
         const { error } = await supabase
           .from('game_sessions')
           .update({ 
-            current_game_state: JSON.parse(JSON.stringify(nextGameState)) as unknown as Json,
+            current_game_state: JSON.parse(JSON.stringify(nextGameState)),
             status: 'active',
             current_game: nextGameNumber
           })
@@ -223,6 +221,7 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
         
         // Force refresh the page after successful progression
         if (typeof window !== 'undefined') {
+          console.log('Forcing page refresh after game progression');
           setTimeout(() => {
             window.location.reload();
           }, 1000);

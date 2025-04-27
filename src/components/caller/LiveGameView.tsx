@@ -1,4 +1,3 @@
-
 import React, { useEffect } from 'react';
 import { WinPattern } from '@/types/winPattern';
 import { WinPatternStatusDisplay } from '@/components/game/WinPatternStatusDisplay';
@@ -83,6 +82,19 @@ export function LiveGameView({
   
   // Get all win patterns for the active game type
   const availablePatterns = activeGameType ? winPatterns.filter(p => p.gameType === activeGameType) : winPatterns;
+
+  // Add effect to handle game number changes
+  useEffect(() => {
+    if (progress && currentGameNumber) {
+      console.log(`Checking game numbers - Progress: ${progress.current_game_number}, Current: ${currentGameNumber}`);
+      if (progress.current_game_number !== currentGameNumber) {
+        console.log('Game number mismatch detected, refreshing page');
+        if (typeof window !== 'undefined') {
+          window.location.reload();
+        }
+      }
+    }
+  }, [progress, currentGameNumber]);
 
   return (
     <div className="space-y-6 p-6">
