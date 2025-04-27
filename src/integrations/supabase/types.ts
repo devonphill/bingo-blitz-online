@@ -11,6 +11,7 @@ export type Database = {
     Tables: {
       assigned_tickets: {
         Row: {
+          called_numbers: number | null
           id: string
           layout_mask: number
           numbers: number[]
@@ -22,6 +23,7 @@ export type Database = {
           time_stamp: string
         }
         Insert: {
+          called_numbers?: number | null
           id?: string
           layout_mask: number
           numbers: number[]
@@ -33,6 +35,7 @@ export type Database = {
           time_stamp?: string
         }
         Update: {
+          called_numbers?: number | null
           id?: string
           layout_mask?: number
           numbers?: number[]

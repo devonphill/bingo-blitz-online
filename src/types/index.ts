@@ -79,9 +79,9 @@ export function convertLegacyGameConfig(config: LegacyGameConfig): GameConfig {
       
       patterns[patternId] = {
         active: true,
-        isNonCash: Boolean(prize.isNonCash),
-        prizeAmount: prize.amount || '0.00',
-        description: prize.description || ''
+        isNonCash: Boolean(prize?.isNonCash),
+        prizeAmount: prize?.amount || '0.00',
+        description: prize?.description || ''
       };
     });
   }
