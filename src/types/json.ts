@@ -47,3 +47,10 @@ export interface CalledItemType {
   called_at: string;
   call_order: number;
 }
+
+// Add a type for the active_pattern_id that's used but not in the database schema
+export interface SessionWithActivePattern {
+  id: string;
+  active_pattern_id?: string | null;
+  current_game?: number;
+}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { GameConfiguration, GamePattern, CalledItem, GameType } from '@/types';
-import { Json, isOfType, GameConfigurationType, GamePatternType, CalledItemType } from '@/types/json';
+import { Json, isOfType, GameConfigurationType, GamePatternType, CalledItemType, SessionWithActivePattern } from '@/types/json';
 
 // Existing type guard functions
 const isGamePattern = (obj: any): obj is GamePattern => {
@@ -45,110 +45,151 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
 
       currentGameNumber = progressData?.current_game_number || gameNumber || 1;
 
-      // Fetch game configuration - use any type to bypass TypeScript checks temporarily
-      const { data: configData, error: configError } = await (supabase
-        .from('game_configurations' as any)
-        .select('*')
+      // Fetch game configuration from session data since we don't have the game_configurations table
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('game_sessions')
+        .select('game_type, current_game_state, current_game')
+        .eq('id', sessionId)
+        .single();
+          
+      if (sessionError) {
+        throw new Error(`Error fetching session data: ${sessionError.message}`);
+      }
+      
+      // Set configuration from session data
+      setConfiguration({
+        id: 'legacy',
+        session_id: sessionId,
+        game_number: currentGameNumber || 1,
+        game_type: (sessionData?.game_type as GameType) || 'mainstage',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      
+      // Get active pattern from session progress
+      const { data: currentProgress, error: currentProgressError } = await supabase
+        .from('sessions_progress')
+        .select('current_win_pattern')
         .eq('session_id', sessionId)
-        .eq('game_number', currentGameNumber)
-        .single() as any);
-
-      if (configError) {
-        console.error("Error fetching game configuration:", configError);
-        
-        // Fallback to session data
-        const { data: sessionData, error: sessionError } = await supabase
-          .from('game_sessions')
-          .select('game_type, active_pattern_id, current_game_state')
-          .eq('id', sessionId)
-          .single();
-          
-        if (sessionError) {
-          throw new Error(`Error fetching session data: ${sessionError.message}`);
-        }
-        
-        // Set configuration from session data
-        setConfiguration({
-          id: 'legacy',
-          session_id: sessionId,
-          game_number: currentGameNumber,
-          game_type: (sessionData?.game_type as GameType) || 'mainstage',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
-        
-        // Set active pattern
-        if (sessionData?.active_pattern_id) {
-          setActivePattern(sessionData.active_pattern_id);
-        } else if (sessionData?.current_game_state && 'activePatternIds' in sessionData.current_game_state) {
-          const activePatterns = (sessionData.current_game_state as any).activePatternIds;
-          if (activePatterns && activePatterns.length > 0) {
-            setActivePattern(activePatterns[0]);
-          }
-        }
-      } else if (configData) {
-        // Convert configData to GameConfiguration type
-        const typedConfigData = configData as unknown as GameConfigurationType;
-        
-        // Set configuration from new table
-        setConfiguration({
-          id: typedConfigData.id,
-          session_id: typedConfigData.session_id,
-          game_number: typedConfigData.game_number,
-          game_type: typedConfigData.game_type as GameType,
-          created_at: typedConfigData.created_at,
-          updated_at: typedConfigData.updated_at
-        });
-        
-        // Fetch patterns for this configuration - use any type to bypass TypeScript checks temporarily
-        const { data: patternsData, error: patternsError } = await (supabase
-          .from('game_patterns' as any)
-          .select('*')
-          .eq('game_config_id', typedConfigData.id)
-          .order('pattern_order', { ascending: true }) as any);
-
-        if (patternsError) {
-          console.error("Error fetching patterns:", patternsError);
-        } else if (patternsData) {
-          const typedPatterns: GamePattern[] = (patternsData as unknown as GamePatternType[]).map(p => ({
-            id: p.id,
-            game_config_id: p.game_config_id,
-            pattern_id: p.pattern_id,
-            pattern_order: p.pattern_order,
-            prize_amount: p.prize_amount,
-            prize_description: p.prize_description,
-            is_non_cash: p.is_non_cash,
-            created_at: p.created_at
-          }));
-          
-          setPatterns(typedPatterns);
+        .single();
+      
+      if (!currentProgressError && currentProgress && currentProgress.current_win_pattern) {
+        setActivePattern(currentProgress.current_win_pattern);
+      } else if (sessionData?.current_game_state && 
+                typeof sessionData.current_game_state === 'object' && 
+                'activePatternIds' in sessionData.current_game_state) {
+        const activePatterns = (sessionData.current_game_state as any).activePatternIds;
+        if (activePatterns && activePatterns.length > 0) {
+          setActivePattern(activePatterns[0]);
         }
       }
+      
+      // Extract patterns from the session's current_game_state
+      if (sessionData?.current_game_state && 
+          typeof sessionData.current_game_state === 'object' &&
+          'activePatternIds' in sessionData.current_game_state &&
+          'prizes' in sessionData.current_game_state) {
+        
+        const gameState = sessionData.current_game_state as any;
+        const activePatterns = gameState.activePatternIds || [];
+        const prizes = gameState.prizes || {};
+        
+        const extractedPatterns: GamePattern[] = activePatterns.map((patternId: string, index: number) => {
+          const prizeDetails = prizes[patternId] || {};
+          
+          return {
+            id: `legacy-${patternId}`,
+            game_config_id: 'legacy',
+            pattern_id: patternId,
+            pattern_order: index,
+            prize_amount: prizeDetails.amount,
+            prize_description: prizeDetails.description,
+            is_non_cash: prizeDetails.isNonCash || false,
+            created_at: new Date().toISOString()
+          };
+        });
+        
+        setPatterns(extractedPatterns);
+      }
 
-      // Fetch called items from the new table - use any type to bypass TypeScript checks temporarily
-      const { data: calledItemsData, error: calledItemsError } = await (supabase
-        .from('called_items' as any)
+      // Fetch called items from the legacy game state
+      if (sessionData?.current_game_state && 
+          typeof sessionData.current_game_state === 'object' &&
+          'calledItems' in sessionData.current_game_state) {
+          
+        const gameState = sessionData.current_game_state as any;
+        const existingCalls = gameState.calledItems || [];
+        
+        const legacyCalledItems: CalledItem[] = existingCalls.map((item: any, index: number) => {
+          if (typeof item === 'number') {
+            // Simple number array
+            return {
+              id: `legacy-${index}`,
+              session_id: sessionId,
+              game_number: currentGameNumber || 1,
+              item_value: item,
+              called_at: new Date().toISOString(),
+              call_order: index + 1
+            };
+          } else if (typeof item === 'object' && item !== null) {
+            // Object array with more details
+            return {
+              id: item.id || `legacy-${index}`,
+              session_id: sessionId,
+              game_number: currentGameNumber || 1,
+              item_value: item.value || item.number || 0,
+              called_at: item.called_at || new Date().toISOString(),
+              call_order: index + 1
+            };
+          }
+          
+          // Fallback
+          return {
+            id: `legacy-${index}`,
+            session_id: sessionId,
+            game_number: currentGameNumber || 1,
+            item_value: 0,
+            called_at: new Date().toISOString(),
+            call_order: index + 1
+          };
+        });
+        
+        setCalledItems(legacyCalledItems);
+        
+        if (legacyCalledItems.length > 0) {
+          setLastCalledItem(legacyCalledItems[legacyCalledItems.length - 1].item_value);
+        }
+        
+        if (gameState.lastCalledItem) {
+          if (typeof gameState.lastCalledItem === 'number') {
+            setLastCalledItem(gameState.lastCalledItem);
+          } else if (typeof gameState.lastCalledItem === 'object' && gameState.lastCalledItem !== null) {
+            setLastCalledItem(gameState.lastCalledItem.value || gameState.lastCalledItem.number || null);
+          }
+        }
+      }
+      
+      // Fetch called numbers from called_numbers table as a fallback
+      const { data: calledNumbersData, error: calledNumbersError } = await supabase
+        .from('called_numbers')
         .select('*')
         .eq('session_id', sessionId)
-        .eq('game_number', currentGameNumber)
-        .order('call_order', { ascending: true }) as any);
-
-      if (calledItemsError) {
-        console.error("Error fetching called items:", calledItemsError);
-      } else if (calledItemsData) {
-        const typedCalledItems: CalledItem[] = (calledItemsData as unknown as CalledItemType[]).map(c => ({
-          id: c.id,
-          session_id: c.session_id,
-          game_number: c.game_number,
-          item_value: c.item_value,
-          called_at: c.called_at,
-          call_order: c.call_order
+        .order('called_at', { ascending: true });
+        
+      if (!calledNumbersError && calledNumbersData && calledNumbersData.length > 0 && calledItems.length === 0) {
+        const mappedCalledItems: CalledItem[] = calledNumbersData.map((item: any, index: number) => ({
+          id: item.id,
+          session_id: item.session_id,
+          game_number: currentGameNumber || 1,
+          item_value: item.number,
+          called_at: item.called_at,
+          call_order: index + 1
         }));
         
-        setCalledItems(typedCalledItems);
+        setCalledItems(mappedCalledItems);
         
-        if (typedCalledItems.length > 0) {
-          setLastCalledItem(typedCalledItems[typedCalledItems.length - 1].item_value);
+        if (mappedCalledItems.length > 0) {
+          setLastCalledItem(mappedCalledItems[mappedCalledItems.length - 1].item_value);
         }
       }
     } catch (err) {
@@ -157,7 +198,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
     } finally {
       setLoading(false);
     }
-  }, [sessionId, gameNumber]);
+  }, [sessionId, gameNumber, calledItems.length]);
 
   // Call number function
   const callNumber = useCallback(async (gameType: GameType): Promise<number | null> => {
@@ -179,35 +220,42 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
         newNumber = Math.floor(Math.random() * numberRange) + 1;
       } while (existingNumbers.includes(newNumber));
       
-      // Insert the new called item - use any type to bypass TypeScript checks temporarily
-      const { data, error } = await (supabase
-        .from('called_items' as any)
+      // Insert into called_numbers table
+      const { data, error } = await supabase
+        .from('called_numbers')
         .insert({
           session_id: sessionId,
-          game_number: configuration.game_number,
-          item_value: newNumber,
-          call_order: existingNumbers.length + 1
+          number: newNumber
         })
         .select()
-        .single() as any);
+        .single();
         
       if (error) {
         console.error("Error calling number:", error);
-        // Legacy fallback
-        const { error: updateError } = await supabase
+        // Legacy fallback - update the current_game_state JSON
+        const { data: sessionData } = await supabase
           .from('game_sessions')
-          .update({
-            'current_game_state': {
-              ...configuration,
-              calledItems: [...existingNumbers, newNumber],
-              lastCalledItem: newNumber
-            }
-          } as any)
-          .eq('id', sessionId);
+          .select('current_game_state')
+          .eq('id', sessionId)
+          .single();
           
-        if (updateError) {
-          console.error("Error in legacy call number update:", updateError);
-          return null;
+        let currentGameState = sessionData?.current_game_state || {};
+        if (typeof currentGameState === 'object') {
+          currentGameState = {
+            ...currentGameState,
+            calledItems: [...(currentGameState.calledItems || []), newNumber],
+            lastCalledItem: newNumber
+          };
+          
+          const { error: updateError } = await supabase
+            .from('game_sessions')
+            .update({ current_game_state: currentGameState })
+            .eq('id', sessionId);
+            
+          if (updateError) {
+            console.error("Error in legacy call number update:", updateError);
+            return null;
+          }
         }
       }
       
@@ -248,20 +296,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
       
       const nextPattern = patterns[currentPatternIndex + 1];
       
-      // Update the active pattern in the database
-      const { error } = await supabase
-        .from('game_sessions')
-        .update({
-          active_pattern_id: nextPattern.pattern_id
-        } as any)
-        .eq('id', sessionId);
-        
-      if (error) {
-        console.error("Error updating active pattern:", error);
-        return false;
-      }
-      
-      // Update the session progress
+      // Update the active pattern in the sessions_progress table
       const { error: progressError } = await supabase
         .from('sessions_progress')
         .update({
@@ -271,6 +306,22 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
         
       if (progressError) {
         console.error("Error updating session progress:", progressError);
+        return false;
+      }
+      
+      // Update session with active pattern
+      const updateData: Partial<SessionWithActivePattern> = {
+        active_pattern_id: nextPattern.pattern_id
+      };
+      
+      const { error: sessionError } = await supabase
+        .from('game_sessions')
+        .update(updateData)
+        .eq('id', sessionId);
+        
+      if (sessionError) {
+        console.error("Error updating game session:", sessionError);
+        return false;
       }
       
       // Update local state
@@ -326,36 +377,26 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
       
       const nextGameNumber = currentGameNumber + 1;
       
-      // Get the next game configuration
-      const { data: nextConfigData, error: nextConfigError } = await supabase
-        .from('game_configurations')
-        .select('*')
-        .eq('session_id', sessionId)
-        .eq('game_number', nextGameNumber)
+      // Get the first pattern for the next game from the session configuration
+      const { data: sessionData } = await supabase
+        .from('game_sessions')
+        .select('games_config')
+        .eq('id', sessionId)
         .single();
         
-      if (nextConfigError) {
-        console.error("Error fetching next game configuration:", nextConfigError);
-        return false;
+      let firstPatternId = 'oneLine'; // Default pattern
+      
+      if (sessionData?.games_config) {
+        const gamesConfig = Array.isArray(sessionData.games_config) ? sessionData.games_config : [];
+        const nextGameConfig = gamesConfig.find((config: any) => config?.gameNumber === nextGameNumber);
+        
+        if (nextGameConfig && 'selectedPatterns' in nextGameConfig && 
+            Array.isArray(nextGameConfig.selectedPatterns) && 
+            nextGameConfig.selectedPatterns.length > 0) {
+          firstPatternId = nextGameConfig.selectedPatterns[0];
+        }
       }
       
-      // Get the first pattern for the next game
-      const { data: nextPatternsData, error: nextPatternsError } = await supabase
-        .from('game_patterns')
-        .select('*')
-        .eq('game_config_id', nextConfigData.id)
-        .order('pattern_order', { ascending: true })
-        .limit(1);
-        
-      if (nextPatternsError) {
-        console.error("Error fetching next game patterns:", nextPatternsError);
-        return false;
-      }
-      
-      const firstPatternId = nextPatternsData && nextPatternsData.length > 0 
-        ? nextPatternsData[0].pattern_id 
-        : null;
-        
       // Update session progress
       const { error: updateProgressError } = await supabase
         .from('sessions_progress')
@@ -371,12 +412,14 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
       }
       
       // Update game session
+      const updateData: Partial<SessionWithActivePattern> = {
+        current_game: nextGameNumber,
+        active_pattern_id: firstPatternId
+      };
+      
       const { error: updateSessionError } = await supabase
         .from('game_sessions')
-        .update({
-          current_game: nextGameNumber,
-          active_pattern_id: firstPatternId
-        })
+        .update(updateData)
         .eq('id', sessionId);
         
       if (updateSessionError) {
@@ -402,28 +445,31 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
     
     fetchGameData();
     
-    // Subscribe to called_items changes
+    // Subscribe to called_numbers changes
     const channel = supabase
-      .channel(`called-items-${sessionId}`)
+      .channel(`called-numbers-${sessionId}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'called_items',
+          table: 'called_numbers',
           filter: `session_id=eq.${sessionId}`
         },
         (payload) => {
-          console.log('New called item:', payload);
+          console.log('New called number:', payload);
           
           if (payload.new) {
+            const newNumber = payload.new.number;
+            const callOrder = calledItems.length + 1;
+            
             const newItem: CalledItem = {
               id: payload.new.id,
-              session_id: payload.new.session_id,
-              game_number: payload.new.game_number,
-              item_value: payload.new.item_value,
+              session_id: sessionId,
+              game_number: configuration?.game_number || 1,
+              item_value: newNumber,
               called_at: payload.new.called_at,
-              call_order: payload.new.call_order
+              call_order: callOrder
             };
             
             // Update the called items and last called item
@@ -435,27 +481,27 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
               return [...prev, newItem];
             });
             
-            setLastCalledItem(newItem.item_value);
+            setLastCalledItem(newNumber);
           }
         }
       )
       .subscribe();
       
-    // Also subscribe to changes in the active pattern
-    const patternChannel = supabase
-      .channel(`active-pattern-${sessionId}`)
+    // Subscribe to progress changes for active pattern updates
+    const progressChannel = supabase
+      .channel(`progress-${sessionId}`)
       .on(
         'postgres_changes',
         {
           event: 'UPDATE',
           schema: 'public',
-          table: 'game_sessions',
-          filter: `id=eq.${sessionId}`
+          table: 'sessions_progress',
+          filter: `session_id=eq.${sessionId}`
         },
         (payload) => {
-          const updatedSession = payload.new;
-          if (updatedSession && updatedSession.active_pattern_id !== activePattern) {
-            setActivePattern(updatedSession.active_pattern_id);
+          console.log('Sessions progress updated:', payload);
+          if (payload.new && 'current_win_pattern' in payload.new && payload.new.current_win_pattern) {
+            setActivePattern(payload.new.current_win_pattern);
           }
         }
       )
@@ -463,9 +509,9 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
     
     return () => {
       supabase.removeChannel(channel);
-      supabase.removeChannel(patternChannel);
+      supabase.removeChannel(progressChannel);
     };
-  }, [sessionId, fetchGameData, activePattern]);
+  }, [sessionId, fetchGameData, calledItems.length, configuration?.game_number]);
   
   return {
     configuration,

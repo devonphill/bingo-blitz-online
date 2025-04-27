@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,6 +16,7 @@ import { GameType } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
 import { Label } from '@/components/ui/label';
+import { SessionWithActivePattern } from '@/types/json';
 
 interface MainstageCallControlsProps {
   onCallNumber: () => void;
@@ -130,11 +132,14 @@ export function MainstageCallControls({
         return;
       }
       
+      // Update session with the active pattern
+      const updateData: Partial<SessionWithActivePattern> = {
+        active_pattern_id: nextPattern
+      };
+      
       const { error: sessionError } = await supabase
         .from('game_sessions')
-        .update({
-          active_pattern_id: nextPattern
-        })
+        .update(updateData)
         .eq('id', currentSession.id);
         
       if (sessionError) {
@@ -195,12 +200,14 @@ export function MainstageCallControls({
         return;
       }
       
+      const updateData: Partial<SessionWithActivePattern> = {
+        current_game: nextGameNumber,
+        active_pattern_id: null
+      };
+      
       const { error: sessionError } = await supabase
         .from('game_sessions')
-        .update({
-          current_game: nextGameNumber,
-          active_pattern_id: null
-        } as any)
+        .update(updateData)
         .eq('id', currentSession.id);
         
       if (sessionError) {
