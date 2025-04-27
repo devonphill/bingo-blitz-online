@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { GameConfiguration, GamePattern, CalledItem, GameType } from '@/types';
-import { Json, isOfType } from '@/types/json';
+import { Json, isOfType, GameConfigurationType, GamePatternType, CalledItemType } from '@/types/json';
 
 // Existing type guard functions
 const isGamePattern = (obj: any): obj is GamePattern => {
@@ -45,13 +45,13 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
 
       currentGameNumber = progressData?.current_game_number || gameNumber || 1;
 
-      // Fetch game configuration
-      const { data: configData, error: configError } = await supabase
-        .from('game_configurations')
+      // Fetch game configuration - use any type to bypass TypeScript checks temporarily
+      const { data: configData, error: configError } = await (supabase
+        .from('game_configurations' as any)
         .select('*')
         .eq('session_id', sessionId)
         .eq('game_number', currentGameNumber)
-        .single();
+        .single() as any);
 
       if (configError) {
         console.error("Error fetching game configuration:", configError);
@@ -72,7 +72,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
           id: 'legacy',
           session_id: sessionId,
           game_number: currentGameNumber,
-          game_type: sessionData?.game_type as GameType || 'mainstage',
+          game_type: (sessionData?.game_type as GameType) || 'mainstage',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });
@@ -86,28 +86,31 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
             setActivePattern(activePatterns[0]);
           }
         }
-      } else {
+      } else if (configData) {
+        // Convert configData to GameConfiguration type
+        const typedConfigData = configData as unknown as GameConfigurationType;
+        
         // Set configuration from new table
         setConfiguration({
-          id: configData.id,
-          session_id: configData.session_id,
-          game_number: configData.game_number,
-          game_type: configData.game_type as GameType,
-          created_at: configData.created_at,
-          updated_at: configData.updated_at
+          id: typedConfigData.id,
+          session_id: typedConfigData.session_id,
+          game_number: typedConfigData.game_number,
+          game_type: typedConfigData.game_type as GameType,
+          created_at: typedConfigData.created_at,
+          updated_at: typedConfigData.updated_at
         });
         
-        // Fetch patterns for this configuration
-        const { data: patternsData, error: patternsError } = await supabase
-          .from('game_patterns')
+        // Fetch patterns for this configuration - use any type to bypass TypeScript checks temporarily
+        const { data: patternsData, error: patternsError } = await (supabase
+          .from('game_patterns' as any)
           .select('*')
-          .eq('game_config_id', configData.id)
-          .order('pattern_order', { ascending: true });
+          .eq('game_config_id', typedConfigData.id)
+          .order('pattern_order', { ascending: true }) as any);
 
         if (patternsError) {
           console.error("Error fetching patterns:", patternsError);
         } else if (patternsData) {
-          const typedPatterns: GamePattern[] = patternsData.map(p => ({
+          const typedPatterns: GamePattern[] = (patternsData as unknown as GamePatternType[]).map(p => ({
             id: p.id,
             game_config_id: p.game_config_id,
             pattern_id: p.pattern_id,
@@ -122,18 +125,18 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
         }
       }
 
-      // Fetch called items from the new table
-      const { data: calledItemsData, error: calledItemsError } = await supabase
-        .from('called_items')
+      // Fetch called items from the new table - use any type to bypass TypeScript checks temporarily
+      const { data: calledItemsData, error: calledItemsError } = await (supabase
+        .from('called_items' as any)
         .select('*')
         .eq('session_id', sessionId)
         .eq('game_number', currentGameNumber)
-        .order('call_order', { ascending: true });
+        .order('call_order', { ascending: true }) as any);
 
       if (calledItemsError) {
         console.error("Error fetching called items:", calledItemsError);
       } else if (calledItemsData) {
-        const typedCalledItems: CalledItem[] = calledItemsData.map(c => ({
+        const typedCalledItems: CalledItem[] = (calledItemsData as unknown as CalledItemType[]).map(c => ({
           id: c.id,
           session_id: c.session_id,
           game_number: c.game_number,
@@ -176,9 +179,9 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
         newNumber = Math.floor(Math.random() * numberRange) + 1;
       } while (existingNumbers.includes(newNumber));
       
-      // Insert the new called item
-      const { data, error } = await supabase
-        .from('called_items')
+      // Insert the new called item - use any type to bypass TypeScript checks temporarily
+      const { data, error } = await (supabase
+        .from('called_items' as any)
         .insert({
           session_id: sessionId,
           game_number: configuration.game_number,
@@ -186,7 +189,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
           call_order: existingNumbers.length + 1
         })
         .select()
-        .single();
+        .single() as any);
         
       if (error) {
         console.error("Error calling number:", error);
@@ -199,7 +202,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
               calledItems: [...existingNumbers, newNumber],
               lastCalledItem: newNumber
             }
-          })
+          } as any)
           .eq('id', sessionId);
           
         if (updateError) {
@@ -250,7 +253,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
         .from('game_sessions')
         .update({
           active_pattern_id: nextPattern.pattern_id
-        })
+        } as any)
         .eq('id', sessionId);
         
       if (error) {

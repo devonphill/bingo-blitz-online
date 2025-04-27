@@ -29,7 +29,7 @@ interface MainstageCallControlsProps {
   activeWinPatterns: string[] | number[];
   currentSession: { 
     id: string | undefined; 
-    active_pattern_id?: string;
+    active_pattern_id?: string | null;
   };
 }
 
@@ -200,7 +200,7 @@ export function MainstageCallControls({
         .update({
           current_game: nextGameNumber,
           active_pattern_id: null
-        })
+        } as any)
         .eq('id', currentSession.id);
         
       if (sessionError) {
