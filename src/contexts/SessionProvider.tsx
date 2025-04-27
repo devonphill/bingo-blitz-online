@@ -47,8 +47,19 @@ export function SessionProvider({ children }: SessionProviderProps) {
     ticketsHook.assignTicketsToPlayer
   );
 
+  // Create a wrapper function for setCurrentSession that accepts a string
+  const setCurrentSession = (sessionId: string | null) => {
+    if (sessionId) {
+      const session = sessionData.sessions.find(s => s.id === sessionId);
+      sessionData.setCurrentSession(session || null);
+    } else {
+      sessionData.setCurrentSession(null);
+    }
+  };
+
   const contextValue: SessionContextType = {
     ...sessionData,
+    setCurrentSession,
     players: playersHook.players,
     joinSession: async (playerCode: string) => {
       try {

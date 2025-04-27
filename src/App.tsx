@@ -1,5 +1,5 @@
 
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, useEffect } from "react-router-dom";
 import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
@@ -13,11 +13,24 @@ import AdminDashboard from "./pages/AdminDashboard";
 import { Toaster } from './components/ui/toaster';
 import { SessionProvider } from './contexts/SessionProvider';
 import { AuthProvider } from './contexts/AuthContext';
+import { createRequiredTables } from './utils/databaseCreator';
+
+function AppInitializer() {
+  useEffect(() => {
+    // Initialize required database tables
+    createRequiredTables()
+      .then(() => console.log('Database tables initialized successfully'))
+      .catch(err => console.error('Error initializing database tables:', err));
+  }, []);
+  
+  return null;
+}
 
 function App() {
   return (
     <AuthProvider>
       <SessionProvider>
+        <AppInitializer />
         <Router>
           <Routes>
             <Route path="/" element={<Index />} />

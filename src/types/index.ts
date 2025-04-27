@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Json } from './json';
 
@@ -139,6 +140,7 @@ export interface GameSession {
   games_config?: GameConfig[];
   current_game?: number;
   active_pattern_id?: string;
+  current_game_state?: CurrentGameState;
 }
 
 // Player type 
@@ -179,6 +181,17 @@ export interface GameState {
   calledItems: CalledItem[];
   lastCalledItem: CalledItem | null;
   status: 'pending' | 'active' | 'completed';
+}
+
+// Current game state for player games
+export interface CurrentGameState {
+  gameNumber?: number;
+  gameType?: GameType;
+  calledItems?: any[];
+  lastCalledItem?: any;
+  activePatternIds?: string[];
+  prizes?: Record<string, PrizeDetails>;
+  status?: 'pending' | 'active' | 'completed';
 }
 
 // Export the initial game state helper
