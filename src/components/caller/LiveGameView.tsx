@@ -2,7 +2,7 @@
 import React from 'react';
 import { WinPattern } from '@/types/winPattern';
 import { WinPatternStatusDisplay } from '@/components/game/WinPatternStatusDisplay';
-import { CallControls } from '@/components/caller/CallControls';
+import CallControls from '@/components/caller/CallControls';
 import BingoCard from '@/components/caller/BingoCard';
 import { GameType, PrizeDetails, GameConfig } from '@/types';
 
