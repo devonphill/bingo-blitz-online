@@ -9,7 +9,7 @@ import { WinPatternSelector } from './WinPatternSelector';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Json, parseGameConfigs } from '@/types/json';
+import { jsonToGameConfigs, gameConfigsToJson } from '@/utils/jsonUtils';
 
 interface GameSetupViewProps {
   currentGameType: GameType;
@@ -152,12 +152,13 @@ export function GameSetupView({
     
     setIsSaving(true);
     try {
-      const gameConfigsJson = JSON.stringify(gameConfigs);
+      // Convert GameConfig[] to a JSON-compatible format for the database
+      const jsonConfigs = gameConfigsToJson(gameConfigs);
       
       const { data, error } = await supabase
         .from('game_sessions')
         .update({ 
-          games_config: gameConfigs
+          games_config: jsonConfigs
         })
         .eq('id', localStorage.getItem('currentSessionId'))
         .select('games_config');
