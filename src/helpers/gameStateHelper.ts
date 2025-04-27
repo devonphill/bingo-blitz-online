@@ -1,12 +1,11 @@
 
-import { GameType, CurrentGameState } from '@/types';
+import { GameType } from '@/types';
 
-export const getCurrentGameState = (gameType: GameType): CurrentGameState => ({
+// Basic state initialization function for handling database interactions
+export const getInitialGameState = (gameType: GameType) => ({
   gameNumber: 1,
   gameType,
-  activePatternIds: [],
   calledItems: [],
   lastCalledItem: null,
-  status: 'pending',
-  prizes: {},
+  status: 'pending'
 });

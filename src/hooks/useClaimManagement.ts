@@ -1,334 +1,164 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { useGameProgression } from './useGameProgression';
-import { CurrentGameState } from '@/types';
+import { SessionProgress } from '@/types';
 
-export function useClaimManagement(sessionId: string | undefined) {
-  const [showClaimSheet, setShowClaimSheet] = useState(false);
-  const [currentClaim, setCurrentClaim] = useState<{
-    playerName: string;
-    playerId: string;
-    tickets: any[];
-    claimId?: string;
-  } | null>(null);
-  const [claimQueue, setClaimQueue] = useState<Array<{
-    playerName: string;
-    playerId: string;
-    claimId?: string;
-  }>>([]);
-  const [processingClaim, setProcessingClaim] = useState(false);
-  const hasCheckedInitialClaims = useRef(false);
+export function useClaimManagement(sessionId: string | undefined, gameNumber: number | undefined) {
+  const [pendingClaims, setPendingClaims] = useState<any[]>([]);
+  const [isProcessingClaim, setIsProcessingClaim] = useState(false);
   const { toast } = useToast();
-  const { progressToNextGame, isProcessingGame } = useGameProgression(
-    sessionId ? { id: sessionId } as any : null, 
-    () => {
-      console.log("Session completed callback triggered");
-      toast({
-        title: "Session Completed",
-        description: "All games in this session have been completed.",
-      });
-    }
-  );
 
-  const handleCloseSheet = useCallback(() => {
-    console.log("Closing claim sheet");
-    setShowClaimSheet(false);
-  }, []);
-
-  const processNextClaim = useCallback(async () => {
-    if (claimQueue.length === 0 || processingClaim || showClaimSheet) {
-      return;
-    }
-
-    setCurrentClaim(null);
-    
-    setProcessingClaim(true);
-    const nextClaim = claimQueue[0];
+  const fetchPendingClaims = useCallback(async () => {
+    if (!sessionId || !gameNumber) return [];
     
     try {
-      console.log(`Processing next claim for ${nextClaim.playerName}`);
-      
-      const { data: ticketData, error: ticketError } = await supabase
-        .from('assigned_tickets')
-        .select('*')
-        .eq('player_id', nextClaim.playerId)
-        .eq('session_id', sessionId);
-
-      if (ticketError) {
-        console.error("Error fetching ticket data:", ticketError);
-        setClaimQueue(prev => prev.slice(1));
-        setProcessingClaim(false);
-        return;
-      }
-
-      console.log(`Retrieved ${ticketData?.length || 0} tickets for player ${nextClaim.playerName}`);
-      
-      setCurrentClaim({
-        playerName: nextClaim.playerName,
-        playerId: nextClaim.playerId,
-        tickets: ticketData || [],
-        claimId: nextClaim.claimId
-      });
-      
-      setClaimQueue(prev => prev.slice(1));
-      
-      console.log("Opening sheet for claim verification!");
-      setTimeout(() => {
-        setShowClaimSheet(true);
-        setProcessingClaim(false);
-      }, 100);
-      
-    } catch (error) {
-      console.error("Error processing next claim:", error);
-      setClaimQueue(prev => prev.slice(1));
-      setProcessingClaim(false);
-    }
-  }, [claimQueue, processingClaim, sessionId, showClaimSheet]);
-
-  const checkForClaims = useCallback(async () => {
-    if (!sessionId || hasCheckedInitialClaims.current) return;
-    
-    console.log("Performing initial check for pending claims");
-    hasCheckedInitialClaims.current = true;
-    
-    try {
+      // Use universal_game_logs instead of bingo_claims
       const { data, error } = await supabase
-        .from('bingo_claims')
-        .select('id, player_id, claimed_at, players(nickname), win_pattern_id')
+        .from('universal_game_logs')
+        .select('*')
         .eq('session_id', sessionId)
-        .eq('status', 'pending')
-        .order('claimed_at', { ascending: true });
+        .eq('game_number', gameNumber)
+        .eq('status', 'pending');
         
       if (error) {
-        console.error("Error fetching pending claims:", error);
-        return;
+        console.error("Error fetching claims:", error);
+        return [];
       }
       
-      if (data && data.length > 0) {
-        console.log("Found pending claims:", data);
-        
-        data.forEach(claim => {
-          const isDuplicate = 
-            (currentClaim?.playerId === claim.player_id) || 
-            claimQueue.some(q => q.playerId === claim.player_id);
-            
-          if (!isDuplicate) {
-            console.log(`Adding existing claim for ${claim.players?.nickname || 'Unknown'} to queue`);
-            setClaimQueue(prev => [
-              ...prev, 
-              {
-                playerName: claim.players?.nickname || 'Unknown',
-                playerId: claim.player_id,
-                claimId: claim.id
-              }
-            ]);
-          }
-        });
-      }
-    } catch (error) {
-      console.error("Error checking for pending claims:", error);
+      return data || [];
+    } catch (err) {
+      console.error("Error in fetchPendingClaims:", err);
+      return [];
     }
-  }, [sessionId, currentClaim, claimQueue]);
+  }, [sessionId, gameNumber]);
 
   useEffect(() => {
-    if (!showClaimSheet && !processingClaim && claimQueue.length > 0) {
-      console.log("Auto-processing next claim");
-      const timer = setTimeout(() => {
-        processNextClaim();
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [showClaimSheet, processingClaim, claimQueue, processNextClaim]);
+    fetchPendingClaims().then(claims => setPendingClaims(claims));
+  }, [fetchPendingClaims]);
 
-  useEffect(() => {
-    if (!sessionId) return;
-    
-    console.log("Setting up real-time listener for bingo claims");
-    
-    const channel = supabase
-      .channel('caller-claims')
-      .on(
-        'broadcast',
-        { event: 'bingo-claim' },
-        (payload) => {
-          console.log("Received bingo claim broadcast:", payload);
-          
-          if (payload.payload && payload.payload.playerId && payload.payload.playerName) {
-            const claimData = payload.payload;
-            
-            const isDuplicate = 
-              (currentClaim?.playerId === claimData.playerId) || 
-              claimQueue.some(q => q.playerId === claimData.playerId);
-            
-            if (!isDuplicate) {
-              console.log(`Adding new claim from ${claimData.playerName} to queue`);
-              setClaimQueue(prev => [
-                ...prev,
-                {
-                  playerName: claimData.playerName,
-                  playerId: claimData.playerId,
-                  claimId: claimData.claimId
-                }
-              ]);
-              
-              toast({
-                title: "New Claim!",
-                description: `${claimData.playerName} has claimed bingo!`,
-                variant: "default",
-              });
-              
-              if (!showClaimSheet && !processingClaim && !currentClaim) {
-                setTimeout(() => {
-                  processNextClaim();
-                }, 300);
-              }
-            } else {
-              console.log(`Duplicate claim received from ${claimData.playerName}, ignoring`);
-            }
-          }
-        }
-      )
-      .subscribe();
+  const validateClaim = useCallback(async (claimId: string, playerId: string) => {
+    if (!sessionId || !gameNumber) return false;
 
-    return () => {
-      console.log("Removing channel for bingo claims");
-      supabase.removeChannel(channel);
-    };
-  }, [sessionId, currentClaim, claimQueue, showClaimSheet, processingClaim, processNextClaim, toast]);
-
-  const validateClaim = useCallback(async (shouldAdvanceGame = false) => {
-    if (!currentClaim || !sessionId) return;
-    
-    console.log(`Validating claim for ${currentClaim.playerName}, shouldAdvanceGame: ${shouldAdvanceGame}`);
-    
+    setIsProcessingClaim(true);
     try {
-      if (currentClaim.claimId) {
-        console.log(`Updating claim ${currentClaim.claimId} status to 'validated'`);
-        const { error: updateError } = await supabase
-          .from('bingo_claims')
-          .update({ status: 'validated' })
-          .eq('id', currentClaim.claimId);
-          
-        if (updateError) {
-          console.error("Error updating claim status:", updateError);
-        }
-      }
-      
-      const { data: sessionProgress } = await supabase
-        .from('sessions_progress')
+      // Fetch player info
+      const { data: playerData, error: playerError } = await supabase
+        .from('players')
         .select('*')
-        .eq('session_id', sessionId)
+        .eq('id', playerId)
         .single();
 
-      if (sessionProgress) {
-        // Update session progress after successful claim validation
-        await supabase
-          .from('sessions_progress')
-          .update({
-            current_win_pattern: null // Reset the current win pattern after validation
-          })
-          .eq('session_id', sessionId);
+      if (playerError) {
+        console.error("Error fetching player data:", playerError);
+        toast({
+          title: "Error",
+          description: "Failed to fetch player data.",
+          variant: "destructive"
+        });
+        return false;
       }
 
-      await supabase.channel('player-claims-listener')
-        .send({
-          type: 'broadcast',
-          event: 'claim-result',
-          payload: {
-            playerId: currentClaim.playerId,
-            result: 'valid',
-            timestamp: new Date().toISOString()
-          }
-        });
-      
-      return true;
-    } catch (error) {
-      console.error("Error validating claim:", error);
-      return false;
-    }
-  }, [currentClaim, sessionId]);
+      // Fetch session info
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('game_sessions')
+        .select('*')
+        .eq('id', sessionId)
+        .single();
 
-  const rejectClaim = useCallback(async () => {
-    if (!currentClaim || !sessionId) return;
-    
-    console.log(`Rejecting claim for ${currentClaim.playerName}`);
-    
-    try {
-      if (currentClaim.claimId) {
-        console.log(`Updating claim ${currentClaim.claimId} status to 'rejected'`);
-        const { error: updateError } = await supabase
-          .from('bingo_claims')
-          .update({ status: 'rejected' })
-          .eq('id', currentClaim.claimId);
-          
-        if (updateError) {
-          console.error("Error updating claim status:", updateError);
-        }
+      if (sessionError) {
+        console.error("Error fetching session data:", sessionError);
+        toast({
+          title: "Error",
+          description: "Failed to fetch session data.",
+          variant: "destructive"
+        });
+        return false;
       }
-      
-      await supabase.channel('player-claims-listener')
-        .send({
-          type: 'broadcast',
-          event: 'claim-result',
-          payload: {
-            playerId: currentClaim.playerId,
-            result: 'rejected',
-            timestamp: new Date().toISOString()
-          }
+
+      // Update the claim status in universal_game_logs
+      const { error: updateError } = await supabase
+        .from('universal_game_logs')
+        .update({ status: 'validated', validated_at: new Date().toISOString() })
+        .eq('id', claimId);
+
+      if (updateError) {
+        console.error("Error validating claim:", updateError);
+        toast({
+          title: "Error",
+          description: "Failed to validate claim.",
+          variant: "destructive"
         });
-      
-      await supabase.channel('player-game-updates')
-        .send({
-          type: 'broadcast',
-          event: 'claim-update',
-          payload: { 
-            sessionId: sessionId,
-            playerId: currentClaim.playerId,
-            result: 'false'
-          }
-        });
-      
+        return false;
+      }
+
+      // Update local state
+      setPendingClaims(prev => prev.filter(claim => claim.id !== claimId));
+
       toast({
-        title: "Claim Rejected",
-        description: `${currentClaim.playerName}'s claim has been rejected.`
+        title: "Claim Validated",
+        description: "The claim has been successfully validated.",
       });
-      
-    } catch (error) {
-      console.error("Error rejecting claim:", error);
-      
+      return true;
+    } catch (err) {
+      console.error("Error in validateClaim:", err);
       toast({
         title: "Error",
-        description: "Failed to reject the claim. Please try again.",
+        description: "An unexpected error occurred while validating the claim.",
         variant: "destructive"
       });
+      return false;
+    } finally {
+      setIsProcessingClaim(false);
     }
-  }, [currentClaim, sessionId, toast]);
+  }, [sessionId, gameNumber, toast]);
 
-  const handleNextGame = useCallback(() => {
-    console.log("Explicitly handling next game progression");
-    progressToNextGame();
-  }, [progressToNextGame]);
+  const rejectClaim = useCallback(async (claimId: string) => {
+    if (!sessionId || !gameNumber) return false;
+
+    setIsProcessingClaim(true);
+    try {
+      // Update the claim status to 'rejected' in universal_game_logs
+      const { error: updateError } = await supabase
+        .from('universal_game_logs')
+        .update({ status: 'rejected' })
+        .eq('id', claimId);
+
+      if (updateError) {
+        console.error("Error rejecting claim:", updateError);
+        toast({
+          title: "Error",
+          description: "Failed to reject claim.",
+          variant: "destructive"
+        });
+        return false;
+      }
+
+      // Update local state
+      setPendingClaims(prev => prev.filter(claim => claim.id !== claimId));
+
+      toast({
+        title: "Claim Rejected",
+        description: "The claim has been successfully rejected.",
+      });
+      return true;
+    } catch (err) {
+      console.error("Error in rejectClaim:", err);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred while rejecting the claim.",
+        variant: "destructive"
+      });
+      return false;
+    } finally {
+      setIsProcessingClaim(false);
+    }
+  }, [sessionId, gameNumber, toast]);
 
   return {
-    showClaimSheet,
-    setShowClaimSheet: handleCloseSheet,
-    currentClaim,
-    setCurrentClaim,
-    claimQueue,
-    openClaimSheet: useCallback(() => {
-      console.log("Opening claim sheet manually");
-      if (claimQueue.length > 0 && !currentClaim && !showClaimSheet && !processingClaim) {
-        processNextClaim();
-      } else if (currentClaim && !showClaimSheet && !processingClaim) {
-        setShowClaimSheet(true);
-      }
-    }, [claimQueue, currentClaim, processNextClaim, showClaimSheet, processingClaim]),
+    pendingClaims,
+    fetchPendingClaims,
     validateClaim,
     rejectClaim,
-    processNextClaim,
-    checkForClaims,
-    handleNextGame,
-    isProcessingGame
+    isProcessingClaim
   };
 }

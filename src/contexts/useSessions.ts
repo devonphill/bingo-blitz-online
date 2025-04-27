@@ -29,14 +29,14 @@ export function useSessions() {
         return {
           id: session.id,
           name: session.name,
-          gameType: session.game_type,
+          gameType: session.game_type as GameType,
           createdBy: session.created_by,
           accessCode: session.access_code,
-          status: session.status,
+          status: session.status as 'pending' | 'active' | 'completed',
           createdAt: session.created_at,
           sessionDate: session.session_date,
           numberOfGames: session.number_of_games || 1,
-          lifecycle_state: session.lifecycle_state,
+          lifecycle_state: session.lifecycle_state as 'setup' | 'live' | 'ended',
           games_config: gameConfigs,
           current_game: session.current_game,
           active_pattern_id: session.active_pattern_id

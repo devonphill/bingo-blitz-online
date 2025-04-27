@@ -119,33 +119,6 @@ export type Database = {
         }
         Relationships: []
       }
-      game_rules_config: {
-        Row: {
-          created_at: string
-          created_by: string | null
-          game_type: Database["public"]["Enums"]["game_type"]
-          id: string
-          rules: Json
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          created_by?: string | null
-          game_type: Database["public"]["Enums"]["game_type"]
-          id?: string
-          rules?: Json
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          created_by?: string | null
-          game_type?: Database["public"]["Enums"]["game_type"]
-          id?: string
-          rules?: Json
-          updated_at?: string
-        }
-        Relationships: []
-      }
       game_sessions: {
         Row: {
           access_code: string

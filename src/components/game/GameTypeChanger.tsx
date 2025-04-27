@@ -3,21 +3,37 @@ import React from 'react';
 import { Button } from "@/components/ui/button";
 import { useSessions } from "@/contexts/useSessions";
 import { GameType } from "@/types";
+import { useSessionProgress } from "@/hooks/useSessionProgress";
 
 export function GameTypeChanger() {
-  const { currentSession, updateCurrentGameState } = useSessions();
+  const { currentSession, updateSession } = useSessions();
   
   const changeGameType = async (newType: GameType) => {
     if (!currentSession) return;
     
-    await updateCurrentGameState({
-      gameType: newType,
-      gameNumber: (currentSession.current_game_state?.gameNumber || 0) + 1,
-      calledItems: [],
-      lastCalledItem: null,
-      activePatternIds: ['oneLine'],
-      prizes: {},
-      status: 'pending'
+    // Update the game_type in the session
+    await updateSession(currentSession.id, {
+      gameType: newType
+    });
+    
+    // Update the games_config for the current game
+    const currentGameNumber = currentSession.current_game || 1;
+    const gamesConfig = Array.isArray(currentSession.games_config) 
+      ? [...currentSession.games_config] 
+      : [];
+    
+    const updatedConfig = gamesConfig.map(config => {
+      if (config.gameNumber === currentGameNumber) {
+        return {
+          ...config,
+          gameType: newType
+        };
+      }
+      return config;
+    });
+    
+    await updateSession(currentSession.id, {
+      games_config: updatedConfig
     });
   };
 
@@ -26,13 +42,13 @@ export function GameTypeChanger() {
       <h3 className="text-lg font-semibold mb-3">Change Game Type</h3>
       <div className="flex gap-4">
         <Button 
-          variant={currentSession?.current_game_state?.gameType === 'mainstage' ? 'default' : 'outline'}
+          variant={currentSession?.gameType === 'mainstage' ? 'default' : 'outline'}
           onClick={() => changeGameType('mainstage')}
         >
           Mainstage Bingo
         </Button>
         <Button 
-          variant={currentSession?.current_game_state?.gameType === 'party' ? 'default' : 'outline'}
+          variant={currentSession?.gameType === 'party' ? 'default' : 'outline'}
           onClick={() => changeGameType('party')}
         >
           Party Bingo

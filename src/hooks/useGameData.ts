@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { GameConfiguration, GamePattern, CalledItem, GameType, GameConfig } from '@/types';
 import { Json, isOfType, GameConfigurationType, GamePatternType, CalledItemType, SessionWithActivePattern, WinPatternConfig, isGameConfigItem } from '@/types/json';
+import { getPatternConfig } from '@/types/json';
 
 // Existing type guard functions
 const isGamePattern = (obj: any): obj is GamePattern => {
@@ -82,19 +83,25 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
             if (currentGameConfig && currentGameConfig.patterns) {
               const extractedPatterns: GamePattern[] = [];
               
+              // Safely access and iterate through patterns
               Object.entries(currentGameConfig.patterns)
-                .filter(([_, config]) => config.active)
+                .filter(([_, config]) => {
+                  // Safely check if config has active property and it's true
+                  return config && typeof config === 'object' && 'active' in config && config.active === true;
+                })
                 .forEach(([patternId, config], index) => {
-                  extractedPatterns.push({
-                    id: `pattern-${patternId}`,
-                    game_config_id: 'legacy',
-                    pattern_id: patternId,
-                    pattern_order: index,
-                    prize_amount: config.prizeAmount,
-                    prize_description: config.description,
-                    is_non_cash: config.isNonCash,
-                    created_at: new Date().toISOString()
-                  });
+                  if (config && typeof config === 'object') {
+                    extractedPatterns.push({
+                      id: `pattern-${patternId}`,
+                      game_config_id: 'legacy',
+                      pattern_id: patternId,
+                      pattern_order: index,
+                      prize_amount: config.prizeAmount || '10.00',
+                      prize_description: config.description || '',
+                      is_non_cash: config.isNonCash || false,
+                      created_at: new Date().toISOString()
+                    });
+                  }
                 });
               
               setPatterns(extractedPatterns);
@@ -481,7 +488,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
       supabase.removeChannel(channel);
       supabase.removeChannel(progressChannel);
     };
-  }, [sessionId, fetchGameData, calledItems.length, configuration?.game_number]);
+  }, [sessionId, fetchGameData]);
   
   return {
     configuration,

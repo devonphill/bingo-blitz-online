@@ -3,6 +3,7 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { GameSession } from "@/types";
 import { AlertCircle, RefreshCw, Info } from "lucide-react";
+import { useSessionProgress } from "@/hooks/useSessionProgress";
 
 interface Props {
   isLoading: boolean;
@@ -82,11 +83,15 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
     );
   }
 
+  // Get progress information from session progress
+  const sessionId = currentSession?.id;
+  const { progress } = useSessionProgress(sessionId);
+  
   // Check if the game is in an active state
   const isGameLive = currentSession.lifecycle_state === 'live';
   const isSessionActive = currentSession.status === 'active';
-  const hasCurrentGameState = !!currentSession.current_game_state;
-  const isGameActive = hasCurrentGameState && currentSession.current_game_state.status === 'active';
+  const gameStatus = progress?.game_status || 'pending';
+  const isGameActive = gameStatus === 'active';
 
   // If the game is not active yet, show waiting message
   if (!isGameLive || !isSessionActive || !isGameActive) {
@@ -117,11 +122,9 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
               <p className="text-sm text-gray-500">
                 <span className="font-semibold">Status:</span> {currentSession.status || 'unknown'}
               </p>
-              {hasCurrentGameState && (
-                <p className="text-sm text-gray-500 mt-2">
-                  <span className="font-semibold">Game status:</span> {currentSession.current_game_state.status || 'unknown'}
-                </p>
-              )}
+              <p className="text-sm text-gray-500 mt-2">
+                <span className="font-semibold">Game status:</span> {gameStatus || 'unknown'}
+              </p>
             </div>
             <Button onClick={() => window.location.reload()} className="w-full flex items-center justify-center gap-2">
               <RefreshCw className="h-4 w-4" />
