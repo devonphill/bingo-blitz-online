@@ -1,3 +1,4 @@
+
 // This file defines the core data structures used throughout the application.
 
 export type UserRole = 'superuser' | 'subuser';
@@ -11,10 +12,11 @@ export interface User {
 // Updated GameType definition to include 'mainstage', 'party', 'quiz', 'music', and 'logo'
 export type GameType = 'mainstage' | 'party' | 'quiz' | 'music' | 'logo';
 
-// Prize details interface
+// Prize details interface - updated to include isNonCash property
 export interface PrizeDetails {
   amount?: string;
   description?: string;
+  isNonCash?: boolean;
 }
 
 // --- New definition for the state of the currently active game ---

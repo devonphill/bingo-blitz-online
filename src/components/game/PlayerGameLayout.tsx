@@ -24,6 +24,8 @@ interface PlayerGameLayoutProps {
   isClaiming?: boolean;
   claimStatus?: 'pending' | 'validated' | 'rejected';
   gameType?: string;
+  currentGameNumber?: number;
+  numberOfGames?: number;
 }
 
 export default function PlayerGameLayout({
@@ -41,7 +43,9 @@ export default function PlayerGameLayout({
   calledNumbers,
   isClaiming = false,
   claimStatus,
-  gameType = '90-ball'
+  gameType = '90-ball',
+  currentGameNumber = 1,
+  numberOfGames = 1
 }: PlayerGameLayoutProps) {
   const [localClaimValidating, setLocalClaimValidating] = useState(false);
   const { toast } = useToast();
@@ -195,6 +199,11 @@ export default function PlayerGameLayout({
               <p className="text-sm text-gray-300">
                 Game Type: <span className="font-bold text-white">{gameType}</span>
               </p>
+              {numberOfGames > 1 && (
+                <p className="text-sm text-gray-300 mt-1">
+                  Game: <span className="font-bold text-white">{currentGameNumber} of {numberOfGames}</span>
+                </p>
+              )}
             </div>
           )}
           <Button

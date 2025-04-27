@@ -22,5 +22,5 @@ export const gameConfigToJson = (config: GameConfig[]): string => {
   return JSON.stringify(config);
 };
 
-// Sample JSON string that can be copy/pasted directly in the database
+// Sample JSON string that can be copied/pasted directly in the database
 export const sampleGameConfigJson = gameConfigToJson(sampleGameConfig);
