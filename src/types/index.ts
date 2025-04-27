@@ -71,19 +71,21 @@ export function isLegacyGameConfig(config: any): boolean {
 export function convertLegacyGameConfig(config: LegacyGameConfig): GameConfig {
   const patterns: Record<string, WinPatternConfig> = {};
   
-  config.selectedPatterns.forEach(patternId => {
-    const prize = config.prizes[patternId] || {};
-    patterns[patternId] = {
-      active: true,
-      isNonCash: prize.isNonCash || false,
-      prizeAmount: prize.amount || '0.00',
-      description: prize.description || ''
-    };
-  });
+  if (Array.isArray(config.selectedPatterns)) {
+    config.selectedPatterns.forEach(patternId => {
+      const prize = config.prizes?.[patternId] || {};
+      patterns[patternId] = {
+        active: true,
+        isNonCash: prize.isNonCash || false,
+        prizeAmount: prize.amount || '0.00',
+        description: prize.description || ''
+      };
+    });
+  }
   
   return {
-    gameNumber: config.gameNumber,
-    gameType: config.gameType,
+    gameNumber: config.gameNumber || 1,
+    gameType: config.gameType || 'mainstage',
     patterns
   };
 }

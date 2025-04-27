@@ -8,12 +8,8 @@ interface SessionContextProps {
   sessions: GameSession[];
   currentSession: GameSession | null;
   fetchSessions: () => Promise<void>;
-  createSession?: (sessionData: Partial<GameSession>) => Promise<string | null>;
   updateSession: (sessionId: string, updates: Partial<GameSession>) => Promise<boolean>;
-  deleteSession?: (sessionId: string) => Promise<boolean>;
-  fetchSessionById?: (sessionId: string) => Promise<GameSession | null>;
   setCurrentSession: (sessionId: string | null) => void;
-  joinSessionWithCode?: (accessCode: string) => Promise<any>;
   players: Player[];
   fetchPlayers: (sessionId: string) => Promise<void>;
   addPlayer: (sessionId: string, player: TempPlayer) => Promise<string | null>;
@@ -33,12 +29,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     sessions,
     currentSession,
     fetchSessions,
-    createSession,
     updateSession,
-    deleteSession,
-    fetchSessionById,
     setCurrentSession,
-    joinSessionWithCode,
     isLoading: sessionsLoading,
     error: sessionsError
   } = useSessions();
@@ -64,12 +56,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         sessions,
         currentSession,
         fetchSessions,
-        createSession,
         updateSession,
-        deleteSession,
-        fetchSessionById,
         setCurrentSession,
-        joinSessionWithCode,
         players,
         fetchPlayers,
         addPlayer,

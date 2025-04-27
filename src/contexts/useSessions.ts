@@ -1,9 +1,9 @@
 
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { GameSession } from '@/types';
+import { GameSession, GameConfig } from '@/types';
 import { convertFromLegacyConfig } from '@/utils/callerSessionHelper';
-import { Json } from '@/types/json';
+import { Json, parseGameConfigs } from '@/types/json';
 
 export function useSessions() {
   const [sessions, setSessions] = useState<GameSession[]>([]);
@@ -31,14 +31,11 @@ export function useSessions() {
         // Convert raw data to GameSession objects
         const sessionObjects: GameSession[] = data.map(session => {
           // Process games_config to ensure it's in the correct format
-          let processedGamesConfig = [];
+          let processedGamesConfig: GameConfig[] = [];
           
           if (session.games_config) {
-            if (Array.isArray(session.games_config)) {
-              processedGamesConfig = session.games_config.map(config => convertFromLegacyConfig(config));
-            } else {
-              processedGamesConfig = [convertFromLegacyConfig(session.games_config)];
-            }
+            // Use parseGameConfigs from types/json to safely convert the JSON data
+            processedGamesConfig = parseGameConfigs(session.games_config);
           }
           
           return {

@@ -29,16 +29,47 @@ export function prepareForDatabase(data: any): Json {
   return JSON.parse(JSON.stringify(data));
 }
 
-// Helper function to safely convert Json to GameConfig[]
+/**
+ * Safely convert Json to GameConfig[]
+ * This handles different formats and ensures type safety
+ */
 export function parseGameConfigs(json: Json): GameConfig[] {
   if (!json || !Array.isArray(json)) {
     return [];
   }
   
-  return json.map((item: any) => ({
-    gameNumber: item.gameNumber || 1,
-    gameType: item.gameType || 'mainstage',
-    patterns: item.patterns || {},
-    session_id: item.session_id
-  }));
+  return json.map((item: any) => {
+    // Ensure item is an object
+    if (typeof item !== 'object' || item === null) {
+      return {
+        gameNumber: 1,
+        gameType: 'mainstage',
+        patterns: {},
+        session_id: undefined
+      };
+    }
+    
+    // Create patterns object with proper type checking
+    const patterns: Record<string, any> = {};
+    
+    if (item.patterns && typeof item.patterns === 'object') {
+      Object.entries(item.patterns).forEach(([patternId, config]) => {
+        const patternConfig = config as Record<string, any> || {};
+        
+        patterns[patternId] = {
+          active: patternConfig.active === true,
+          isNonCash: patternConfig.isNonCash === true,
+          prizeAmount: patternConfig.prizeAmount || '0.00',
+          description: patternConfig.description || ''
+        };
+      });
+    }
+    
+    return {
+      gameNumber: typeof item.gameNumber === 'number' ? item.gameNumber : 1,
+      gameType: item.gameType || 'mainstage',
+      patterns: patterns,
+      session_id: item.session_id
+    };
+  });
 }

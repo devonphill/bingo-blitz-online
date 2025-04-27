@@ -30,3 +30,12 @@ export function parseJson<T>(jsonData: string | Json | null): T | null {
     return null;
   }
 }
+
+/**
+ * Prepares an object to be safely stored as JSON in the database
+ * @param data Any data structure to be stored in the database
+ * @returns A JSON-compatible representation of the data
+ */
+export function toJsonSafe<T>(data: T): Json {
+  return JSON.parse(JSON.stringify(data));
+}

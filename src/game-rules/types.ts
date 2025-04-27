@@ -29,13 +29,13 @@ export interface GameRules {
 
   /**
    * Get all win patterns available for this game type.
-   * Added to ensure compatibility with existing code.
+   * Pattern information for UI display and selection.
    */
   getWinPatterns(): { id: string; name: string; gameType: string; available: boolean; }[];
   
   /**
    * Generate a new random number that hasn't been called yet.
-   * Added to ensure compatibility with existing code.
+   * Used by the caller to draw the next number.
    */
   generateNewNumber(calledItems: number[]): number;
 

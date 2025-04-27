@@ -1,195 +1,162 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { supabase } from '@/integrations/supabase/client';
+import { GameType, WinPattern, GameConfig } from '@/types';
+import { WinPatternConfig } from '@/types';
 import { useToast } from "@/hooks/use-toast";
-import { generateAccessCode } from "@/utils/accessCodeGenerator";
-import { GameSetupView } from '@/components/caller/GameSetupView';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { GameTypeSelector } from '@/components/caller/GameTypeSelector';
+import { WinPatternSelector } from '@/components/caller/WinPatternSelector';
 import { LiveGameView } from '@/components/caller/LiveGameView';
-import { WinPattern } from '@/types/winPattern';
-import { DEFAULT_PATTERN_ORDER } from '@/types';
-import { supabase } from "@/integrations/supabase/client";
-import { GameType, GameSession, GameConfig } from '@/types';
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { getGameRulesForType } from '@/game-rules/gameRulesRegistry';
+import { SessionProgressUpdate } from '@/utils/callerSessionHelper';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
-import { updateSessionProgress } from '@/utils/callerSessionHelper';
-import { prepareForDatabase } from '@/utils/jsonUtils';
-
-interface Claim {
-  id: string;
-  session_id: string;
-  player_id: string;
-  player_name: string;
-  win_pattern: string;
-  prize_amount: string;
-  ticket_serial: string;
-  ticket_position: number;
-  ticket_layout_mask: number;
-  ticket_numbers: number[];
-  claimed_at: string;
-}
+import { getGameRulesForType } from '@/game-rules/gameRulesRegistry';
+import { SessionProgress } from '@/hooks/useSessionProgress';
 
 export default function CallerSession() {
-  const { sessionId: routeSessionId } = useParams<{ sessionId: string }>();
-  const sessionId = routeSessionId || localStorage.getItem('currentSessionId') || '';
-  const [session, setSession] = useState<GameSession | null>(null);
-  const [sessionName, setSessionName] = useState('');
-  const [accessCode, setAccessCode] = useState('');
-  const [numberOfGames, setNumberOfGames] = useState(1);
-  const [currentGameNumber, setCurrentGameNumber] = useState(1);
-  const [currentGameType, setCurrentGameType] = useState<GameType>('mainstage');
-  const [winPatterns, setWinPatterns] = useState<WinPattern[]>([]);
-  const [selectedPatterns, setSelectedPatterns] = useState<string[]>([]);
-  const [isStarting, setIsStarting] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isGoingLive, setIsGoingLive] = useState(false);
-  const [calledItems, setCalledItems] = useState<number[]>([]);
-  const [lastCalledItem, setLastCalledItem] = useState<number | null>(null);
-  const [pendingClaims, setPendingClaims] = useState(0);
-  const [claims, setClaims] = useState<Claim[]>([]);
-  const [isClaimsDialogOpen, setIsClaimsDialogOpen] = useState(false);
-  const [gameStatus, setGameStatus] = useState<string>('pending');
-  const [currentWinPattern, setCurrentWinPattern] = useState<string | null>(null);
-  const [currentGameConfigs, setCurrentGameConfigs] = useState<GameConfig[]>([]);
-  const [currentGameTypeFromProgress, setCurrentGameTypeFromProgress] = useState<GameType>('mainstage');
+  const { sessionId: urlSessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // Get session progress from the database for authoritative game state
-  const { progress: sessionProgress } = useSessionProgress(sessionId);
+  const [session, setSession] = useState<{
+    id: string;
+    name: string;
+    gameType: GameType;
+    createdBy: string;
+    accessCode: string;
+    status: string;
+    createdAt: string;
+    sessionDate?: string;
+    numberOfGames: number;
+    current_game: number;
+    lifecycle_state: string;
+    games_config: GameConfig[];
+  } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [gameType, setGameType] = useState<GameType>('mainstage');
+  const [availablePatterns, setAvailablePatterns] = useState<WinPattern[]>([]);
+  const [selectedPatterns, setSelectedPatterns] = useState<string[]>([]);
+  const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
+  const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
+  const [pendingClaims, setPendingClaims] = useState(0);
+  const [isClaimSheetOpen, setIsClaimSheetOpen] = useState(false);
+  const [sessionStatus, setSessionStatus] = useState<string>('pending');
+  const [gameConfigs, setGameConfigs] = useState<GameConfig[]>([]);
+  const [currentGameNumber, setCurrentGameNumber] = useState(1);
+  const [numberOfGames, setNumberOfGames] = useState(1);
+  const [currentWinPattern, setCurrentWinPattern] = useState<string | null>(null);
 
+  const gameRules = getGameRulesForType(gameType);
+
+  // Fetch session data on component mount
   useEffect(() => {
-    if (sessionProgress) {
-      setCurrentWinPattern(sessionProgress.current_win_pattern || null);
-      setCurrentGameType(sessionProgress.current_game_type as GameType);
-      
-      // Handle called_numbers if it exists, otherwise fallback to empty array
-      const calledNumbers = sessionProgress.called_numbers || [];
-      
-      if (calledNumbers && calledNumbers.length > 0) {
-        setCalledItems(calledNumbers);
-        setLastCalledItem(calledNumbers[calledNumbers.length - 1] || null);
-      }
-      
-      // Update game status 
-      const gameStatus = sessionProgress.game_status || 'pending';
-      setGameStatus(gameStatus as 'pending' | 'active' | 'completed');
-    }
-  }, [sessionProgress]);
-
-  const fetchSessionById = useCallback(async (sessionId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('game_sessions')
-        .select('*')
-        .eq('id', sessionId)
-        .single();
-        
-      if (error) throw error;
-      
-      if (data) {
-        // Create a properly typed GameSession object
-        const session: GameSession = {
-          id: data.id,
-          name: data.name,
-          gameType: data.game_type as GameType,
-          createdBy: data.created_by,
-          accessCode: data.access_code,
-          status: data.status as 'pending' | 'active' | 'completed',
-          createdAt: data.created_at,
-          sessionDate: data.session_date,
-          numberOfGames: data.number_of_games,
-          current_game: data.current_game,
-          lifecycle_state: data.lifecycle_state as 'setup' | 'live' | 'ended' | 'completed',
-          games_config: Array.isArray(data.games_config) 
-            ? (data.games_config as GameConfig[]) 
-            : []
-        };
-        
-        setSession(session);
-      }
-    } catch (error) {
-      console.error('Error fetching session:', error);
-    }
-  }, []);
-
-  const fetchClaims = useCallback(async (sessionId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('universal_game_logs')
-        .select(`
-          id, 
-          session_id,
-          player_id,
-          player_name,
-          win_pattern,
-          prize_amount,
-          ticket_serial,
-          ticket_position,
-          ticket_layout_mask,
-          ticket_numbers,
-          claimed_at
-        `)
-        .eq('session_id', sessionId);
-
-      if (error) {
-        console.error('Error fetching claims:', error);
+    async function fetchSessionData() {
+      if (!urlSessionId) {
+        setError('Session ID is missing.');
+        setIsLoading(false);
         return;
       }
 
-      setClaims(data || []);
-      setPendingClaims(data ? data.length : 0);
-    } catch (err) {
-      console.error('Error fetching claims:', err);
-    }
-  }, []);
+      setIsLoading(true);
+      setError(null);
 
-  useEffect(() => {
-    if (sessionId) {
-      localStorage.setItem('currentSessionId', sessionId);
-      fetchSessionById(sessionId);
-      fetchClaims(sessionId);
-    }
-  }, [sessionId, fetchSessionById, fetchClaims]);
+      try {
+        const { data, error } = await supabase
+          .from('game_sessions')
+          .select('*')
+          .eq('id', urlSessionId)
+          .single();
 
-  useEffect(() => {
-    if (session) {
-      setSessionName(session.name);
-      setAccessCode(session.accessCode);
-      setNumberOfGames(session.numberOfGames);
-      setCurrentGameNumber(session.current_game);
-      setCurrentGameType(session.gameType);
-      setCurrentGameConfigs(session.games_config);
-      
-      const gameRules = getGameRulesForType(session.gameType);
-      setWinPatterns(gameRules.getWinPatterns());
-      
-      // Set initial selected patterns
-      if (session.games_config && session.games_config.length > 0) {
-        const firstGameConfig = session.games_config[0];
-        if (firstGameConfig.patterns) {
-          setSelectedPatterns(Object.keys(firstGameConfig.patterns).filter(key => firstGameConfig.patterns[key].active));
-        } else if (firstGameConfig.selectedPatterns) {
-          setSelectedPatterns(firstGameConfig.selectedPatterns);
-        } else {
-          setSelectedPatterns(DEFAULT_PATTERN_ORDER[session.gameType] || []);
+        if (error) {
+          throw error;
         }
-      } else {
-        setSelectedPatterns(DEFAULT_PATTERN_ORDER[session.gameType] || []);
+
+        if (data) {
+          setSession({
+            id: data.id,
+            name: data.name,
+            gameType: data.game_type as GameType,
+            createdBy: data.created_by,
+            accessCode: data.access_code,
+            status: data.status as string,
+            createdAt: data.created_at,
+            sessionDate: data.session_date,
+            numberOfGames: data.number_of_games,
+            current_game: data.current_game,
+            lifecycle_state: data.lifecycle_state as string,
+            games_config: data.games_config
+          });
+          setGameType(data.game_type as GameType);
+          setSessionStatus(data.status as string);
+          setGameConfigs(data.games_config as GameConfig[]);
+          setCurrentGameNumber(data.current_game || 1);
+          setNumberOfGames(data.number_of_games || 1);
+        }
+      } catch (err) {
+        setError(`Failed to fetch session: ${(err as Error).message}`);
+        console.error('Error fetching session:', err);
+      } finally {
+        setIsLoading(false);
       }
     }
-  }, [session]);
 
-  const handleGameTypeChange = (type: GameType) => {
-    setCurrentGameType(type);
-    const gameRules = getGameRulesForType(type);
-    setWinPatterns(gameRules.getWinPatterns());
-    setSelectedPatterns(DEFAULT_PATTERN_ORDER[type] || []);
+    fetchSessionData();
+  }, [urlSessionId]);
+
+  useEffect(() => {
+    if (gameRules) {
+      const patterns = gameRules.getWinPatterns().map(p => ({
+        ...p,
+        gameType: p.gameType as GameType
+      }));
+      setAvailablePatterns(patterns);
+    }
+  }, [gameRules]);
+
+  // Fetch session progress
+  const { progress, loading: progressLoading, error: progressError } = useSessionProgress(urlSessionId);
+
+  useEffect(() => {
+    if (progress) {
+      setCalledNumbers(progress.called_numbers || []);
+      setCurrentWinPattern(progress.current_win_pattern);
+    }
+  }, [progress]);
+
+  // Update session progress in the database
+  const updateSessionProgress = async (sessionId: string, updates: SessionProgressUpdate): Promise<boolean> => {
+    try {
+      const { error } = await supabase
+        .from('sessions_progress')
+        .update(updates)
+        .eq('session_id', sessionId);
+
+      if (error) {
+        console.error('Error updating session progress:', error);
+        return false;
+      }
+
+      return true;
+    } catch (err) {
+      console.error('Exception updating session progress:', err);
+      return false;
+    }
+  };
+
+  const handleGameTypeChange = (newType: GameType) => {
+    setGameType(newType);
+    if (gameRules) {
+      const patterns = gameRules.getWinPatterns().map(p => ({
+        ...p,
+        gameType: p.gameType as GameType
+      }));
+      setAvailablePatterns(patterns);
+    }
+    setSelectedPatterns([]);
   };
 
   const handlePatternSelect = (pattern: WinPattern) => {
@@ -202,319 +169,232 @@ export default function CallerSession() {
     });
   };
 
-  const startSession = async () => {
-    setIsStarting(true);
-    try {
-      const newAccessCode = generateAccessCode(6);
-      setAccessCode(newAccessCode);
-
-      const { error } = await supabase
-        .from('game_sessions')
-        .update({ access_code: newAccessCode })
-        .eq('id', sessionId);
-
-      if (error) throw error;
-
-      toast({
-        title: "Session Started",
-        description: "The session has been started with a new access code.",
-      });
-    } catch (err) {
-      console.error("Error starting session:", err);
-      toast({
-        title: "Error",
-        description: "Failed to start the session.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsStarting(false);
-    }
-  };
-
-  const saveSessionName = async () => {
-    setIsSaving(true);
-    try {
-      const { error } = await supabase
-        .from('game_sessions')
-        .update({ name: sessionName })
-        .eq('id', sessionId);
-
-      if (error) throw error;
-
-      toast({
-        title: "Session Name Updated",
-        description: "The session name has been updated successfully.",
-      });
-    } catch (err) {
-      console.error("Error saving session name:", err);
-      toast({
-        title: "Error",
-        description: "Failed to update the session name.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const goLive = async () => {
-    setIsGoingLive(true);
-    try {
-      // Update the game_sessions table to set the status to 'active' and lifecycle_state to 'live'
-      await supabase
-        .from('game_sessions')
-        .update({
-          status: 'active',
-          lifecycle_state: 'live'
-        })
-        .eq('id', sessionId);
-
-      // Also update the sessions_progress table to set the game_status to 'active'
-      await supabase
-        .from('sessions_progress')
-        .update({
-          game_status: 'active'
-        })
-        .eq('session_id', sessionId);
-
-      // Notify
-      toast({
-        title: "Game is Live!",
-        description: "The game has started and is now live.",
-      });
-
-      // Update local state
-      setGameStatus('active');
-    } catch (err) {
-      console.error("Error going live:", err);
-      toast({
-        title: "Error",
-        description: "Failed to start the game.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsGoingLive(false);
-    }
-  };
-
-  const callNumber = async () => {
-    if (!session) return;
+  const handleGenerateNewNumber = () => {
+    if (!gameRules || calledNumbers.length >= 90) return;
 
     try {
-      // Generate a new random number based on the game type
-      const gameRules = getGameRulesForType(currentGameType);
-      const newNumber = gameRules.generateNewNumber(calledItems);
+      const newNumber = gameRules.generateNewNumber(calledNumbers);
+      setCalledNumbers(prev => [...prev, newNumber]);
+      setLastCalledNumber(newNumber);
 
-      // Update the called items array
-      const updatedCalledItems = [...calledItems, newNumber];
-      setCalledItems(updatedCalledItems);
-      setLastCalledItem(newNumber);
-
-      // Update the session progress in the database
-      await updateSessionProgress(sessionId, {
-        called_numbers: updatedCalledItems,
-        current_game_type: currentGameType
-      });
-
-      // Notify
-      toast({
-        title: "Number Called",
-        description: `The number ${newNumber} has been called.`,
-      });
-    } catch (err) {
-      console.error("Error calling number:", err);
-      toast({
-        title: "Error",
-        description: "Failed to call a new number.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const recallNumber = async () => {
-    if (!session) return;
-
-    try {
-      if (calledItems.length === 0) {
-        toast({
-          title: "No Numbers Called",
-          description: "No numbers have been called yet.",
-          variant: "destructive"
+      // Update session progress with the new number
+      if (session) {
+        updateSessionProgress(session.id, {
+          called_numbers: [...calledNumbers, newNumber]
         });
-        return;
+      }
+    } catch (error) {
+      console.error("Error generating new number:", error);
+      toast({
+        title: "Error",
+        description: "Failed to generate a new number. All possible numbers may have been called.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleRecallNumber = () => {
+    if (calledNumbers.length === 0) return;
+
+    const recalledNumber = calledNumbers[calledNumbers.length - 1];
+    setCalledNumbers(prev => prev.slice(0, -1));
+    setLastCalledNumber(recalledNumber);
+
+    // Update session progress by removing the last called number
+    if (session) {
+      updateSessionProgress(session.id, {
+        called_numbers: calledNumbers.slice(0, -1)
+      });
+    }
+  };
+
+  const handleViewClaims = () => {
+    setIsClaimSheetOpen(true);
+  };
+
+  const handleCloseClaimSheet = () => {
+    setIsClaimSheetOpen(false);
+  };
+
+  const handleGoLive = async () => {
+    if (!session) return;
+
+    try {
+      // Update session status to 'active'
+      const { error } = await supabase
+        .from('game_sessions')
+        .update({ status: 'active' })
+        .eq('id', session.id);
+
+      if (error) {
+        throw error;
       }
 
-      // Remove the last called number
-      const updatedCalledItems = calledItems.slice(0, -1);
-      const recalledNumber = calledItems[calledItems.length - 1];
+      setSessionStatus('active');
 
-      setCalledItems(updatedCalledItems);
-      setLastCalledItem(updatedCalledItems.length > 0 ? updatedCalledItems[updatedCalledItems.length - 1] : null);
-
-      // Update the session progress in the database
-      await updateSessionProgress(sessionId, {
-        called_numbers: updatedCalledItems,
-        current_game_type: currentGameType
-      });
-
-      // Notify
-      toast({
-        title: "Number Recalled",
-        description: `The number ${recalledNumber} has been recalled.`,
+      // Update session progress with initial game state
+      await updateSessionProgress(session.id, {
+        game_status: 'active'
       });
     } catch (err) {
-      console.error("Error recalling number:", err);
+      console.error('Error going live:', err);
       toast({
         title: "Error",
-        description: "Failed to recall the last number.",
+        description: "Failed to start the game. Please try again.",
         variant: "destructive"
       });
     }
   };
 
-  const updateSessionInDatabase = async (sessionId: string) => {
+  const handleGameEnd = async () => {
+    if (!session) return;
+
     try {
-      // Update the game_sessions table without current_game_state
-      await supabase
+      // Update session status to 'completed'
+      const { error } = await supabase
         .from('game_sessions')
-        .update({
-          status: gameStatus,
-          current_game: currentGameNumber,
-        })
-        .eq('id', sessionId);
-      
-      // Instead, update the sessions_progress table
-      await supabase
-        .from('sessions_progress')
-        .update({
-          current_game_number: currentGameNumber,
-          current_win_pattern: currentWinPattern,
-          current_game_type: currentGameType,
-          // Add called_numbers if the column exists
-          ...(typeof sessionProgress?.called_numbers !== 'undefined' && {
-            called_numbers: calledItems
-          }),
-          // Add game_status if the column exists
-          ...(typeof sessionProgress?.game_status !== 'undefined' && {
-            game_status: gameStatus
-          })
-        })
-        .eq('session_id', sessionId);
-      
+        .update({ status: 'completed' })
+        .eq('id', session.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setSessionStatus('completed');
+
+      await updateSessionProgress(session.id, {
+        game_status: 'completed'
+      });
     } catch (err) {
-      console.error('Error updating session in database:', err);
+      console.error('Error ending game:', err);
       toast({
-        title: 'Error',
-        description: 'Failed to update game state in database',
-        variant: 'destructive'
+        title: "Error",
+        description: "Failed to end the game. Please try again.",
+        variant: "destructive"
       });
     }
   };
 
-  const closeGame = async () => {
+  const handleNextGame = async () => {
+    if (!session) return;
+
     try {
-      // Update game_sessions table
-      await supabase
+      // Increment current_game and update session
+      const nextGameNumber = session.current_game + 1;
+      const { error } = await supabase
         .from('game_sessions')
-        .update({
-          status: 'completed',
-          lifecycle_state: 'completed'
-        })
-        .eq('id', currentSession.id);
-      
-      // Also update sessions_progress
-      await supabase
-        .from('sessions_progress')
-        .update({
-          ...(typeof sessionProgress?.game_status !== 'undefined' && {
-            game_status: 'completed'
-          })
-        })
-        .eq('session_id', currentSession.id);
-      
-      // Redirect or handle UI changes
-      navigate('/dashboard');
+        .update({ current_game: nextGameNumber })
+        .eq('id', session.id);
+
+      if (error) {
+        throw error;
+      }
+
+      // Update local state
+      setSession(prevSession => {
+        if (prevSession) {
+          return { ...prevSession, current_game: nextGameNumber };
+        }
+        return prevSession;
+      });
+      setCurrentGameNumber(nextGameNumber);
+
+      // Reset game state
+      setCalledNumbers([]);
+      setLastCalledNumber(null);
+      setSelectedPatterns([]);
+
+      // Update session progress
+      await updateSessionProgress(session.id, {
+        game_status: 'pending'
+      });
     } catch (err) {
-      console.error('Error closing game:', err);
+      console.error('Error starting next game:', err);
+      toast({
+        title: "Error",
+        description: "Failed to start the next game. Please try again.",
+        variant: "destructive"
+      });
     }
   };
 
+  const remainingNumbers = React.useMemo(() => {
+    const allNumbers = Array.from({ length: 90 }, (_, i) => i + 1);
+    return allNumbers.filter(num => !calledNumbers.includes(num));
+  }, [calledNumbers]);
+
+  if (isLoading) {
+    return <div>Loading session...</div>;
+  }
+
+  if (error) {
+    return <div>Error: {error}</div>;
+  }
+
+  if (!session) {
+    return <div>Session not found.</div>;
+  }
+
   return (
-    <div className="container mx-auto p-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Session: {sessionName}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {session ? (
-            <>
-              {session.lifecycle_state === 'setup' && (
-                <GameSetupView
-                  currentGameType={currentGameType}
-                  onGameTypeChange={handleGameTypeChange}
-                  winPatterns={winPatterns}
-                  selectedPatterns={selectedPatterns}
-                  onPatternSelect={handlePatternSelect}
-                  onGoLive={goLive}
-                  isGoingLive={isGoingLive}
-                  gameConfigs={currentGameConfigs}
-                  numberOfGames={numberOfGames}
-                  setGameConfigs={setCurrentGameConfigs}
-                />
-              )}
-              {session.lifecycle_state === 'live' && (
-                <LiveGameView
-                  gameType={currentGameType}
-                  winPatterns={winPatterns}
-                  selectedPatterns={selectedPatterns}
-                  currentWinPattern={currentWinPattern}
-                  onCallNumber={callNumber}
-                  onRecall={recallNumber}
-                  lastCalledNumber={lastCalledItem}
-                  calledNumbers={calledItems}
-                  pendingClaims={pendingClaims}
-                  onViewClaims={() => setIsClaimsDialogOpen(true)}
-                  gameConfigs={currentGameConfigs}
-                  sessionStatus={gameStatus}
-                  onCloseGame={closeGame}
-                  currentGameNumber={currentGameNumber}
-                  numberOfGames={numberOfGames}
-                />
-              )}
-              <Dialog open={isClaimsDialogOpen} onOpenChange={setIsClaimsDialogOpen}>
-                <DialogContent className="sm:max-w-[425px]">
-                  <DialogHeader>
-                    <DialogTitle>Pending Claims</DialogTitle>
-                    <DialogDescription>
-                      Review and manage player claims for this session.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="grid gap-4 py-4">
-                    {claims.map(claim => (
-                      <div key={claim.id} className="border rounded-md p-4">
-                        <p>Player: {claim.player_name}</p>
-                        <p>Pattern: {claim.win_pattern}</p>
-                        <p>Ticket: {claim.ticket_serial}</p>
-                        <p>Claimed at: {claim.claimed_at}</p>
-                        <Button>Validate Claim</Button>
-                      </div>
-                    ))}
-                  </div>
-                  <DialogFooter>
-                    <DialogClose asChild>
-                      <Button type="button" variant="secondary">
-                        Close
-                      </Button>
-                    </DialogClose>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </>
-          ) : (
-            <p>Loading session...</p>
-          )}
-        </CardContent>
-      </Card>
+    <div className="container mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-4">Caller Session: {session.name}</h1>
+
+      {sessionStatus === 'pending' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Game Configuration</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <GameTypeSelector
+                currentGameType={gameType}
+                onGameTypeChange={handleGameTypeChange}
+              />
+
+              <WinPatternSelector
+                patterns={availablePatterns}
+                selectedPatterns={selectedPatterns}
+                onPatternSelect={handlePatternSelect}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Session Details</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Session Name</Label>
+                <Input type="text" value={session.name} readOnly />
+              </div>
+              <div className="space-y-2">
+                <Label>Access Code</Label>
+                <Input type="text" value={session.accessCode} readOnly />
+              </div>
+              <Button onClick={handleGoLive}>Go Live</Button>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        <LiveGameView
+          gameType={gameType}
+          winPatterns={availablePatterns}
+          selectedPatterns={selectedPatterns}
+          currentWinPattern={currentWinPattern}
+          onCallNumber={handleGenerateNewNumber}
+          onRecall={handleRecallNumber}
+          lastCalledNumber={lastCalledNumber}
+          calledNumbers={calledNumbers}
+          pendingClaims={pendingClaims}
+          onViewClaims={handleViewClaims}
+          sessionStatus={sessionStatus}
+          onCloseGame={handleGameEnd}
+          currentGameNumber={currentGameNumber}
+          numberOfGames={numberOfGames}
+          gameConfigs={gameConfigs}
+        />
+      )}
     </div>
   );
 }

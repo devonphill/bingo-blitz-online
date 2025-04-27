@@ -38,20 +38,22 @@ export function convertFromLegacyConfig(legacyConfig: LegacyGameConfig): GameCon
   // Create a new object in the new format
   const patterns: Record<string, { active: boolean; isNonCash: boolean; prizeAmount: string; description: string }> = {};
   
-  legacyConfig.selectedPatterns.forEach(patternId => {
-    const prizeDetails = legacyConfig.prizes[patternId] || { amount: '0', isNonCash: false, description: '' };
-    
-    patterns[patternId] = {
-      active: true,
-      isNonCash: prizeDetails.isNonCash,
-      prizeAmount: prizeDetails.amount || '0',
-      description: prizeDetails.description || ''
-    };
-  });
+  if (Array.isArray(legacyConfig.selectedPatterns)) {
+    legacyConfig.selectedPatterns.forEach(patternId => {
+      const prizeDetails = legacyConfig.prizes?.[patternId] || { amount: '0', isNonCash: false, description: '' };
+      
+      patterns[patternId] = {
+        active: true,
+        isNonCash: prizeDetails.isNonCash || false,
+        prizeAmount: prizeDetails.amount || '0',
+        description: prizeDetails.description || ''
+      };
+    });
+  }
   
   return {
-    gameNumber: legacyConfig.gameNumber,
-    gameType: legacyConfig.gameType,
+    gameNumber: legacyConfig.gameNumber || 1,
+    gameType: legacyConfig.gameType || 'mainstage',
     patterns
   };
 }

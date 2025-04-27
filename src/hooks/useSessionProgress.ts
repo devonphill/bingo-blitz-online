@@ -17,6 +17,15 @@ export interface SessionProgress {
   game_status?: 'pending' | 'active' | 'completed';
 }
 
+export interface SessionProgressUpdate {
+  current_game_number?: number;
+  max_game_number?: number;
+  current_win_pattern?: string | null;
+  current_game_type?: string;
+  called_numbers?: number[];
+  game_status?: 'pending' | 'active' | 'completed';
+}
+
 export function useSessionProgress(sessionId?: string) {
   const [progress, setProgress] = useState<SessionProgress | null>(null);
   const [loading, setLoading] = useState(false);
@@ -77,7 +86,7 @@ export function useSessionProgress(sessionId?: string) {
           
           if (!payload.new) return;
           
-          // Safe property access with defaults
+          // Safe property access with defaults and type casting
           const newData = payload.new as Record<string, any> || {};
           
           const updatedProgress: SessionProgress = {

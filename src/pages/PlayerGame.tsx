@@ -1,3 +1,4 @@
+
 import React, { useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -52,34 +53,12 @@ export default function PlayerGame() {
     claimStatus,
     gameType,
     isSubmittingClaim,
-    submitClaim
+    handleClaimBingo
   } = usePlayerGame(playerCode);
 
   // Get session progress from the database for authoritative game state
   const { progress: sessionProgress } = useSessionProgress(currentSession?.id);
   
-  // Handle bingo claim
-  const handleClaimBingo = useCallback(async (ticket: Ticket) => {
-    if (!submitClaim) {
-      console.error("submitClaim function is not available");
-      return;
-    }
-    
-    const result = await submitClaim(ticket);
-    return result;
-  }, [submitClaim]);
-
-  // Add this type-corrected submitClaim function to your component
-  const submitClaim = async (ticketInfo: Ticket) => {
-    if (!handleClaimBingo) return false;
-    try {
-      return await handleClaimBingo(ticketInfo);
-    } catch (error) {
-      console.error("Error submitting claim:", error);
-      return false;
-    }
-  };
-
   // Only attempt to render the game if we have all needed data
   const isInitialLoading = isLoading && loadingStep !== 'completed';
   const hasTickets = tickets && tickets.length > 0;
