@@ -507,6 +507,47 @@ export type Database = {
         }
         Relationships: []
       }
+      sessions_progress: {
+        Row: {
+          created_at: string
+          current_game_number: number
+          current_game_type: string
+          current_win_pattern: string | null
+          id: string
+          max_game_number: number
+          session_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          current_game_number?: number
+          current_game_type: string
+          current_win_pattern?: string | null
+          id?: string
+          max_game_number?: number
+          session_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          current_game_number?: number
+          current_game_type?: string
+          current_win_pattern?: string | null
+          id?: string
+          max_game_number?: number
+          session_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sessions_progress_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "game_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       universal_game_logs: {
         Row: {
           called_numbers: number[]

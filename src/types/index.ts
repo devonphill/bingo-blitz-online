@@ -14,7 +14,6 @@ export type GameType = 'mainstage' | 'party' | 'quiz' | 'music' | 'logo';
 // Prize details interface
 export interface PrizeDetails {
   amount?: string;
-  isNonCash: boolean;
   description?: string;
 }
 
@@ -85,4 +84,15 @@ export interface BingoCaller {
   sessionId: string;
   calledNumbers: number[];
   currentNumber: number | null;
+}
+
+export interface SessionProgress {
+  id: string;
+  session_id: string;
+  current_game_number: number;
+  max_game_number: number;
+  current_game_type: string;
+  current_win_pattern: string | null;
+  created_at: string;
+  updated_at: string;
 }

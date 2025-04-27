@@ -8,6 +8,7 @@ import PlayerGameLayout from '@/components/game/PlayerGameLayout';
 import { WIN_PATTERNS } from '@/types/winPattern';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
+import { useSessionProgress } from '@/hooks/useSessionProgress';
 
 export default function PlayerGame() {
   const { playerCode: urlPlayerCode } = useParams<{ playerCode: string }>();
@@ -200,6 +201,8 @@ export default function PlayerGame() {
     });
   }, [isLoading, loadingStep, currentSession, currentGameState, tickets, shouldShowLoader, isClaiming, claimStatus, activeWinPatterns]);
 
+  const { progress: sessionProgress } = useSessionProgress(currentSession?.id);
+
   if (shouldShowLoader) {
     return (
       <PlayerGameLoader 
@@ -231,6 +234,8 @@ export default function PlayerGame() {
       isClaiming={isClaiming}
       claimStatus={claimStatus}
       gameType={gameType || 'mainstage'}
+      currentGameNumber={sessionProgress?.current_game_number || 1}
+      numberOfGames={sessionProgress?.max_game_number || 1}
     >
       <GameTypePlayspace
         gameType={gameType || "mainstage"}
