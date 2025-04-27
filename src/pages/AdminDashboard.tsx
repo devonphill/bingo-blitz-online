@@ -5,7 +5,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useSessionContext } from "@/contexts/SessionProvider";
 import { useNavigate } from "react-router-dom";
 import BulkAddPlayersForm from "@/components/player/BulkAddPlayersForm";
-import { GameRulesManager } from "@/components/admin/GameRulesManager";
 
 export default function AdminDashboard() {
   const { user, role, logout } = useAuth();
@@ -27,13 +26,7 @@ export default function AdminDashboard() {
           <h1 className="text-3xl font-bold mb-4 text-bingo-primary">Admin Dashboard</h1>
           <div className="mb-6">
             <p>Welcome <span className="font-bold">{user?.email}</span> (Superuser)</p>
-            <p className="mt-2 text-gray-600">Site owner/admin panel: manage users, game rules, and caller profiles.</p>
-          </div>
-
-          {/* Game Rules Management Section */}
-          <div className="mb-8">
-            <h2 className="text-2xl font-semibold mb-4">Game Rules Management</h2>
-            <GameRulesManager />
+            <p className="mt-2 text-gray-600">Site owner/admin panel: manage users and game settings.</p>
           </div>
 
           {/* Bulk Add Players Section */}
