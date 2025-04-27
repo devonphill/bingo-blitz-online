@@ -31,6 +31,9 @@ export function useSessions() {
           gameConfigs = configs.map(config => normalizeGameConfig(config as any));
         }
         
+        // Handle the active_pattern_id if it exists, otherwise it will be null
+        const activePatternId = session.active_pattern_id ?? null;
+        
         return {
           id: session.id,
           name: session.name,
@@ -44,7 +47,7 @@ export function useSessions() {
           lifecycle_state: session.lifecycle_state as 'setup' | 'live' | 'ended',
           games_config: gameConfigs,
           current_game: session.current_game,
-          active_pattern_id: session.active_pattern_id || null // Safely handle if property doesn't exist
+          active_pattern_id: activePatternId
         };
       });
 

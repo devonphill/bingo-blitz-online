@@ -1,134 +1,89 @@
 
-import { GameConfig, LegacyGameConfig, WinPatternConfig } from "@/types";
-import { Json } from "@/types/json";
+import { GameConfig, LegacyGameConfig, isLegacyGameConfig, convertLegacyGameConfig, WinPatternConfig, GameType } from '@/types';
+import { DEFAULT_PATTERN_ORDER } from '@/types';
 
 /**
- * Safely converts any game config format to the current GameConfig format
- * Handles both the new format and legacy formats
+ * Normalizes a game config object, handling both new and legacy formats
  */
 export function normalizeGameConfig(config: any): GameConfig {
-  // If it's already in the correct format
-  if (config && 'patterns' in config && typeof config.patterns === 'object') {
-    const patterns: Record<string, WinPatternConfig> = {};
-    
-    // Ensure all pattern entries are properly formatted
-    Object.entries(config.patterns).forEach(([patternId, patternConfig]: [string, any]) => {
-      patterns[patternId] = {
-        active: Boolean(patternConfig?.active),
-        isNonCash: Boolean(patternConfig?.isNonCash),
-        prizeAmount: String(patternConfig?.prizeAmount || '10.00'),
-        description: String(patternConfig?.description || `${patternId} Prize`)
-      };
-    });
-    
-    return {
-      gameNumber: Number(config.gameNumber),
-      gameType: config.gameType,
-      patterns
-    };
+  // Handle null or undefined
+  if (!config) {
+    return createDefaultGameConfig(1);
   }
   
-  // Convert legacy format
-  if (config && 'selectedPatterns' in config && Array.isArray(config.selectedPatterns)) {
+  // If it's a legacy config, convert it
+  if (isLegacyGameConfig(config)) {
+    return convertLegacyGameConfig(config as LegacyGameConfig);
+  }
+  
+  // It's already in the new format or partial
+  const gameNumber = config.gameNumber || 1;
+  const gameType = config.gameType || 'mainstage';
+  
+  // If patterns property doesn't exist, we need to build it
+  if (!config.patterns) {
     const patterns: Record<string, WinPatternConfig> = {};
     
-    // Add all active patterns
-    if (Array.isArray(config.selectedPatterns)) {
-      config.selectedPatterns.forEach((patternId: string) => {
-        const prizeInfo = config.prizes?.[patternId];
-        
+    // If config has selectedPatterns, use them to populate patterns
+    if (config.selectedPatterns && Array.isArray(config.selectedPatterns)) {
+      config.selectedPatterns.forEach(patternId => {
+        const prize = config.prizes?.[patternId] || {};
         patterns[patternId] = {
           active: true,
-          isNonCash: Boolean(prizeInfo?.isNonCash),
-          prizeAmount: String(prizeInfo?.amount || '10.00'),
-          description: String(prizeInfo?.description || `${patternId} Prize`)
+          isNonCash: prize.isNonCash || false,
+          prizeAmount: prize.amount || '10.00',
+          description: prize.description || `${patternId} Prize`
+        };
+      });
+    } else {
+      // If no selectedPatterns, create default patterns based on game type
+      const defaultPatterns = DEFAULT_PATTERN_ORDER[gameType as GameType] || ['oneLine', 'twoLines', 'fullHouse'];
+      defaultPatterns.forEach(patternId => {
+        patterns[patternId] = {
+          active: patternId === 'oneLine', // Only activate first pattern by default
+          isNonCash: false,
+          prizeAmount: '10.00',
+          description: `${patternId} Prize`
         };
       });
     }
     
-    // Add any inactive patterns that have prize info
-    if (config.prizes && typeof config.prizes === 'object') {
-      Object.entries(config.prizes).forEach(([patternId, prizeInfo]: [string, any]) => {
-        if (!patterns[patternId]) {
-          patterns[patternId] = {
-            active: false,
-            isNonCash: Boolean(prizeInfo?.isNonCash),
-            prizeAmount: String(prizeInfo?.amount || '10.00'),
-            description: String(prizeInfo?.description || `${patternId} Prize`)
-          };
-        }
-      });
-    }
-    
     return {
-      gameNumber: Number(config.gameNumber),
-      gameType: config.gameType,
-      patterns
+      gameNumber,
+      gameType: gameType as GameType,
+      patterns: patterns,
+      session_id: config.session_id
     };
   }
   
-  // If we couldn't parse it, return a default config
+  // Return the config with proper typing
   return {
-    gameNumber: 1,
-    gameType: 'mainstage',
-    patterns: {
-      'oneLine': {
-        active: true,
-        isNonCash: false,
-        prizeAmount: '10.00',
-        description: 'One Line Prize'
-      }
-    }
+    gameNumber: gameNumber,
+    gameType: gameType as GameType,
+    patterns: config.patterns,
+    session_id: config.session_id
   };
 }
 
 /**
- * Safely parses game configs from JSON data
+ * Creates a default game configuration
  */
-export function parseGameConfigs(json: Json | undefined | null): GameConfig[] {
-  // Handle null or undefined
-  if (!json) return [];
+export function createDefaultGameConfig(gameNumber: number, gameType: GameType = 'mainstage'): GameConfig {
+  const patterns: Record<string, WinPatternConfig> = {};
   
-  // Handle array of configs
-  if (Array.isArray(json)) {
-    return json.map(item => normalizeGameConfig(item));
-  }
-  
-  // Handle single config
-  if (typeof json === 'object' && json !== null) {
-    return [normalizeGameConfig(json)];
-  }
-  
-  // Default empty array
-  return [];
-}
-
-/**
- * Gets active patterns from a game config
- */
-export function getActivePatterns(config: GameConfig): string[] {
-  if (!config || !config.patterns) return [];
-  
-  return Object.entries(config.patterns)
-    .filter(([_, patternConfig]) => patternConfig.active)
-    .map(([patternId]) => patternId);
-}
-
-/**
- * Gets prizes in the PrizeDetails format from a game config
- */
-export function getPrizeDetails(config: GameConfig): Record<string, { amount?: string; description?: string; isNonCash?: boolean }> {
-  if (!config || !config.patterns) return {};
-  
-  const prizes: Record<string, { amount?: string; description?: string; isNonCash?: boolean }> = {};
-  
-  Object.entries(config.patterns).forEach(([patternId, patternConfig]) => {
-    prizes[patternId] = {
-      amount: patternConfig.prizeAmount,
-      description: patternConfig.description,
-      isNonCash: patternConfig.isNonCash
+  const defaultPatterns = DEFAULT_PATTERN_ORDER[gameType] || ['oneLine', 'twoLines', 'fullHouse'];
+  defaultPatterns.forEach(patternId => {
+    patterns[patternId] = {
+      active: patternId === 'oneLine', // Only activate first pattern by default
+      isNonCash: false,
+      prizeAmount: '10.00',
+      description: `${patternId} Prize`
     };
   });
   
-  return prizes;
+  return {
+    gameNumber,
+    gameType,
+    patterns
+  };
 }

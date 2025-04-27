@@ -1,3 +1,4 @@
+
 import { useState, useCallback } from 'react';
 import { GameConfig, WinPatternConfig } from '@/types';
 import { Json } from '@/types/json';
@@ -20,8 +21,7 @@ export function useGameProgression(gameConfigs: GameConfig[]) {
       .filter(([_, patternConfig]) => {
         // Safely check if the patternConfig exists and has an active property
         if (!patternConfig || typeof patternConfig !== 'object') return false;
-        const config = patternConfig as Record<string, any>;
-        return config.active === true;
+        return patternConfig.active === true;
       })
       .map(([patternId, _]) => patternId);
   }, [getPatternsForGame]);

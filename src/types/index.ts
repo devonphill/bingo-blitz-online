@@ -57,20 +57,20 @@ export interface PrizeDetails {
   isNonCash?: boolean;
 }
 
-// Game configuration
-export interface GameConfig {
-  gameNumber: number;
-  gameType: GameType;
-  patterns: Record<string, WinPatternConfig>;
-  session_id?: string;
-}
-
 // Win pattern configuration
 export interface WinPatternConfig {
   active: boolean;
   isNonCash: boolean;
   prizeAmount: string;
   description: string;
+}
+
+// Game configuration
+export interface GameConfig {
+  gameNumber: number;
+  gameType: GameType;
+  patterns: Record<string, WinPatternConfig>;
+  session_id?: string;
 }
 
 // Legacy game configuration format to support older data
@@ -124,6 +124,17 @@ export const DEFAULT_PATTERN_ORDER = {
   music: ['oneLine', 'twoLines', 'fullHouse'],
   logo: ['oneLine', 'twoLines', 'fullHouse']
 } as const;
+
+// Current game state for player games
+export interface CurrentGameState {
+  gameNumber?: number;
+  gameType?: GameType;
+  calledItems?: any[];
+  lastCalledItem?: any;
+  activePatternIds?: string[];
+  prizes?: Record<string, PrizeDetails>;
+  status?: 'pending' | 'active' | 'completed';
+}
 
 // Game session type
 export interface GameSession {
@@ -181,17 +192,6 @@ export interface GameState {
   calledItems: CalledItem[];
   lastCalledItem: CalledItem | null;
   status: 'pending' | 'active' | 'completed';
-}
-
-// Current game state for player games
-export interface CurrentGameState {
-  gameNumber?: number;
-  gameType?: GameType;
-  calledItems?: any[];
-  lastCalledItem?: any;
-  activePatternIds?: string[];
-  prizes?: Record<string, PrizeDetails>;
-  status?: 'pending' | 'active' | 'completed';
 }
 
 // Export the initial game state helper
