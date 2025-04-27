@@ -10,7 +10,7 @@ import { WIN_PATTERNS } from '@/types/winPattern';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
-import { PrizeDetails } from '@/types';
+import { PrizeDetails, GameType, Ticket } from '@/types';
 
 export default function PlayerGame() {
   const { playerCode: urlPlayerCode } = useParams<{ playerCode: string }>();
@@ -349,17 +349,17 @@ export default function PlayerGame() {
         winPrizes={simplifiedPrizes}
         activeWinPatterns={currentWinPattern ? [currentWinPattern] : []}
         currentWinPattern={currentWinPattern}
-        onClaimBingo={handleClaimBingo}
+        onClaimBingo={(ticket) => handleClaimBingo(ticket)}
         errorMessage={errorMessage || ''}
         isLoading={isLoading}
         isClaiming={isClaiming}
         claimStatus={claimStatus}
-        gameType={gameType || 'mainstage'}
+        gameType={gameType}
         currentGameNumber={currentGameNumber}
         numberOfGames={numberOfGames}
       >
         <GameTypePlayspace
-          gameType={gameType || "mainstage"}
+          gameType={gameType}
           tickets={tickets || []}
           calledNumbers={calledItems || []}
           lastCalledNumber={lastCalledItem}

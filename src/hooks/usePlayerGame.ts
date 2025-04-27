@@ -1,7 +1,8 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { GameSession, GameState, Ticket } from '@/types';
+import { GameSession, GameState, Ticket, GameType, GameConfig } from '@/types';
 
 export function usePlayerGame(playerCode: string | null | undefined) {
   // State for player info
@@ -20,7 +21,7 @@ export function usePlayerGame(playerCode: string | null | undefined) {
   const [activeWinPatterns, setActiveWinPatterns] = useState<string[]>([]);
   const [winPrizes, setWinPrizes] = useState<any>({});
   const [autoMarking, setAutoMarking] = useState(true);
-  const [gameType, setGameType] = useState<string>('mainstage');
+  const [gameType, setGameType] = useState<GameType>('mainstage');
   
   // State for claim handling
   const [isSubmittingClaim, setIsSubmittingClaim] = useState(false);
@@ -68,42 +69,29 @@ export function usePlayerGame(playerCode: string | null | undefined) {
           throw new Error(`Session not found: ${sessionError?.message || 'Unknown error'}`);
         }
         
+        // Create GameSession object with proper typing
         setCurrentSession({
           id: sessionData.id,
           name: sessionData.name,
-          gameType: sessionData.game_type,
+          gameType: sessionData.game_type as GameType,
           createdBy: sessionData.created_by,
           accessCode: sessionData.access_code,
-          status: sessionData.status,
+          status: sessionData.status as 'pending' | 'active' | 'completed',
           createdAt: sessionData.created_at,
           sessionDate: sessionData.session_date,
           numberOfGames: sessionData.number_of_games,
           current_game: sessionData.current_game,
-          lifecycle_state: sessionData.lifecycle_state,
-          games_config: sessionData.games_config,
-          current_game_state: sessionData.current_game_state
+          lifecycle_state: sessionData.lifecycle_state as 'setup' | 'live' | 'ended' | 'completed',
+          games_config: Array.isArray(sessionData.games_config) 
+            ? sessionData.games_config as GameConfig[]
+            : []
         });
-        setGameType(sessionData.game_type);
         
-        setLoadingStep('fetching-game-state');
-        const { data: gameStateData, error: gameStateError } = await supabase
-          .from('game_sessions')
-          .select('current_game_state')
-          .eq('id', sessionId)
-          .single();
-          
-        if (gameStateError || !gameStateData) {
-          console.warn(`Game state not found: ${gameStateError?.message || 'Unknown error'}`);
-        } else {
-          setCurrentGameState(gameStateData.current_game_state as GameState);
-          
-          if (gameStateData.current_game_state) {
-            setCalledItems(gameStateData.current_game_state.calledItems || []);
-            setLastCalledItem(gameStateData.current_game_state.lastCalledItem || null);
-            setActiveWinPatterns(gameStateData.current_game_state.activePatternIds || []);
-            setWinPrizes(gameStateData.current_game_state.prizes || {});
-          }
-        }
+        // Set game type correctly
+        setGameType(sessionData.game_type as GameType);
+        
+        // For now, skip fetching current_game_state since it doesn't exist in the table
+        // We'll use sessions_progress instead
         
         setLoadingStep('fetching-tickets');
         const { data: ticketData, error: ticketError } = await supabase
@@ -115,7 +103,19 @@ export function usePlayerGame(playerCode: string | null | undefined) {
           throw new Error(`Tickets not found: ${ticketError?.message || 'Unknown error'}`);
         }
         
-        setTickets(ticketData as Ticket[]);
+        // Map database ticket fields to our Ticket interface
+        const mappedTickets: Ticket[] = (ticketData || []).map(ticket => ({
+          id: ticket.id,
+          playerId: ticket.player_id,
+          sessionId: ticket.session_id,
+          numbers: ticket.numbers,
+          serial: ticket.serial,
+          position: ticket.position,
+          layoutMask: ticket.layout_mask,
+          perm: ticket.perm
+        }));
+        
+        setTickets(mappedTickets);
         
       } catch (err) {
         setErrorMessage((err as Error).message);
@@ -129,8 +129,8 @@ export function usePlayerGame(playerCode: string | null | undefined) {
     loadPlayerData();
   }, [playerCode]);
 
-  const handleClaimBingo = useCallback(async (ticketInfo: Ticket) => {
-    if (!currentSession || !playerId) return;
+  const handleClaimBingo = useCallback(async (ticketInfo: Ticket): Promise<boolean> => {
+    if (!currentSession || !playerId) return false;
     
     setIsSubmittingClaim(true);
     setClaimStatus('pending');
@@ -148,15 +148,16 @@ export function usePlayerGame(playerCode: string | null | undefined) {
       });
       
       // Simulate claim submission
-      setTimeout(() => {
-        // Simulate successful claim
-        setClaimStatus('validated');
-        toast({
-          title: "Claim Validated",
-          description: "Your bingo claim has been validated!",
-        });
-      }, 3000);
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
+      // Simulate successful claim
+      setClaimStatus('validated');
+      toast({
+        title: "Claim Validated",
+        description: "Your bingo claim has been validated!",
+      });
+      
+      return true;
     } catch (err) {
       setClaimStatus('rejected');
       toast({
@@ -164,6 +165,7 @@ export function usePlayerGame(playerCode: string | null | undefined) {
         description: "Your bingo claim was not valid. Please check your card and try again.",
         variant: "destructive"
       });
+      return false;
     } finally {
       setIsSubmittingClaim(false);
     }
@@ -194,9 +196,7 @@ export function usePlayerGame(playerCode: string | null | undefined) {
     gameType,
     loadingStep,
     resetClaimStatus,
-    submitClaim: async (winPatternId: string, ticketData: any) => {
-      return true;
-    },
+    submitClaim: handleClaimBingo,
     isSubmittingClaim
   };
 }

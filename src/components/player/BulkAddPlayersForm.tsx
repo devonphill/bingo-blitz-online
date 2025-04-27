@@ -7,12 +7,14 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { useSessionContext } from '@/contexts/SessionProvider';
 import { v4 as uuidv4 } from 'uuid';
+import { AdminTempPlayer } from '@/types';
 
 type TempPlayer = {
   playerCode: string;
   nickname: string;
   email: string;
   tickets: number;
+  ticketCount: number; // Added to match AdminTempPlayer
 };
 
 function generatePlayerCode(length = 6) {
@@ -35,13 +37,15 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
+    const ticketsCount = Number(tickets) || 1;
     setPlayers((prev) => [
       ...prev,
       {
         playerCode: generatePlayerCode(),
         nickname,
         email,
-        tickets: Number(tickets) || 1,
+        tickets: ticketsCount,
+        ticketCount: ticketsCount, // Set both properties
       }
     ]);
     setNickname('');
@@ -51,9 +55,15 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
 
   const handleEdit = (index: number, field: keyof TempPlayer, value: string | number) => {
     setPlayers(players =>
-      players.map((p, i) =>
-        i === index ? { ...p, [field]: value } : p
-      )
+      players.map((p, i) => {
+        if (i !== index) return p;
+        
+        // If updating tickets, also update ticketCount
+        if (field === 'tickets') {
+          return { ...p, [field]: value, ticketCount: Number(value) };
+        }
+        return { ...p, [field]: value };
+      })
     );
   };
 
@@ -74,7 +84,7 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
     
     setSaving(true);
     try {
-      const result = await bulkAddPlayers(sessionId, players);
+      const result = await bulkAddPlayers(sessionId, players as AdminTempPlayer[]);
       if (!result.success) {
         toast({
           title: 'Some players failed',

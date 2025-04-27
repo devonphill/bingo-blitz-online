@@ -4,6 +4,7 @@ import { Loader } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import CurrentNumberDisplay from "./CurrentNumberDisplay";
+import { GameType, Ticket } from "@/types";
 
 interface PlayerGameLayoutProps {
   tickets: any[];
@@ -16,13 +17,13 @@ interface PlayerGameLayoutProps {
   winPrizes: { [key: string]: string };
   activeWinPatterns: string[];
   currentWinPattern: string | null;
-  onClaimBingo: () => Promise<boolean>;
+  onClaimBingo: (ticketInfo: Ticket) => Promise<boolean>;
   errorMessage: string;
   isLoading: boolean;
   children: React.ReactNode;
   isClaiming?: boolean;
   claimStatus?: 'pending' | 'validated' | 'rejected';
-  gameType?: string;
+  gameType?: GameType;
   currentGameNumber?: number;
   numberOfGames?: number;
 }
@@ -54,12 +55,10 @@ export default function PlayerGameLayout({
   const instanceId = useRef(Date.now()); // Create a unique instance ID for this component
   const resetTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Debug render with unique instance ID
   useEffect(() => {
     console.log(`PlayerGameLayout rendered with instance ID: ${instanceId.current}, pattern: ${currentWinPattern}`);
   }, [currentWinPattern]);
 
-  // Track pattern changes to manage claim status
   useEffect(() => {
     if (currentWinPattern && currentWinPattern !== lastWinPattern) {
       console.log(`Win pattern changed from ${lastWinPattern} to ${currentWinPattern}, resetting claim status`);
@@ -67,7 +66,6 @@ export default function PlayerGameLayout({
       setLocalClaimValidating(false);
       setLastWinPattern(currentWinPattern);
       
-      // Show toast when pattern changes
       if (lastWinPattern) {
         const patternName = getPatternDisplayName(currentWinPattern);
         toast({
@@ -78,7 +76,6 @@ export default function PlayerGameLayout({
     }
   }, [currentWinPattern, lastWinPattern, toast]);
 
-  // Helper function to get display name for patterns
   const getPatternDisplayName = (pattern: string): string => {
     switch(pattern.replace('MAINSTAGE_', '')) {
       case 'oneLine': return 'One Line';
@@ -90,7 +87,6 @@ export default function PlayerGameLayout({
     }
   };
 
-  // Sync external claim status with local state
   useEffect(() => {
     console.log(`PlayerGameLayout (instance ${instanceId.current}): External claim status updated to:`, claimStatus);
     
@@ -107,7 +103,6 @@ export default function PlayerGameLayout({
     }
   }, [claimStatus, isClaiming]);
 
-  // Auto-reset claim status after validation (to allow claiming for next pattern)
   useEffect(() => {
     if (resetTimerRef.current) {
       clearTimeout(resetTimerRef.current);
@@ -117,7 +112,6 @@ export default function PlayerGameLayout({
     if (localClaimStatus === 'validated' || localClaimStatus === 'rejected') {
       console.log(`Setting up auto-reset for claim status: ${localClaimStatus}`);
       
-      // Reset status after 5 seconds to allow claiming for next pattern
       resetTimerRef.current = setTimeout(() => {
         console.log(`Auto-resetting claim status from ${localClaimStatus}`);
         setLocalClaimStatus(null);
@@ -132,7 +126,6 @@ export default function PlayerGameLayout({
     };
   }, [localClaimStatus]);
 
-  // Listen for claim result broadcasts
   useEffect(() => {
     if (!currentSession?.id || !playerCode) return;
     
@@ -166,7 +159,6 @@ export default function PlayerGameLayout({
       )
       .subscribe();
       
-    // Listen for general game updates
     const gameUpdatesChannel = supabase
       .channel(`player-game-updates-${instanceId.current}`)
       .on(
@@ -174,7 +166,6 @@ export default function PlayerGameLayout({
         { event: 'claim-update' },
         (payload) => {
           console.log(`Instance ${instanceId.current} received claim update broadcast:`, payload);
-          // Update claim status when any claim is processed
           if (payload.payload && payload.payload.sessionId === currentSession.id && 
               payload.payload.result === 'valid') {
             setLocalClaimStatus('validated');
@@ -185,7 +176,6 @@ export default function PlayerGameLayout({
             setLocalClaimValidating(false);
           }
           
-          // Reset claim status when pattern changes due to game progression
           if (payload.payload && 
               payload.payload.sessionId === currentSession.id && 
               payload.payload.patternChange === true) {
@@ -193,7 +183,6 @@ export default function PlayerGameLayout({
             setLocalClaimStatus(null);
             setLocalClaimValidating(false);
             
-            // If a new pattern is provided, update lastWinPattern to force re-evaluation
             if (payload.payload.nextPattern && payload.payload.nextPattern !== lastWinPattern) {
               setLastWinPattern(null);
             }
@@ -207,7 +196,6 @@ export default function PlayerGameLayout({
       )
       .subscribe();
     
-    // Listen for game progression updates
     const progressChannel = supabase
       .channel(`game-progression-channel-${instanceId.current}`)
       .on(
@@ -218,27 +206,25 @@ export default function PlayerGameLayout({
           
           if (payload.payload && payload.payload.sessionId === currentSession.id) {
             console.log("Game progressed, resetting claim status");
-            // Reset claim status when game progresses to new pattern
             setLocalClaimStatus(null);
             setLocalClaimValidating(false);
-            setLastWinPattern(null); // Reset to force update on next render
+            setLastWinPattern(null);
             
-            // Show specific toast based on what changed
             if (payload.payload.previousGame !== payload.payload.newGame) {
               toast({
                 title: "New Game",
                 description: `Game ${payload.payload.newGame} has started!`,
               });
             } else {
-                const pattern = payload.payload.nextPattern || 
-                  (currentWinPattern === 'oneLine' ? 'twoLines' : 
-                   currentWinPattern === 'twoLines' ? 'fullHouse' : 'fullHouse');
-                
-                const patternName = getPatternDisplayName(pattern);
-                toast({
-                  title: "Pattern Changed",
-                  description: `New pattern: ${patternName}`,
-                });
+              const pattern = payload.payload.nextPattern || 
+                (currentWinPattern === 'oneLine' ? 'twoLines' : 
+                 currentWinPattern === 'twoLines' ? 'fullHouse' : 'fullHouse');
+              
+              const patternName = getPatternDisplayName(pattern);
+              toast({
+                title: "Pattern Changed",
+                description: `New pattern: ${patternName}`,
+              });
             }
           }
         }
@@ -254,15 +240,15 @@ export default function PlayerGameLayout({
   }, [currentSession?.id, playerCode, toast, lastWinPattern, currentWinPattern, instanceId]);
 
   const handleClaimClick = async () => {
-    if (localClaimValidating || isClaiming || localClaimStatus === 'validated') {
-      console.log("Claim already in progress or validated, ignoring click");
+    if (localClaimValidating || isClaiming || localClaimStatus === 'validated' || !tickets || tickets.length === 0) {
+      console.log("Claim already in progress, validated, or no tickets, ignoring click");
       return;
     }
     
     try {
       console.log("Attempting to claim bingo");
       setLocalClaimValidating(true);
-      const success = await onClaimBingo();
+      const success = await onClaimBingo(tickets[0]);
       
       if (!success) {
         setLocalClaimValidating(false);

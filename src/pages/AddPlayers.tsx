@@ -35,9 +35,7 @@ export default function AddPlayers() {
   const { addPlayer, bulkAddPlayers, assignTicketsToPlayer } = useSessionContext();
   
   useEffect(() => {
-    const fetchSession = async () => {
-      if (!sessionId) return;
-      
+    const fetchSessionById = async (sessionId: string) => {
       try {
         const { data, error } = await supabase
           .from('game_sessions')
@@ -45,53 +43,57 @@ export default function AddPlayers() {
           .eq('id', sessionId)
           .single();
           
-        if (error) {
-          console.error("Error fetching session:", error);
-          toast({
-            title: "Error",
-            description: "Failed to load session data.",
-            variant: "destructive",
-          });
-          return;
-        }
+        if (error) throw error;
         
-        const sessionData = data || {};
-        setSession({
-          ...sessionData,
-          gameType: sessionData.game_type as GameType,
-          games_config: Array.isArray(sessionData.games_config) ? 
-            sessionData.games_config as GameConfig[] : 
-            []
-        });
-      } catch (err) {
-        console.error("Exception loading session:", err);
+        if (data) {
+          const session: GameSession = {
+            id: data.id,
+            name: data.name,
+            gameType: data.game_type as GameType,
+            createdBy: data.created_by,
+            accessCode: data.access_code,
+            status: data.status as 'pending' | 'active' | 'completed',
+            createdAt: data.created_at,
+            sessionDate: data.session_date,
+            numberOfGames: data.number_of_games,
+            current_game: data.current_game,
+            lifecycle_state: data.lifecycle_state as 'setup' | 'live' | 'ended' | 'completed',
+            games_config: Array.isArray(data.games_config) 
+              ? (data.games_config as GameConfig[]) 
+              : []
+          };
+          
+          setSession(session);
+        }
+      } catch (error) {
+        console.error('Error fetching session:', error);
       }
     };
     
-    fetchSession();
+    const fetchPlayers = async () => {
+      if (!sessionId) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('players')
+          .select('*')
+          .eq('session_id', sessionId)
+          .order('joined_at', { ascending: false });
+        
+        if (error) {
+          console.error("Error fetching players:", error);
+          return;
+        }
+        
+        setPlayers(data || []);
+      } catch (err) {
+        console.error("Exception fetching players:", err);
+      }
+    };
+    
+    fetchSessionById(sessionId);
     fetchPlayers();
   }, [sessionId, toast]);
-  
-  const fetchPlayers = async () => {
-    if (!sessionId) return;
-    
-    try {
-      const { data, error } = await supabase
-        .from('players')
-        .select('*')
-        .eq('session_id', sessionId)
-        .order('joined_at', { ascending: false });
-        
-      if (error) {
-        console.error("Error fetching players:", error);
-        return;
-      }
-      
-      setPlayers(data || []);
-    } catch (err) {
-      console.error("Exception fetching players:", err);
-    }
-  };
   
   const handleAddPlayer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,7 +110,6 @@ export default function AddPlayers() {
     setIsLoading(true);
     
     try {
-      // Generate a random player code (6 characters)
       const playerCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       
       if (addPlayer) {
@@ -120,9 +121,7 @@ export default function AddPlayers() {
             description: `${newPlayerName} has been added to the session.`,
           });
           
-          // Assign tickets if needed
           if (newPlayerTickets > 0 && assignTicketsToPlayer) {
-            // We need to get the player ID first
             const { data } = await supabase
               .from('players')
               .select('id')
@@ -135,12 +134,10 @@ export default function AddPlayers() {
             }
           }
           
-          // Reset form
           setNewPlayerName('');
           setNewPlayerEmail('');
           setNewPlayerTickets(1);
           
-          // Refresh player list
           fetchPlayers();
         } else {
           toast({
@@ -163,11 +160,42 @@ export default function AddPlayers() {
   };
   
   const handleBulkImport = async () => {
-    // This would open a modal or form for bulk import
     toast({
       title: "Bulk import",
       description: "Bulk import functionality would be implemented here.",
     });
+  };
+  
+  const handleSessionUpdate = async (updates: Partial<GameSession>) => {
+    try {
+      const { data, error } = await supabase
+        .from('game_sessions')
+        .update(updates)
+        .eq('id', sessionId)
+        .select();
+      
+      if (error) throw error;
+      
+      if (data && data[0]) {
+        const updatedSession: GameSession = {
+          ...session,
+          ...updates,
+        };
+        
+        setSession(updatedSession);
+        toast({
+          title: "Success",
+          description: "Session updated successfully."
+        });
+      }
+    } catch (error) {
+      console.error('Error updating session:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update session.",
+        variant: "destructive"
+      });
+    }
   };
   
   return (

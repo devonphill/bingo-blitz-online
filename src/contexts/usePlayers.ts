@@ -31,10 +31,10 @@ export function usePlayers(
         const mappedPlayers: Player[] = data.map(item => ({
           id: item.id,
           nickname: item.nickname,
-          sessionId: item.session_id,
-          joinedAt: item.joined_at,
-          playerCode: item.player_code,
+          sessionId: item.session_id, // map session_id to sessionId
+          joinedAt: item.joined_at,  // map joined_at to joinedAt
           tickets: item.tickets,
+          playerCode: item.player_code, // map player_code to playerCode
           email: item.email
         }));
         
@@ -75,8 +75,8 @@ export function usePlayers(
         id: data.id,
         nickname: data.nickname,
         sessionId: data.session_id, // Map session_id to sessionId
-        joinedAt: data.joined_at,
-        playerCode: data.player_code,
+        joinedAt: data.joined_at,   // Map joined_at to joinedAt
+        playerCode: data.player_code, // Map player_code to playerCode
         tickets: data.tickets,
         email: data.email
       };
@@ -169,8 +169,8 @@ export function usePlayers(
         id: data.id,
         nickname: data.nickname,
         sessionId: data.session_id, // Map session_id to sessionId
-        joinedAt: data.joined_at,
-        playerCode: data.player_code,
+        joinedAt: data.joined_at,   // Map joined_at to joinedAt
+        playerCode: data.player_code, // Map player_code to playerCode
         tickets: data.tickets,
         email: data.email
       };
@@ -193,5 +193,5 @@ export function usePlayers(
   };
 }
 
-// Export AdminTempPlayer interface to resolve the error in SessionContext
-export type { AdminTempPlayer };
+// Export AdminTempPlayer interface
+export { AdminTempPlayer };

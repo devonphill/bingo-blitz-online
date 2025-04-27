@@ -45,7 +45,7 @@ export function convertLegacyGameConfig(config: LegacyGameConfig): GameConfig {
   const patterns: Record<string, WinPatternConfig> = {};
   if (config.selectedPatterns && Array.isArray(config.selectedPatterns)) {
     config.selectedPatterns.forEach(patternId => {
-      const prize = config.prizes[patternId] || {};
+      const prize = config.prizes && config.prizes[patternId] || {};
       patterns[patternId] = {
         active: true,
         isNonCash: prize.isNonCash || false,
@@ -124,7 +124,7 @@ export interface SessionProgress {
   session_id: string;
   current_game_number: number;
   max_game_number: number;
-  current_win_pattern?: string;
+  current_win_pattern?: string | null;
   current_game_type: GameType;
   created_at: string;
   updated_at: string;

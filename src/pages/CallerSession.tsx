@@ -1,1210 +1,520 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
-import { GameSession, GameType, CurrentGameState, PrizeDetails, GameConfig, GameState } from '@/types';
-import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { generateAccessCode } from "@/utils/accessCodeGenerator";
 import { GameSetupView } from '@/components/caller/GameSetupView';
 import { LiveGameView } from '@/components/caller/LiveGameView';
-import ClaimVerificationSheet from '@/components/game/ClaimVerificationSheet';
-import { useSessionLifecycle } from '@/hooks/useSessionLifecycle';
+import { WinPattern } from '@/types/winPattern';
+import { DEFAULT_PATTERN_ORDER } from '@/types';
+import { supabase } from "@/integrations/supabase/client";
+import { GameType, GameSession, GameConfig } from '@/types';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { getGameRulesForType } from '@/game-rules/gameRulesRegistry';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
-import { convertFromLegacyConfig } from '@/utils/callerSessionHelper';
+import { updateSessionProgress } from '@/utils/callerSessionHelper';
+import { prepareForDatabase } from '@/utils/jsonUtils';
 
-type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
+interface Claim {
+  id: string;
+  session_id: string;
+  player_id: string;
+  player_name: string;
+  win_pattern: string;
+  prize_amount: string;
+  ticket_serial: string;
+  ticket_position: number;
+  ticket_layout_mask: number;
+  ticket_numbers: number[];
+  claimed_at: string;
+}
 
 export default function CallerSession() {
-  const { sessionId } = useParams<{ sessionId: string }>();
+  const { sessionId: routeSessionId } = useParams<{ sessionId: string }>();
+  const sessionId = routeSessionId || localStorage.getItem('currentSessionId') || '';
   const [session, setSession] = useState<GameSession | null>(null);
-  const [currentNumber, setCurrentNumber] = useState<number | null>(null);
-  const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
+  const [sessionName, setSessionName] = useState('');
+  const [accessCode, setAccessCode] = useState('');
+  const [numberOfGames, setNumberOfGames] = useState(1);
+  const [currentGameNumber, setCurrentGameNumber] = useState(1);
   const [currentGameType, setCurrentGameType] = useState<GameType>('mainstage');
-  const [winPatterns, setWinPatterns] = useState<WinPattern[]>(WIN_PATTERNS.mainstage);
-  const [pendingClaims, setPendingClaims] = useState<any[]>([]);
+  const [winPatterns, setWinPatterns] = useState<WinPattern[]>([]);
   const [selectedPatterns, setSelectedPatterns] = useState<string[]>([]);
-  const [prizes, setPrizes] = useState<{[patternId: string]: PrizeDetails}>({});
-  const [gameConfigs, setGameConfigs] = useState<GameConfig[]>([]);
-  const [currentGameIndex, setCurrentGameIndex] = useState(0);
+  const [isStarting, setIsStarting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
-  const [showClaimSheet, setShowClaimSheet] = useState(false);
-  const [currentClaim, setCurrentClaim] = useState<any>(null);
+  const [calledItems, setCalledItems] = useState<number[]>([]);
+  const [lastCalledItem, setLastCalledItem] = useState<number | null>(null);
+  const [pendingClaims, setPendingClaims] = useState(0);
+  const [claims, setClaims] = useState<Claim[]>([]);
+  const [isClaimsDialogOpen, setIsClaimsDialogOpen] = useState(false);
+  const [gameStatus, setGameStatus] = useState<string>('pending');
+  const [currentWinPattern, setCurrentWinPattern] = useState<string | null>(null);
+  const [currentGameConfigs, setCurrentGameConfigs] = useState<GameConfig[]>([]);
+  const [currentGameTypeFromProgress, setCurrentGameTypeFromProgress] = useState<GameType>('mainstage');
+  const navigate = useNavigate();
   const { toast } = useToast();
-  const { setSessionLifecycle } = useSessionLifecycle(sessionId);
+
+  // Get session progress from the database for authoritative game state
   const { progress: sessionProgress } = useSessionProgress(sessionId);
 
   useEffect(() => {
-    console.log("StateUpdate - currentGameType:", currentGameType);
-    console.log("StateUpdate - selectedPatterns:", selectedPatterns);
-    console.log("StateUpdate - prizes:", prizes);
-    console.log("StateUpdate - gameConfigs:", gameConfigs);
-  }, [currentGameType, selectedPatterns, prizes, gameConfigs]);
-  
-  const fetchWinPatterns = useCallback((gameType: GameType) => {
-    console.log("Fetching win patterns for:", gameType);
-    setWinPatterns(WIN_PATTERNS[gameType] || []);
-  }, []);
+    if (sessionProgress) {
+      setCurrentWinPattern(sessionProgress.current_win_pattern || null);
+      setCurrentGameType(sessionProgress.current_game_type as GameType);
+      
+      // Handle called_numbers if it exists, otherwise fallback to empty array
+      const calledNumbers = sessionProgress.called_numbers || [];
+      
+      if (calledNumbers && calledNumbers.length > 0) {
+        setCalledItems(calledNumbers);
+        setLastCalledItem(calledNumbers[calledNumbers.length - 1] || null);
+      }
+      
+      // Update game status 
+      const gameStatus = sessionProgress.game_status || 'pending';
+      setGameStatus(gameStatus as 'pending' | 'active' | 'completed');
+    }
+  }, [sessionProgress]);
 
-  const fetchSession = useCallback(async () => {
-    if (!sessionId) return;
-
+  const fetchSessionById = useCallback(async (sessionId: string) => {
     try {
-      console.log("Fetching session data...");
       const { data, error } = await supabase
         .from('game_sessions')
         .select('*')
         .eq('id', sessionId)
         .single();
+        
+      if (error) throw error;
+      
+      if (data) {
+        // Create a properly typed GameSession object
+        const session: GameSession = {
+          id: data.id,
+          name: data.name,
+          gameType: data.game_type as GameType,
+          createdBy: data.created_by,
+          accessCode: data.access_code,
+          status: data.status as 'pending' | 'active' | 'completed',
+          createdAt: data.created_at,
+          sessionDate: data.session_date,
+          numberOfGames: data.number_of_games,
+          current_game: data.current_game,
+          lifecycle_state: data.lifecycle_state as 'setup' | 'live' | 'ended' | 'completed',
+          games_config: Array.isArray(data.games_config) 
+            ? (data.games_config as GameConfig[]) 
+            : []
+        };
+        
+        setSession(session);
+      }
+    } catch (error) {
+      console.error('Error fetching session:', error);
+    }
+  }, []);
+
+  const fetchClaims = useCallback(async (sessionId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('universal_game_logs')
+        .select(`
+          id, 
+          session_id,
+          player_id,
+          player_name,
+          win_pattern,
+          prize_amount,
+          ticket_serial,
+          ticket_position,
+          ticket_layout_mask,
+          ticket_numbers,
+          claimed_at
+        `)
+        .eq('session_id', sessionId);
 
       if (error) {
-        console.error("Error fetching session:", error);
+        console.error('Error fetching claims:', error);
         return;
       }
-      
-      console.log("Session data received:", data);
-      
-      let configs: GameConfig[] = [];
-      if (data.games_config && Array.isArray(data.games_config)) {
-        const jsonConfigs = data.games_config as Json[];
-        configs = jsonConfigs.map((config: any): GameConfig => {
-          return convertFromLegacyConfig(config);
-        });
-        console.log("Game configs loaded from database:", configs);
-      } 
-      
-      const numberOfGames = data.number_of_games || 1;
-      if (configs.length !== numberOfGames) {
-        console.log(`Creating ${numberOfGames} default game configs`);
-        
-        configs = Array.from({ length: numberOfGames }, (_, index) => ({
-          gameNumber: index + 1,
-          gameType: (data.game_type as GameType) || 'mainstage',
-          patterns: {
-            oneLine: {
-              active: true,
-              isNonCash: false,
-              prizeAmount: '10.00',
-              description: 'One Line Prize'
-            }
-          }
-        }));
-      }
-      
-      setGameConfigs(configs);
-      
-      if (configs.length > 0) {
-        const firstConfig = configs[0];
-        console.log("Setting state from first game config:", firstConfig);
-        setCurrentGameType(firstConfig.gameType);
-        
-        // Get active patterns from the patterns property
-        const activePatterns = Object.entries(firstConfig.patterns || {})
-          .filter(([_, config]) => config.active)
-          .map(([patternId]) => patternId);
-          
-        setSelectedPatterns(activePatterns);
-        
-        // Convert patterns to prizes format for backward compatibility
-        const convertedPrizes: {[patternId: string]: PrizeDetails} = {};
-        Object.entries(firstConfig.patterns || {}).forEach(([patternId, config]) => {
-          convertedPrizes[patternId] = {
-            amount: config.prizeAmount,
-            isNonCash: config.isNonCash,
-            description: config.description
-          };
-        });
-        setPrizes(convertedPrizes);
-        
-        fetchWinPatterns(firstConfig.gameType);
-      }
 
-      const initialGameState: CurrentGameState = {
-        gameNumber: 1,
-        gameType: (data.game_type as GameType) || 'mainstage',
-        activePatternIds: [],
-        calledItems: [],
-        lastCalledItem: null,
-        status: 'pending',
-        prizes: {}
-      };
-
-      setSession({
-        id: data.id,
-        name: data.name,
-        gameType: data.game_type as GameType || 'mainstage',
-        createdBy: data.created_by,
-        accessCode: data.access_code,
-        status: data.status as "pending" | "active" | "completed",
-        createdAt: data.created_at,
-        sessionDate: data.session_date,
-        numberOfGames: data.number_of_games,
-        current_game: data.current_game,
-        lifecycle_state: data.lifecycle_state as 'setup' | 'live' | 'ended' | 'completed',
-        games_config: configs,
-        current_game_state: initialGameState
-      });
-
-      if (sessionId) {
-        try {
-          // Try to get called numbers from sessions_progress
-          const { data: progressData } = await supabase
-            .from('sessions_progress')
-            .select('*')
-            .eq('session_id', sessionId)
-            .single();
-            
-          if (progressData) {
-            // Check if session progress has called numbers (may not have in all databases)
-            const progressCalledNumbers = progressData.called_numbers || [];
-            
-            if (Array.isArray(progressCalledNumbers) && progressCalledNumbers.length > 0) {
-              setCalledNumbers(progressCalledNumbers);
-              setCurrentNumber(progressCalledNumbers[progressCalledNumbers.length - 1]);
-            } else {
-              // Fallback to session's called_items if available
-              if (data.called_items) {
-                try {
-                  const parsedItems = typeof data.called_items === 'string' ? 
-                    JSON.parse(data.called_items) : data.called_items;
-                  
-                  if (Array.isArray(parsedItems)) {
-                    const numbers = parsedItems.map((item: any) => item.value);
-                    setCalledNumbers(numbers);
-                    setCurrentNumber(numbers.length > 0 ? numbers[numbers.length - 1] : null);
-                  }
-                } catch (e) {
-                  console.error("Error parsing called items:", e);
-                }
-              }
-            }
-          }
-        } catch (err) {
-          console.error("Error fetching called numbers:", err);
-        }
-      }
+      setClaims(data || []);
+      setPendingClaims(data ? data.length : 0);
     } catch (err) {
-      console.error("Exception during session fetch:", err);
+      console.error('Error fetching claims:', err);
     }
-  }, [sessionId, fetchWinPatterns]);
+  }, []);
 
   useEffect(() => {
-    fetchSession();
-  }, [fetchSession]);
+    if (sessionId) {
+      localStorage.setItem('currentSessionId', sessionId);
+      fetchSessionById(sessionId);
+      fetchClaims(sessionId);
+    }
+  }, [sessionId, fetchSessionById, fetchClaims]);
 
   useEffect(() => {
-    if (sessionProgress && sessionId && session) {
-      console.log("Syncing CallerSession with sessionProgress:", sessionProgress);
-      
-      if (sessionProgress.current_game_number !== session.current_game_state?.gameNumber) {
-        console.log(`Updating game number from ${session.current_game_state?.gameNumber} to ${sessionProgress.current_game_number}`);
-        
-        if (session.current_game_state) {
-          const updatedGameState = {
-            ...session.current_game_state,
-            gameNumber: sessionProgress.current_game_number
-          };
-          
-          setSession(prev => prev ? {
-            ...prev,
-            current_game_state: updatedGameState
-          } : null);
-        }
-      }
-      
-      if (sessionProgress.current_win_pattern && 
-          (!session.current_game_state?.activePatternIds?.includes(sessionProgress.current_win_pattern))) {
-        console.log(`Updating win pattern to ${sessionProgress.current_win_pattern}`);
-        
-        const matchingConfig = gameConfigs.find(c => c.gameNumber === sessionProgress.current_game_number);
-        if (matchingConfig) {
-          const newPatterns = [sessionProgress.current_win_pattern];
-          if (matchingConfig.selectedPatterns) {
-            const currentPatternIndex = matchingConfig.selectedPatterns.indexOf(sessionProgress.current_win_pattern);
-            if (currentPatternIndex >= 0 && currentPatternIndex < matchingConfig.selectedPatterns.length - 1) {
-              newPatterns.push(...matchingConfig.selectedPatterns.slice(currentPatternIndex + 1));
-            }
-          }
-          setSelectedPatterns(newPatterns);
-          
-          if (session.current_game_state) {
-            const updatedGameState = {
-              ...session.current_game_state,
-              activePatternIds: newPatterns
-            };
-            
-            setSession(prev => prev ? {
-              ...prev,
-              current_game_state: updatedGameState
-            } : null);
-          }
-        }
-      }
-    }
-  }, [sessionProgress, sessionId, session, gameConfigs]);
-
-  const handleGameTypeChange = async (newType: GameType) => {
-    if (!session) return;
-    
-    console.log("Changing game type to:", newType);
-    
-    setCurrentGameType(newType);
-    fetchWinPatterns(newType);
-    setCalledNumbers([]);
-    setCurrentNumber(null);
-    
-    const updatedConfigs = [...gameConfigs];
-    if (updatedConfigs[currentGameIndex]) {
-      updatedConfigs[currentGameIndex].gameType = newType;
-    }
-    setGameConfigs(updatedConfigs);
-    
-    const updatedGameState: CurrentGameState = {
-      ...session.current_game_state,
-      gameType: newType,
-      calledItems: [],
-      lastCalledItem: null,
-      activePatternIds: selectedPatterns
-    };
-
-    try {
-      const gameStateForSupabase = {
-        gameNumber: updatedGameState.gameNumber,
-        gameType: updatedGameState.gameType,
-        activePatternIds: updatedGameState.activePatternIds,
-        calledItems: updatedGameState.calledItems || [],
-        lastCalledItem: updatedGameState.lastCalledItem,
-        status: updatedGameState.status,
-        prizes: JSON.parse(JSON.stringify(updatedGameState.prizes || {}))
-      };
-
-      const { error } = await supabase
-        .from('game_sessions')
-        .update({
-          game_type: newType,
-          current_game_state: gameStateForSupabase as Json,
-          games_config: JSON.parse(JSON.stringify(updatedConfigs)) as Json
-        })
-        .eq('id', sessionId);
-
-      if (error) {
-        console.error("Error updating game type:", error);
-        toast({
-          title: "Error changing game type",
-          description: "Failed to update the game type. Please try again.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Game type updated",
-          description: `Changed to ${newType} Bingo`,
-        });
-      }
-    } catch (err) {
-      console.error("Exception during game type update:", err);
-    }
-  };
-
-  const handlePatternSelect = async (pattern: WinPattern) => {
-    if (!session?.current_game_state) return;
-    
-    const patternId = String(pattern.id);
-    console.log("Toggle pattern:", patternId);
-    
-    const newSelectedPatterns = [...selectedPatterns];
-    const patternIndex = newSelectedPatterns.indexOf(patternId);
-    
-    if (patternIndex >= 0) {
-      newSelectedPatterns.splice(patternIndex, 1);
-      const updatedPrizes = {...prizes};
-      delete updatedPrizes[patternId];
-      setPrizes(updatedPrizes);
-    } else {
-      newSelectedPatterns.push(patternId);
-      
-      if (!prizes[patternId]) {
-        const updatedPrizes = {
-          ...prizes,
-          [patternId]: {
-            amount: '10.00',
-            isNonCash: false,
-            description: `${pattern.name} Prize`
-          }
-        };
-        setPrizes(updatedPrizes);
-      }
-    }
-    
-    console.log("New selected patterns:", newSelectedPatterns);
-    setSelectedPatterns(newSelectedPatterns);
-    
-    const updatedConfigs = [...gameConfigs];
-    if (updatedConfigs[currentGameIndex]) {
-      updatedConfigs[currentGameIndex].selectedPatterns = newSelectedPatterns;
-      updatedConfigs[currentGameIndex].prizes = {...prizes};
-      
-      if (patternIndex >= 0 && updatedConfigs[currentGameIndex].prizes[patternId]) {
-        delete updatedConfigs[currentGameIndex].prizes[patternId];
-      }
-    }
-    setGameConfigs(updatedConfigs);
-    
-    const updatedGameState = {
-      ...session.current_game_state,
-      activePatternIds: newSelectedPatterns,
-      prizes: prizes
-    };
-    
-    setSession(prevSession => prevSession ? {
-      ...prevSession,
-      current_game_state: updatedGameState,
-      games_config: updatedConfigs
-    } : null);
-    
-    try {
-      const { error } = await supabase
-        .from('game_sessions')
-        .update({ 
-          current_game_state: updatedGameState as unknown as Json,
-          games_config: updatedConfigs as unknown as Json
-        })
-        .eq('id', sessionId);
-
-      if (error) {
-        console.error("Error updating win patterns:", error);
-        toast({
-          title: "Error updating win patterns",
-          description: "Failed to update the win patterns. Please try again.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: pattern.id + (patternIndex >= 0 ? " removed" : " selected"),
-          description: `Win pattern ${patternIndex >= 0 ? "removed from" : "added to"} the game.`,
-        });
-      }
-    } catch (err) {
-      console.error("Exception during pattern select:", err);
-    }
-  };
-
-  const handlePrizeChange = async (patternId: string, prizeDetails: PrizeDetails) => {
-    console.log(`Updating prize for ${patternId}:`, prizeDetails);
-    
-    const updatedPrizes = {
-      ...prizes,
-      [patternId]: prizeDetails
-    };
-    setPrizes(updatedPrizes);
-    
-    const updatedConfigs = [...gameConfigs];
-    if (updatedConfigs[currentGameIndex]) {
-      updatedConfigs[currentGameIndex].prizes = {
-        ...updatedConfigs[currentGameIndex].prizes,
-        [patternId]: prizeDetails
-      };
-      setGameConfigs(updatedConfigs);
-    }
-    
     if (session) {
-      const updatedGameState = {
-        ...session.current_game_state,
-        prizes: updatedPrizes
-      };
+      setSessionName(session.name);
+      setAccessCode(session.accessCode);
+      setNumberOfGames(session.numberOfGames);
+      setCurrentGameNumber(session.current_game);
+      setCurrentGameType(session.gameType);
+      setCurrentGameConfigs(session.games_config);
       
-      setSession(prevSession => prevSession ? {
-        ...prevSession,
-        current_game_state: updatedGameState,
-        games_config: updatedConfigs
-      } : null);
+      const gameRules = getGameRulesForType(session.gameType);
+      setWinPatterns(gameRules.getWinPatterns());
       
-      try {
-        const { error } = await supabase
-          .from('game_sessions')
-          .update({
-            current_game_state: updatedGameState as unknown as Json,
-            games_config: updatedConfigs as unknown as Json
-          })
-          .eq('id', sessionId);
-          
-        if (error) {
-          console.error("Error updating prize details:", error);
+      // Set initial selected patterns
+      if (session.games_config && session.games_config.length > 0) {
+        const firstGameConfig = session.games_config[0];
+        if (firstGameConfig.patterns) {
+          setSelectedPatterns(Object.keys(firstGameConfig.patterns).filter(key => firstGameConfig.patterns[key].active));
+        } else if (firstGameConfig.selectedPatterns) {
+          setSelectedPatterns(firstGameConfig.selectedPatterns);
+        } else {
+          setSelectedPatterns(DEFAULT_PATTERN_ORDER[session.gameType] || []);
         }
-      } catch (err) {
-        console.error("Exception during prize update:", err);
+      } else {
+        setSelectedPatterns(DEFAULT_PATTERN_ORDER[session.gameType] || []);
       }
     }
+  }, [session]);
+
+  const handleGameTypeChange = (type: GameType) => {
+    setCurrentGameType(type);
+    const gameRules = getGameRulesForType(type);
+    setWinPatterns(gameRules.getWinPatterns());
+    setSelectedPatterns(DEFAULT_PATTERN_ORDER[type] || []);
   };
 
-  const handleGoLive = async () => {
-    if (!session) return;
-    
-    setIsGoingLive(true);
-    
-    const currentConfig = gameConfigs[currentGameIndex];
-    const patternsToCheck = currentConfig?.selectedPatterns || session.current_game_state?.activePatternIds;
-    
-    if (!patternsToCheck || patternsToCheck.length === 0) {
-      toast({
-        title: "Cannot start game",
-        description: "Please select at least one win pattern before starting the game.",
-        variant: "destructive"
-      });
-      setIsGoingLive(false);
-      return;
-    }
+  const handlePatternSelect = (pattern: WinPattern) => {
+    setSelectedPatterns(prev => {
+      if (prev.includes(pattern.id)) {
+        return prev.filter(id => id !== pattern.id);
+      } else {
+        return [...prev, pattern.id];
+      }
+    });
+  };
 
+  const startSession = async () => {
+    setIsStarting(true);
     try {
-      console.log("Attempting to set session to live state...");
-      
-      const updatedGameState: CurrentGameState = {
-        ...session.current_game_state,
-        status: 'active',
-        activePatternIds: patternsToCheck,
-        prizes: prizes
-      };
-      
-      const gameStateForSupabase = {
-        gameNumber: updatedGameState.gameNumber,
-        gameType: updatedGameState.gameType,
-        activePatternIds: updatedGameState.activePatternIds,
-        calledItems: updatedGameState.calledItems || [],
-        lastCalledItem: updatedGameState.lastCalledItem,
-        status: updatedGameState.status,
-        prizes: JSON.parse(JSON.stringify(updatedGameState.prizes || {}))
-      };
-      
-      let currentWinPattern = null;
-      if (patternsToCheck && patternsToCheck.length > 0) {
-        currentWinPattern = patternsToCheck[0];
-      }
+      const newAccessCode = generateAccessCode(6);
+      setAccessCode(newAccessCode);
 
-      const [sessionUpdate, progressUpdate] = await Promise.all([
-        supabase
-          .from('game_sessions')
-          .update({ 
-            lifecycle_state: 'live',
-            status: 'active',
-            current_game_state: gameStateForSupabase as unknown as Json,
-            games_config: JSON.parse(JSON.stringify(gameConfigs)) as unknown as Json
-          })
-          .eq('id', sessionId),
-          
-        supabase
-          .from('sessions_progress')
-          .update({
-            current_win_pattern: currentWinPattern
-          })
-          .eq('session_id', sessionId)
-      ]);
+      const { error } = await supabase
+        .from('game_sessions')
+        .update({ access_code: newAccessCode })
+        .eq('id', sessionId);
 
-      if (sessionUpdate.error) {
-        console.error("Error starting game:", sessionUpdate.error);
-        toast({
-          title: "Error",
-          description: "Failed to start the game. Please try again.",
-          variant: "destructive"
-        });
-        setIsGoingLive(false);
-        return;
-      }
-      
-      if (progressUpdate.error) {
-        console.error("Error updating session progress:", progressUpdate.error);
-      }
+      if (error) throw error;
 
-      setSession(prevSession => {
-        if (!prevSession) return null;
-        return {
-          ...prevSession,
-          lifecycle_state: 'live',
-          status: 'active',
-          current_game_state: updatedGameState
-        };
-      });
-      
       toast({
-        title: "Game Started",
-        description: "The game is now live!",
+        title: "Session Started",
+        description: "The session has been started with a new access code.",
       });
-      
-      console.log("Game successfully set to live state");
-      
     } catch (err) {
-      console.error("Exception during go live operation:", err);
+      console.error("Error starting session:", err);
       toast({
         title: "Error",
-        description: "An unexpected error occurred. Please try again.",
+        description: "Failed to start the session.",
         variant: "destructive"
       });
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
+  const saveSessionName = async () => {
+    setIsSaving(true);
+    try {
+      const { error } = await supabase
+        .from('game_sessions')
+        .update({ name: sessionName })
+        .eq('id', sessionId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Session Name Updated",
+        description: "The session name has been updated successfully.",
+      });
+    } catch (err) {
+      console.error("Error saving session name:", err);
+      toast({
+        title: "Error",
+        description: "Failed to update the session name.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const goLive = async () => {
+    setIsGoingLive(true);
+    try {
+      // Update the game_sessions table to set the status to 'active' and lifecycle_state to 'live'
+      await supabase
+        .from('game_sessions')
+        .update({
+          status: 'active',
+          lifecycle_state: 'live'
+        })
+        .eq('id', sessionId);
+
+      // Also update the sessions_progress table to set the game_status to 'active'
+      await supabase
+        .from('sessions_progress')
+        .update({
+          game_status: 'active'
+        })
+        .eq('session_id', sessionId);
+
+      // Notify
+      toast({
+        title: "Game is Live!",
+        description: "The game has started and is now live.",
+      });
+
+      // Update local state
+      setGameStatus('active');
+    } catch (err) {
+      console.error("Error going live:", err);
+      toast({
+        title: "Error",
+        description: "Failed to start the game.",
+        variant: "destructive"
+      });
+    } finally {
       setIsGoingLive(false);
     }
   };
 
   const callNumber = async () => {
     if (!session) return;
-    
-    const gameType = session.current_game_state?.gameType || 'mainstage';
-    const numberRange = gameType === 'mainstage' ? 90 : 75;
-    const newNumber = Math.floor(Math.random() * numberRange) + 1;
-    
-    if (calledNumbers.includes(newNumber)) {
-      callNumber();
-      return;
-    }
-
-    setCurrentNumber(newNumber);
-    const updatedCalledNumbers = [...calledNumbers, newNumber];
-    setCalledNumbers(updatedCalledNumbers);
-
-    if (session.current_game_state) {
-      const updatedGameState: CurrentGameState = {
-        ...session.current_game_state,
-        calledItems: updatedCalledNumbers,
-        lastCalledItem: newNumber
-      };
-
-      setSession(prevSession => prevSession ? {
-        ...prevSession,
-        current_game_state: updatedGameState
-      } : null);
-
-      try {
-        const gameStateForSupabase = {
-          gameNumber: updatedGameState.gameNumber,
-          gameType: updatedGameState.gameType,
-          activePatternIds: updatedGameState.activePatternIds,
-          calledItems: updatedGameState.calledItems,
-          lastCalledItem: updatedGameState.lastCalledItem,
-          status: updatedGameState.status,
-          prizes: JSON.parse(JSON.stringify(updatedGameState.prizes || {}))
-        };
-
-        const { error } = await supabase
-          .from('game_sessions')
-          .update({ current_game_state: gameStateForSupabase as unknown as Json })
-          .eq('id', sessionId);
-
-        if (error) {
-          console.error("Error updating called numbers:", error);
-          toast({
-            title: "Error calling number",
-            description: "Failed to update the called number. Please try again.",
-            variant: "destructive",
-          });
-          fetchSession();
-        } else {
-          toast({
-            title: "Number called",
-            description: `The number ${newNumber} has been called.`,
-          });
-        }
-      } catch (err) {
-        console.error("Exception during number calling:", err);
-      }
-    }
-  };
-
-  const checkForClaims = async () => {
-    if (!sessionId) return;
 
     try {
-      const { data: claims, error } = await supabase
-        .from('universal_game_logs')
-        .select('id, player_id, claimed_at, player_name')
-        .eq('session_id', sessionId)
-        .eq('game_number', session?.current_game || 1)
-        .is('validated_at', null)
-        .order('claimed_at', { ascending: true });
+      // Generate a new random number based on the game type
+      const gameRules = getGameRulesForType(currentGameType);
+      const newNumber = gameRules.generateNewNumber(calledItems);
 
-      if (error) {
-        console.error("Error fetching pending claims:", error);
-        toast({
-          title: "Error checking claims",
-          description: "Failed to check for pending claims. Please try again.",
-          variant: "destructive",
-        });
-      } else if (claims && claims.length > 0) {
-        setPendingClaims(claims || []);
-        
-        const firstClaim = claims[0];
-        
-        const { data: ticketData, error: ticketError } = await supabase
-          .from('assigned_tickets')
-          .select('*')
-          .eq('player_id', firstClaim.player_id)
-          .eq('session_id', sessionId);
-          
-        if (ticketError) {
-          console.error("Error fetching ticket data:", ticketError);
-        } else {
-          setCurrentClaim({
-            playerName: firstClaim.player_name || 'Unknown',
-            playerId: firstClaim.player_id,
-            tickets: ticketData || [],
-            claimId: firstClaim.id
-          });
-          
-          setShowClaimSheet(true);
-          
-          toast({
-            title: "Claim ready for verification",
-            description: `${firstClaim.player_name || 'A player'} has claimed bingo!`,
-          });
-        }
-      } else {
-        toast({
-          title: "No claims",
-          description: "There are no pending claims at this time.",
-        });
-      }
-    } catch (err) {
-      console.error("Exception during claims check:", err);
-    }
-  };
+      // Update the called items array
+      const updatedCalledItems = [...calledItems, newNumber];
+      setCalledItems(updatedCalledItems);
+      setLastCalledItem(newNumber);
 
-  const handleValidClaim = async () => {
-    if (!currentClaim || !sessionId) return;
-    
-    try {
-      const { error } = await supabase
-        .from('universal_game_logs')
-        .update({ validated_at: new Date().toISOString() })
-        .eq('id', currentClaim.claimId);
-        
-      if (error) {
-        console.error("Error validating claim:", error);
-        toast({
-          title: "Error",
-          description: "Failed to validate claim. Please try again.",
-          variant: "destructive"
-        });
-        return;
-      }
-      
-      await supabase
-        .channel('game-updates')
-        .send({
-          type: 'broadcast',
-          event: 'claim-result',
-          payload: { 
-            playerId: currentClaim.playerId,
-            result: 'valid'
-          }
-        });
-      
-      toast({
-        title: "Claim Validated",
-        description: `${currentClaim.playerName}'s claim has been validated.`
+      // Update the session progress in the database
+      await updateSessionProgress(sessionId, {
+        called_numbers: updatedCalledItems,
+        current_game_type: currentGameType
       });
-      
-      if (session && session.current_game_state) {
-        const winPatternId = session.current_game_state.activePatternIds[0] || 'unknown';
-        const winPrize = session.current_game_state.prizes?.[winPatternId];
-        
-        try {
-          const ticketData = currentClaim.tickets && currentClaim.tickets.length > 0 
-            ? currentClaim.tickets[0] 
-            : null;
-            
-          if (ticketData) {
-            const logData = {
-              session_id: sessionId,
-              game_number: session.current_game_state.gameNumber,
-              game_type: session.current_game_state.gameType,
-              win_pattern: winPatternId,
-              player_id: currentClaim.playerId,
-              player_name: currentClaim.playerName,
-              player_email: ticketData.player_email || null,
-              ticket_serial: ticketData.serial,
-              ticket_perm: ticketData.perm,
-              ticket_position: ticketData.position,
-              ticket_layout_mask: ticketData.layout_mask,
-              ticket_numbers: ticketData.numbers,
-              called_numbers: session.current_game_state.calledItems || [],
-              total_calls: (session.current_game_state.calledItems || []).length,
-              last_called_number: session.current_game_state.lastCalledItem,
-              prize: winPrize?.description || null,
-              prize_amount: winPrize?.amount || null,
-              prize_shared: winPrize?.isNonCash || false
-            };
-            
-            const { error: logError } = await supabase
-              .from('universal_game_logs')
-              .insert(logData);
-              
-            if (logError) {
-              console.error("Error saving game log:", logError);
-            } else {
-              console.log("Game log saved successfully");
-            }
-          }
-        } catch (logErr) {
-          console.error("Exception saving game log:", logErr);
-        }
-      }
-      
-      if (session && selectedPatterns.length > 1) {
-        const currentPatternIndex = selectedPatterns.findIndex(p => p === selectedPatterns[0]);
-        
-        if (currentPatternIndex !== -1 && currentPatternIndex < selectedPatterns.length - 1) {
-          const updatedPatterns = [...selectedPatterns];
-          const completedPattern = updatedPatterns.shift();
-          
-          if (completedPattern) {
-            console.log(`Win pattern ${completedPattern} completed`);
-          }
-          
-          console.log("Advancing to next win pattern:", updatedPatterns[0]);
-          
-          if (session.current_game_state) {
-            const updatedGameState = {
-              ...session.current_game_state,
-              activePatternIds: updatedPatterns
-            };
-            
-            const gameStateForSupabase = {
-              gameNumber: updatedGameState.gameNumber,
-              gameType: updatedGameState.gameType,
-              activePatternIds: updatedGameState.activePatternIds,
-              calledItems: updatedGameState.calledItems,
-              lastCalledItem: updatedGameState.lastCalledItem,
-              status: updatedGameState.status,
-              prizes: JSON.parse(JSON.stringify(updatedGameState.prizes || {}))
-            };
-            
-            const { error: sessionError } = await supabase
-              .from('game_sessions')
-              .update({ current_game_state: gameStateForSupabase as unknown as Json })
-              .eq('id', sessionId);
-                
-            if (sessionError) {
-              console.error("Error updating game state:", sessionError);
-            }
-            
-            try {
-              const { data: progressData, error: fetchError } = await supabase
-                .from('sessions_progress')
-                .select('current_win_pattern')
-                .eq('session_id', sessionId)
-                .single();
-                
-              if (fetchError) {
-                console.error("Error fetching session progress:", fetchError);
-              } else {
-                const { error: updateError } = await supabase
-                  .from('sessions_progress')
-                  .update({ 
-                    current_win_pattern: updatedPatterns[0]
-                  })
-                  .eq('session_id', sessionId);
-                  
-                if (updateError) {
-                  console.error("Error updating session progress:", updateError);
-                }
-              }
-            } catch (err) {
-              console.error("Error updating win pattern progress:", err);
-            }
-            
-            setSelectedPatterns(updatedPatterns);
-            setSession(prev => prev ? {
-              ...prev,
-              current_game_state: updatedGameState
-            } : null);
-            
-            toast({
-              title: "Next Win Pattern",
-              description: `Advanced to the next win pattern.`
-            });
-          }
-        } else if (session.current_game_state && 
-                  session.numberOfGames && 
-                  session.current_game_state.gameNumber < session.numberOfGames) {
-          const nextGameNumber = session.current_game_state.gameNumber + 1;
-          const nextGameIndex = nextGameNumber - 1;
-          const nextGameConfig = gameConfigs[nextGameIndex];
-          
-          if (nextGameConfig) {
-            setCalledNumbers([]);
-            setCurrentNumber(null);
-            setCurrentGameType(nextGameConfig.gameType);
-            setSelectedPatterns(nextGameConfig.selectedPatterns || []);
-            setPrizes(nextGameConfig.prizes || {});
-            
-            const nextGameState: CurrentGameState = {
-              gameNumber: nextGameNumber,
-              gameType: nextGameConfig.gameType,
-              activePatternIds: nextGameConfig.selectedPatterns || [],
-              calledItems: [],
-              lastCalledItem: null,
-              status: 'active',
-              prizes: nextGameConfig.prizes || {}
-            };
-            
-            const gameStateForSupabase = {
-              gameNumber: nextGameState.gameNumber,
-              gameType: nextGameState.gameType,
-              activePatternIds: nextGameState.activePatternIds,
-              calledItems: nextGameState.calledItems,
-              lastCalledItem: nextGameState.lastCalledItem,
-              status: nextGameState.status,
-              prizes: JSON.parse(JSON.stringify(nextGameState.prizes || {}))
-            };
-            
-            const [sessionUpdate, progressUpdate] = await Promise.all([
-              supabase
-                .from('game_sessions')
-                .update({ 
-                  current_game_state: gameStateForSupabase as unknown as Json,
-                  current_game: nextGameNumber
-                })
-                .eq('id', sessionId),
-                
-              supabase
-                .from('sessions_progress')
-                .update({
-                  current_game_number: nextGameNumber,
-                  current_win_pattern: nextGameConfig.selectedPatterns ? nextGameConfig.selectedPatterns[0] : null
-                })
-                .eq('session_id', sessionId)
-            ]);
-            
-            if (sessionUpdate.error) {
-              console.error("Error updating game state:", sessionUpdate.error);
-            }
-            
-            if (progressUpdate.error) {
-              console.error("Error updating session progress:", progressUpdate.error);
-            }
-              
-            setSession(prev => prev ? {
-              ...prev,
-              current_game: nextGameNumber,
-              current_game_state: nextGameState
-            } : null);
-            
-            toast({
-              title: "Next Game",
-              description: `Advanced to Game ${nextGameNumber}`
-            });
-          }
-        }
-      }
-      
-      setTimeout(() => {
-        setShowClaimSheet(false);
-      }, 500);
-      
-      setTimeout(() => {
-        checkForClaims();
-      }, 2000);
-    } catch (err) {
-      console.error("Error during claim validation:", err);
-    }
-  };
 
-  const handleFalseClaim = async () => {
-    if (!currentClaim || !sessionId) return;
-    
-    try {
-      const { error } = await supabase
-        .from('universal_game_logs')
-        .update({ validated_at: new Date().toISOString(), status: 'rejected' })
-        .eq('id', currentClaim.claimId);
-        
-      if (error) {
-        console.error("Error rejecting claim:", error);
-        toast({
-          title: "Error",
-          description: "Failed to reject claim. Please try again.",
-          variant: "destructive"
-        });
-        return;
-      }
-      
-      await supabase
-        .channel('game-updates')
-        .send({
-          type: 'broadcast',
-          event: 'claim-result',
-          payload: { 
-            playerId: currentClaim.playerId,
-            result: 'rejected'
-          }
-        });
-      
+      // Notify
       toast({
-        title: "Claim Rejected",
-        description: `${currentClaim.playerName}'s claim has been rejected.`
-      });
-      
-      setShowClaimSheet(false);
-      setCurrentClaim(null);
-      
-      checkForClaims();
-    } catch (err) {
-      console.error("Error during claim rejection:", err);
-    }
-  };
-
-  const handleCloseGame = async () => {
-    try {
-      console.log("Handling Close Game...");
-      
-      if (!session || !sessionId) {
-        toast({
-          title: "Error",
-          description: "Session data not found. Please reload the page.",
-          variant: "destructive",
-        });
-        return;
-      }
-      
-      if (!sessionProgress) {
-        console.error("No session progress data found");
-        return;
-      }
-      
-      const currentWinPattern = sessionProgress.current_win_pattern;
-      const currentGameNumber = sessionProgress.current_game_number;
-      const maxGameNumber = sessionProgress.max_game_number;
-      const isLastGame = currentGameNumber >= maxGameNumber;
-      
-      if (isLastGame && currentWinPattern === 'fullHouse') {
-        console.log("Last game and pattern - marking session as completed");
-        
-        const { error } = await supabase
-          .from('game_sessions')
-          .update({ 
-            status: 'completed',
-            lifecycle_state: 'completed'
-          })
-          .eq('id', sessionId);
-          
-        if (error) {
-          console.error("Error completing session:", error);
-          toast({
-            title: "Error",
-            description: "Failed to complete the session.",
-            variant: "destructive"
-          });
-        } else {
-          toast({
-            title: "Session Completed",
-            description: "The session has been successfully completed.",
-          });
-        }
-        
-        return;
-      }
-      
-      let nextPattern: string | null = null;
-      let nextGameNumber = currentGameNumber;
-      
-      if (currentWinPattern === 'oneLine') {
-        nextPattern = 'twoLines';
-      } else if (currentWinPattern === 'twoLines') {
-        nextPattern = 'fullHouse';
-      } else if (currentWinPattern === 'fullHouse' && !isLastGame) {
-        nextPattern = 'oneLine';
-        nextGameNumber = currentGameNumber + 1;
-      }
-      
-      console.log(`Advancing: Current game: ${currentGameNumber}, Next game: ${nextGameNumber}, Next pattern: ${nextPattern}`);
-      
-      const matchingConfig = gameConfigs.find(config => config.gameNumber === nextGameNumber);
-      
-      const newGameState: CurrentGameState = {
-        ...session.current_game_state,
-        gameNumber: nextGameNumber,
-        calledItems: nextGameNumber > currentGameNumber ? [] : session.current_game_state.calledItems,
-        lastCalledItem: nextGameNumber > currentGameNumber ? null : session.current_game_state.lastCalledItem,
-        activePatternIds: nextPattern ? [nextPattern] : session.current_game_state.activePatternIds,
-      };
-      
-      if (matchingConfig) {
-        newGameState.gameType = matchingConfig.gameType;
-        newGameState.prizes = matchingConfig.prizes;
-        
-        if (nextGameNumber > currentGameNumber) {
-          setCurrentGameType(matchingConfig.gameType);
-          setPrizes(matchingConfig.prizes || {});
-          setSelectedPatterns(matchingConfig.selectedPatterns || []);
-          setCalledNumbers([]);
-          setCurrentNumber(null);
-        } else if (nextPattern) {
-          setSelectedPatterns([nextPattern]);
-        }
-      }
-      
-      const gameStateForSupabase = {
-        gameNumber: newGameState.gameNumber,
-        gameType: newGameState.gameType,
-        activePatternIds: newGameState.activePatternIds,
-        calledItems: newGameState.calledItems,
-        lastCalledItem: newGameState.lastCalledItem,
-        status: newGameState.status,
-        prizes: JSON.parse(JSON.stringify(newGameState.prizes || {}))
-      };
-      
-      const { error: progressError } = await supabase
-        .from('sessions_progress')
-        .update({
-          current_game_number: nextGameNumber,
-          current_win_pattern: nextPattern
-        })
-        .eq('session_id', sessionId);
-          
-      if (progressError) {
-        console.error("Error updating session progress:", progressError);
-        toast({
-          title: "Error",
-          description: "Failed to update session progress.",
-          variant: "destructive"
-        });
-        return;
-      }
-      
-      const { error: sessionError } = await supabase
-        .from('game_sessions')
-        .update({ 
-          current_game_state: gameStateForSupabase as unknown as Json,
-          current_game: nextGameNumber
-        })
-        .eq('id', sessionId);
-          
-      if (sessionError) {
-        console.error("Error updating session:", sessionError);
-        toast({
-          title: "Error",
-          description: "Failed to update game session.",
-          variant: "destructive"
-        });
-        return;
-      }
-      
-      setSession(prev => prev ? {
-        ...prev,
-        current_game: nextGameNumber,
-        current_game_state: newGameState
-      } : null);
-      
-      const actionType = nextGameNumber > currentGameNumber ? "Game" : "Pattern";
-      toast({
-        title: `${actionType} Advanced`,
-        description: nextGameNumber > currentGameNumber ? 
-          `Advanced to Game ${nextGameNumber}` : 
-          `Advanced to ${nextPattern === 'twoLines' ? 'Two Lines' : nextPattern === 'fullHouse' ? 'Full House' : nextPattern}`
+        title: "Number Called",
+        description: `The number ${newNumber} has been called.`,
       });
     } catch (err) {
-      console.error("Error in handleCloseGame:", err);
+      console.error("Error calling number:", err);
       toast({
         title: "Error",
-        description: "An unexpected error occurred while closing the game.",
+        description: "Failed to call a new number.",
         variant: "destructive"
       });
     }
   };
 
-  useEffect(() => {
-    if (!sessionId) return;
-    
-    console.log("Setting up real-time listener for bingo claims on session", sessionId);
-    
-    const channel = supabase
-      .channel('caller-claims')
-      .on(
-        'broadcast',
-        { event: 'bingo-claim' },
-        async (payload) => {
-          console.log("Received bingo claim broadcast:", payload);
-          
-          if (payload.payload && payload.payload.playerId && payload.payload.playerName) {
-            const claimData = payload.payload;
-            
-            toast({
-              title: "New Bingo Claim!",
-              description: `${claimData.playerName} has claimed bingo! Click 'View Claims' to verify.`,
-              variant: "default",
-            });
-            
-            setPendingClaims(prev => [...prev, { 
-              id: claimData.claimId || undefined,
-              player_id: claimData.playerId,
-              player_name: claimData.playerName
-            }]);
-          }
-        }
-      )
-      .subscribe();
+  const recallNumber = async () => {
+    if (!session) return;
 
-    return () => {
-      console.log("Removing channel for bingo claims");
-      supabase.removeChannel(channel);
-    };
-  }, [sessionId, toast]);
+    try {
+      if (calledItems.length === 0) {
+        toast({
+          title: "No Numbers Called",
+          description: "No numbers have been called yet.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Remove the last called number
+      const updatedCalledItems = calledItems.slice(0, -1);
+      const recalledNumber = calledItems[calledItems.length - 1];
+
+      setCalledItems(updatedCalledItems);
+      setLastCalledItem(updatedCalledItems.length > 0 ? updatedCalledItems[updatedCalledItems.length - 1] : null);
+
+      // Update the session progress in the database
+      await updateSessionProgress(sessionId, {
+        called_numbers: updatedCalledItems,
+        current_game_type: currentGameType
+      });
+
+      // Notify
+      toast({
+        title: "Number Recalled",
+        description: `The number ${recalledNumber} has been recalled.`,
+      });
+    } catch (err) {
+      console.error("Error recalling number:", err);
+      toast({
+        title: "Error",
+        description: "Failed to recall the last number.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const updateSessionInDatabase = async (sessionId: string) => {
+    try {
+      // Update the game_sessions table without current_game_state
+      await supabase
+        .from('game_sessions')
+        .update({
+          status: gameStatus,
+          current_game: currentGameNumber,
+        })
+        .eq('id', sessionId);
+      
+      // Instead, update the sessions_progress table
+      await supabase
+        .from('sessions_progress')
+        .update({
+          current_game_number: currentGameNumber,
+          current_win_pattern: currentWinPattern,
+          current_game_type: currentGameType,
+          // Add called_numbers if the column exists
+          ...(typeof sessionProgress?.called_numbers !== 'undefined' && {
+            called_numbers: calledItems
+          }),
+          // Add game_status if the column exists
+          ...(typeof sessionProgress?.game_status !== 'undefined' && {
+            game_status: gameStatus
+          })
+        })
+        .eq('session_id', sessionId);
+      
+    } catch (err) {
+      console.error('Error updating session in database:', err);
+      toast({
+        title: 'Error',
+        description: 'Failed to update game state in database',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const closeGame = async () => {
+    try {
+      // Update game_sessions table
+      await supabase
+        .from('game_sessions')
+        .update({
+          status: 'completed',
+          lifecycle_state: 'completed'
+        })
+        .eq('id', currentSession.id);
+      
+      // Also update sessions_progress
+      await supabase
+        .from('sessions_progress')
+        .update({
+          ...(typeof sessionProgress?.game_status !== 'undefined' && {
+            game_status: 'completed'
+          })
+        })
+        .eq('session_id', currentSession.id);
+      
+      // Redirect or handle UI changes
+      navigate('/dashboard');
+    } catch (err) {
+      console.error('Error closing game:', err);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {!session ? (
-        <div className="flex items-center justify-center h-screen">
-          <p className="text-lg text-gray-500">Loading session...</p>
-        </div>
-      ) : session.lifecycle_state === 'setup' ? (
-        <GameSetupView
-          currentGameType={currentGameType}
-          onGameTypeChange={handleGameTypeChange}
-          winPatterns={winPatterns}
-          selectedPatterns={selectedPatterns}
-          onPatternSelect={handlePatternSelect}
-          onGoLive={handleGoLive}
-          isGoingLive={isGoingLive}
-          prizes={prizes}
-          onPrizeChange={handlePrizeChange}
-          gameConfigs={gameConfigs}
-          numberOfGames={session.numberOfGames || 1}
-          setGameConfigs={setGameConfigs}
-        />
-      ) : session.lifecycle_state === 'live' ? (
-        <>
-          <LiveGameView
-            gameType={currentGameType}
-            winPatterns={winPatterns}
-            selectedPatterns={selectedPatterns}
-            currentWinPattern={selectedPatterns[0] || null}
-            onCallNumber={callNumber}
-            onRecall={() => setCurrentNumber(calledNumbers[calledNumbers.length - 1])}
-            lastCalledNumber={currentNumber}
-            calledNumbers={calledNumbers}
-            pendingClaims={pendingClaims.length}
-            onViewClaims={checkForClaims}
-            prizes={prizes}
-            gameConfigs={gameConfigs}
-            sessionStatus={session.status}
-            onCloseGame={handleCloseGame}
-            currentGameNumber={sessionProgress?.current_game_number || session.current_game_state?.gameNumber || 1}
-            numberOfGames={sessionProgress?.max_game_number || session.numberOfGames || 1}
-          />
-          
-          {currentClaim && (
-            <ClaimVerificationSheet
-              isOpen={showClaimSheet}
-              onClose={() => setShowClaimSheet(false)}
-              playerName={currentClaim.playerName}
-              tickets={currentClaim.tickets || []}
-              calledNumbers={calledNumbers}
-              currentNumber={currentNumber}
-              onValidClaim={handleValidClaim}
-              onFalseClaim={handleFalseClaim}
-              currentWinPattern={selectedPatterns[0] || null}
-              gameType={`MAINSTAGE_${currentGameType}`}
-            />
+    <div className="container mx-auto p-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Session: {sessionName}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {session ? (
+            <>
+              {session.lifecycle_state === 'setup' && (
+                <GameSetupView
+                  currentGameType={currentGameType}
+                  onGameTypeChange={handleGameTypeChange}
+                  winPatterns={winPatterns}
+                  selectedPatterns={selectedPatterns}
+                  onPatternSelect={handlePatternSelect}
+                  onGoLive={goLive}
+                  isGoingLive={isGoingLive}
+                  gameConfigs={currentGameConfigs}
+                  numberOfGames={numberOfGames}
+                  setGameConfigs={setCurrentGameConfigs}
+                />
+              )}
+              {session.lifecycle_state === 'live' && (
+                <LiveGameView
+                  gameType={currentGameType}
+                  winPatterns={winPatterns}
+                  selectedPatterns={selectedPatterns}
+                  currentWinPattern={currentWinPattern}
+                  onCallNumber={callNumber}
+                  onRecall={recallNumber}
+                  lastCalledNumber={lastCalledItem}
+                  calledNumbers={calledItems}
+                  pendingClaims={pendingClaims}
+                  onViewClaims={() => setIsClaimsDialogOpen(true)}
+                  gameConfigs={currentGameConfigs}
+                  sessionStatus={gameStatus}
+                  onCloseGame={closeGame}
+                  currentGameNumber={currentGameNumber}
+                  numberOfGames={numberOfGames}
+                />
+              )}
+              <Dialog open={isClaimsDialogOpen} onOpenChange={setIsClaimsDialogOpen}>
+                <DialogContent className="sm:max-w-[425px]">
+                  <DialogHeader>
+                    <DialogTitle>Pending Claims</DialogTitle>
+                    <DialogDescription>
+                      Review and manage player claims for this session.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-4">
+                    {claims.map(claim => (
+                      <div key={claim.id} className="border rounded-md p-4">
+                        <p>Player: {claim.player_name}</p>
+                        <p>Pattern: {claim.win_pattern}</p>
+                        <p>Ticket: {claim.ticket_serial}</p>
+                        <p>Claimed at: {claim.claimed_at}</p>
+                        <Button>Validate Claim</Button>
+                      </div>
+                    ))}
+                  </div>
+                  <DialogFooter>
+                    <DialogClose asChild>
+                      <Button type="button" variant="secondary">
+                        Close
+                      </Button>
+                    </DialogClose>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </>
+          ) : (
+            <p>Loading session...</p>
           )}
-        </>
-      ) : (
-        <div className="flex items-center justify-center h-screen">
-          <p className="text-lg text-gray-500">Session has ended or not found. Current state: {session?.lifecycle_state}</p>
-        </div>
-      )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
