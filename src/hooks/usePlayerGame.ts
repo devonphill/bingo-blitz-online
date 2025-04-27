@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -290,6 +289,47 @@ export function usePlayerGame(playerCode?: string | null) {
     };
   }, [playerId, toast]);
 
+  const resetClaimStatus = useCallback(() => {
+    console.log("Resetting claim status to undefined");
+    setClaimStatus(undefined);
+    setIsClaiming(false);
+    
+    if (claimResetTimer.current) {
+      clearTimeout(claimResetTimer.current);
+      claimResetTimer.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    console.log(`Setting up broadcast channel for game updates in session ${sessionId}`);
+    
+    const broadcastChannel = supabase.channel('player-game-updates')
+      .on('broadcast', { event: 'claim-update' }, (payload) => {
+        console.log("Received claim update broadcast:", payload);
+        
+        if (payload.payload && payload.payload.sessionId === sessionId) {
+          console.log("Game update received for current session");
+          
+          // If we receive a valid or false claim result, reset our claim status
+          if (payload.payload.result === 'valid' || payload.payload.result === 'false') {
+            console.log("Resetting claim status due to broadcast result:", payload.payload.result);
+            resetClaimStatus();
+            
+            // Refresh session state to get latest win pattern state
+            fetchSessions();
+          }
+        }
+      })
+      .subscribe();
+      
+    return () => {
+      console.log("Cleaning up broadcast channel");
+      supabase.removeChannel(broadcastChannel);
+    };
+  }, [sessionId, resetClaimStatus, fetchSessions]);
+
   const handleClaimBingo = useCallback(async (): Promise<boolean> => {
     if (!playerId || !sessionId || !playerName) {
       toast({
@@ -320,7 +360,8 @@ export function usePlayerGame(playerCode?: string | null) {
         .insert({
           player_id: playerId,
           session_id: sessionId,
-          status: 'pending'
+          status: 'pending',
+          win_pattern_id: activeWinPatterns.length > 0 ? activeWinPatterns[0] : null
         })
         .select('id')
         .single();
@@ -379,11 +420,6 @@ export function usePlayerGame(playerCode?: string | null) {
       return false;
     }
   }, [playerId, sessionId, playerName, toast, isClaiming, claimStatus, gameType, activeWinPatterns, tickets.length]);
-
-  const resetClaimStatus = useCallback(() => {
-    setClaimStatus(undefined);
-    setIsClaiming(false);
-  }, []);
 
   return {
     tickets,

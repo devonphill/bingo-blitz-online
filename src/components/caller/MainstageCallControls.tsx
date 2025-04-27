@@ -50,6 +50,14 @@ export function MainstageCallControls({
     setIsClosingConfirmOpen(false);
   };
 
+  // Log component props for debugging
+  console.log("MainstageCallControls props:", { 
+    currentGameNumber, 
+    numberOfGames, 
+    isLastGame, 
+    sessionStatus
+  });
+
   return (
     <>
       <Card>
@@ -60,11 +68,9 @@ export function MainstageCallControls({
               <Badge className="ml-2" variant={sessionStatus === 'active' ? 'default' : 'outline'}>
                 {sessionStatus === 'active' ? 'Live' : 'Pending'}
               </Badge>
-              {currentGameNumber && numberOfGames && (
-                <Badge className="ml-2" variant="outline">
-                  Game {currentGameNumber} of {numberOfGames}
-                </Badge>
-              )}
+              <Badge className="ml-2" variant="outline">
+                Game {currentGameNumber} of {numberOfGames}
+              </Badge>
             </div>
             <Button 
               size="sm" 

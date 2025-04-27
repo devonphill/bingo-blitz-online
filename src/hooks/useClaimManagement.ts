@@ -1,12 +1,8 @@
-
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useGameProgression } from './useGameProgression';
-import { CurrentGameState, GameType, PrizeDetails } from '@/types';
-
-// Define a recursive Json type that can handle nested objects
-type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
+import { CurrentGameState } from '@/types';
 
 export function useClaimManagement(sessionId: string | undefined) {
   const [showClaimSheet, setShowClaimSheet] = useState(false);
@@ -27,7 +23,6 @@ export function useClaimManagement(sessionId: string | undefined) {
   const { progressToNextGame, isProcessingGame } = useGameProgression(
     sessionId ? { id: sessionId } as any : null, 
     () => {
-      // This callback will be called when the session is completed
       console.log("Session completed callback triggered");
       toast({
         title: "Session Completed",
@@ -36,26 +31,24 @@ export function useClaimManagement(sessionId: string | undefined) {
     }
   );
 
-  // Handle closing the claim sheet
   const handleCloseSheet = useCallback(() => {
+    console.log("Closing claim sheet");
     setShowClaimSheet(false);
-    // We don't immediately clear currentClaim here to prevent UI jumps
-    // It will be cleared before processing the next claim
   }, []);
 
-  // Process the next claim in queue
   const processNextClaim = useCallback(async () => {
     if (claimQueue.length === 0 || processingClaim || showClaimSheet) {
       return;
     }
 
-    // First clear any previous claim
     setCurrentClaim(null);
     
     setProcessingClaim(true);
     const nextClaim = claimQueue[0];
     
     try {
+      console.log(`Processing next claim for ${nextClaim.playerName}`);
+      
       const { data: ticketData, error: ticketError } = await supabase
         .from('assigned_tickets')
         .select('*')
@@ -64,15 +57,13 @@ export function useClaimManagement(sessionId: string | undefined) {
 
       if (ticketError) {
         console.error("Error fetching ticket data:", ticketError);
-        // Remove the problematic claim from queue and continue
         setClaimQueue(prev => prev.slice(1));
         setProcessingClaim(false);
         return;
       }
 
-      console.log(`Processing claim for ${nextClaim.playerName} with ${ticketData?.length || 0} tickets`);
+      console.log(`Retrieved ${ticketData?.length || 0} tickets for player ${nextClaim.playerName}`);
       
-      // Set the current claim after we successfully fetched the tickets
       setCurrentClaim({
         playerName: nextClaim.playerName,
         playerId: nextClaim.playerId,
@@ -80,11 +71,9 @@ export function useClaimManagement(sessionId: string | undefined) {
         claimId: nextClaim.claimId
       });
       
-      // Remove this claim from the queue
       setClaimQueue(prev => prev.slice(1));
       
       console.log("Opening sheet for claim verification!");
-      // Open the sheet automatically
       setTimeout(() => {
         setShowClaimSheet(true);
         setProcessingClaim(false);
@@ -97,17 +86,16 @@ export function useClaimManagement(sessionId: string | undefined) {
     }
   }, [claimQueue, processingClaim, sessionId, showClaimSheet]);
 
-  // Check for pending claims in the database
   const checkForClaims = useCallback(async () => {
     if (!sessionId || hasCheckedInitialClaims.current) return;
     
-    console.log("Performing initial check for claims, setting flag to true");
+    console.log("Performing initial check for pending claims");
     hasCheckedInitialClaims.current = true;
     
     try {
       const { data, error } = await supabase
         .from('bingo_claims')
-        .select('id, player_id, claimed_at, players(nickname)')
+        .select('id, player_id, claimed_at, players(nickname), win_pattern_id')
         .eq('session_id', sessionId)
         .eq('status', 'pending')
         .order('claimed_at', { ascending: true });
@@ -120,13 +108,13 @@ export function useClaimManagement(sessionId: string | undefined) {
       if (data && data.length > 0) {
         console.log("Found pending claims:", data);
         
-        // Add pending claims to the queue if they're not already there
         data.forEach(claim => {
           const isDuplicate = 
             (currentClaim?.playerId === claim.player_id) || 
             claimQueue.some(q => q.playerId === claim.player_id);
             
           if (!isDuplicate) {
+            console.log(`Adding existing claim for ${claim.players?.nickname || 'Unknown'} to queue`);
             setClaimQueue(prev => [
               ...prev, 
               {
@@ -143,9 +131,9 @@ export function useClaimManagement(sessionId: string | undefined) {
     }
   }, [sessionId, currentClaim, claimQueue]);
 
-  // Auto-process next claim when ready
   useEffect(() => {
     if (!showClaimSheet && !processingClaim && claimQueue.length > 0) {
+      console.log("Auto-processing next claim");
       const timer = setTimeout(() => {
         processNextClaim();
       }, 500);
@@ -153,11 +141,10 @@ export function useClaimManagement(sessionId: string | undefined) {
     }
   }, [showClaimSheet, processingClaim, claimQueue, processNextClaim]);
 
-  // Listen for real-time bingo claims - with important fixes
   useEffect(() => {
     if (!sessionId) return;
     
-    console.log("Setting up real-time listener for bingo claims on session", sessionId);
+    console.log("Setting up real-time listener for bingo claims");
     
     const channel = supabase
       .channel('caller-claims')
@@ -170,13 +157,12 @@ export function useClaimManagement(sessionId: string | undefined) {
           if (payload.payload && payload.payload.playerId && payload.payload.playerName) {
             const claimData = payload.payload;
             
-            // Check if this claim is already being processed or in queue
             const isDuplicate = 
               (currentClaim?.playerId === claimData.playerId) || 
               claimQueue.some(q => q.playerId === claimData.playerId);
             
             if (!isDuplicate) {
-              console.log("Adding new claim to queue:", claimData.playerName);
+              console.log(`Adding new claim from ${claimData.playerName} to queue`);
               setClaimQueue(prev => [
                 ...prev,
                 {
@@ -192,15 +178,13 @@ export function useClaimManagement(sessionId: string | undefined) {
                 variant: "default",
               });
               
-              // Automatically process the next claim if not currently showing or processing one
               if (!showClaimSheet && !processingClaim && !currentClaim) {
-                // Add slight delay to ensure the queue is updated first
                 setTimeout(() => {
                   processNextClaim();
                 }, 300);
               }
             } else {
-              console.log("Duplicate claim received, ignoring:", claimData.playerName);
+              console.log(`Duplicate claim received from ${claimData.playerName}, ignoring`);
             }
           }
         }
@@ -213,29 +197,14 @@ export function useClaimManagement(sessionId: string | undefined) {
     };
   }, [sessionId, currentClaim, claimQueue, showClaimSheet, processingClaim, processNextClaim, toast]);
 
-  // Manually open the claim sheet
-  const openClaimSheet = useCallback(() => {
-    console.log("Opening claim sheet manually");
-    
-    // If there are claims in the queue but no current claim is being displayed,
-    // process the next claim in queue
-    if (claimQueue.length > 0 && !currentClaim && !showClaimSheet && !processingClaim) {
-      processNextClaim();
-    } else if (currentClaim && !showClaimSheet && !processingClaim) {
-      // If there's a current claim but the sheet is closed, reopen it
-      setShowClaimSheet(true);
-    }
-  }, [claimQueue, currentClaim, processNextClaim, showClaimSheet, processingClaim]);
-
-  // Validate a claim - enhanced with better game progression
   const validateClaim = useCallback(async (shouldAdvanceGame = false) => {
     if (!currentClaim || !sessionId) return;
     
-    console.log("Validating claim for player:", currentClaim.playerName, "shouldAdvanceGame:", shouldAdvanceGame);
+    console.log(`Validating claim for ${currentClaim.playerName}, shouldAdvanceGame: ${shouldAdvanceGame}`);
     
     try {
-      // Update the claim status in the database if there's a claim ID
       if (currentClaim.claimId) {
+        console.log(`Updating claim ${currentClaim.claimId} status to 'validated'`);
         const { error: updateError } = await supabase
           .from('bingo_claims')
           .update({ status: 'validated' })
@@ -246,7 +215,6 @@ export function useClaimManagement(sessionId: string | undefined) {
         }
       }
       
-      // Get current session state to determine active win patterns
       const { data: sessionData, error: sessionError } = await supabase
         .from('game_sessions')
         .select('current_game_state, number_of_games, current_game')
@@ -256,60 +224,52 @@ export function useClaimManagement(sessionId: string | undefined) {
       if (sessionError || !sessionData || !sessionData.current_game_state) {
         console.error("Error fetching session data:", sessionError);
       } else {
-        const gameStateData = sessionData.current_game_state as Json;
+        console.log("Retrieved current session state:", sessionData);
         
-        // Safely check if the gameState is an object with activePatternIds
-        if (
-          typeof gameStateData === 'object' && 
-          gameStateData !== null && 
-          !Array.isArray(gameStateData) && 
-          'activePatternIds' in gameStateData
-        ) {
+        const gameStateData = sessionData.current_game_state;
+        
+        if (typeof gameStateData === 'object' && gameStateData !== null && 'activePatternIds' in gameStateData) {
           const currentGameState = gameStateData as unknown as CurrentGameState;
           const activePatterns = currentGameState.activePatternIds || [];
           
           if (activePatterns.length > 0) {
-            // Get current win pattern (first in the list)
             const currentPattern = activePatterns[0];
+            console.log("Current active pattern:", currentPattern);
             
-            // Check if this is a fullHouse pattern
             const isFullHouse = 
               currentPattern === 'fullHouse' || 
               currentPattern === 'MAINSTAGE_fullHouse' ||
               /fullhouse/i.test(currentPattern);
             
-            console.log("Current pattern:", currentPattern, "Is full house:", isFullHouse);
+            console.log("Is full house pattern:", isFullHouse);
             
-            // Get game progress record for this session
             const { data: progressData, error: progressError } = await supabase
               .from('game_progress')
               .select('*')
               .eq('session_id', sessionId)
+              .eq('game_number', currentGameState.gameNumber || 1)
               .maybeSingle();
               
             if (progressError) {
               console.error("Error fetching game progress:", progressError);
             }
             
-            // Update game progress with completed pattern
             if (progressData) {
-              // Add the current pattern to completed patterns list
+              console.log("Updating existing game progress:", progressData);
+              
               const completedPatterns = [...(progressData.completed_win_patterns || [])];
               if (!completedPatterns.includes(currentPattern)) {
                 completedPatterns.push(currentPattern);
               }
               
-              // Calculate the next active pattern
               const remainingPatterns = activePatterns.filter(p => !completedPatterns.includes(p));
               const nextPattern = remainingPatterns.length > 0 ? remainingPatterns[0] : null;
               
               console.log("Updating game progress:", {
                 completedPatterns,
-                nextPattern,
-                currentPattern
+                nextPattern
               });
               
-              // Update game progress
               const { error: updateProgressError } = await supabase
                 .from('game_progress')
                 .update({
@@ -322,12 +282,11 @@ export function useClaimManagement(sessionId: string | undefined) {
                 console.error("Error updating game progress:", updateProgressError);
               }
               
-              // Update active patterns in game state
               const updatedPatterns = activePatterns.filter(p => p !== currentPattern);
+              console.log("Updated active patterns:", updatedPatterns);
               
               if (updatedPatterns.length === 0 && shouldAdvanceGame) {
                 console.log("No patterns remaining - will advance game");
-                // Explicitly call progressToNextGame if this is a full house win or no patterns remain
                 if (isFullHouse) {
                   console.log("Full house win - advancing to next game");
                   setTimeout(() => {
@@ -335,21 +294,17 @@ export function useClaimManagement(sessionId: string | undefined) {
                   }, 1500);
                 }
               } else if (updatedPatterns.length > 0) {
-                console.log("Updating active patterns in game state:", updatedPatterns);
+                console.log("Updating active patterns in game state");
                 
-                // Create a safe updated game state object
                 const updatedGameStateObj: CurrentGameState = {
                   ...currentGameState,
                   activePatternIds: updatedPatterns
                 };
                 
-                // Convert to a JSON-compatible object for supabase
-                const gameStateForSupabase = JSON.parse(JSON.stringify(updatedGameStateObj));
-                
                 const { error: updateSessionError } = await supabase
                   .from('game_sessions')
                   .update({
-                    current_game_state: gameStateForSupabase as Json
+                    current_game_state: updatedGameStateObj as any
                   })
                   .eq('id', sessionId);
                   
@@ -357,25 +312,21 @@ export function useClaimManagement(sessionId: string | undefined) {
                   console.error("Error updating session game state:", updateSessionError);
                 }
               } else if (isFullHouse && shouldAdvanceGame) {
-                // For full house win, always try to progress to next game even if there are patterns
-                console.log("Full house win - advancing to next game regardless of remaining patterns");
+                console.log("Full house win - advancing to next game");
                 setTimeout(() => {
                   progressToNextGame();
                 }, 1500);
               }
             } else {
-              // Create new game progress record
-              // Make sure we have a valid gameNumber
-              let gameNumber = 1; // Default value
+              console.log("Creating new game progress record");
+              
+              let gameNumber = 1;
               if (
                 typeof gameStateData === 'object' &&
                 gameStateData !== null &&
-                !Array.isArray(gameStateData) && 
                 'gameNumber' in gameStateData
               ) {
-                // Safe access with type checking
-                const gameNumberValue = (gameStateData as any).gameNumber;
-                gameNumber = typeof gameNumberValue === 'number' ? gameNumberValue : 1;
+                gameNumber = typeof gameStateData.gameNumber === 'number' ? gameStateData.gameNumber : 1;
               }
               
               const { error: createError } = await supabase
@@ -391,29 +342,23 @@ export function useClaimManagement(sessionId: string | undefined) {
                 console.error("Error creating game progress:", createError);
               }
               
-              // Update active patterns in game state
               const updatedPatterns = activePatterns.filter(p => p !== currentPattern);
               
-              // Check if this is a full house win
               if ((updatedPatterns.length === 0 || isFullHouse) && shouldAdvanceGame) {
                 console.log("No patterns remaining or full house win - will advance game");
                 setTimeout(() => {
                   progressToNextGame();
                 }, 1500);
               } else if (updatedPatterns.length > 0) {
-                // Create a safe updated game state object
                 const updatedGameStateObj: CurrentGameState = {
-                  ...(currentGameState as CurrentGameState),
+                  ...currentGameState,
                   activePatternIds: updatedPatterns
                 };
-                
-                // Convert to a JSON-compatible object for supabase
-                const gameStateForSupabase = JSON.parse(JSON.stringify(updatedGameStateObj));
                 
                 const { error: updateSessionError } = await supabase
                   .from('game_sessions')
                   .update({
-                    current_game_state: gameStateForSupabase as Json
+                    current_game_state: updatedGameStateObj as any
                   })
                   .eq('id', sessionId);
                   
@@ -426,7 +371,17 @@ export function useClaimManagement(sessionId: string | undefined) {
         }
       }
       
-      // Return a success result
+      await supabase.channel('player-claims-listener')
+        .send({
+          type: 'broadcast',
+          event: 'claim-result',
+          payload: {
+            playerId: currentClaim.playerId,
+            result: 'valid',
+            timestamp: new Date().toISOString()
+          }
+        });
+      
       return true;
     } catch (error) {
       console.error("Error validating claim:", error);
@@ -434,15 +389,14 @@ export function useClaimManagement(sessionId: string | undefined) {
     }
   }, [currentClaim, sessionId, progressToNextGame]);
 
-  // Reject a claim
   const rejectClaim = useCallback(async () => {
     if (!currentClaim || !sessionId) return;
     
-    console.log("Rejecting claim for player:", currentClaim.playerName);
+    console.log(`Rejecting claim for ${currentClaim.playerName}`);
     
     try {
-      // Update the claim status in the database if there's a claim ID
       if (currentClaim.claimId) {
+        console.log(`Updating claim ${currentClaim.claimId} status to 'rejected'`);
         const { error: updateError } = await supabase
           .from('bingo_claims')
           .update({ status: 'rejected' })
@@ -453,9 +407,18 @@ export function useClaimManagement(sessionId: string | undefined) {
         }
       }
       
-      // Broadcast the result to all players
-      await supabase
-        .channel('player-game-updates')
+      await supabase.channel('player-claims-listener')
+        .send({
+          type: 'broadcast',
+          event: 'claim-result',
+          payload: {
+            playerId: currentClaim.playerId,
+            result: 'rejected',
+            timestamp: new Date().toISOString()
+          }
+        });
+      
+      await supabase.channel('player-game-updates')
         .send({
           type: 'broadcast',
           event: 'claim-update',
@@ -471,8 +434,6 @@ export function useClaimManagement(sessionId: string | undefined) {
         description: `${currentClaim.playerName}'s claim has been rejected.`
       });
       
-      // The sheet will be closed by the confirmation callback with a delay
-      
     } catch (error) {
       console.error("Error rejecting claim:", error);
       
@@ -484,9 +445,8 @@ export function useClaimManagement(sessionId: string | undefined) {
     }
   }, [currentClaim, sessionId, toast]);
 
-  // Added function to progress to next game
   const handleNextGame = useCallback(() => {
-    console.log("Handling next game progression");
+    console.log("Explicitly handling next game progression");
     progressToNextGame();
   }, [progressToNextGame]);
 
@@ -496,7 +456,14 @@ export function useClaimManagement(sessionId: string | undefined) {
     currentClaim,
     setCurrentClaim,
     claimQueue,
-    openClaimSheet,
+    openClaimSheet: useCallback(() => {
+      console.log("Opening claim sheet manually");
+      if (claimQueue.length > 0 && !currentClaim && !showClaimSheet && !processingClaim) {
+        processNextClaim();
+      } else if (currentClaim && !showClaimSheet && !processingClaim) {
+        setShowClaimSheet(true);
+      }
+    }, [claimQueue, currentClaim, processNextClaim, showClaimSheet, processingClaim]),
     validateClaim,
     rejectClaim,
     processNextClaim,

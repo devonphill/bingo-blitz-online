@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader } from "lucide-react";
@@ -45,6 +46,7 @@ export default function PlayerGameLayout({
   const [localClaimValidating, setLocalClaimValidating] = useState(false);
   const { toast } = useToast();
 
+  // Reset claiming state based on external changes to claimStatus or isClaiming
   useEffect(() => {
     if (claimStatus === 'validated' || claimStatus === 'rejected') {
       setLocalClaimValidating(false);
@@ -55,8 +57,11 @@ export default function PlayerGameLayout({
     }
   }, [claimStatus, isClaiming]);
 
+  // Listen for claim result broadcasts
   useEffect(() => {
     if (!currentSession?.id || !playerCode) return;
+    
+    console.log("Setting up claim result broadcast listener for player");
     
     const claimsChannel = supabase
       .channel('player-claims-listener')
@@ -84,9 +89,26 @@ export default function PlayerGameLayout({
         }
       )
       .subscribe();
+      
+    // Also listen for general game updates
+    const gameUpdatesChannel = supabase
+      .channel('player-game-updates')
+      .on(
+        'broadcast',
+        { event: 'claim-update' },
+        (payload) => {
+          console.log("Received claim update broadcast:", payload);
+          // Force a refresh when any claim is processed
+          if (payload.payload && payload.payload.sessionId === currentSession.id) {
+            setLocalClaimValidating(false);
+          }
+        }
+      )
+      .subscribe();
     
     return () => {
       supabase.removeChannel(claimsChannel);
+      supabase.removeChannel(gameUpdatesChannel);
     };
   }, [currentSession?.id, playerCode, toast]);
 

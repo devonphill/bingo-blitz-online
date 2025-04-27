@@ -60,24 +60,19 @@ export default function ClaimVerificationSheet({
   const [validClaimsCount, setValidClaimsCount] = useState(0);
   const [isFullHouse, setIsFullHouse] = useState(false);
 
-  console.log("ClaimVerificationSheet rendered with isOpen:", isOpen, "playerName:", playerName);
-
   const normalizedWinPattern = currentWinPattern && !currentWinPattern.includes('_') && 
     (gameType === 'mainstage' || gameType === '90-ball') 
       ? `MAINSTAGE_${currentWinPattern}` 
       : currentWinPattern;
 
   useEffect(() => {
-    console.log("ClaimVerificationSheet isOpen changed to:", isOpen);
-    
     if (isOpen) {
-      console.log("SHEET IS OPEN NOW with player:", playerName);
+      console.log("CLAIM SHEET IS OPEN with player:", playerName);
       console.log("Ticket data:", tickets);
       console.log("Current win pattern:", normalizedWinPattern);
       
       const isFullHousePattern = normalizedWinPattern === 'MAINSTAGE_fullHouse' || 
-                                normalizedWinPattern === 'fullHouse';
-      console.log("Is this a full house pattern?", isFullHousePattern);
+                               normalizedWinPattern === 'fullHouse';
       setIsFullHouse(isFullHousePattern);
     }
     
@@ -175,6 +170,7 @@ export default function ClaimVerificationSheet({
 
   const handleFalseClaim = () => {
     if (isProcessing) return;
+    
     console.log("False claim button clicked");
     setActionType('false');
     setConfirmDialogOpen(true);
@@ -185,8 +181,8 @@ export default function ClaimVerificationSheet({
     
     try {
       const gameTypePrefix = gameType === 'mainstage' ? 'MAINSTAGE_' : 
-                            gameType === '90-ball' ? 'MAINSTAGE_' : 
-                            gameType ? `${gameType.toUpperCase()}_` : '';
+                           gameType === '90-ball' ? 'MAINSTAGE_' : 
+                           gameType ? `${gameType.toUpperCase()}_` : '';
       
       const promises = validTickets.map(async (ticket) => {
         const gameLog = {
@@ -217,7 +213,7 @@ export default function ClaimVerificationSheet({
         normalizedWinPattern?.includes('fullHouse') || 
         normalizedWinPattern?.includes('MAINSTAGE_fullHouse');
       
-      console.log("Is this a full house win?", isFullHouseWin, "Pattern:", normalizedWinPattern);
+      console.log("Is this a full house win?", isFullHouseWin);
       
       await supabase.channel('player-game-updates')
         .send({
@@ -324,7 +320,6 @@ export default function ClaimVerificationSheet({
   return (
     <>
       <Sheet open={isOpen} onOpenChange={(open) => {
-        console.log("Sheet onOpenChange called with:", open);
         if (!open && !isProcessing) onClose();
       }}>
         <SheetContent className="w-[85%] sm:w-[600px] md:w-[85%] max-w-3xl overflow-auto" side="right">

@@ -4,7 +4,7 @@ import { useToast } from '@/hooks/use-toast';
 import { usePlayerGame } from '@/hooks/usePlayerGame';
 import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import PlayerGameLoader from '@/components/game/PlayerGameLoader';
-import CurrentNumberDisplay from '@/components/game/CurrentNumberDisplay';
+import PlayerGameLayout from '@/components/game/PlayerGameLayout';
 import { WIN_PATTERNS } from '@/types/winPattern';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
@@ -58,6 +58,7 @@ export default function PlayerGame() {
   useEffect(() => {
     if (claimStatus === 'validated' || claimStatus === 'rejected') {
       const timer = setTimeout(() => {
+        console.log(`Auto-resetting claim status from ${claimStatus} state after timeout`);
         resetClaimStatus();
       }, 5000);
       
@@ -81,22 +82,23 @@ export default function PlayerGame() {
           setTimeout(() => setAutoMarking(prev => !prev), 50);
           
           // If we receive a valid claim result and we're currently claiming, reset our claim status
-          if (payload.payload.result === 'valid' && isClaiming) {
+          if ((payload.payload.result === 'valid' || payload.payload.result === 'false') && isClaiming) {
+            console.log(`Resetting claim status due to ${payload.payload.result} broadcast result`);
             resetClaimStatus();
-            toast({
-              title: "Claim Verified",
-              description: "Your bingo claim has been verified!",
-              variant: "default"
-            });
-          } 
-          // If we receive a false claim result and we're currently claiming, reset our claim status
-          else if (payload.payload.result === 'false' && isClaiming) {
-            resetClaimStatus();
-            toast({
-              title: "Claim Rejected", 
-              description: "Your claim was not valid. Please check your card.",
-              variant: "destructive"
-            });
+            
+            if (payload.payload.result === 'valid') {
+              toast({
+                title: "Claim Verified",
+                description: "Your bingo claim has been verified!",
+                variant: "default"
+              });
+            } else if (payload.payload.result === 'false') {
+              toast({
+                title: "Claim Rejected", 
+                description: "Your claim was not valid. Please check your card.",
+                variant: "destructive"
+              });
+            }
           }
         }
       })
@@ -106,7 +108,7 @@ export default function PlayerGame() {
       console.log("Cleaning up broadcast channel");
       supabase.removeChannel(broadcastChannel);
     };
-  }, [playerCode, currentSession?.id, isClaiming, resetClaimStatus, toast]);
+  }, [playerCode, currentSession?.id, isClaiming, resetClaimStatus, toast, setAutoMarking]);
 
   useEffect(() => {
     if (!currentSession?.id) return;
@@ -128,6 +130,7 @@ export default function PlayerGame() {
           
           // Force a refresh to get the latest session state
           if (payload.new && JSON.stringify(payload.new) !== JSON.stringify(payload.old)) {
+            console.log("Database change detected, refreshing game state");
             setAutoMarking(prev => !prev);
             setTimeout(() => setAutoMarking(prev => !prev), 50);
           }
@@ -136,6 +139,7 @@ export default function PlayerGame() {
       .subscribe();
       
     return () => {
+      console.log("Removing database subscription");
       supabase.removeChannel(channel);
     };
   }, [currentSession?.id, setAutoMarking]);
@@ -207,98 +211,38 @@ export default function PlayerGame() {
     );
   }
 
-  return (
-    <div className="min-h-screen flex bg-gray-50">
-      <div className="flex flex-col" style={{width:'30%', minWidth:240, maxWidth:400}}>
-        <div className="flex-1 bg-black text-white p-4">
-          <h1 className="text-xl font-bold mb-4">
-            {currentSession?.name || "Bingo Game"}
-          </h1>
-          <div className="text-sm text-gray-300 mb-4">
-            Welcome, {playerName || "Player"}
-          </div>
-          
-          <div className="mb-6 p-3 bg-gray-800 rounded-lg">
-            <h2 className="text-lg font-medium mb-2">Game Type</h2>
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="outline" className="bg-gray-700 text-white border-gray-600">
-                {getGameTypeDisplayName()}
-              </Badge>
-            </div>
-          </div>
-          
-          {activeWinPatterns && activeWinPatterns.length > 0 && (
-            <div className="mb-6 p-3 bg-gray-800 rounded-lg">
-              <h2 className="text-lg font-medium mb-2">Active Win Patterns</h2>
-              <div className="flex flex-wrap gap-2">
-                {activeWinPatterns.map(patternId => (
-                  <Badge 
-                    key={patternId}
-                    className="bg-bingo-primary text-white"
-                  >
-                    {getWinPatternName(patternId)}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          <button
-            onClick={handleClaimBingo}
-            disabled={isClaiming || claimStatus === 'validated' || claimStatus === 'pending'}
-            className={`w-full py-3 px-4 rounded-lg font-medium mt-2 ${
-              isClaiming || claimStatus === 'pending' 
-                ? 'bg-yellow-500 text-white' 
-                : claimStatus === 'validated'
-                  ? 'bg-green-500 text-white'
-                  : claimStatus === 'rejected'
-                    ? 'bg-red-500 text-white'
-                    : 'bg-bingo-primary text-white hover:bg-bingo-secondary'
-            }`}
-          >
-            {isClaiming || claimStatus === 'pending' 
-              ? 'Verifying Claim...'
-              : claimStatus === 'validated'
-                ? 'Win Verified!'
-                : claimStatus === 'rejected'
-                  ? 'Claim Rejected'
-                  : 'CLAIM BINGO!'}
-          </button>
-          
-          {(isClaiming || claimStatus === 'pending') && (
-            <p className="text-xs text-center text-yellow-400 mt-1">
-              Your claim is being verified by the caller
-            </p>
-          )}
-        </div>
-        
-        <div className="bg-black text-white p-4 border-t border-gray-700 sticky bottom-0" style={{ height: '30vw', maxHeight: '400px' }}>
-          <CurrentNumberDisplay 
-            number={lastCalledItem} 
-            sizePx={Math.min(window.innerWidth * 0.25, 350)}
-            gameType={gameType}
-          />
-          <div className="text-xs text-gray-400 mt-2 text-center">
-            {calledItems?.length || 0} numbers called
-          </div>
-        </div>
-      </div>
+  const currentWinPattern = activeWinPatterns.length > 0 ? activeWinPatterns[0] : null;
 
-      <div className="flex-1 bg-gray-50 h-full overflow-y-auto">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <GameTypePlayspace
-            gameType={gameType || "mainstage"}
-            tickets={tickets || []}
-            calledNumbers={calledItems || []}
-            lastCalledNumber={lastCalledItem}
-            autoMarking={autoMarking}
-            setAutoMarking={setAutoMarking}
-            handleClaimBingo={handleClaimBingo}
-            isClaiming={isClaiming}
-            claimStatus={claimStatus}
-          />
-        </div>
-      </div>
-    </div>
+  return (
+    <PlayerGameLayout
+      tickets={tickets || []}
+      calledNumbers={calledItems || []}
+      currentNumber={lastCalledItem}
+      currentSession={currentSession}
+      autoMarking={autoMarking}
+      setAutoMarking={setAutoMarking}
+      playerCode={playerCode || ''}
+      winPrizes={winPrizes || {}}
+      activeWinPatterns={activeWinPatterns || []}
+      currentWinPattern={currentWinPattern}
+      onClaimBingo={handleClaimBingo}
+      errorMessage={errorMessage || ''}
+      isLoading={isLoading}
+      isClaiming={isClaiming}
+      claimStatus={claimStatus}
+      gameType={gameType || 'mainstage'}
+    >
+      <GameTypePlayspace
+        gameType={gameType || "mainstage"}
+        tickets={tickets || []}
+        calledNumbers={calledItems || []}
+        lastCalledNumber={lastCalledItem}
+        autoMarking={autoMarking}
+        setAutoMarking={setAutoMarking}
+        handleClaimBingo={handleClaimBingo}
+        isClaiming={isClaiming}
+        claimStatus={claimStatus}
+      />
+    </PlayerGameLayout>
   );
 }
