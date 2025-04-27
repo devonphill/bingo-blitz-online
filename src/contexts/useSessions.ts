@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { GameSession, GameType, GameConfig } from '@/types';
@@ -43,7 +44,7 @@ export function useSessions() {
           lifecycle_state: session.lifecycle_state as 'setup' | 'live' | 'ended',
           games_config: gameConfigs,
           current_game: session.current_game,
-          active_pattern_id: session.active_pattern_id
+          active_pattern_id: session.active_pattern_id || null // Safely handle if property doesn't exist
         };
       });
 

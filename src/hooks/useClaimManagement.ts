@@ -43,7 +43,7 @@ export function useClaimManagement(sessionId: string | undefined, gameNumber: nu
           last_called_number: lastCalledNumber,
           total_calls: currentCalledNumbers.length,
           validated_at: new Date().toISOString(),
-          status: 'validated'
+          game_type: 'mainstage' // Default game type if not available
         });
 
       if (logError) {
@@ -110,7 +110,7 @@ export function useClaimManagement(sessionId: string | undefined, gameNumber: nu
           last_called_number: lastCalledNumber,
           total_calls: currentCalledNumbers.length,
           validated_at: new Date().toISOString(),
-          status: 'rejected'
+          game_type: 'mainstage' // Default game type if not available
         });
 
       if (logError) {

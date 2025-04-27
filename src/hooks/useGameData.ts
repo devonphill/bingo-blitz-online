@@ -75,23 +75,25 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
               
               // Safely access and iterate through patterns
               Object.entries(currentGameConfig.patterns)
-                .filter(([_, config]) => {
+                .filter(([_, configValue]) => {
+                  if (!configValue || typeof configValue !== 'object') return false;
                   // Safely check if config has active property and it's true
-                  return config && typeof config === 'object' && 'active' in config && config.active === true;
+                  return 'active' in configValue && configValue.active === true;
                 })
-                .forEach(([patternId, config], index) => {
-                  if (config && typeof config === 'object') {
-                    extractedPatterns.push({
-                      id: `pattern-${patternId}`,
-                      game_config_id: 'legacy',
-                      pattern_id: patternId,
-                      pattern_order: index,
-                      prize_amount: config.prizeAmount || '10.00',
-                      prize_description: config.description || '',
-                      is_non_cash: config.isNonCash || false,
-                      created_at: new Date().toISOString()
-                    });
-                  }
+                .forEach(([patternId, configValue], index) => {
+                  if (!configValue || typeof configValue !== 'object') return;
+                  
+                  const config = configValue as Record<string, any>;
+                  extractedPatterns.push({
+                    id: `pattern-${patternId}`,
+                    game_config_id: 'legacy',
+                    pattern_id: patternId,
+                    pattern_order: index,
+                    prize_amount: config.prizeAmount || '10.00',
+                    prize_description: config.description || '',
+                    is_non_cash: config.isNonCash || false,
+                    created_at: new Date().toISOString()
+                  });
                 });
               
               setPatterns(extractedPatterns);
@@ -157,27 +159,44 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
         }
       }
 
-      // Fetch called items from the called_numbers table
-      const { data: calledNumbersData, error: calledNumbersError } = await supabase
-        .from('called_numbers')
-        .select('*')
-        .eq('session_id', sessionId)
-        .order('called_at', { ascending: true });
+      // Get called numbers from the session's called_items field
+      const { data: sessionWithCalledItems, error: calledItemsError } = await supabase
+        .from('game_sessions')
+        .select('called_items')
+        .eq('id', sessionId)
+        .single();
         
-      if (!calledNumbersError && calledNumbersData && calledNumbersData.length > 0) {
-        const mappedCalledItems: CalledItem[] = calledNumbersData.map((item: any, index: number) => ({
-          id: item.id,
-          session_id: item.session_id,
-          game_number: currentGameNumber || 1,
-          value: item.number,
-          timestamp: item.called_at,
-          call_order: index + 1
-        }));
-        
-        setCalledItems(mappedCalledItems);
-        
-        if (mappedCalledItems.length > 0) {
-          setLastCalledItem(mappedCalledItems[mappedCalledItems.length - 1].value);
+      if (!calledItemsError && sessionWithCalledItems?.called_items) {
+        try {
+          // Parse the called_items JSON string if available
+          let parsedCalledItems: CalledItem[] = [];
+          
+          try {
+            if (typeof sessionWithCalledItems.called_items === 'string') {
+              parsedCalledItems = JSON.parse(sessionWithCalledItems.called_items);
+            } else if (Array.isArray(sessionWithCalledItems.called_items)) {
+              parsedCalledItems = sessionWithCalledItems.called_items;
+            }
+          } catch (parseError) {
+            console.error("Error parsing called items:", parseError);
+          }
+          
+          if (Array.isArray(parsedCalledItems) && parsedCalledItems.length > 0) {
+            setCalledItems(parsedCalledItems.map((item, index) => ({
+              id: item.id || `item-${index}`,
+              session_id: item.session_id || sessionId,
+              game_number: currentGameNumber || 1,
+              value: item.value,
+              timestamp: item.timestamp || new Date().toISOString(),
+              call_order: item.call_order || index + 1
+            })));
+            
+            if (parsedCalledItems.length > 0) {
+              setLastCalledItem(parsedCalledItems[parsedCalledItems.length - 1].value);
+            }
+          }
+        } catch (err) {
+          console.error("Error processing called items:", err);
         }
       }
     } catch (err) {
@@ -208,34 +227,33 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
         newNumber = Math.floor(Math.random() * numberRange) + 1;
       } while (existingNumbers.includes(newNumber));
       
-      // Insert into called_numbers table
-      const { data, error } = await supabase
-        .from('called_numbers')
-        .insert({
-          session_id: sessionId,
-          number: newNumber
+      // Create new called item
+      const newCalledItem: CalledItem = {
+        id: `item-${Date.now()}`,
+        session_id: sessionId,
+        game_number: configuration.game_number,
+        value: newNumber,
+        timestamp: new Date().toISOString(),
+        call_order: existingNumbers.length + 1
+      };
+      
+      // Update calledItems in state
+      const updatedCalledItems = [...calledItems, newCalledItem];
+      setCalledItems(updatedCalledItems);
+      setLastCalledItem(newNumber);
+      
+      // Update the called_items in the game_sessions table
+      const { error } = await supabase
+        .from('game_sessions')
+        .update({
+          called_items: JSON.stringify(updatedCalledItems)
         })
-        .select()
-        .single();
+        .eq('id', sessionId);
         
       if (error) {
-        console.error("Error calling number:", error);
+        console.error("Error updating called items:", error);
         return null;
       }
-      
-      // Update local state
-      setLastCalledItem(newNumber);
-      setCalledItems(prev => [
-        ...prev, 
-        { 
-          id: data?.id || `temp-${Date.now()}`,
-          session_id: sessionId,
-          game_number: configuration.game_number,
-          value: newNumber,
-          timestamp: new Date().toISOString(),
-          call_order: existingNumbers.length + 1
-        }
-      ]);
       
       return newNumber;
     } catch (err) {
@@ -406,49 +424,36 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
     }
   }, [sessionId, configuration, gameConfigs]);
 
-  // Set up real-time subscription for changes to called items
+  // Set up subscription for changes to called items
   useEffect(() => {
     if (!sessionId) return;
     
     fetchGameData();
     
-    // Subscribe to called_numbers changes
+    // Subscribe to game_sessions changes to detect when called_items are updated
     const channel = supabase
-      .channel(`called-numbers-${sessionId}`)
+      .channel(`game-sessions-${sessionId}`)
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: 'UPDATE',
           schema: 'public',
-          table: 'called_numbers',
-          filter: `session_id=eq.${sessionId}`
+          table: 'game_sessions',
+          filter: `id=eq.${sessionId}`
         },
         (payload) => {
-          console.log('New called number:', payload);
+          console.log('Game session updated:', payload);
           
-          if (payload.new) {
-            const newNumber = payload.new.number;
-            const callOrder = calledItems.length + 1;
-            
-            const newItem: CalledItem = {
-              id: payload.new.id,
-              session_id: sessionId,
-              game_number: configuration?.game_number || 1,
-              value: newNumber,
-              timestamp: payload.new.called_at,
-              call_order: callOrder
-            };
-            
-            // Update the called items and last called item
-            setCalledItems(prev => {
-              // Avoid duplicates
-              if (prev.some(item => item.id === newItem.id)) {
-                return prev;
+          if (payload.new && 'called_items' in payload.new) {
+            try {
+              const newCalledItems = JSON.parse(payload.new.called_items as string);
+              if (Array.isArray(newCalledItems) && newCalledItems.length > 0) {
+                setCalledItems(newCalledItems);
+                setLastCalledItem(newCalledItems[newCalledItems.length - 1].value);
               }
-              return [...prev, newItem];
-            });
-            
-            setLastCalledItem(newNumber);
+            } catch (err) {
+              console.error("Error processing updated called items:", err);
+            }
           }
         }
       )
@@ -478,7 +483,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
       supabase.removeChannel(channel);
       supabase.removeChannel(progressChannel);
     };
-  }, [sessionId, fetchGameData, calledItems, configuration, supabase]);
+  }, [sessionId, fetchGameData]);
   
   return {
     configuration,

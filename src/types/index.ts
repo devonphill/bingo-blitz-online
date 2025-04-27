@@ -47,7 +47,7 @@ export interface SessionProgress {
   current_win_pattern: string | null;
   created_at: string;
   updated_at: string;
-  game_status: string;
+  game_status?: string;
 }
 
 // Prize details structure
@@ -139,7 +139,7 @@ export interface GameSession {
   lifecycle_state?: 'setup' | 'live' | 'ended';
   games_config?: GameConfig[];
   current_game?: number;
-  active_pattern_id?: string;
+  active_pattern_id?: string | null;
   current_game_state?: CurrentGameState;
 }
 

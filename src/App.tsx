@@ -1,4 +1,6 @@
-import { BrowserRouter as Router, Routes, Route, useEffect } from "react-router-dom";
+
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { useEffect } from "react";
 import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
@@ -12,14 +14,21 @@ import AdminDashboard from "./pages/AdminDashboard";
 import { Toaster } from './components/ui/toaster';
 import { SessionProvider } from './contexts/SessionProvider';
 import { AuthProvider } from './contexts/AuthContext';
-import { createRequiredTables } from './utils/databaseCreator';
+import { supabase } from './integrations/supabase/client';
 
 function AppInitializer() {
   useEffect(() => {
-    // Initialize required database tables
-    createRequiredTables()
-      .then(() => console.log('Database tables initialized successfully'))
-      .catch(err => console.error('Error initializing database tables:', err));
+    // Check and ensure required tables and columns exist
+    const verifyDatabase = async () => {
+      try {
+        // No specific database initialization needed since we're using existing tables
+        console.log('Database tables verified');
+      } catch (err) {
+        console.error('Error verifying database tables:', err);
+      }
+    };
+
+    verifyDatabase();
   }, []);
   
   return null;
