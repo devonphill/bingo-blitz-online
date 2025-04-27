@@ -66,19 +66,27 @@ export function MainstageCallControls({
       // This is especially useful on page refresh
       if (progress.current_win_pattern && activeWinPatterns && activeWinPatterns.length > 0) {
         const progressPattern = progress.current_win_pattern;
-        const uiPattern = activeWinPatterns[0].replace('MAINSTAGE_', '');
         
-        if (progressPattern !== uiPattern) {
-          console.log(`Pattern mismatch detected - DB: ${progressPattern}, UI: ${uiPattern}`);
-          // We don't update the state here as it's controlled by parent component
-          // Just logging for debugging
+        // Check if progress pattern is in the activeWinPatterns array
+        const hasPattern = activeWinPatterns.includes(progressPattern);
+        
+        if (!hasPattern) {
+          console.log(`Pattern mismatch detected - DB: ${progressPattern}, UI patterns: ${activeWinPatterns.join(', ')}`);
+          
+          // Force refresh the page to reload the correct patterns from database
+          if (typeof window !== 'undefined') {
+            window.location.reload();
+          }
         }
       }
       
       if (progress.current_game_number !== currentGameNumber) {
         console.log(`Game number mismatch detected - DB: ${progress.current_game_number}, UI: ${currentGameNumber}`);
-        // We don't update the state here as it's controlled by parent component
-        // Just logging for debugging
+        
+        // Force refresh the page to reload the correct game number from database
+        if (typeof window !== 'undefined') {
+          window.location.reload();
+        }
       }
     }
   }, [progress, currentSession, activeWinPatterns, currentGameNumber]);

@@ -73,7 +73,8 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
           .from('game_sessions')
           .update({ 
             status: 'completed',
-            lifecycle_state: 'completed'
+            lifecycle_state: 'completed',
+            current_game: totalGames, // Ensure current_game is set to the total
           })
           .eq('id', session.id);
 
@@ -110,6 +111,13 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
           // Trigger the completion callback
           if (onGameComplete) {
             onGameComplete();
+          }
+          
+          // Force refresh the page
+          if (typeof window !== 'undefined') {
+            setTimeout(() => {
+              window.location.reload();
+            }, 1000);
           }
         }
       } else {
@@ -157,7 +165,7 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
           .from('sessions_progress')
           .update({
             current_game_number: nextGameNumber,
-            current_win_pattern: 'oneLine'  // Start with oneLine for new game
+            current_win_pattern: nextGameConfig?.selectedPatterns?.[0] || 'oneLine'  // Start with first pattern for new game
           })
           .eq('session_id', session.id);
           
@@ -176,6 +184,13 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
           title: "Game Advanced",
           description: `Successfully advanced to game ${nextGameNumber}`,
         });
+        
+        // Force refresh the page after successful progression
+        if (typeof window !== 'undefined') {
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000);
+        }
       }
     } catch (err) {
       console.error("Error in progressToNextGame:", err);

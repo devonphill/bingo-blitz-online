@@ -14,6 +14,14 @@ export const useSessionProgress = (sessionId: string | undefined) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const lastUpdateRef = useRef<string | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    // Set isMounted to false when component unmounts
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!sessionId) {
@@ -33,7 +41,7 @@ export const useSessionProgress = (sessionId: string | undefined) => {
         if (error) {
           console.error('Error fetching session progress:', error);
           setError(error.message);
-        } else if (data) {
+        } else if (data && isMountedRef.current) {
           console.log('Fetched session progress:', data);
           // Create a JSON string representation to compare with previous data
           const dataString = JSON.stringify(data);
@@ -47,7 +55,9 @@ export const useSessionProgress = (sessionId: string | undefined) => {
         console.error('Exception fetching session progress:', err);
         setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {
-        setIsLoading(false);
+        if (isMountedRef.current) {
+          setIsLoading(false);
+        }
       }
     };
 
@@ -64,13 +74,18 @@ export const useSessionProgress = (sessionId: string | undefined) => {
         filter: `session_id=eq.${sessionId}`
       }, (payload) => {
         console.log('Session progress changed:', payload);
-        if (payload.new) {
+        if (payload.new && isMountedRef.current) {
           // Create a JSON string representation to compare with previous data
           const dataString = JSON.stringify(payload.new);
           if (dataString !== lastUpdateRef.current) {
             lastUpdateRef.current = dataString;
             setProgress(payload.new as ProgressType);
             console.log(`Real-time update: Game ${(payload.new as ProgressType).current_game_number}/${(payload.new as ProgressType).max_game_number}, Pattern: ${(payload.new as ProgressType).current_win_pattern}`);
+            
+            // Force refresh the page to reload the current state
+            if (typeof window !== 'undefined') {
+              window.location.reload();
+            }
           }
         }
       })
@@ -82,7 +97,7 @@ export const useSessionProgress = (sessionId: string | undefined) => {
       .on('broadcast', { event: 'game-progression' }, (payload) => {
         console.log("Progress hook received game progression broadcast:", payload);
         
-        if (payload.payload && payload.payload.sessionId === sessionId) {
+        if (payload.payload && payload.payload.sessionId === sessionId && isMountedRef.current) {
           // When receiving a game progression event, fetch the latest progress to ensure synchronization
           console.log(`Received game progression broadcast for session ${sessionId}, refreshing progress`);
           fetchProgress();
@@ -103,6 +118,13 @@ export const useSessionProgress = (sessionId: string | undefined) => {
               ...progress,
               current_game_number: payload.payload.newGame,
             });
+            
+            // Force refresh the page to reload the new game state
+            if (typeof window !== 'undefined') {
+              setTimeout(() => {
+                window.location.reload();
+              }, 1000);
+            }
           }
         }
       })

@@ -45,12 +45,14 @@ export function LiveGameView({
   numberOfGames = 1
 }: LiveGameViewProps) {
   const numberRange = gameType === 'mainstage' ? 90 : 75;
+  const { progress } = useSessionProgress(gameConfigs[0]?.session_id);
   
   console.log("LiveGameView - prizes:", prizes);
   console.log("LiveGameView - gameConfigs:", gameConfigs);
   console.log("LiveGameView - sessionStatus:", sessionStatus);
   console.log("LiveGameView - game numbers:", {currentGameNumber, numberOfGames});
   console.log("LiveGameView - selectedPatterns:", selectedPatterns);
+  console.log("LiveGameView - session progress:", progress);
   
   // Use the first game's configurations if available
   const currentGameConfig = gameConfigs.length > 0 ? 
@@ -58,7 +60,22 @@ export function LiveGameView({
     : null;
     
   const activeGameType = currentGameConfig?.gameType || gameType;
-  const activePatterns = currentGameConfig?.selectedPatterns || selectedPatterns;
+  
+  // Prioritize win pattern from session progress if available
+  let activePatterns = currentGameConfig?.selectedPatterns || selectedPatterns;
+  let actualCurrentWinPattern = currentWinPattern;
+  
+  if (progress && progress.current_win_pattern) {
+    // If we have progress data, use that pattern as the active one
+    console.log("Using win pattern from session progress:", progress.current_win_pattern);
+    actualCurrentWinPattern = progress.current_win_pattern;
+    
+    // If the pattern from progress isn't in activePatterns, add it
+    if (!activePatterns.includes(actualCurrentWinPattern)) {
+      activePatterns = [actualCurrentWinPattern, ...activePatterns.filter(p => p !== actualCurrentWinPattern)];
+    }
+  }
+  
   const activePrizes = currentGameConfig?.prizes || prizes;
   
   // Get all win patterns for the active game type
@@ -72,7 +89,7 @@ export function LiveGameView({
           name: p.name,
           active: activePatterns.includes(p.id)
         }))}
-        currentActive={currentWinPattern}
+        currentActive={actualCurrentWinPattern}
         gameIsLive={true}
       />
       
@@ -85,9 +102,10 @@ export function LiveGameView({
           onViewClaims={onViewClaims}
           sessionStatus={sessionStatus}
           onCloseGame={onCloseGame}
-          currentGameNumber={currentGameNumber}
-          numberOfGames={numberOfGames}
+          currentGameNumber={progress?.current_game_number || currentGameNumber}
+          numberOfGames={progress?.max_game_number || numberOfGames}
           activeWinPatterns={activePatterns}
+          currentSession={{id: gameConfigs[0]?.session_id}}
         />
         
         <BingoCard
