@@ -45,7 +45,9 @@ export function LiveGameView({
   numberOfGames = 1
 }: LiveGameViewProps) {
   const numberRange = gameType === 'mainstage' ? 90 : 75;
-  const { progress } = useSessionProgress(gameConfigs[0]?.session_id);
+  // Get the session_id safely from the gameConfigs array
+  const sessionId = gameConfigs.length > 0 && gameConfigs[0].session_id ? gameConfigs[0].session_id : undefined;
+  const { progress } = useSessionProgress(sessionId);
   
   console.log("LiveGameView - prizes:", prizes);
   console.log("LiveGameView - gameConfigs:", gameConfigs);
@@ -53,6 +55,7 @@ export function LiveGameView({
   console.log("LiveGameView - game numbers:", {currentGameNumber, numberOfGames});
   console.log("LiveGameView - selectedPatterns:", selectedPatterns);
   console.log("LiveGameView - session progress:", progress);
+  console.log("LiveGameView - sessionId:", sessionId);
   
   // Use the first game's configurations if available
   const currentGameConfig = gameConfigs.length > 0 ? 
@@ -105,7 +108,7 @@ export function LiveGameView({
           currentGameNumber={progress?.current_game_number || currentGameNumber}
           numberOfGames={progress?.max_game_number || numberOfGames}
           activeWinPatterns={activePatterns}
-          currentSession={{id: gameConfigs[0]?.session_id}}
+          currentSession={{id: sessionId}}
         />
         
         <BingoCard

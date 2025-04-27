@@ -31,12 +31,13 @@ export interface CurrentGameState {
 }
 // --- End of new definition ---
 
-// Game configuration interface
+// Game configuration interface - updated to include session_id
 export interface GameConfig {
   gameNumber: number;
   gameType: GameType;
   selectedPatterns: string[];
   prizes: { [patternId: string]: PrizeDetails };
+  session_id?: string; // Added session_id property
 }
 
 // Updated GameSession interface
