@@ -54,3 +54,14 @@ export interface SessionWithActivePattern {
   active_pattern_id?: string | null;
   current_game?: number;
 }
+
+// Type for current game state to better handle the JSON structure
+export interface CurrentGameStateType {
+  gameNumber: number;
+  gameType: string;
+  activePatternIds: string[];
+  calledItems: Array<number | { id?: string; value?: number; number?: number; called_at?: string }>;
+  lastCalledItem: number | { id?: string; value?: number; number?: number; called_at?: string } | null;
+  status: string;
+  prizes?: Record<string, any>;
+}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { GameConfiguration, GamePattern, CalledItem, GameType } from '@/types';
-import { Json, isOfType, GameConfigurationType, GamePatternType, CalledItemType, SessionWithActivePattern } from '@/types/json';
+import { Json, isOfType, GameConfigurationType, GamePatternType, CalledItemType, SessionWithActivePattern, CurrentGameStateType } from '@/types/json';
 
 // Existing type guard functions
 const isGamePattern = (obj: any): obj is GamePattern => {
@@ -76,95 +76,103 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
       if (!currentProgressError && currentProgress && currentProgress.current_win_pattern) {
         setActivePattern(currentProgress.current_win_pattern);
       } else if (sessionData?.current_game_state && 
-                typeof sessionData.current_game_state === 'object' && 
-                'activePatternIds' in sessionData.current_game_state) {
-        const activePatterns = (sessionData.current_game_state as any).activePatternIds;
-        if (activePatterns && activePatterns.length > 0) {
-          setActivePattern(activePatterns[0]);
+                typeof sessionData.current_game_state === 'object') {
+        // Type-safe handling of current_game_state
+        const gameState = sessionData.current_game_state as any;
+        
+        if (gameState && 'activePatternIds' in gameState && Array.isArray(gameState.activePatternIds)) {
+          const activePatterns = gameState.activePatternIds;
+          if (activePatterns && activePatterns.length > 0) {
+            setActivePattern(activePatterns[0]);
+          }
         }
       }
       
       // Extract patterns from the session's current_game_state
       if (sessionData?.current_game_state && 
-          typeof sessionData.current_game_state === 'object' &&
-          'activePatternIds' in sessionData.current_game_state &&
-          'prizes' in sessionData.current_game_state) {
+          typeof sessionData.current_game_state === 'object') {
         
+        // Type-safe handling using explicit checks
         const gameState = sessionData.current_game_state as any;
-        const activePatterns = gameState.activePatternIds || [];
-        const prizes = gameState.prizes || {};
         
-        const extractedPatterns: GamePattern[] = activePatterns.map((patternId: string, index: number) => {
-          const prizeDetails = prizes[patternId] || {};
+        if (gameState && 'activePatternIds' in gameState && 'prizes' in gameState) {
+          const activePatterns = Array.isArray(gameState.activePatternIds) ? gameState.activePatternIds : [];
+          const prizes = typeof gameState.prizes === 'object' ? gameState.prizes : {};
           
-          return {
-            id: `legacy-${patternId}`,
-            game_config_id: 'legacy',
-            pattern_id: patternId,
-            pattern_order: index,
-            prize_amount: prizeDetails.amount,
-            prize_description: prizeDetails.description,
-            is_non_cash: prizeDetails.isNonCash || false,
-            created_at: new Date().toISOString()
-          };
-        });
-        
-        setPatterns(extractedPatterns);
+          const extractedPatterns: GamePattern[] = activePatterns.map((patternId: string, index: number) => {
+            const prizeDetails = prizes[patternId] || {};
+            
+            return {
+              id: `legacy-${patternId}`,
+              game_config_id: 'legacy',
+              pattern_id: patternId,
+              pattern_order: index,
+              prize_amount: prizeDetails.amount,
+              prize_description: prizeDetails.description,
+              is_non_cash: !!prizeDetails.isNonCash,
+              created_at: new Date().toISOString()
+            };
+          });
+          
+          setPatterns(extractedPatterns);
+        }
       }
 
       // Fetch called items from the legacy game state
       if (sessionData?.current_game_state && 
-          typeof sessionData.current_game_state === 'object' &&
-          'calledItems' in sessionData.current_game_state) {
+          typeof sessionData.current_game_state === 'object') {
           
         const gameState = sessionData.current_game_state as any;
-        const existingCalls = gameState.calledItems || [];
         
-        const legacyCalledItems: CalledItem[] = existingCalls.map((item: any, index: number) => {
-          if (typeof item === 'number') {
-            // Simple number array
+        if (gameState && 'calledItems' in gameState && Array.isArray(gameState.calledItems)) {
+          const existingCalls = gameState.calledItems || [];
+          
+          const legacyCalledItems: CalledItem[] = existingCalls.map((item: any, index: number) => {
+            if (typeof item === 'number') {
+              // Simple number array
+              return {
+                id: `legacy-${index}`,
+                session_id: sessionId,
+                game_number: currentGameNumber || 1,
+                item_value: item,
+                called_at: new Date().toISOString(),
+                call_order: index + 1
+              };
+            } else if (typeof item === 'object' && item !== null) {
+              // Object array with more details
+              return {
+                id: item.id || `legacy-${index}`,
+                session_id: sessionId,
+                game_number: currentGameNumber || 1,
+                item_value: item.value || item.number || 0,
+                called_at: item.called_at || new Date().toISOString(),
+                call_order: index + 1
+              };
+            }
+            
+            // Fallback
             return {
               id: `legacy-${index}`,
               session_id: sessionId,
               game_number: currentGameNumber || 1,
-              item_value: item,
+              item_value: 0,
               called_at: new Date().toISOString(),
               call_order: index + 1
             };
-          } else if (typeof item === 'object' && item !== null) {
-            // Object array with more details
-            return {
-              id: item.id || `legacy-${index}`,
-              session_id: sessionId,
-              game_number: currentGameNumber || 1,
-              item_value: item.value || item.number || 0,
-              called_at: item.called_at || new Date().toISOString(),
-              call_order: index + 1
-            };
+          });
+          
+          setCalledItems(legacyCalledItems);
+          
+          if (legacyCalledItems.length > 0) {
+            setLastCalledItem(legacyCalledItems[legacyCalledItems.length - 1].item_value);
           }
           
-          // Fallback
-          return {
-            id: `legacy-${index}`,
-            session_id: sessionId,
-            game_number: currentGameNumber || 1,
-            item_value: 0,
-            called_at: new Date().toISOString(),
-            call_order: index + 1
-          };
-        });
-        
-        setCalledItems(legacyCalledItems);
-        
-        if (legacyCalledItems.length > 0) {
-          setLastCalledItem(legacyCalledItems[legacyCalledItems.length - 1].item_value);
-        }
-        
-        if (gameState.lastCalledItem) {
-          if (typeof gameState.lastCalledItem === 'number') {
-            setLastCalledItem(gameState.lastCalledItem);
-          } else if (typeof gameState.lastCalledItem === 'object' && gameState.lastCalledItem !== null) {
-            setLastCalledItem(gameState.lastCalledItem.value || gameState.lastCalledItem.number || null);
+          if ('lastCalledItem' in gameState && gameState.lastCalledItem !== null) {
+            if (typeof gameState.lastCalledItem === 'number') {
+              setLastCalledItem(gameState.lastCalledItem);
+            } else if (typeof gameState.lastCalledItem === 'object' && gameState.lastCalledItem !== null) {
+              setLastCalledItem(gameState.lastCalledItem.value || gameState.lastCalledItem.number || null);
+            }
           }
         }
       }
@@ -241,15 +249,18 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
           
         let currentGameState = sessionData?.current_game_state || {};
         if (typeof currentGameState === 'object') {
-          currentGameState = {
-            ...currentGameState,
-            calledItems: [...(currentGameState.calledItems || []), newNumber],
+          // Safe type casting for state update
+          const typedGameState = currentGameState as Record<string, any>;
+          
+          const updatedGameState = {
+            ...typedGameState,
+            calledItems: [...(Array.isArray(typedGameState.calledItems) ? typedGameState.calledItems : []), newNumber],
             lastCalledItem: newNumber
           };
           
           const { error: updateError } = await supabase
             .from('game_sessions')
-            .update({ current_game_state: currentGameState })
+            .update({ current_game_state: updatedGameState as Json })
             .eq('id', sessionId);
             
           if (updateError) {
