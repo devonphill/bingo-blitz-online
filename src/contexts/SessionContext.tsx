@@ -2,7 +2,7 @@
 import React, { createContext, useContext } from 'react';
 import { useSessions } from './useSessions';
 import { usePlayers } from './usePlayers';
-import { TempPlayer, AdminTempPlayer, GameSession, Player } from '@/types';
+import { TempPlayer, GameSession, Player } from '@/types';
 
 interface SessionContextProps {
   sessions: GameSession[];
@@ -10,13 +10,14 @@ interface SessionContextProps {
   fetchSessions: () => Promise<void>;
   updateSession: (sessionId: string, updates: Partial<GameSession>) => Promise<boolean>;
   setCurrentSession: (sessionId: string | null) => void;
+  getSessionByCode: (code: string) => GameSession | null;
   players: Player[];
   fetchPlayers: (sessionId: string) => Promise<void>;
   addPlayer: (sessionId: string, player: TempPlayer) => Promise<string | null>;
   removePlayer: (playerId: string) => Promise<boolean>;
   updatePlayer: (playerId: string, updates: Partial<Player>) => Promise<boolean>;
   joinSession: (playerCode: string) => Promise<any>;
-  bulkAddPlayers: (sessionId: string, players: AdminTempPlayer[]) => Promise<any>;
+  bulkAddPlayers: (sessionId: string, players: any[]) => Promise<any>;
   loading?: boolean;
   error: string;
   isLoading: boolean;
@@ -30,7 +31,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     currentSession,
     fetchSessions,
     updateSession,
-    setCurrentSession,
+    setCurrentSession: setCurrentSessionById,
+    getSessionByCode,
     isLoading: sessionsLoading,
     error: sessionsError
   } = useSessions();
@@ -49,6 +51,11 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const loading = sessionsLoading || playersLoading;
   const error = sessionsError || playersError;
+  
+  // Create a wrapper function for setCurrentSession that accepts a string
+  const setCurrentSession = (sessionId: string | null) => {
+    setCurrentSessionById(sessionId);
+  };
 
   return (
     <SessionContext.Provider
@@ -58,6 +65,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         fetchSessions,
         updateSession,
         setCurrentSession,
+        getSessionByCode,
         players,
         fetchPlayers,
         addPlayer,

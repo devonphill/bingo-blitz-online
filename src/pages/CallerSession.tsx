@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { GameType, WinPattern, GameConfig } from '@/types';
+import { GameType, GameConfig } from '@/types';
+import { WinPattern } from '@/types/winPattern';
 import { WinPatternConfig } from '@/types';
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,6 +16,7 @@ import { SessionProgressUpdate } from '@/utils/callerSessionHelper';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
 import { getGameRulesForType } from '@/game-rules/gameRulesRegistry';
 import { SessionProgress } from '@/hooks/useSessionProgress';
+import { jsonToGameConfigs } from '@/utils/jsonUtils';
 
 export default function CallerSession() {
   const { sessionId: urlSessionId } = useParams<{ sessionId: string }>();
@@ -76,6 +78,8 @@ export default function CallerSession() {
         }
 
         if (data) {
+          const parsedConfigs = jsonToGameConfigs(data.games_config);
+          
           setSession({
             id: data.id,
             name: data.name,
@@ -88,11 +92,11 @@ export default function CallerSession() {
             numberOfGames: data.number_of_games,
             current_game: data.current_game,
             lifecycle_state: data.lifecycle_state as string,
-            games_config: data.games_config
+            games_config: parsedConfigs
           });
           setGameType(data.game_type as GameType);
           setSessionStatus(data.status as string);
-          setGameConfigs(data.games_config as GameConfig[]);
+          setGameConfigs(parsedConfigs);
           setCurrentGameNumber(data.current_game || 1);
           setNumberOfGames(data.number_of_games || 1);
         }
@@ -110,9 +114,11 @@ export default function CallerSession() {
   useEffect(() => {
     if (gameRules) {
       const patterns = gameRules.getWinPatterns().map(p => ({
-        ...p,
-        gameType: p.gameType as GameType
-      }));
+        id: p.id,
+        name: p.name,
+        gameType: p.gameType,
+        available: p.available
+      } as WinPattern));
       setAvailablePatterns(patterns);
     }
   }, [gameRules]);
@@ -151,9 +157,11 @@ export default function CallerSession() {
     setGameType(newType);
     if (gameRules) {
       const patterns = gameRules.getWinPatterns().map(p => ({
-        ...p,
-        gameType: p.gameType as GameType
-      }));
+        id: p.id,
+        name: p.name,
+        gameType: p.gameType,
+        available: p.available
+      } as WinPattern));
       setAvailablePatterns(patterns);
     }
     setSelectedPatterns([]);

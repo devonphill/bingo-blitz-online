@@ -1,5 +1,6 @@
 
 import { Json } from '@/types/json';
+import { GameConfig } from '@/types';
 
 /**
  * Prepares data for storage in the database by converting it to a JSON-compatible format
@@ -39,3 +40,40 @@ export function parseJson<T>(jsonData: string | Json | null): T | null {
 export function toJsonSafe<T>(data: T): Json {
   return JSON.parse(JSON.stringify(data));
 }
+
+/**
+ * Specifically prepares GameConfig[] for database storage by ensuring it's in a JSON-safe format
+ * @param configs Array of GameConfig objects
+ * @returns A JSON-compatible representation of the GameConfig array
+ */
+export function gameConfigsToJson(configs: GameConfig[]): Json {
+  return prepareForDatabase(configs);
+}
+
+/**
+ * Convert JSON data from database to GameConfig[] array
+ * @param jsonData JSON data from database
+ * @returns Parsed GameConfig array or empty array if invalid
+ */
+export function jsonToGameConfigs(jsonData: Json): GameConfig[] {
+  if (!jsonData) return [];
+  
+  try {
+    const parsed = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
+    
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    
+    return parsed.map((item: any) => ({
+      gameNumber: item.gameNumber || 1,
+      gameType: item.gameType || 'mainstage',
+      patterns: item.patterns || {},
+      session_id: item.session_id
+    }));
+  } catch (err) {
+    console.error('Error parsing game configs:', err);
+    return [];
+  }
+}
+

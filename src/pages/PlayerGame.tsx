@@ -53,11 +53,20 @@ export default function PlayerGame() {
     claimStatus,
     gameType,
     isSubmittingClaim,
-    handleClaimBingo
+    handleClaimBingo: submitBingoClaim
   } = usePlayerGame(playerCode);
 
   // Get session progress from the database for authoritative game state
   const { progress: sessionProgress } = useSessionProgress(currentSession?.id);
+  
+  // Create a wrapper function that matches the expected signature
+  const handleClaimBingo = useCallback(() => {
+    if (!tickets || tickets.length === 0) {
+      return Promise.resolve(false);
+    }
+    // Call the original handler with the first ticket
+    return submitBingoClaim(tickets[0]);
+  }, [submitBingoClaim, tickets]);
   
   // Only attempt to render the game if we have all needed data
   const isInitialLoading = isLoading && loadingStep !== 'completed';

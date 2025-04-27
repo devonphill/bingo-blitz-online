@@ -44,7 +44,7 @@ export function convertFromLegacyConfig(legacyConfig: LegacyGameConfig): GameCon
       
       patterns[patternId] = {
         active: true,
-        isNonCash: prizeDetails.isNonCash || false,
+        isNonCash: prizeDetails.isNonCash === true,
         prizeAmount: prizeDetails.amount || '0',
         description: prizeDetails.description || ''
       };

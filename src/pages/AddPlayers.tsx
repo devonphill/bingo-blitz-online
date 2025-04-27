@@ -1,5 +1,3 @@
-
-// Fix imports and update the AddPlayers component to handle session contexts properly
 import React, { useState, useEffect } from 'react';
 import { useSessionContext } from '@/contexts/SessionProvider';
 import BulkAddPlayersForm from '@/components/player/BulkAddPlayersForm';
@@ -9,8 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useParams } from 'react-router-dom';
 import { GameConfig } from '@/types';
-import { parseGameConfigs } from '@/types/json';
-import { prepareForDatabase } from '@/utils/jsonUtils';
+import { gameConfigsToJson } from '@/utils/jsonUtils';
 
 export default function AddPlayers() {
   const { sessionId } = useParams();
@@ -88,16 +85,18 @@ export default function AddPlayers() {
     if (!sessionId || !currentSession) return;
     
     try {
-      // Convert games_config to the correct format for the database
-      const gamesConfig = parseGameConfigs(currentSession.games_config);
-      
-      // Create a sanitized version of the session data for update
-      const sessionUpdates = {
-        ...currentSession,
-        games_config: prepareForDatabase(gamesConfig)
-      };
-      
-      await updateSession(sessionId, sessionUpdates);
+      // Convert games_config to the correct format for the database using our utility function
+      if (currentSession.games_config) {
+        const jsonReadyConfig = gameConfigsToJson(currentSession.games_config);
+        
+        // Create a copy of the session with the properly formatted games_config
+        const sessionUpdates = {
+          ...currentSession,
+          games_config: jsonReadyConfig
+        };
+        
+        await updateSession(sessionId, sessionUpdates);
+      }
     } catch (error) {
       console.error('Error updating session:', error);
     }
