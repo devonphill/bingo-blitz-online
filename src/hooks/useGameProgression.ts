@@ -4,6 +4,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { GameSession } from '@/types';
 
+// Define a recursive Json type for Supabase JSON data
+type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
+
 export function useGameProgression(session: GameSession | null, onGameComplete?: () => void) {
   const [isProcessingGame, setIsProcessingGame] = useState(false);
   const { toast } = useToast();
@@ -42,20 +45,24 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
       }
       
       // Calculate next game number using the fetched data
-      const currentGameState = latestSessionData.current_game_state || {};
-      const currentGameNumber = currentGameState.gameNumber || 1;
+      const currentGameState = latestSessionData.current_game_state as { gameNumber?: number } || {};
+      const currentGameNumber = typeof currentGameState === 'object' && currentGameState && 'gameNumber' in currentGameState 
+        ? (currentGameState.gameNumber as number) || 1 
+        : 1;
       const nextGameNumber = currentGameNumber + 1;
       console.log(`Current game: ${currentGameNumber}, Next game: ${nextGameNumber}`);
       
       // Get total number of games from the session
-      const totalGames = latestSessionData.numberOfGames || 1;
+      const totalGames = latestSessionData.number_of_games || 1;
       const isLastGame = nextGameNumber > totalGames;
       console.log(`Total games: ${totalGames}, Is this the last game? ${isLastGame ? 'Yes' : 'No'}`);
       
       // Get the next game configuration if available
       let nextGameConfig = null;
       if (latestSessionData.games_config && Array.isArray(latestSessionData.games_config)) {
-        nextGameConfig = latestSessionData.games_config.find(game => game.gameNumber === nextGameNumber);
+        nextGameConfig = latestSessionData.games_config.find((game: any) => 
+          game && typeof game === 'object' && game.gameNumber === nextGameNumber
+        );
       }
       
       console.log("Next game config:", nextGameConfig);
@@ -93,7 +100,10 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
         // Setup the next game state with proper default values
         const nextGameState = {
           gameNumber: nextGameNumber,
-          gameType: nextGameConfig?.gameType || currentGameState.gameType || latestSessionData.gameType,
+          gameType: nextGameConfig?.gameType || 
+                    (currentGameState && typeof currentGameState === 'object' && 'gameType' in currentGameState ? 
+                      currentGameState.gameType : 
+                      latestSessionData.game_type),
           activePatternIds: nextGameConfig?.selectedPatterns || [],
           calledItems: [],
           lastCalledItem: null,
