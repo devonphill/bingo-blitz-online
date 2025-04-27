@@ -1,63 +1,16 @@
 
-import React from 'react';
-import { Json } from './json';
+import { WinPattern } from './winPattern';
+import { GameRules } from '@/game-rules/types';
 
-// Core game types
-export type GameType = 'mainstage' | 'party' | 'quiz' | 'music' | 'logo';
+// Add other common types here
+export type GameType = 'mainstage' | '90-ball' | '75-ball' | 'speed' | 'custom';
 
-// Default pattern ordering and game rules
-export const GAME_RULES = {
-  mainstage: {
-    minPlayers: 2,
-    maxPlayers: 100,
-    patterns: ['oneLine', 'twoLines', 'fullHouse']
-  },
-  party: {
-    minPlayers: 2,
-    maxPlayers: 100,
-    patterns: ['corners', 'oneLine', 'twoLines', 'threeLines', 'fullHouse']
-  },
-  quiz: {
-    minPlayers: 2,
-    maxPlayers: 50,
-    patterns: ['oneLine', 'twoLines', 'fullHouse'],
-    questionTime: 30
-  },
-  music: {
-    minPlayers: 2,
-    maxPlayers: 50,
-    patterns: ['oneLine', 'twoLines', 'fullHouse'],
-    songDuration: 30
-  },
-  logo: {
-    minPlayers: 2,
-    maxPlayers: 50,
-    patterns: ['oneLine', 'twoLines', 'fullHouse'],
-    logoDisplayTime: 15
-  }
-} as const;
-
-// Session progress type for tracking game state
-export interface SessionProgress {
-  id: string;
-  session_id: string;
-  current_game_number: number;
-  max_game_number: number;
-  current_game_type: string;
-  current_win_pattern: string | null;
-  created_at: string;
-  updated_at: string;
-  game_status?: string;
-}
-
-// Prize details structure
 export interface PrizeDetails {
-  amount?: string;
-  description?: string;
-  isNonCash?: boolean;
+  amount: string;
+  isNonCash: boolean;
+  description: string;
 }
 
-// Win pattern configuration
 export interface WinPatternConfig {
   active: boolean;
   isNonCash: boolean;
@@ -65,80 +18,60 @@ export interface WinPatternConfig {
   description: string;
 }
 
-// Game configuration
+// GameConfig interface supporting both legacy and new formats
 export interface GameConfig {
   gameNumber: number;
   gameType: GameType;
   patterns: Record<string, WinPatternConfig>;
   session_id?: string;
-  // Allow accessing old properties for backwards compatibility during migration
-  [key: string]: any;
+  
+  // Support for legacy properties, marked as optional
+  selectedPatterns?: string[];
+  prizes?: { [patternId: string]: PrizeDetails };
 }
 
-// Legacy game configuration format to support older data
 export interface LegacyGameConfig {
   gameNumber: number;
   gameType: GameType;
   selectedPatterns: string[];
-  prizes: Record<string, {
-    amount: string;
-    isNonCash: boolean;
-    description: string;
-  }>;
+  prizes: { [patternId: string]: PrizeDetails };
 }
 
-// Helper functions for game config conversion
 export function isLegacyGameConfig(config: any): config is LegacyGameConfig {
-  return config && 
-    typeof config === 'object' && 
-    'gameNumber' in config && 
-    'gameType' in config && 
-    'selectedPatterns' in config &&
-    'prizes' in config;
+  return config && Array.isArray(config.selectedPatterns) && typeof config.prizes === 'object';
 }
 
-export function convertLegacyGameConfig(legacy: LegacyGameConfig): GameConfig {
+export function convertLegacyGameConfig(config: LegacyGameConfig): GameConfig {
   const patterns: Record<string, WinPatternConfig> = {};
-  
-  // Convert each pattern in the legacy config
-  legacy.selectedPatterns.forEach(patternId => {
-    const prize = legacy.prizes[patternId];
-    patterns[patternId] = {
-      active: true,
-      isNonCash: prize?.isNonCash || false,
-      prizeAmount: prize?.amount || '0.00',
-      description: prize?.description || ''
-    };
-  });
+  if (config.selectedPatterns && Array.isArray(config.selectedPatterns)) {
+    config.selectedPatterns.forEach(patternId => {
+      const prize = config.prizes[patternId] || {};
+      patterns[patternId] = {
+        active: true,
+        isNonCash: prize.isNonCash || false,
+        prizeAmount: prize.amount || '10.00',
+        description: prize.description || `${patternId} Prize`
+      };
+    });
+  }
   
   return {
-    gameNumber: legacy.gameNumber,
-    gameType: legacy.gameType,
+    gameNumber: config.gameNumber,
+    gameType: config.gameType,
     patterns
   };
 }
 
-// Add DEFAULT_PATTERN_ORDER to define the standard order of win patterns
-export const DEFAULT_PATTERN_ORDER = {
-  mainstage: ['oneLine', 'twoLines', 'fullHouse'],
-  party: ['corners', 'oneLine', 'twoLines', 'threeLines', 'fullHouse'],
-  quiz: ['oneLine', 'twoLines', 'fullHouse'],
-  music: ['oneLine', 'twoLines', 'fullHouse'],
-  logo: ['oneLine', 'twoLines', 'fullHouse']
-} as const;
-
-// Current game state for player games
 export interface CurrentGameState {
-  gameNumber?: number;
-  gameType?: GameType;
-  calledItems?: any[];
-  lastCalledItem?: any;
-  activePatternIds?: string[];
-  prizes?: Record<string, PrizeDetails>;
-  status?: 'pending' | 'active' | 'completed';
+  gameNumber: number;
+  gameType: GameType;
+  activePatternIds: string[];
+  calledItems: number[];
+  lastCalledItem: number | null;
+  status: 'pending' | 'active' | 'completed';
+  prizes: { [patternId: string]: PrizeDetails };
 }
 
-// Game session type
 export interface GameSession {
   id: string;
   name: string;
@@ -148,65 +81,36 @@ export interface GameSession {
   status: 'pending' | 'active' | 'completed';
   createdAt: string;
   sessionDate?: string;
-  numberOfGames?: number;
-  lifecycle_state?: 'setup' | 'live' | 'ended';
-  games_config?: GameConfig[];
-  current_game?: number;
-  active_pattern_id?: string | null;
+  numberOfGames: number;
+  current_game: number;
+  lifecycle_state: 'setup' | 'live' | 'ended' | 'completed';
+  games_config: GameConfig[];
   current_game_state?: CurrentGameState;
 }
 
-// Player type 
 export interface Player {
   id: string;
   nickname: string;
-  player_code: string;
-  session_id: string;
-  joined_at: string;
+  sessionId: string;
+  joinedAt: string;
   tickets: number;
+  playerCode: string;
   email?: string;
 }
 
-// Ticket type 
 export interface Ticket {
   id: string;
-  numbers: number[][];
-  layout?: string;
-  playerName?: string;
-  playerId?: string;
-  serial?: string;
+  playerId: string;
+  sessionId: string;
+  numbers: number[];
+  serial: string;
+  position: number;
+  layoutMask: number;
 }
 
-// Called item type
-export interface CalledItem {
-  id: string;
-  session_id: string;
-  game_number: number;
-  value: number;
-  timestamp: string;
-  call_order: number;
+// Types for player admin
+export interface AdminTempPlayer {
+  nickname: string;
+  email?: string;
+  ticketCount: number;
 }
-
-// Game state type
-export interface GameState {
-  gameNumber: number;
-  gameType: GameType;
-  calledItems: CalledItem[];
-  lastCalledItem: CalledItem | null;
-  status: 'pending' | 'active' | 'completed';
-}
-
-// Bingo claim type
-export interface BingoClaim {
-  id: string;
-  session_id: string;
-  player_id: string;
-  claimed_at: string;
-  status: 'pending' | 'validated' | 'rejected';
-  win_pattern_id: string;
-  validated_at?: string;
-  ticket_id?: string;
-}
-
-// Export the initial game state helper
-export { getInitialGameState } from '@/helpers/gameStateHelper';

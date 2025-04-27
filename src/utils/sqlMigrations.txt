@@ -1,20 +1,12 @@
 
--- Migration to add bingo_claims table
+-- Note: The bingo_claims table is no longer necessary as this data is stored in the universal_game_logs table.
+-- This file is kept for reference purposes only.
 
-CREATE TABLE IF NOT EXISTS public.bingo_claims (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_id uuid NOT NULL,
-  player_id uuid NOT NULL,
-  claimed_at timestamp with time zone NOT NULL DEFAULT now(),
-  status text NOT NULL DEFAULT 'pending',
-  win_pattern_id text NOT NULL,
-  validated_at timestamp with time zone,
-  ticket_id uuid
-);
-
--- Add indexes for performance
-CREATE INDEX IF NOT EXISTS idx_bingo_claims_session_id ON public.bingo_claims (session_id);
-CREATE INDEX IF NOT EXISTS idx_bingo_claims_player_id ON public.bingo_claims (player_id);
-CREATE INDEX IF NOT EXISTS idx_bingo_claims_status ON public.bingo_claims (status);
-
--- Note: This SQL script needs to be run manually in the Supabase SQL editor
+-- Example universal_game_logs fields for bingo claims:
+-- player_id - The ID of the player making the claim
+-- claimed_at - Timestamp when the claim was made
+-- validated_at - Timestamp when the claim was validated (null if pending)
+-- win_pattern - The pattern that was claimed
+-- session_id - The session where the claim was made
+-- game_number - The game number in the session
+-- status - Status of the claim (pending, validated, rejected)

@@ -38,24 +38,7 @@ serve(async (req) => {
       `);
     }
     
-    // Create bingo_claims table if it doesn't exist
-    const createBingoClaimsResult = await supabaseClient.rpc('create_bingo_claims_if_not_exists');
-    
-    if (createBingoClaimsResult.error) {
-      console.error("Error creating bingo_claims table:", createBingoClaimsResult.error);
-      
-      // Try direct SQL approach
-      await supabaseClient.query(`
-        CREATE TABLE IF NOT EXISTS public.bingo_claims (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          player_id UUID NOT NULL REFERENCES public.players(id) ON DELETE CASCADE,
-          session_id UUID NOT NULL REFERENCES public.game_sessions(id) ON DELETE CASCADE,
-          status TEXT NOT NULL DEFAULT 'pending',
-          win_pattern_id TEXT,
-          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
-        );
-      `);
-    }
+    // Note: No need to create bingo_claims table as claims are stored in universal_game_logs
 
     return new Response(JSON.stringify({ success: true }), {
       headers: {

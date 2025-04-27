@@ -21,6 +21,11 @@ export function convertFromLegacyConfig(config: any): GameConfig {
     };
   }
 
+  // Check if this is already in the new format
+  if (config.patterns && typeof config.patterns === 'object') {
+    return config as GameConfig;
+  }
+  
   // Extract properties from the old format
   const { gameNumber = 1, gameType = 'mainstage', selectedPatterns = [], prizes = {} } = config;
   

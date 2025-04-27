@@ -9,6 +9,7 @@ import { LiveGameView } from '@/components/caller/LiveGameView';
 import ClaimVerificationSheet from '@/components/game/ClaimVerificationSheet';
 import { useSessionLifecycle } from '@/hooks/useSessionLifecycle';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
+import { convertFromLegacyConfig } from '@/utils/callerSessionHelper';
 
 type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
@@ -64,12 +65,9 @@ export default function CallerSession() {
       let configs: GameConfig[] = [];
       if (data.games_config && Array.isArray(data.games_config)) {
         const jsonConfigs = data.games_config as Json[];
-        configs = jsonConfigs.map((config: any): GameConfig => ({
-          gameNumber: config.gameNumber || 1,
-          gameType: (config.gameType as GameType) || 'mainstage',
-          selectedPatterns: Array.isArray(config.selectedPatterns) ? config.selectedPatterns : ['oneLine'],
-          prizes: config.prizes || {}
-        }));
+        configs = jsonConfigs.map((config: any): GameConfig => {
+          return convertFromLegacyConfig(config);
+        });
         console.log("Game configs loaded from database:", configs);
       } 
       
@@ -80,11 +78,11 @@ export default function CallerSession() {
         configs = Array.from({ length: numberOfGames }, (_, index) => ({
           gameNumber: index + 1,
           gameType: (data.game_type as GameType) || 'mainstage',
-          selectedPatterns: ['oneLine'],
-          prizes: {
-            'oneLine': {
-              amount: '10.00',
+          patterns: {
+            oneLine: {
+              active: true,
               isNonCash: false,
+              prizeAmount: '10.00',
               description: 'One Line Prize'
             }
           }
@@ -97,8 +95,26 @@ export default function CallerSession() {
         const firstConfig = configs[0];
         console.log("Setting state from first game config:", firstConfig);
         setCurrentGameType(firstConfig.gameType);
-        setSelectedPatterns(firstConfig.selectedPatterns || []);
-        setPrizes(firstConfig.prizes || {});
+        
+        if (firstConfig.selectedPatterns) {
+          setSelectedPatterns(firstConfig.selectedPatterns);
+        } else {
+          const activePatterns = Object.entries(firstConfig.patterns)
+            .filter(([_, config]) => config.active)
+            .map(([patternId]) => patternId);
+          setSelectedPatterns(activePatterns);
+        }
+        
+        const convertedPrizes: {[patternId: string]: PrizeDetails} = {};
+        Object.entries(firstConfig.patterns).forEach(([patternId, config]) => {
+          convertedPrizes[patternId] = {
+            amount: config.prizeAmount,
+            isNonCash: config.isNonCash,
+            description: config.description
+          };
+        });
+        setPrizes(convertedPrizes);
+        
         fetchWinPatterns(firstConfig.gameType);
       }
 
@@ -112,20 +128,6 @@ export default function CallerSession() {
         prizes: {}
       };
 
-      const gameState = data.current_game_state 
-        ? (data.current_game_state as unknown as CurrentGameState)
-        : initialGameState;
-
-      let lifecycleState: 'setup' | 'live' | 'ended' = 'setup';
-      
-      if (data.lifecycle_state) {
-        if (['setup', 'live', 'ended'].includes(data.lifecycle_state)) {
-          lifecycleState = data.lifecycle_state as 'setup' | 'live' | 'ended';
-        } else {
-          console.warn(`Invalid lifecycle_state value received: ${data.lifecycle_state}, using default 'setup'`);
-        }
-      }
-      
       setSession({
         id: data.id,
         name: data.name,
@@ -136,19 +138,31 @@ export default function CallerSession() {
         createdAt: data.created_at,
         sessionDate: data.session_date,
         numberOfGames: data.number_of_games,
-        current_game_state: gameState,
-        lifecycle_state: lifecycleState,
-        games_config: configs
+        current_game: data.current_game,
+        lifecycle_state: data.lifecycle_state as 'setup' | 'live' | 'ended' | 'completed',
+        games_config: configs,
+        current_game_state: initialGameState
       });
 
-      if (gameState.calledItems && Array.isArray(gameState.calledItems)) {
-        setCalledNumbers(gameState.calledItems as number[]);
+      if (sessionId) {
+        try {
+          const { data: progressData } = await supabase
+            .from('sessions_progress')
+            .select('called_numbers')
+            .eq('session_id', sessionId)
+            .single();
+            
+          if (progressData && progressData.called_numbers && Array.isArray(progressData.called_numbers)) {
+            setCalledNumbers(progressData.called_numbers);
+            
+            if (progressData.called_numbers.length > 0) {
+              setCurrentNumber(progressData.called_numbers[progressData.called_numbers.length - 1]);
+            }
+          }
+        } catch (err) {
+          console.error("Error fetching called numbers:", err);
+        }
       }
-      
-      if (gameState.lastCalledItem) {
-        setCurrentNumber(gameState.lastCalledItem as number);
-      }
-      
     } catch (err) {
       console.error("Exception during session fetch:", err);
     }
@@ -576,10 +590,12 @@ export default function CallerSession() {
 
     try {
       const { data: claims, error } = await supabase
-        .from('bingo_claims')
-        .select('id, player_id, claimed_at, players(nickname)')
+        .from('universal_game_logs')
+        .select('id, player_id, claimed_at, player_name')
         .eq('session_id', sessionId)
-        .eq('status', 'pending');
+        .eq('game_number', session?.current_game || 1)
+        .is('validated_at', null)
+        .order('claimed_at', { ascending: true });
 
       if (error) {
         console.error("Error fetching pending claims:", error);
@@ -604,7 +620,7 @@ export default function CallerSession() {
             console.error("Error fetching ticket data:", ticketError);
           } else {
             setCurrentClaim({
-              playerName: firstClaim.players?.nickname || 'Unknown',
+              playerName: firstClaim.player_name || 'Unknown',
               playerId: firstClaim.player_id,
               tickets: ticketData || [],
               claimId: firstClaim.id
@@ -614,7 +630,7 @@ export default function CallerSession() {
             
             toast({
               title: "Claim ready for verification",
-              description: `${firstClaim.players?.nickname || 'A player'} has claimed bingo!`,
+              description: `${firstClaim.player_name || 'A player'} has claimed bingo!`,
             });
           }
         } else {
@@ -634,8 +650,8 @@ export default function CallerSession() {
     
     try {
       const { error } = await supabase
-        .from('bingo_claims')
-        .update({ status: 'validated' })
+        .from('universal_game_logs')
+        .update({ validated_at: new Date().toISOString() })
         .eq('id', currentClaim.claimId);
         
       if (error) {
@@ -875,8 +891,8 @@ export default function CallerSession() {
     
     try {
       const { error } = await supabase
-        .from('bingo_claims')
-        .update({ status: 'rejected' })
+        .from('universal_game_logs')
+        .update({ validated_at: new Date().toISOString(), status: 'rejected' })
         .eq('id', currentClaim.claimId);
         
       if (error) {
@@ -1096,9 +1112,9 @@ export default function CallerSession() {
             });
             
             setPendingClaims(prev => [...prev, { 
-              id: claimData.claimId,
+              id: claimData.claimId || undefined,
               player_id: claimData.playerId,
-              players: { nickname: claimData.playerName }
+              player_name: claimData.playerName
             }]);
           }
         }
