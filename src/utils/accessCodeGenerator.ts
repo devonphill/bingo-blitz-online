@@ -1,33 +1,24 @@
 
 /**
- * Generates a random access code of specified length
- * @param length The length of the code to generate
- * @returns A string containing the random access code
+ * Generates a random alphanumeric access code of the specified length
+ * @param length The length of the access code to generate
+ * @returns A random alphanumeric string
  */
 export function generateAccessCode(length: number = 6): string {
-  const characters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Excludes confusing characters like 0, O, 1, I
-  let code = '';
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // No confusing characters like I, O, 0, 1
+  let result = '';
   
   for (let i = 0; i < length; i++) {
-    const randomIndex = Math.floor(Math.random() * characters.length);
-    code += characters.charAt(randomIndex);
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   
-  return code;
+  return result;
 }
 
 /**
- * Validates if an access code matches the expected format
- * @param code The access code to validate
- * @param length The expected length of the code
- * @returns Boolean indicating if the code is valid
+ * Generates a random player code
+ * @returns A random player code string
  */
-export function isValidAccessCode(code: string, length: number = 6): boolean {
-  if (!code || code.length !== length) {
-    return false;
-  }
-  
-  // Check if code contains only valid characters
-  const validCharacterRegex = /^[A-Z0-9]+$/;
-  return validCharacterRegex.test(code);
+export function generatePlayerCode(): string {
+  return `P${generateAccessCode(5)}`;
 }

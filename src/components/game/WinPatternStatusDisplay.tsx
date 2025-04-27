@@ -2,7 +2,7 @@
 import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { GameType } from '@/types/winPattern';
+import { GameType } from '@/types';
 
 interface WinPatternStatusDisplayProps {
   gameType?: GameType;
@@ -92,9 +92,9 @@ function getDefaultPatternsForType(gameType: GameType): string[] {
     case 'music':
     case 'logo':
     case 'mainstage':
-    case '90-ball':
+    case '90ball':
       return ['oneLine', 'twoLines', 'fullHouse'];
-    case '75-ball':
+    case '75ball':
       return ['oneLine', 'coverAll'];
     case 'speed':
       return ['oneLine', 'fullHouse'];

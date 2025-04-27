@@ -6,8 +6,8 @@ export interface WinPattern {
   available: boolean;
 }
 
-// Define GameType to match the one in types/index.ts
-export type GameType = 'mainstage' | '75ball' | '90ball' | 'quickfire' | 'party' | 'quiz' | 'music' | 'logo' | 'speed' | 'custom';
+// Import GameType from index.ts to ensure consistency
+import { GameType } from './index';
 
 export const WIN_PATTERNS: { [key in GameType]: WinPattern[] } = {
   mainstage: [
@@ -49,11 +49,6 @@ export const WIN_PATTERNS: { [key in GameType]: WinPattern[] } = {
   speed: [
     { id: 'oneLine', name: 'One Line', gameType: 'speed', available: true },
     { id: 'fullHouse', name: 'Full House', gameType: 'speed', available: true }
-  ],
-  custom: [
-    { id: 'oneLine', name: 'One Line', gameType: 'custom', available: true },
-    { id: 'twoLines', name: 'Two Lines', gameType: 'custom', available: true },
-    { id: 'fullHouse', name: 'Full House', gameType: 'custom', available: true }
   ],
   quickfire: [
     { id: 'oneNumber', name: 'One Number', gameType: 'quickfire', available: true },

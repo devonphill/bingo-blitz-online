@@ -3,7 +3,7 @@ import React, { createContext, useContext, ReactNode } from 'react';
 import { useSessions } from './useSessions';
 import { usePlayers, AdminTempPlayer } from './usePlayers';
 import { useTickets } from './useTickets';
-import type { GameSession, Player } from '@/types';
+import type { GameSession, Player, TempPlayer } from '@/types';
 
 interface SessionContextType {
   sessions: GameSession[];
@@ -16,9 +16,9 @@ interface SessionContextType {
   error: string | null;
   // Player methods
   players?: Player[];
-  joinSession: (playerCode: string) => Promise<{ player: any | null, error: Error | null }>;
-  addPlayer?: (nickname: string, sessionId: string, email?: string) => Promise<any>;
-  bulkAddPlayers?: (sessionId: string, newPlayers: AdminTempPlayer[]) => Promise<{ success: boolean; message?: string }>;
+  joinSession: (playerCode: string) => Promise<{ success: boolean; playerCode?: string; playerId?: string; error?: string }>;
+  addPlayer?: (sessionId: string, player: TempPlayer) => Promise<string | null>;
+  bulkAddPlayers?: (sessionId: string, newPlayers: AdminTempPlayer[]) => Promise<{ success: boolean; message?: string; count?: number; error?: string }>;
   // Ticket methods
   assignTicketsToPlayer?: (playerId: string, sessionId: string, ticketCount: number) => Promise<any>;
   getPlayerAssignedTickets?: (playerId: string, sessionId: string) => Promise<any>;
@@ -43,11 +43,9 @@ export function SessionProvider({ children }: SessionProviderProps) {
   } = useSessions();
   
   const ticketsHook = useTickets();
-  const playersHook = usePlayers(
-    sessions,
-    fetchSessions,
-    ticketsHook.assignTicketsToPlayer
-  );
+  
+  // Initialize usePlayers without arguments
+  const playersHook = usePlayers();
 
   // Create a wrapper function for setCurrentSession that accepts a string
   const setCurrentSession = (sessionId: string | null) => {
@@ -67,9 +65,12 @@ export function SessionProvider({ children }: SessionProviderProps) {
     joinSession: async (playerCode: string) => {
       try {
         const result = await playersHook.joinSession(playerCode);
-        return { player: result.player, error: null };
+        return result;
       } catch (error) {
-        return { player: null, error: error as Error };
+        return { 
+          success: false, 
+          error: (error as Error).message 
+        };
       }
     },
     addPlayer: playersHook.addPlayer,

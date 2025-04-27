@@ -2,7 +2,7 @@
 // Any additional types needed for the app that aren't covered by the other interfaces
 import { Json } from './json';
 
-export type GameType = 'mainstage' | '75ball' | '90ball' | 'quickfire' | 'party' | 'quiz' | 'music' | 'logo';
+export type GameType = 'mainstage' | '75ball' | '90ball' | 'quickfire' | 'party' | 'quiz' | 'music' | 'logo' | 'speed';
 
 export const DEFAULT_PATTERN_ORDER: Record<GameType, string[]> = {
   'mainstage': ['oneLine', 'twoLines', 'fullHouse'],
@@ -12,7 +12,8 @@ export const DEFAULT_PATTERN_ORDER: Record<GameType, string[]> = {
   'party': ['oneLine', 'twoLines', 'fullHouse'],
   'quiz': ['oneLine', 'twoLines', 'fullHouse'],
   'music': ['oneLine', 'twoLines', 'fullHouse'],
-  'logo': ['oneLine', 'twoLines', 'fullHouse']
+  'logo': ['oneLine', 'twoLines', 'fullHouse'],
+  'speed': ['oneLine', 'fullHouse']
 };
 
 export interface WinPatternConfig {
@@ -27,6 +28,9 @@ export interface GameConfig {
   gameType: GameType;
   patterns: Record<string, WinPatternConfig>;
   session_id?: string;
+  // For backward compatibility
+  selectedPatterns?: string[];
+  prizes?: Record<string, any>;
 }
 
 export interface GameState {
@@ -111,8 +115,8 @@ export interface SessionProgress {
   current_game_type: GameType;
   created_at: string;
   updated_at: string;
-  called_numbers: number[];
-  game_status: 'pending' | 'active' | 'completed';
+  called_numbers?: number[];
+  game_status?: 'pending' | 'active' | 'completed';
 }
 
 export interface Player {
@@ -164,6 +168,7 @@ export function parseGameConfigs(json: Json): GameConfig[] {
   return json.map((item: any) => ({
     gameNumber: item.gameNumber || 1,
     gameType: item.gameType || 'mainstage',
-    patterns: item.patterns || {}
+    patterns: item.patterns || {},
+    session_id: item.session_id
   })) as GameConfig[];
 }

@@ -11,8 +11,6 @@ export interface TicketStatus {
 export interface DefaultWinPattern {
   id: string; // Unique identifier for the pattern (e.g., "oneLine", "fourCorners")
   name: string; // User-friendly name (e.g., "One Line", "Four Corners")
-  // Removed description and validate from here as per user feedback/simpler design
-  // Optional: definition?: any; // Can be added later if needed
 }
 
 /**
@@ -28,6 +26,18 @@ export interface GameRules {
    * Get the default win patterns available for this game type.
    */
   getDefaultWinPatterns(): DefaultWinPattern[];
+
+  /**
+   * Get all win patterns available for this game type.
+   * Added to ensure compatibility with existing code.
+   */
+  getWinPatterns(): { id: string; name: string; gameType: string; available: boolean; }[];
+  
+  /**
+   * Generate a new random number that hasn't been called yet.
+   * Added to ensure compatibility with existing code.
+   */
+  generateNewNumber(calledItems: number[]): number;
 
   /**
    * Calculate the status of a given ticket against a specific win pattern,

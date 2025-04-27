@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useSessionContext } from '@/contexts/SessionProvider';
+import { parseGameConfigs } from '@/types';
 
 export default function AddPlayers() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -33,7 +34,8 @@ export default function AddPlayers() {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const { addPlayer, bulkAddPlayers, assignTicketsToPlayer } = useSessionContext();
-  
+  const { fetchPlayers } = useSessionContext();
+
   useEffect(() => {
     const fetchSessionById = async (sessionId: string) => {
       try {

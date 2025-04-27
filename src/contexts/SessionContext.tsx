@@ -19,10 +19,11 @@ interface SessionContextProps {
   addPlayer: (sessionId: string, player: TempPlayer) => Promise<string | null>;
   removePlayer: (playerId: string) => Promise<boolean>;
   updatePlayer: (playerId: string, updates: Partial<Player>) => Promise<boolean>;
-  joinSession: (nickname: string, sessionId: string, email?: string) => Promise<any>;
+  joinSession: (playerCode: string) => Promise<any>;
   bulkAddPlayers: (sessionId: string, players: AdminTempPlayer[]) => Promise<any>;
   loading: boolean;
   error: string;
+  isLoading: boolean;
 }
 
 const SessionContext = createContext<SessionContextProps | undefined>(undefined);
@@ -38,7 +39,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     fetchSessionById,
     setCurrentSession,
     joinSessionWithCode,
-    loading: sessionsLoading,
+    isLoading: sessionsLoading,
     error: sessionsError
   } = useSessions();
 
@@ -77,7 +78,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         joinSession,
         bulkAddPlayers,
         loading,
-        error
+        error,
+        isLoading: loading
       }}
     >
       {children}

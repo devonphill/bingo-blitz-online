@@ -26,3 +26,17 @@ export function parseJson<T>(json: Json | undefined | null): T | null {
 export function prepareForDatabase(data: any): Json {
   return JSON.parse(JSON.stringify(data));
 }
+
+// Helper function to safely convert Json to GameConfig[]
+export function parseGameConfigs(json: Json): import('./index').GameConfig[] {
+  if (!json || !Array.isArray(json)) {
+    return [];
+  }
+  
+  return json.map((item: any) => ({
+    gameNumber: item.gameNumber || 1,
+    gameType: item.gameType || 'mainstage',
+    patterns: item.patterns || {},
+    session_id: item.session_id
+  }));
+}

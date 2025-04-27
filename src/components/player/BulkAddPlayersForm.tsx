@@ -1,122 +1,148 @@
 
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AdminTempPlayer, TempPlayer } from "@/types";
-import { useSessionContext } from "@/contexts/SessionProvider";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { generateAccessCode } from '@/utils/accessCodeGenerator';
+import { useSessionContext } from "@/contexts/SessionProvider";
+import { AdminTempPlayer } from "@/contexts/usePlayers";
+import { generatePlayerCode } from '@/utils/accessCodeGenerator';
 
-export function BulkAddPlayersForm() {
-  const [bulkData, setBulkData] = useState<string>('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const { bulkAddPlayers, currentSession } = useSessionContext();
+export default function BulkAddPlayersForm() {
+  const [bulkPlayersText, setBulkPlayersText] = useState("");
+  const [delimiter, setDelimiter] = useState(",");
+  const [isLoading, setIsLoading] = useState(false);
+  const { currentSession, bulkAddPlayers } = useSessionContext();
   const { toast } = useToast();
 
-  const parseBulkData = (data: string): AdminTempPlayer[] => {
-    const lines = data.trim().split('\n');
-    return lines
-      .filter(line => line.trim())
-      .map(line => {
-        const [nickname, email, ticketsStr, playerCode] = line.split(',').map(part => part.trim());
-        const tickets = parseInt(ticketsStr || '1', 10);
-        
-        return {
-          nickname: nickname || 'Guest',
-          email: email || '',
-          tickets: tickets,
-          ticketCount: tickets,
-          playerCode: playerCode || generateAccessCode(6)
-        };
-      });
-  };
-
+  // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!currentSession) {
+    if (!currentSession || !bulkAddPlayers) {
       toast({
         title: "Error",
-        description: "No session selected",
+        description: "No active session found",
         variant: "destructive"
       });
       return;
     }
     
+    setIsLoading(true);
+    
     try {
-      setIsSubmitting(true);
-      const parsedPlayers = parseBulkData(bulkData);
+      // Parse the bulk text
+      const players = parseBulkPlayersText(bulkPlayersText, delimiter);
       
-      if (parsedPlayers.length === 0) {
+      if (players.length === 0) {
         toast({
-          title: "Error",
-          description: "No valid player data found",
+          title: "No players found",
+          description: "Please check your input format",
           variant: "destructive"
         });
         return;
       }
       
-      const result = await bulkAddPlayers(currentSession.id, parsedPlayers);
+      // Add the players to the session
+      const result = await bulkAddPlayers(currentSession.id, players);
       
       if (result.success) {
         toast({
-          title: "Players Added",
-          description: `Successfully added ${result.count} players`
+          title: "Success",
+          description: `Added ${result.count || players.length} players to the session`
         });
-        setBulkData('');
+        setBulkPlayersText("");
       } else {
         toast({
           title: "Error",
-          description: result.error || "Failed to add players",
+          description: result.message || "Failed to add players",
           variant: "destructive"
         });
       }
     } catch (err) {
+      console.error("Error adding players:", err);
       toast({
         title: "Error",
-        description: (err as Error).message || "An error occurred",
+        description: "An unexpected error occurred",
         variant: "destructive"
       });
     } finally {
-      setIsSubmitting(false);
+      setIsLoading(false);
     }
+  };
+
+  // Parse bulk text into player objects
+  const parseBulkPlayersText = (text: string, delimiter: string): AdminTempPlayer[] => {
+    if (!text.trim()) return [];
+    
+    return text.split('\n')
+      .filter(line => line.trim())
+      .map(line => {
+        const parts = line.split(delimiter).map(part => part.trim());
+        
+        // Get each part with fallbacks
+        const nickname = parts[0] || `Player ${Math.floor(Math.random() * 1000)}`;
+        const email = parts[1] || "";
+        const ticketCount = parseInt(parts[2], 10) || 1;
+        
+        // Generate a player code
+        const playerCode = generatePlayerCode();
+        
+        return {
+          nickname,
+          email,
+          ticketCount,
+          playerCode,
+          tickets: ticketCount
+        };
+      });
   };
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Bulk Add Players</CardTitle>
-        <CardDescription>
-          Add multiple players at once by entering each player on a new line with the format:
-          <br />
-          <code>Name, Email, Tickets, PlayerCode (optional)</code>
-        </CardDescription>
       </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit}>
-          <div className="grid gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="bulkData">Player Data</Label>
-              <Textarea
-                id="bulkData"
-                value={bulkData}
-                onChange={(e) => setBulkData(e.target.value)}
-                placeholder="John Doe, john@example.com, 2&#10;Jane Smith, jane@example.com, 3"
-                rows={10}
-                className="resize-none"
-              />
-            </div>
+      <form onSubmit={handleSubmit}>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="delimiter">Delimiter</Label>
+            <Input 
+              id="delimiter" 
+              value={delimiter} 
+              onChange={(e) => setDelimiter(e.target.value)}
+              placeholder="Delimiter character"
+              className="max-w-xs"
+            />
+            <p className="text-sm text-muted-foreground">
+              Character used to separate name, email, and tickets (default: comma)
+            </p>
           </div>
-          <Button type="submit" className="mt-4" disabled={isSubmitting || !bulkData.trim()}>
-            {isSubmitting ? "Adding Players..." : "Add Players"}
+          
+          <div className="space-y-2">
+            <Label htmlFor="bulkText">Players List</Label>
+            <Textarea 
+              id="bulkText"
+              value={bulkPlayersText}
+              onChange={(e) => setBulkPlayersText(e.target.value)}
+              placeholder="Name, Email, Tickets&#10;John Doe, john@example.com, 2&#10;Jane Smith, jane@example.com, 1"
+              className="min-h-32"
+            />
+            <p className="text-sm text-muted-foreground">
+              Enter one player per line with format: Name{delimiter} Email{delimiter} Tickets
+            </p>
+          </div>
+        </CardContent>
+        <CardFooter>
+          <Button type="submit" disabled={isLoading || !bulkPlayersText.trim()}>
+            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Add Players
           </Button>
-        </form>
-      </CardContent>
-      <CardFooter className="flex justify-between text-sm text-muted-foreground">
-        <p>Example: Mark Smith, mark@example.com, 2</p>
-      </CardFooter>
+        </CardFooter>
+      </form>
     </Card>
   );
 }
