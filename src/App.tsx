@@ -1,4 +1,3 @@
-
 import { BrowserRouter as Router, Routes, Route, useEffect } from "react-router-dom";
 import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";

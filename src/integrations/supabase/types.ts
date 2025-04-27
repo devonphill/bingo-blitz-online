@@ -122,6 +122,7 @@ export type Database = {
       game_sessions: {
         Row: {
           access_code: string
+          called_items: string | null
           created_at: string
           created_by: string
           current_game: number
@@ -137,6 +138,7 @@ export type Database = {
         }
         Insert: {
           access_code: string
+          called_items?: string | null
           created_at?: string
           created_by: string
           current_game?: number
@@ -152,6 +154,7 @@ export type Database = {
         }
         Update: {
           access_code?: string
+          called_items?: string | null
           created_at?: string
           created_by?: string
           current_game?: number
@@ -286,6 +289,7 @@ export type Database = {
       }
       universal_game_logs: {
         Row: {
+          called_items: string | null
           called_numbers: number[]
           caller_id: string | null
           claimed_at: string
@@ -315,6 +319,7 @@ export type Database = {
           win_pattern: string
         }
         Insert: {
+          called_items?: string | null
           called_numbers: number[]
           caller_id?: string | null
           claimed_at?: string
@@ -344,6 +349,7 @@ export type Database = {
           win_pattern: string
         }
         Update: {
+          called_items?: string | null
           called_numbers?: number[]
           caller_id?: string | null
           claimed_at?: string

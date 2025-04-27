@@ -1,89 +1,53 @@
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { SessionProgress } from '@/types';
 
 export function useClaimManagement(sessionId: string | undefined, gameNumber: number | undefined) {
-  const [pendingClaims, setPendingClaims] = useState<any[]>([]);
   const [isProcessingClaim, setIsProcessingClaim] = useState(false);
   const { toast } = useToast();
 
-  const fetchPendingClaims = useCallback(async () => {
-    if (!sessionId || !gameNumber) return [];
-    
-    try {
-      // Use universal_game_logs instead of bingo_claims
-      const { data, error } = await supabase
-        .from('universal_game_logs')
-        .select('*')
-        .eq('session_id', sessionId)
-        .eq('game_number', gameNumber)
-        .eq('status', 'pending');
-        
-      if (error) {
-        console.error("Error fetching claims:", error);
-        return [];
-      }
-      
-      return data || [];
-    } catch (err) {
-      console.error("Error in fetchPendingClaims:", err);
-      return [];
+  const validateClaim = useCallback(async (
+    playerId: string, 
+    playerName: string,
+    winPatternId: string,
+    currentCalledNumbers: number[],
+    lastCalledNumber: number | null,
+    ticketData: {
+      serial: string;
+      perm: number;
+      position: number;
+      layoutMask: number;
+      numbers: number[];
     }
-  }, [sessionId, gameNumber]);
-
-  useEffect(() => {
-    fetchPendingClaims().then(claims => setPendingClaims(claims));
-  }, [fetchPendingClaims]);
-
-  const validateClaim = useCallback(async (claimId: string, playerId: string) => {
+  ) => {
     if (!sessionId || !gameNumber) return false;
 
     setIsProcessingClaim(true);
     try {
-      // Fetch player info
-      const { data: playerData, error: playerError } = await supabase
-        .from('players')
-        .select('*')
-        .eq('id', playerId)
-        .single();
-
-      if (playerError) {
-        console.error("Error fetching player data:", playerError);
-        toast({
-          title: "Error",
-          description: "Failed to fetch player data.",
-          variant: "destructive"
-        });
-        return false;
-      }
-
-      // Fetch session info
-      const { data: sessionData, error: sessionError } = await supabase
-        .from('game_sessions')
-        .select('*')
-        .eq('id', sessionId)
-        .single();
-
-      if (sessionError) {
-        console.error("Error fetching session data:", sessionError);
-        toast({
-          title: "Error",
-          description: "Failed to fetch session data.",
-          variant: "destructive"
-        });
-        return false;
-      }
-
-      // Update the claim status in universal_game_logs
-      const { error: updateError } = await supabase
+      // Save the validation record directly to universal_game_logs
+      const { error: logError } = await supabase
         .from('universal_game_logs')
-        .update({ status: 'validated', validated_at: new Date().toISOString() })
-        .eq('id', claimId);
+        .insert({
+          session_id: sessionId,
+          game_number: gameNumber,
+          player_id: playerId,
+          player_name: playerName,
+          ticket_serial: ticketData.serial,
+          ticket_perm: ticketData.perm,
+          ticket_position: ticketData.position,
+          ticket_layout_mask: ticketData.layoutMask,
+          ticket_numbers: ticketData.numbers,
+          win_pattern: winPatternId,
+          called_numbers: currentCalledNumbers,
+          last_called_number: lastCalledNumber,
+          total_calls: currentCalledNumbers.length,
+          validated_at: new Date().toISOString(),
+          status: 'validated'
+        });
 
-      if (updateError) {
-        console.error("Error validating claim:", updateError);
+      if (logError) {
+        console.error("Error logging claim validation:", logError);
         toast({
           title: "Error",
           description: "Failed to validate claim.",
@@ -91,9 +55,6 @@ export function useClaimManagement(sessionId: string | undefined, gameNumber: nu
         });
         return false;
       }
-
-      // Update local state
-      setPendingClaims(prev => prev.filter(claim => claim.id !== claimId));
 
       toast({
         title: "Claim Validated",
@@ -113,19 +74,47 @@ export function useClaimManagement(sessionId: string | undefined, gameNumber: nu
     }
   }, [sessionId, gameNumber, toast]);
 
-  const rejectClaim = useCallback(async (claimId: string) => {
+  const rejectClaim = useCallback(async (
+    playerId: string,
+    playerName: string,
+    winPatternId: string,
+    currentCalledNumbers: number[],
+    lastCalledNumber: number | null,
+    ticketData: {
+      serial: string;
+      perm: number;
+      position: number;
+      layoutMask: number;
+      numbers: number[];
+    }
+  ) => {
     if (!sessionId || !gameNumber) return false;
 
     setIsProcessingClaim(true);
     try {
-      // Update the claim status to 'rejected' in universal_game_logs
-      const { error: updateError } = await supabase
+      // Log the rejected claim in universal_game_logs
+      const { error: logError } = await supabase
         .from('universal_game_logs')
-        .update({ status: 'rejected' })
-        .eq('id', claimId);
+        .insert({
+          session_id: sessionId,
+          game_number: gameNumber,
+          player_id: playerId,
+          player_name: playerName,
+          ticket_serial: ticketData.serial,
+          ticket_perm: ticketData.perm,
+          ticket_position: ticketData.position,
+          ticket_layout_mask: ticketData.layoutMask,
+          ticket_numbers: ticketData.numbers,
+          win_pattern: winPatternId,
+          called_numbers: currentCalledNumbers,
+          last_called_number: lastCalledNumber,
+          total_calls: currentCalledNumbers.length,
+          validated_at: new Date().toISOString(),
+          status: 'rejected'
+        });
 
-      if (updateError) {
-        console.error("Error rejecting claim:", updateError);
+      if (logError) {
+        console.error("Error logging claim rejection:", logError);
         toast({
           title: "Error",
           description: "Failed to reject claim.",
@@ -133,9 +122,6 @@ export function useClaimManagement(sessionId: string | undefined, gameNumber: nu
         });
         return false;
       }
-
-      // Update local state
-      setPendingClaims(prev => prev.filter(claim => claim.id !== claimId));
 
       toast({
         title: "Claim Rejected",
@@ -156,8 +142,6 @@ export function useClaimManagement(sessionId: string | undefined, gameNumber: nu
   }, [sessionId, gameNumber, toast]);
 
   return {
-    pendingClaims,
-    fetchPendingClaims,
     validateClaim,
     rejectClaim,
     isProcessingClaim
