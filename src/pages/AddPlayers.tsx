@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useSessionContext } from '@/contexts/SessionProvider';
 import BulkAddPlayersForm from '@/components/player/BulkAddPlayersForm';
@@ -86,13 +85,9 @@ export default function AddPlayers() {
     
     try {
       if (currentSession.games_config) {
-        // Convert games_config to JSON-safe format first
-        const jsonConfig = prepareForDatabase(currentSession.games_config);
-        
+        // Use the game configs directly
         await updateSession(sessionId, {
           ...currentSession,
-          // The updateSession function in the context should handle the conversion correctly
-          games_config: currentSession.games_config 
         });
       }
     } catch (error) {

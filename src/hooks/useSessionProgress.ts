@@ -55,8 +55,8 @@ export function useSessionProgress(sessionId?: string) {
           current_game_type: (data?.current_game_type || 'mainstage') as GameType,
           created_at: data?.created_at || '',
           updated_at: data?.updated_at || '',
-          called_numbers: data?.called_numbers as number[] || [],
-          game_status: data?.game_status as 'pending' | 'active' | 'completed' || 'pending'
+          called_numbers: Array.isArray(data?.called_numbers) ? data.called_numbers : [],
+          game_status: (data?.game_status as 'pending' | 'active' | 'completed') || 'pending'
         };
         
         setProgress(progressData);
@@ -98,8 +98,8 @@ export function useSessionProgress(sessionId?: string) {
             current_game_type: (newData.current_game_type || 'mainstage') as GameType,
             created_at: newData.created_at || '',
             updated_at: newData.updated_at || '',
-            called_numbers: newData.called_numbers as number[] || [],
-            game_status: newData.game_status as 'pending' | 'active' | 'completed' || 'pending'
+            called_numbers: Array.isArray(newData.called_numbers) ? newData.called_numbers : [],
+            game_status: (newData.game_status as 'pending' | 'active' | 'completed') || 'pending'
           };
           
           setProgress(updatedProgress);
