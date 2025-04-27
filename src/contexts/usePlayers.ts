@@ -26,10 +26,10 @@ export function usePlayers(sessions: GameSession[], fetchSessions: () => Promise
     
     const player: Player = {
       id: data.id,
-      session_id: data.session_id,
+      sessionId: data.session_id,
       nickname: data.nickname,
-      joined_at: data.joined_at,
-      player_code: data.player_code,
+      joinedAt: data.joined_at,
+      playerCode: data.player_code,
       email: data.email,
       tickets: data.tickets
     };
@@ -41,7 +41,7 @@ export function usePlayers(sessions: GameSession[], fetchSessions: () => Promise
       .from('assigned_tickets')
       .select('id')
       .eq('player_id', player.id)
-      .eq('session_id', player.session_id);
+      .eq('session_id', player.sessionId);
 
     if (checkError) {
       console.error("Error checking assigned tickets:", checkError);
@@ -56,7 +56,7 @@ export function usePlayers(sessions: GameSession[], fetchSessions: () => Promise
       .from('assigned_tickets')
       .select('perm')
       .eq('player_id', player.id)
-      .eq('session_id', player.session_id);
+      .eq('session_id', player.sessionId);
       
     // Get unique perm values
     const uniquePerms = existingPermsData ? [...new Set(existingPermsData.map(item => item.perm))] : [];
@@ -65,7 +65,7 @@ export function usePlayers(sessions: GameSession[], fetchSessions: () => Promise
     
     if (permsCount < player.tickets) {
       console.log(`Assigning ${player.tickets - permsCount} more strips to player`);
-      await assignTicketsToPlayer(player.id, player.session_id, player.tickets);
+      await assignTicketsToPlayer(player.id, player.sessionId, player.tickets);
     } else {
       console.log("Player already has all needed tickets assigned");
     }

@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { GameConfig, DEFAULT_PATTERN_ORDER, WinPatternConfig, GameType } from '@/types';
+import { GameConfig, WinPatternConfig, GameType, DEFAULT_PATTERN_ORDER } from '@/types';
 import { normalizeGameConfig } from '@/utils/gameConfigHelper';
 import { Json } from '@/types/json';
 
@@ -30,7 +30,7 @@ export function useGameData(sessionId: string | undefined) {
       let configs: GameConfig[] = [];
 
       if (data.games_config && Array.isArray(data.games_config)) {
-        configs = data.games_config.map(config => normalizeGameConfig(config));
+        configs = (data.games_config as any[]).map(config => normalizeGameConfig(config));
       } else {
         // If no configs exist yet, create a default one based on game_type
         const gameType = (data.game_type || 'mainstage') as GameType;
@@ -51,7 +51,7 @@ export function useGameData(sessionId: string | undefined) {
 
     try {
       // Convert GameConfig[] to a JSON-compatible format
-      const jsonConfigs: Json = JSON.parse(JSON.stringify(configs));
+      const jsonConfigs = JSON.parse(JSON.stringify(configs));
       
       const { error } = await supabase
         .from('game_sessions')

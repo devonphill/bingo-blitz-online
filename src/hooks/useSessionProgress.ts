@@ -5,13 +5,15 @@ import { SessionProgress } from '@/types';
 
 export function useSessionProgress(sessionId: string | undefined) {
   const [progress, setProgress] = useState<SessionProgress | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const fetchProgress = useCallback(async () => {
+  
+  const fetchSessionProgress = useCallback(async () => {
     if (!sessionId) return;
     
-    setLoading(true);
+    setIsLoading(true);
+    setError(null);
+    
     try {
       const { data, error } = await supabase
         .from('sessions_progress')
@@ -26,52 +28,32 @@ export function useSessionProgress(sessionId: string | undefined) {
       }
       
       setProgress(data as SessionProgress);
-      setError(null);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      console.error("Exception in fetchSessionProgress:", err);
+      setError('An unexpected error occurred');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   }, [sessionId]);
   
-  const updateProgress = useCallback(async (updates: Partial<SessionProgress>) => {
-    if (!sessionId || !progress) return false;
-    
-    try {
-      const { error } = await supabase
-        .from('sessions_progress')
-        .update(updates)
-        .eq('session_id', sessionId);
-        
-      if (error) {
-        console.error("Error updating session progress:", error);
-        return false;
-      }
-      
-      setProgress(prev => prev ? { ...prev, ...updates } : null);
-      return true;
-    } catch (err: any) {
-      console.error("Exception updating session progress:", err);
-      return false;
-    }
-  }, [sessionId, progress]);
-  
-  // Setup realtime subscription
   useEffect(() => {
-    if (!sessionId) return;
+    fetchSessionProgress();
     
-    // Fetch initial progress
-    fetchProgress();
+    if (!sessionId) return;
     
     // Subscribe to changes
     const channel = supabase
-      .channel('sessions_progress_changes')
+      .channel(`session-progress-${sessionId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'sessions_progress', filter: `session_id=eq.${sessionId}` },
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'sessions_progress',
+          filter: `session_id=eq.${sessionId}`
+        },
         (payload) => {
-          console.log('Session progress changed:', payload);
-          fetchProgress();
+          setProgress(payload.new as SessionProgress);
         }
       )
       .subscribe();
@@ -79,13 +61,7 @@ export function useSessionProgress(sessionId: string | undefined) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [sessionId, fetchProgress]);
+  }, [sessionId, fetchSessionProgress]);
   
-  return {
-    progress,
-    loading,
-    error,
-    fetchProgress,
-    updateProgress
-  };
+  return { progress, isLoading, error, fetchSessionProgress };
 }

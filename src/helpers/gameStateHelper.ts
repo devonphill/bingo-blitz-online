@@ -5,7 +5,9 @@ import { GameState, GameType } from '@/types';
 export const getInitialGameState = (gameType: GameType): GameState => ({
   gameNumber: 1,
   gameType,
+  activePatternIds: [],
   calledItems: [],
   lastCalledItem: null,
-  status: 'pending'
+  status: 'pending',
+  prizes: {}
 });

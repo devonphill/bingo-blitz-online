@@ -24,19 +24,19 @@ export default function GameTypeSelector({
         </Button>
         <Button
           variant={currentGameType === 'party' ? 'default' : 'outline'}
-          onClick={() => onGameTypeSelect('party')}
+          onClick={() => onGameTypeSelect('party' as GameType)}
         >
           Party Bingo
         </Button>
         <Button
           variant={currentGameType === 'quiz' ? 'default' : 'outline'}
-          onClick={() => onGameTypeSelect('quiz')}
+          onClick={() => onGameTypeSelect('quiz' as GameType)}
         >
           Quiz Bingo
         </Button>
         <Button
           variant={currentGameType === 'music' ? 'default' : 'outline'}
-          onClick={() => onGameTypeSelect('music')}
+          onClick={() => onGameTypeSelect('music' as GameType)}
         >
           Music Bingo
         </Button>

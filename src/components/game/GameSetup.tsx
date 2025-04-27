@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import { useSessions } from "@/contexts/useSessions";
+import { useSessionContext } from "@/contexts/SessionProvider";
 import { GameType, PrizeDetails, GameConfig, WinPatternConfig } from "@/types";
 import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
 import { useToast } from "@/hooks/use-toast";
@@ -10,7 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toJsonSafe } from '@/utils/jsonUtils';
 
 export function GameSetup() {
-  const { currentSession, updateSession } = useSessions();
+  const { currentSession, updateSession } = useSessionContext();
   const { toast } = useToast();
   
   const [gameConfigs, setGameConfigs] = useState<GameConfig[]>([]);
@@ -362,6 +361,7 @@ export function GameSetup() {
 
   return (
     <div className="space-y-6">
+      <h2 className="text-2xl font-bold">Game Setup</h2>
       {adaptedGameConfigsForForms.map((config, index) => (
         <GameConfigForm
           key={index}

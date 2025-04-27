@@ -39,22 +39,38 @@ interface SessionProviderProps {
 }
 
 export function SessionProvider({ children }: SessionProviderProps) {
-  const sessionData = useSessions();
+  const { 
+    sessions, 
+    currentSession, 
+    setCurrentSession: setSessionById,
+    getSessionByCode,
+    fetchSessions,
+    updateSession,
+    isLoading,
+    error 
+  } = useSessions();
+  
   const ticketsHook = useTickets();
   const playersHook = usePlayers(
-    sessionData.sessions,
-    sessionData.fetchSessions,
+    sessions,
+    fetchSessions,
     ticketsHook.assignTicketsToPlayer
   );
 
   // Create a wrapper function for setCurrentSession that accepts a string
   const setCurrentSession = (sessionId: string | null) => {
-    sessionData.setCurrentSession(sessionId);
+    setSessionById(sessionId);
   };
 
   const contextValue: SessionContextType = {
-    ...sessionData,
+    sessions,
+    currentSession,
     setCurrentSession,
+    getSessionByCode,
+    fetchSessions,
+    updateSession,
+    isLoading,
+    error,
     players: playersHook.players,
     joinSession: async (playerCode: string) => {
       try {

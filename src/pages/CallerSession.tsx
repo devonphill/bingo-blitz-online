@@ -1,7 +1,10 @@
+
+// This is a very large file, so we'll focus on fixing specific sections
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { GameSession, GameType, CurrentGameState, PrizeDetails, GameConfig } from '@/types';
+import { GameSession, GameType, CurrentGameState, PrizeDetails, GameConfig, GameState } from '@/types';
 import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
 import { useToast } from "@/hooks/use-toast";
 import { GameSetupView } from '@/components/caller/GameSetupView';
@@ -96,17 +99,16 @@ export default function CallerSession() {
         console.log("Setting state from first game config:", firstConfig);
         setCurrentGameType(firstConfig.gameType);
         
-        if (firstConfig.selectedPatterns) {
-          setSelectedPatterns(firstConfig.selectedPatterns);
-        } else {
-          const activePatterns = Object.entries(firstConfig.patterns)
-            .filter(([_, config]) => config.active)
-            .map(([patternId]) => patternId);
-          setSelectedPatterns(activePatterns);
-        }
+        // Get active patterns from the patterns property
+        const activePatterns = Object.entries(firstConfig.patterns || {})
+          .filter(([_, config]) => config.active)
+          .map(([patternId]) => patternId);
+          
+        setSelectedPatterns(activePatterns);
         
+        // Convert patterns to prizes format for backward compatibility
         const convertedPrizes: {[patternId: string]: PrizeDetails} = {};
-        Object.entries(firstConfig.patterns).forEach(([patternId, config]) => {
+        Object.entries(firstConfig.patterns || {}).forEach(([patternId, config]) => {
           convertedPrizes[patternId] = {
             amount: config.prizeAmount,
             isNonCash: config.isNonCash,
@@ -146,9 +148,10 @@ export default function CallerSession() {
 
       if (sessionId) {
         try {
+          // Try to get called numbers from sessions_progress
           const { data: progressData } = await supabase
             .from('sessions_progress')
-            .select('called_numbers')
+            .select('*')
             .eq('session_id', sessionId)
             .single();
             
@@ -157,6 +160,14 @@ export default function CallerSession() {
             
             if (progressData.called_numbers.length > 0) {
               setCurrentNumber(progressData.called_numbers[progressData.called_numbers.length - 1]);
+            }
+          } else {
+            // If called_numbers doesn't exist in sessions_progress, check the session's current_game_state
+            if (data.current_game_state && 
+                data.current_game_state.calledItems && 
+                Array.isArray(data.current_game_state.calledItems)) {
+              setCalledNumbers(data.current_game_state.calledItems);
+              setCurrentNumber(data.current_game_state.lastCalledItem);
             }
           }
         } catch (err) {
@@ -589,6 +600,7 @@ export default function CallerSession() {
     if (!sessionId) return;
 
     try {
+      // Changed from 'bingo_claims' to 'universal_game_logs'
       const { data: claims, error } = await supabase
         .from('universal_game_logs')
         .select('id, player_id, claimed_at, player_name')
@@ -604,41 +616,39 @@ export default function CallerSession() {
           description: "Failed to check for pending claims. Please try again.",
           variant: "destructive",
         });
-      } else {
+      } else if (claims && claims.length > 0) {
         setPendingClaims(claims || []);
         
-        if (claims && claims.length > 0) {
-          const firstClaim = claims[0];
+        const firstClaim = claims[0];
+        
+        const { data: ticketData, error: ticketError } = await supabase
+          .from('assigned_tickets')
+          .select('*')
+          .eq('player_id', firstClaim.player_id)
+          .eq('session_id', sessionId);
           
-          const { data: ticketData, error: ticketError } = await supabase
-            .from('assigned_tickets')
-            .select('*')
-            .eq('player_id', firstClaim.player_id)
-            .eq('session_id', sessionId);
-            
-          if (ticketError) {
-            console.error("Error fetching ticket data:", ticketError);
-          } else {
-            setCurrentClaim({
-              playerName: firstClaim.player_name || 'Unknown',
-              playerId: firstClaim.player_id,
-              tickets: ticketData || [],
-              claimId: firstClaim.id
-            });
-            
-            setShowClaimSheet(true);
-            
-            toast({
-              title: "Claim ready for verification",
-              description: `${firstClaim.player_name || 'A player'} has claimed bingo!`,
-            });
-          }
+        if (ticketError) {
+          console.error("Error fetching ticket data:", ticketError);
         } else {
+          setCurrentClaim({
+            playerName: firstClaim.player_name || 'Unknown',
+            playerId: firstClaim.player_id,
+            tickets: ticketData || [],
+            claimId: firstClaim.id
+          });
+          
+          setShowClaimSheet(true);
+          
           toast({
-            title: "No claims",
-            description: "There are no pending claims at this time.",
+            title: "Claim ready for verification",
+            description: `${firstClaim.player_name || 'A player'} has claimed bingo!`,
           });
         }
+      } else {
+        toast({
+          title: "No claims",
+          description: "There are no pending claims at this time.",
+        });
       }
     } catch (err) {
       console.error("Exception during claims check:", err);

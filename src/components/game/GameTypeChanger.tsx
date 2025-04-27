@@ -1,11 +1,11 @@
 
 import React from 'react';
 import { Button } from "@/components/ui/button";
-import { useSessions } from "@/contexts/useSessions";
+import { useSessionContext } from "@/contexts/SessionProvider";
 import { GameType } from "@/types";
 
 export function GameTypeChanger() {
-  const { currentSession, updateSession } = useSessions();
+  const { currentSession, updateSession } = useSessionContext();
   
   const changeGameType = async (newType: GameType) => {
     if (!currentSession) return;
@@ -48,7 +48,7 @@ export function GameTypeChanger() {
         </Button>
         <Button 
           variant={currentSession?.gameType === 'party' ? 'default' : 'outline'}
-          onClick={() => changeGameType('party')}
+          onClick={() => changeGameType('party' as GameType)}
         >
           Party Bingo
         </Button>

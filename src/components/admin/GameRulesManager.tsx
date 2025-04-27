@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { GameType, GAME_RULES } from "@/types";
 
 export function GameRulesManager() {
-  const gameTypes: GameType[] = ['mainstage', 'party', 'quiz', 'music', 'logo'];
+  const gameTypes: GameType[] = ['mainstage', 'party' as GameType, 'quiz' as GameType, 'music' as GameType, 'logo' as GameType];
 
   return (
     <Card className="w-full max-w-4xl mx-auto">
@@ -28,29 +28,29 @@ export function GameRulesManager() {
                 <div className="col-span-2">
                   <dt className="text-sm font-medium text-gray-500">Win Patterns</dt>
                   <dd className="flex flex-wrap gap-2">
-                    {GAME_RULES[type].patterns.map((pattern) => (
+                    {GAME_RULES[type].patterns.map((pattern: string) => (
                       <span key={pattern} className="px-2 py-1 bg-gray-100 rounded text-sm">
                         {pattern}
                       </span>
                     ))}
                   </dd>
                 </div>
-                {type === 'quiz' && (
+                {type === 'quiz' as GameType && (
                   <div>
                     <dt className="text-sm font-medium text-gray-500">Question Time</dt>
-                    <dd>{GAME_RULES.quiz.questionTime} seconds</dd>
+                    <dd>{GAME_RULES['quiz'].questionTime} seconds</dd>
                   </div>
                 )}
-                {type === 'music' && (
+                {type === 'music' as GameType && (
                   <div>
                     <dt className="text-sm font-medium text-gray-500">Song Duration</dt>
-                    <dd>{GAME_RULES.music.songDuration} seconds</dd>
+                    <dd>{GAME_RULES['music'].songDuration} seconds</dd>
                   </div>
                 )}
-                {type === 'logo' && (
+                {type === 'logo' as GameType && (
                   <div>
                     <dt className="text-sm font-medium text-gray-500">Logo Display Time</dt>
-                    <dd>{GAME_RULES.logo.logoDisplayTime} seconds</dd>
+                    <dd>{GAME_RULES['logo'].logoDisplayTime} seconds</dd>
                   </div>
                 )}
               </dl>

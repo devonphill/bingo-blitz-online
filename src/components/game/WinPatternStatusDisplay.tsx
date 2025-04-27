@@ -1,83 +1,52 @@
+
 import React from 'react';
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
 import { DEFAULT_PATTERN_ORDER } from '@/types';
+import { GameType } from '@/types/winPattern';
 
 interface WinPatternStatusDisplayProps {
-  patterns: Array<{
-    id: string;
-    name: string;
-    active: boolean;
-  }>;
-  currentActive: string | null;
-  gameIsLive: boolean;
+  gameType: GameType;
+  activePatternId: string | null;
+  completedPatternIds?: string[];
 }
 
 export function WinPatternStatusDisplay({ 
-  patterns, 
-  currentActive,
-  gameIsLive
+  gameType,
+  activePatternId,
+  completedPatternIds = []
 }: WinPatternStatusDisplayProps) {
-  // Sort patterns according to standard game progression where possible
-  const sortedPatterns = [...patterns].sort((a, b) => {
-    // Extract base pattern IDs without prefixes
-    const aBaseId = a.id.replace('MAINSTAGE_', '');
-    const bBaseId = b.id.replace('MAINSTAGE_', '');
-    
-    // Try to find these in standard order arrays
-    const gameTypes = Object.keys(DEFAULT_PATTERN_ORDER) as Array<keyof typeof DEFAULT_PATTERN_ORDER>;
-    const aGameTypeIndex = gameTypes.findIndex(type => 
-      DEFAULT_PATTERN_ORDER[type].includes(aBaseId as any)
-    );
-    const bGameTypeIndex = gameTypes.findIndex(type => 
-      DEFAULT_PATTERN_ORDER[type].includes(bBaseId as any)
-    );
-    
-    // If both found in same standard order array
-    if (aGameTypeIndex !== -1 && bGameTypeIndex !== -1 && aGameTypeIndex === bGameTypeIndex) {
-      const orderArray = DEFAULT_PATTERN_ORDER[gameTypes[aGameTypeIndex]];
-      return orderArray.indexOf(aBaseId as any) - orderArray.indexOf(bBaseId as any);
-    }
-    
-    // Otherwise sort by active status first, then by name
-    if (a.active !== b.active) {
-      return a.active ? -1 : 1;
-    }
-    
-    return a.name.localeCompare(b.name);
-  });
-
+  // Use DEFAULT_PATTERN_ORDER from types
+  const patternOrder = DEFAULT_PATTERN_ORDER[gameType] || [];
+  
+  const patternNames: Record<string, string> = {
+    'oneLine': 'One Line',
+    'twoLines': 'Two Lines',
+    'fullHouse': 'Full House',
+    'corners': 'Corners',
+    'threeLines': 'Three Lines',
+    'coverAll': 'Cover All'
+  };
+  
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">Current Win Patterns</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-wrap gap-2">
-          {sortedPatterns.map((pattern, index) => (
-            <Button
-              key={pattern.id}
-              variant="outline"
-              size="sm"
-              disabled={!pattern.active}
-              className={`
-                ${!pattern.active ? 'opacity-50' : ''}
-                ${(gameIsLive && pattern.id === currentActive) 
-                  ? 'bg-green-100 border-green-500 text-green-700' 
-                  : ''}
-                ${pattern.active && 'relative'}
-              `}
-            >
-              {pattern.name}
-              {pattern.active && index > 0 && (
-                <span className="absolute -top-2 -right-2 h-4 w-4 bg-gray-200 rounded-full flex items-center justify-center text-xs">
-                  {index + 1}
-                </span>
-              )}
-            </Button>
-          ))}
-        </div>
-      </CardContent>
+    <Card className="p-4">
+      <h3 className="text-sm font-medium mb-2">Win Patterns</h3>
+      <div className="flex flex-wrap gap-2">
+        {patternOrder.map(patternId => {
+          const isActive = activePatternId === patternId;
+          const isCompleted = completedPatternIds.includes(patternId);
+          
+          let variant: 'outline' | 'secondary' | 'default' = 'outline';
+          if (isActive) variant = 'default';
+          else if (isCompleted) variant = 'secondary';
+          
+          return (
+            <Badge key={patternId} variant={variant}>
+              {patternNames[patternId] || patternId}
+            </Badge>
+          );
+        })}
+      </div>
     </Card>
   );
 }

@@ -2,11 +2,11 @@
 export interface WinPattern {
   id: string;
   name: string;
-  gameType: 'mainstage' | 'party' | 'quiz' | 'music' | 'logo';
+  gameType: 'mainstage' | 'party' | 'quiz' | 'music' | 'logo' | '90-ball' | '75-ball' | 'speed' | 'custom';
   available: boolean;
 }
 
-export type GameType = 'mainstage' | 'party' | 'quiz' | 'music' | 'logo';
+export type GameType = 'mainstage' | 'party' | 'quiz' | 'music' | 'logo' | '90-ball' | '75-ball' | 'speed' | 'custom';
 
 export const WIN_PATTERNS: { [key in GameType]: WinPattern[] } = {
   mainstage: [
@@ -35,5 +35,23 @@ export const WIN_PATTERNS: { [key in GameType]: WinPattern[] } = {
     { id: 'oneLine', name: 'One Line', gameType: 'logo', available: true },
     { id: 'twoLines', name: 'Two Lines', gameType: 'logo', available: true },
     { id: 'fullHouse', name: 'Full House', gameType: 'logo', available: true }
+  ],
+  '90-ball': [
+    { id: 'oneLine', name: 'One Line', gameType: '90-ball', available: true },
+    { id: 'twoLines', name: 'Two Lines', gameType: '90-ball', available: true },
+    { id: 'fullHouse', name: 'Full House', gameType: '90-ball', available: true }
+  ],
+  '75-ball': [
+    { id: 'oneLine', name: 'One Line', gameType: '75-ball', available: true },
+    { id: 'coverAll', name: 'Cover All', gameType: '75-ball', available: true }
+  ],
+  speed: [
+    { id: 'oneLine', name: 'One Line', gameType: 'speed', available: true },
+    { id: 'fullHouse', name: 'Full House', gameType: 'speed', available: true }
+  ],
+  custom: [
+    { id: 'oneLine', name: 'One Line', gameType: 'custom', available: true },
+    { id: 'twoLines', name: 'Two Lines', gameType: 'custom', available: true },
+    { id: 'fullHouse', name: 'Full House', gameType: 'custom', available: true }
   ]
 };
