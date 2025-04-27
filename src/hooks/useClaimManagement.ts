@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -24,7 +23,17 @@ export function useClaimManagement(sessionId: string | undefined) {
   const [processingClaim, setProcessingClaim] = useState(false);
   const hasCheckedInitialClaims = useRef(false);
   const { toast } = useToast();
-  const { progressToNextGame, isProcessingGame } = useGameProgression({ id: sessionId } as any);
+  const { progressToNextGame, isProcessingGame } = useGameProgression(
+    sessionId ? { id: sessionId } as any : null, 
+    () => {
+      // This callback will be called when the session is completed
+      console.log("Session completed callback triggered");
+      toast({
+        title: "Session Completed",
+        description: "All games in this session have been completed.",
+      });
+    }
+  );
 
   // Handle closing the claim sheet
   const handleCloseSheet = useCallback(() => {
@@ -217,7 +226,7 @@ export function useClaimManagement(sessionId: string | undefined) {
     }
   }, [claimQueue, currentClaim, processNextClaim, showClaimSheet, processingClaim]);
 
-  // Validate a claim
+  // Validate a claim - enhanced with better game progression
   const validateClaim = useCallback(async (shouldAdvanceGame = false) => {
     if (!currentClaim || !sessionId) return;
     
@@ -261,6 +270,14 @@ export function useClaimManagement(sessionId: string | undefined) {
           if (activePatterns.length > 0) {
             // Get current win pattern (first in the list)
             const currentPattern = activePatterns[0];
+            
+            // Check if this is a fullHouse pattern
+            const isFullHouse = 
+              currentPattern === 'fullHouse' || 
+              currentPattern === 'MAINSTAGE_fullHouse' ||
+              /fullhouse/i.test(currentPattern);
+            
+            console.log("Current pattern:", currentPattern, "Is full house:", isFullHouse);
             
             // Get game progress record for this session
             const { data: progressData, error: progressError } = await supabase
@@ -309,6 +326,13 @@ export function useClaimManagement(sessionId: string | undefined) {
               
               if (updatedPatterns.length === 0 && shouldAdvanceGame) {
                 console.log("No patterns remaining - will advance game");
+                // Explicitly call progressToNextGame if this is a full house win or no patterns remain
+                if (isFullHouse) {
+                  console.log("Full house win - advancing to next game");
+                  setTimeout(() => {
+                    progressToNextGame();
+                  }, 1500);
+                }
               } else if (updatedPatterns.length > 0) {
                 console.log("Updating active patterns in game state:", updatedPatterns);
                 
@@ -319,15 +343,7 @@ export function useClaimManagement(sessionId: string | undefined) {
                 };
                 
                 // Convert to a JSON-compatible object for supabase
-                const gameStateForSupabase = {
-                  gameNumber: updatedGameStateObj.gameNumber,
-                  gameType: updatedGameStateObj.gameType,
-                  activePatternIds: updatedGameStateObj.activePatternIds,
-                  calledItems: updatedGameStateObj.calledItems,
-                  lastCalledItem: updatedGameStateObj.lastCalledItem,
-                  status: updatedGameStateObj.status,
-                  prizes: updatedGameStateObj.prizes ? JSON.parse(JSON.stringify(updatedGameStateObj.prizes)) : {}
-                };
+                const gameStateForSupabase = JSON.parse(JSON.stringify(updatedGameStateObj));
                 
                 const { error: updateSessionError } = await supabase
                   .from('game_sessions')
@@ -339,6 +355,12 @@ export function useClaimManagement(sessionId: string | undefined) {
                 if (updateSessionError) {
                   console.error("Error updating session game state:", updateSessionError);
                 }
+              } else if (isFullHouse && shouldAdvanceGame) {
+                // For full house win, always try to progress to next game even if there are patterns
+                console.log("Full house win - advancing to next game regardless of remaining patterns");
+                setTimeout(() => {
+                  progressToNextGame();
+                }, 1500);
               }
             } else {
               // Create new game progress record
@@ -371,8 +393,12 @@ export function useClaimManagement(sessionId: string | undefined) {
               // Update active patterns in game state
               const updatedPatterns = activePatterns.filter(p => p !== currentPattern);
               
-              if (updatedPatterns.length === 0 && shouldAdvanceGame) {
-                console.log("No patterns remaining in new progress - will advance game");
+              // Check if this is a full house win
+              if ((updatedPatterns.length === 0 || isFullHouse) && shouldAdvanceGame) {
+                console.log("No patterns remaining or full house win - will advance game");
+                setTimeout(() => {
+                  progressToNextGame();
+                }, 1500);
               } else if (updatedPatterns.length > 0) {
                 // Create a safe updated game state object
                 const updatedGameStateObj: CurrentGameState = {
@@ -381,15 +407,7 @@ export function useClaimManagement(sessionId: string | undefined) {
                 };
                 
                 // Convert to a JSON-compatible object for supabase
-                const gameStateForSupabase = {
-                  gameNumber: updatedGameStateObj.gameNumber,
-                  gameType: updatedGameStateObj.gameType,
-                  activePatternIds: updatedGameStateObj.activePatternIds,
-                  calledItems: updatedGameStateObj.calledItems,
-                  lastCalledItem: updatedGameStateObj.lastCalledItem,
-                  status: updatedGameStateObj.status,
-                  prizes: updatedGameStateObj.prizes ? JSON.parse(JSON.stringify(updatedGameStateObj.prizes)) : {}
-                };
+                const gameStateForSupabase = JSON.parse(JSON.stringify(updatedGameStateObj));
                 
                 const { error: updateSessionError } = await supabase
                   .from('game_sessions')
@@ -404,48 +422,16 @@ export function useClaimManagement(sessionId: string | undefined) {
               }
             }
           }
-        } else {
-          console.error("Invalid current_game_state format:", gameStateData);
         }
       }
       
-      // Broadcast the result to all players
-      await supabase
-        .channel('game-updates')
-        .send({
-          type: 'broadcast',
-          event: 'claim-result',
-          payload: { 
-            playerId: currentClaim.playerId,
-            result: 'valid'
-          }
-        });
-      
-      toast({
-        title: "Claim Validated",
-        description: `${currentClaim.playerName}'s claim has been validated.`
-      });
-      
-      // If this is a full house validation and no win patterns remain, progress to the next game
-      if (shouldAdvanceGame) {
-        console.log("Full house win validated, progressing to next game");
-        setTimeout(() => {
-          progressToNextGame();
-        }, 1000);
-      }
-      
-      // The sheet will be closed by the confirmation callback with a delay
-      
+      // Return a success result
+      return true;
     } catch (error) {
       console.error("Error validating claim:", error);
-      
-      toast({
-        title: "Error",
-        description: "Failed to validate the claim. Please try again.",
-        variant: "destructive"
-      });
+      return false;
     }
-  }, [currentClaim, sessionId, toast, progressToNextGame]);
+  }, [currentClaim, sessionId, progressToNextGame, toast]);
 
   // Reject a claim
   const rejectClaim = useCallback(async () => {

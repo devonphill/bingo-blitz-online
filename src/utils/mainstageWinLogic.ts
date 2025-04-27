@@ -13,22 +13,26 @@ export function checkMainstageWinPattern(
     row.filter((num): num is number => num !== null)
   );
 
+  // Get count of completed rows (lines)
   const completedLines = rows.filter(row =>
-    row.every(num => calledNumbers.includes(num))
+    row.length > 0 && row.every(num => calledNumbers.includes(num))
   ).length;
 
   const calculateTG = (requiredLines: number): number => {
     if (completedLines >= requiredLines) return 0;
     
+    // Sort rows by how many numbers are left to be marked
     const remainingLines = rows
       .map(row => {
+        if (row.length === 0) return Infinity;  // Skip empty rows
         const unmarkedCount = row.filter(num => !calledNumbers.includes(num)).length;
         return unmarkedCount;
       })
-      .sort((a, b) => a - b)
-      .slice(0, requiredLines - completedLines);
+      .filter(count => count !== Infinity)  // Filter out empty rows
+      .sort((a, b) => a - b)  // Sort by fewest unmarked numbers
+      .slice(0, requiredLines - completedLines);  // Take only what we need
 
-    return remainingLines.length > 0 ? Math.min(...remainingLines) : 0;
+    return remainingLines.length > 0 ? remainingLines[0] : 0;
   };
 
   // Normalize pattern by removing MAINSTAGE_ prefix if present

@@ -150,7 +150,7 @@ export default function ClaimVerificationSheet({
         }, 1500);
       }
 
-      // Send broadcast to update players' UI
+      // Send broadcast to update players' UI with more details
       try {
         await supabase.channel('player-game-updates')
           .send({
@@ -160,7 +160,8 @@ export default function ClaimVerificationSheet({
               sessionId: currentSession?.id,
               result: 'valid',
               timestamp: new Date().toISOString(),
-              pattern: normalizedWinPattern
+              pattern: normalizedWinPattern,
+              isFullHouse: isFullHouse
             }
           });
       } catch (error) {
@@ -256,7 +257,7 @@ export default function ClaimVerificationSheet({
         }, 1500);
       }
 
-      // Broadcast the claim result
+      // Broadcast the claim result with additional information
       supabase.channel('player-game-updates')
         .send({
           type: 'broadcast',
@@ -265,13 +266,14 @@ export default function ClaimVerificationSheet({
             sessionId: currentSession?.id,
             result: 'valid',
             timestamp: new Date().toISOString(),
-            pattern: normalizedWinPattern
+            pattern: normalizedWinPattern,
+            isFullHouse: isFullHouse
           }
         });
     } else if (actionType === 'false') {
       onFalseClaim();
       
-      // Broadcast the claim result for false claims too
+      // Broadcast the claim result for false claims with additional information
       supabase.channel('player-game-updates')
         .send({
           type: 'broadcast',

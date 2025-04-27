@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -56,7 +55,6 @@ export default function PlayerGame() {
     resetClaimStatus,
   } = usePlayerGame(playerCode);
 
-  // Reset claim status when user has been validated or rejected after 5s
   useEffect(() => {
     if (claimStatus === 'validated' || claimStatus === 'rejected') {
       const timer = setTimeout(() => {
@@ -67,7 +65,6 @@ export default function PlayerGame() {
     }
   }, [claimStatus, resetClaimStatus]);
 
-  // Setup a broadcast channel listener for real-time claim updates
   useEffect(() => {
     if (!playerCode || !currentSession?.id) return;
     
@@ -76,12 +73,22 @@ export default function PlayerGame() {
     const broadcastChannel = supabase.channel('player-game-updates')
       .on('broadcast', { event: 'claim-update' }, (payload) => {
         console.log("Received claim update broadcast:", payload);
-        // Force refreshing game state when claim updates are received
         if (payload.payload && payload.payload.sessionId === currentSession.id) {
           console.log("Refreshing game state due to claim update");
-          // This will trigger a refresh of game state in usePlayerGame
           setAutoMarking(prev => !prev); // Toggle to force update
           setTimeout(() => setAutoMarking(prev => !prev), 50); // Toggle back
+          
+          if (payload.payload.result === 'valid' && isClaiming) {
+            console.log("Resetting claim status due to valid result broadcast");
+            setTimeout(() => {
+              resetClaimStatus();
+            }, 500);
+          } else if (payload.payload.result === 'false' && isClaiming) {
+            console.log("Resetting claim status due to false result broadcast");
+            setTimeout(() => {
+              resetClaimStatus();
+            }, 500);
+          }
         }
       })
       .subscribe();
@@ -90,15 +97,13 @@ export default function PlayerGame() {
       console.log("Cleaning up broadcast channel");
       supabase.removeChannel(broadcastChannel);
     };
-  }, [playerCode, currentSession?.id]);
+  }, [playerCode, currentSession?.id, isClaiming, resetClaimStatus]);
 
-  // IMPROVED: Refined loading logic to fix flickering issues
   const isInitialLoading = isLoading && loadingStep !== 'completed';
   const hasTickets = tickets && tickets.length > 0;
   const isGameActive = currentGameState?.status === 'active';
   const hasSession = !!currentSession;
   
-  // IMPROVED: More stable condition to prevent flickering between loaded and loading states
   const shouldShowLoader = 
     (isInitialLoading && loadingStep !== 'completed') || 
     !!errorMessage || 
@@ -106,15 +111,12 @@ export default function PlayerGame() {
     (!currentGameState && loadingStep !== 'completed') ||
     (!isGameActive && !hasTickets && loadingStep !== 'completed');
 
-  // Once we have successfully loaded all data, we should not show the loader again
-  // This prevents flickering when real-time updates are received
   useEffect(() => {
     if (hasSession && hasTickets && isGameActive && loadingStep === 'completed') {
       console.log('Game fully loaded, stable state reached');
     }
   }, [hasSession, hasTickets, isGameActive, loadingStep]);
 
-  // Get display name for game type
   const getGameTypeDisplayName = () => {
     switch (gameType) {
       case 'mainstage': return 'Mainstage Bingo';
@@ -126,15 +128,12 @@ export default function PlayerGame() {
     }
   };
 
-  // Get formatted win pattern name
   const getWinPatternName = (patternId: string) => {
-    // Remove MAINSTAGE_ prefix for display if present
     const displayPatternId = patternId.replace('MAINSTAGE_', '');
     
     const allPatterns = gameType ? WIN_PATTERNS[gameType] : [];
     const pattern = allPatterns.find(p => p.id === displayPatternId);
     
-    // Display friendly names for common patterns
     if (displayPatternId === 'oneLine') return 'One Line';
     if (displayPatternId === 'twoLines') return 'Two Lines';
     if (displayPatternId === 'fullHouse') return 'Full House';
@@ -142,7 +141,6 @@ export default function PlayerGame() {
     return pattern ? pattern.name : patternId;
   };
 
-  // Log some debug information to help diagnose the flickering issue
   useEffect(() => {
     console.log('Player Game Render State:', {
       isLoading,
@@ -170,7 +168,6 @@ export default function PlayerGame() {
 
   return (
     <div className="min-h-screen flex bg-gray-50">
-      {/* Left Panel */}
       <div className="flex flex-col" style={{width:'30%', minWidth:240, maxWidth:400}}>
         <div className="flex-1 bg-black text-white p-4">
           <h1 className="text-xl font-bold mb-4">
@@ -180,7 +177,6 @@ export default function PlayerGame() {
             Welcome, {playerName || "Player"}
           </div>
           
-          {/* Game Type Display */}
           <div className="mb-6 p-3 bg-gray-800 rounded-lg">
             <h2 className="text-lg font-medium mb-2">Game Type</h2>
             <div className="flex flex-wrap gap-2">
@@ -190,7 +186,6 @@ export default function PlayerGame() {
             </div>
           </div>
           
-          {/* Active Win Patterns Display */}
           {activeWinPatterns && activeWinPatterns.length > 0 && (
             <div className="mb-6 p-3 bg-gray-800 rounded-lg">
               <h2 className="text-lg font-medium mb-2">Active Win Patterns</h2>
@@ -207,7 +202,6 @@ export default function PlayerGame() {
             </div>
           )}
           
-          {/* Claim Bingo Button */}
           <button
             onClick={handleClaimBingo}
             disabled={isClaiming || claimStatus === 'validated' || claimStatus === 'pending'}
@@ -230,7 +224,6 @@ export default function PlayerGame() {
                   : 'CLAIM BINGO!'}
           </button>
           
-          {/* Show a message when claim is being verified */}
           {(isClaiming || claimStatus === 'pending') && (
             <p className="text-xs text-center text-yellow-400 mt-1">
               Your claim is being verified by the caller
@@ -250,7 +243,6 @@ export default function PlayerGame() {
         </div>
       </div>
 
-      {/* Right Panel */}
       <div className="flex-1 bg-gray-50 h-full overflow-y-auto">
         <div className="max-w-7xl mx-auto px-4 py-6">
           <GameTypePlayspace

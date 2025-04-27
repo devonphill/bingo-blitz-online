@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { GameSession } from '@/types';
@@ -8,69 +8,158 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
   const [isProcessingGame, setIsProcessingGame] = useState(false);
   const { toast } = useToast();
 
-  const progressToNextGame = async () => {
-    if (!session || isProcessingGame || !session.id) return;
+  const progressToNextGame = useCallback(async () => {
+    if (!session || isProcessingGame || !session.id) {
+      console.log("Cannot progress game: missing session or already processing", {
+        hasSession: !!session,
+        isProcessing: isProcessingGame,
+        sessionId: session?.id
+      });
+      return;
+    }
+    
     setIsProcessingGame(true);
 
     try {
       console.log("Progressing to next game for session:", session.id);
       
-      // Calculate next game number
-      const currentGameNumber = session.current_game_state?.gameNumber || 1;
+      // Fetch the latest session data to ensure we have current state
+      const { data: latestSessionData, error: fetchError } = await supabase
+        .from('game_sessions')
+        .select('*, current_game_state')
+        .eq('id', session.id)
+        .single();
+        
+      if (fetchError) {
+        console.error("Error fetching latest session data:", fetchError);
+        toast({
+          title: "Error",
+          description: "Failed to fetch latest session data for game progression.",
+          variant: "destructive"
+        });
+        setIsProcessingGame(false);
+        return;
+      }
+      
+      // Calculate next game number using the fetched data
+      const currentGameState = latestSessionData.current_game_state || {};
+      const currentGameNumber = currentGameState.gameNumber || 1;
       const nextGameNumber = currentGameNumber + 1;
       console.log(`Current game: ${currentGameNumber}, Next game: ${nextGameNumber}`);
       
-      const isLastGame = nextGameNumber > (session.numberOfGames || 1);
-      console.log(`Is this the last game? ${isLastGame ? 'Yes' : 'No'}`);
+      // Get total number of games from the session
+      const totalGames = latestSessionData.numberOfGames || 1;
+      const isLastGame = nextGameNumber > totalGames;
+      console.log(`Total games: ${totalGames}, Is this the last game? ${isLastGame ? 'Yes' : 'No'}`);
       
       // Get the next game configuration if available
       let nextGameConfig = null;
-      if (session.games_config && Array.isArray(session.games_config) && session.games_config.length > 0) {
-        nextGameConfig = session.games_config.find(game => game.gameNumber === nextGameNumber);
+      if (latestSessionData.games_config && Array.isArray(latestSessionData.games_config)) {
+        nextGameConfig = latestSessionData.games_config.find(game => game.gameNumber === nextGameNumber);
       }
       
       console.log("Next game config:", nextGameConfig);
       
-      // Setup the next game state
-      const nextGameState = {
-        gameNumber: nextGameNumber,
-        gameType: nextGameConfig?.gameType || session.current_game_state?.gameType || session.gameType,
-        activePatternIds: nextGameConfig?.selectedPatterns || [],
-        calledItems: [],
-        lastCalledItem: null,
-        status: 'active',
-        prizes: nextGameConfig?.prizes || {}
-      };
-      
-      console.log("Updating with next game state:", nextGameState);
-      
-      // Update the session with the new game state
-      const { error } = await supabase
-        .from('game_sessions')
-        .update({ 
-          current_game_state: JSON.parse(JSON.stringify(nextGameState)),
-          status: isLastGame ? 'completed' : 'active'
-        })
-        .eq('id', session.id);
+      if (isLastGame) {
+        // This was the last game, update session status to 'completed'
+        const { error } = await supabase
+          .from('game_sessions')
+          .update({ 
+            status: 'completed',
+            lifecycle_state: 'completed'
+          })
+          .eq('id', session.id);
 
-      if (error) {
-        console.error("Error progressing to next game:", error);
-        toast({
-          title: "Error",
-          description: "Failed to progress to next game.",
-          variant: "destructive"
-        });
-        return;
+        if (error) {
+          console.error("Error completing session:", error);
+          toast({
+            title: "Error",
+            description: "Failed to mark session as completed.",
+            variant: "destructive"
+          });
+        } else {
+          console.log("Session marked as completed");
+          toast({
+            title: "Session Completed",
+            description: "All games in this session have been completed.",
+          });
+          
+          // Trigger the completion callback
+          if (onGameComplete) {
+            onGameComplete();
+          }
+        }
+      } else {
+        // Setup the next game state with proper default values
+        const nextGameState = {
+          gameNumber: nextGameNumber,
+          gameType: nextGameConfig?.gameType || currentGameState.gameType || latestSessionData.gameType,
+          activePatternIds: nextGameConfig?.selectedPatterns || [],
+          calledItems: [],
+          lastCalledItem: null,
+          status: 'active',
+          prizes: nextGameConfig?.prizes || {}
+        };
+        
+        console.log("Updating with next game state:", nextGameState);
+        
+        // Update the session with the new game state
+        const { error } = await supabase
+          .from('game_sessions')
+          .update({ 
+            current_game_state: JSON.parse(JSON.stringify(nextGameState)),
+            status: 'active'
+          })
+          .eq('id', session.id);
+
+        if (error) {
+          console.error("Error progressing to next game:", error);
+          toast({
+            title: "Error",
+            description: "Failed to progress to next game.",
+            variant: "destructive"
+          });
+        } else {
+          console.log(`Successfully progressed to game ${nextGameNumber}`);
+          toast({
+            title: "Game Progress",
+            description: `Moving to game ${nextGameNumber}`,
+          });
+          
+          // Clear any existing game progress for the new game
+          const { error: progressError } = await supabase
+            .from('game_progress')
+            .upsert({
+              session_id: session.id,
+              game_number: nextGameNumber,
+              completed_win_patterns: [],
+              current_win_pattern_id: nextGameConfig?.selectedPatterns?.[0] || null
+            }, {
+              onConflict: 'session_id, game_number'
+            });
+            
+          if (progressError) {
+            console.error("Error initializing game progress:", progressError);
+          }
+          
+          // Broadcast game progression to all clients
+          try {
+            await supabase.channel('player-game-updates')
+              .send({
+                type: 'broadcast',
+                event: 'game-progression',
+                payload: {
+                  sessionId: session.id,
+                  previousGame: currentGameNumber,
+                  newGame: nextGameNumber,
+                  timestamp: new Date().toISOString()
+                }
+              });
+          } catch (error) {
+            console.error("Error broadcasting game progression:", error);
+          }
+        }
       }
-
-      if (isLastGame && onGameComplete) {
-        onGameComplete();
-      }
-
-      toast({
-        title: "Game Progress",
-        description: isLastGame ? "Session completed!" : `Moving to game ${nextGameNumber}`,
-      });
     } catch (err) {
       console.error("Game progression error:", err);
       toast({
@@ -81,7 +170,7 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
     } finally {
       setIsProcessingGame(false);
     }
-  };
+  }, [session, isProcessingGame, toast, onGameComplete]);
 
   return {
     isProcessingGame,
