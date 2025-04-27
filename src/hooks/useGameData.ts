@@ -1,21 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { GameConfiguration, GamePattern, CalledItem, GameType, GameConfig } from '@/types';
-import { Json, isOfType, GameConfigurationType, GamePatternType, CalledItemType, SessionWithActivePattern, WinPatternConfig, isGameConfigItem } from '@/types/json';
-import { getPatternConfig } from '@/types/json';
-
-// Existing type guard functions
-const isGamePattern = (obj: any): obj is GamePattern => {
-  return isOfType<GamePattern>(obj, ['pattern_id', 'game_config_id']);
-};
-
-const isCalledItem = (obj: any): obj is CalledItem => {
-  return isOfType<CalledItem>(obj, ['item_value', 'session_id']);
-};
+import { GameType, CalledItem, GameConfig, WinPatternConfig } from '@/types';
+import { Json } from '@/types/json';
 
 export function useGameData(sessionId?: string, gameNumber?: number) {
-  const [configuration, setConfiguration] = useState<GameConfiguration | null>(null);
-  const [patterns, setPatterns] = useState<GamePattern[]>([]);
+  const [configuration, setConfiguration] = useState<any | null>(null);
+  const [patterns, setPatterns] = useState<any[]>([]);
   const [calledItems, setCalledItems] = useState<CalledItem[]>([]);
   const [lastCalledItem, setLastCalledItem] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,7 +71,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
             // Extract pattern info for current game from new format
             const currentGameConfig = configs.find(c => c.gameNumber === currentGameNumber);
             if (currentGameConfig && currentGameConfig.patterns) {
-              const extractedPatterns: GamePattern[] = [];
+              const extractedPatterns: any[] = [];
               
               // Safely access and iterate through patterns
               Object.entries(currentGameConfig.patterns)
@@ -144,7 +134,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
             // Extract pattern info for current game from converted format
             const currentGameConfig = convertedConfigs.find(c => c.gameNumber === currentGameNumber);
             if (currentGameConfig) {
-              const extractedPatterns: GamePattern[] = [];
+              const extractedPatterns: any[] = [];
               
               Object.entries(currentGameConfig.patterns)
                 .filter(([_, config]) => config.active)
@@ -179,15 +169,15 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
           id: item.id,
           session_id: item.session_id,
           game_number: currentGameNumber || 1,
-          item_value: item.number,
-          called_at: item.called_at,
+          value: item.number,
+          timestamp: item.called_at,
           call_order: index + 1
         }));
         
         setCalledItems(mappedCalledItems);
         
         if (mappedCalledItems.length > 0) {
-          setLastCalledItem(mappedCalledItems[mappedCalledItems.length - 1].item_value);
+          setLastCalledItem(mappedCalledItems[mappedCalledItems.length - 1].value);
         }
       }
     } catch (err) {
@@ -204,7 +194,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
     
     try {
       const numberRange = gameType === 'mainstage' ? 90 : 75;
-      const existingNumbers = calledItems.map(item => item.item_value);
+      const existingNumbers = calledItems.map(item => item.value);
       
       // Check if we've called all possible numbers
       if (existingNumbers.length >= numberRange) {
@@ -241,8 +231,8 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
           id: data?.id || `temp-${Date.now()}`,
           session_id: sessionId,
           game_number: configuration.game_number,
-          item_value: newNumber,
-          called_at: new Date().toISOString(),
+          value: newNumber,
+          timestamp: new Date().toISOString(),
           call_order: existingNumbers.length + 1
         }
       ]);
@@ -292,7 +282,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
       }
       
       // Update session with active pattern
-      const updateData: Partial<SessionWithActivePattern> = {
+      const updateData: Partial<any> = {
         active_pattern_id: nextPattern
       };
       
@@ -389,7 +379,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
       }
       
       // Update game session
-      const updateData: Partial<SessionWithActivePattern> = {
+      const updateData: Partial<any> = {
         current_game: nextGameNumber,
         active_pattern_id: firstPatternId
       };
@@ -444,8 +434,8 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
               id: payload.new.id,
               session_id: sessionId,
               game_number: configuration?.game_number || 1,
-              item_value: newNumber,
-              called_at: payload.new.called_at,
+              value: newNumber,
+              timestamp: payload.new.called_at,
               call_order: callOrder
             };
             
@@ -488,7 +478,7 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
       supabase.removeChannel(channel);
       supabase.removeChannel(progressChannel);
     };
-  }, [sessionId, fetchGameData]);
+  }, [sessionId, fetchGameData, calledItems, configuration, supabase]);
   
   return {
     configuration,

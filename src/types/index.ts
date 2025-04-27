@@ -1,18 +1,40 @@
-
 import React from 'react';
 import { Json } from './json';
 
 // Core game types
-export type GameType = 'mainstage' | 'party' | '75-ball' | '90-ball' | 'quiz' | 'music' | 'logo';
+export type GameType = 'mainstage' | 'party' | 'quiz' | 'music' | 'logo';
 
-// Default pattern ordering for UI display
-export const DEFAULT_PATTERN_ORDER = {
-  mainstage: ['oneLine', 'twoLines', 'fullHouse'],
-  party: ['corners', 'oneLine', 'twoLines', 'threeLines', 'fullHouse'],
-  quiz: ['oneLine', 'twoLines', 'fullHouse'],
-  music: ['oneLine', 'twoLines', 'fullHouse'],
-  logo: ['oneLine', 'twoLines', 'fullHouse']
-};
+// Default pattern ordering and game rules
+export const GAME_RULES = {
+  mainstage: {
+    minPlayers: 2,
+    maxPlayers: 100,
+    patterns: ['oneLine', 'twoLines', 'fullHouse']
+  },
+  party: {
+    minPlayers: 2,
+    maxPlayers: 100,
+    patterns: ['corners', 'oneLine', 'twoLines', 'threeLines', 'fullHouse']
+  },
+  quiz: {
+    minPlayers: 2,
+    maxPlayers: 50,
+    patterns: ['oneLine', 'twoLines', 'fullHouse'],
+    questionTime: 30
+  },
+  music: {
+    minPlayers: 2,
+    maxPlayers: 50,
+    patterns: ['oneLine', 'twoLines', 'fullHouse'],
+    songDuration: 30
+  },
+  logo: {
+    minPlayers: 2,
+    maxPlayers: 50,
+    patterns: ['oneLine', 'twoLines', 'fullHouse'],
+    logoDisplayTime: 15
+  }
+} as const;
 
 // Session progress type for tracking game state
 export interface SessionProgress {
@@ -110,7 +132,7 @@ export interface GameSession {
   active_pattern_id?: string;
 }
 
-// Player type
+// Player type 
 export interface Player {
   id: string;
   nickname: string;
@@ -121,7 +143,7 @@ export interface Player {
   email?: string;
 }
 
-// Ticket type
+// Ticket type 
 export interface Ticket {
   id: string;
   numbers: number[][];
@@ -131,10 +153,14 @@ export interface Ticket {
   serial?: string;
 }
 
-// Result type
+// Called item type
 export interface CalledItem {
+  id: string;
+  session_id: string;
+  game_number: number;
   value: number;
   timestamp: string;
+  call_order: number;
 }
 
 // Game state type
