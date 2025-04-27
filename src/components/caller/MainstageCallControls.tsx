@@ -43,6 +43,10 @@ export function MainstageCallControls({
   const isLastGame = currentGameNumber >= numberOfGames;
   const { progress } = useSessionProgress(currentSession?.id);
 
+  const safeActiveWinPatterns: string[] = Array.isArray(activeWinPatterns) 
+    ? activeWinPatterns.map(pattern => String(pattern)) 
+    : [];
+
   const handleBellClick = () => {
     onViewClaims();
   };
@@ -157,7 +161,7 @@ export function MainstageCallControls({
     if (onCloseGame) {
       setIsProcessingClose(true);
       
-      const normalizedActivePatterns = activeWinPatterns.map(p => p.replace('MAINSTAGE_', ''));
+      const normalizedActivePatterns = safeActiveWinPatterns.map(p => String(p).replace('MAINSTAGE_', ''));
       const currentPattern = normalizedActivePatterns[0] || null;
       
       const nextPattern = determineNextPattern(currentPattern, normalizedActivePatterns);
@@ -178,7 +182,7 @@ export function MainstageCallControls({
           
           if (progressType === "pattern" && nextPattern) {
             updateData = {
-              current_win_pattern: nextPattern
+              current_win_pattern: String(nextPattern)
             };
             console.log(`Updating win pattern to: ${nextPattern}`);
           } else if (progressType === "game" && !isLastGame) {
@@ -261,7 +265,7 @@ export function MainstageCallControls({
                 sessionId: currentSession.id,
                 previousGame: currentGameNumber,
                 newGame: isLastGame ? currentGameNumber : currentGameNumber + 1,
-                previousPatterns: activeWinPatterns,
+                previousPatterns: safeActiveWinPatterns,
                 nextPattern: nextPattern,
                 patternProgression: progressType === "pattern",
                 gameProgression: progressType === "game",
@@ -342,11 +346,11 @@ export function MainstageCallControls({
             <div className="text-2xl font-bold">{totalCalls}</div>
           </div>
           
-          {activeWinPatterns && activeWinPatterns.length > 0 && (
+          {safeActiveWinPatterns && safeActiveWinPatterns.length > 0 && (
             <div className="bg-gray-100 p-3 rounded-md text-center">
               <div className="text-sm text-gray-500 mb-1">Current Pattern</div>
               <div className="text-xl font-semibold">
-                {getPatternDisplayName(activeWinPatterns[0].replace('MAINSTAGE_', ''))}
+                {getPatternDisplayName(String(safeActiveWinPatterns[0]).replace('MAINSTAGE_', ''))}
               </div>
             </div>
           )}

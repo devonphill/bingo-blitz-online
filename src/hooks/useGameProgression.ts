@@ -1,7 +1,8 @@
+
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { GameSession, DEFAULT_PATTERN_ORDER } from '@/types';
+import { GameSession } from '@/types';
 
 // Define a recursive Json type for Supabase JSON data
 type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
@@ -13,7 +14,29 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
   // Helper to get the appropriate first pattern for a game based on available patterns
   const getFirstPatternForGame = async (sessionId: string, gameNumber: number, gameType: string) => {
     try {
-      // Try to get the game-specific configuration
+      // Try to get the game-specific configuration from the new tables
+      const { data: configData, error: configError } = await supabase
+        .from('game_configurations')
+        .select('id')
+        .eq('session_id', sessionId)
+        .eq('game_number', gameNumber)
+        .single();
+        
+      if (!configError && configData) {
+        // Get patterns for this configuration
+        const { data: patternsData, error: patternsError } = await supabase
+          .from('game_patterns')
+          .select('pattern_id')
+          .eq('game_config_id', configData.id)
+          .order('pattern_order', { ascending: true })
+          .limit(1);
+          
+        if (!patternsError && patternsData && patternsData.length > 0) {
+          return patternsData[0].pattern_id;
+        }
+      }
+      
+      // Fallback to legacy configuration
       const { data: sessionData } = await supabase
         .from('game_sessions')
         .select('games_config')
@@ -29,13 +52,12 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
             Array.isArray(gameConfig.selectedPatterns) &&
             gameConfig.selectedPatterns.length > 0) {
           console.log(`Found specific patterns for game ${gameNumber}:`, gameConfig.selectedPatterns);
-          return gameConfig.selectedPatterns[0];
+          return String(gameConfig.selectedPatterns[0]);
         }
       }
       
-      // Fallback to the standard first pattern for this game type
-      const standardPatterns = DEFAULT_PATTERN_ORDER[gameType] || DEFAULT_PATTERN_ORDER['mainstage'];
-      return standardPatterns[0] || 'oneLine';
+      // Fallback to standard pattern
+      return 'oneLine';
     } catch (err) {
       console.error(`Error getting patterns for game ${gameNumber}:`, err);
       return 'oneLine'; // Default fallback
@@ -88,12 +110,27 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
       const isLastGame = nextGameNumber > totalGames;
       console.log(`Total games: ${totalGames}, Is this the last game? ${isLastGame ? 'Yes' : 'No'}`);
       
-      // Get the next game configuration if available
+      // Get the next game configuration from the new tables
       let nextGameConfig = null;
-      if (latestSessionData.games_config && Array.isArray(latestSessionData.games_config)) {
-        nextGameConfig = latestSessionData.games_config.find((game: any) => 
-          game && typeof game === 'object' && game.gameNumber === nextGameNumber
-        );
+      const { data: configData, error: configError } = await supabase
+        .from('game_configurations')
+        .select('id, game_type')
+        .eq('session_id', session.id)
+        .eq('game_number', nextGameNumber)
+        .single();
+        
+      if (!configError && configData) {
+        nextGameConfig = {
+          gameNumber: nextGameNumber,
+          gameType: configData.game_type
+        };
+      } else {
+        // Fallback to legacy config
+        if (latestSessionData.games_config && Array.isArray(latestSessionData.games_config)) {
+          nextGameConfig = latestSessionData.games_config.find((game: any) => 
+            game && typeof game === 'object' && game.gameNumber === nextGameNumber
+          );
+        }
       }
       
       console.log("Next game config:", nextGameConfig);
@@ -162,7 +199,7 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
                     (currentGameState && typeof currentGameState === 'object' && 'gameType' in currentGameState ? 
                       currentGameState.gameType : 
                       latestSessionData.game_type),
-          activePatternIds: nextGameConfig?.selectedPatterns || [firstPattern],
+          activePatternIds: [String(firstPattern)], // Ensure we have strings
           calledItems: [],
           lastCalledItem: null,
           status: 'active',
@@ -175,9 +212,10 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
         const { error } = await supabase
           .from('game_sessions')
           .update({ 
-            current_game_state: JSON.parse(JSON.stringify(nextGameState)),
+            current_game_state: nextGameState,
             status: 'active',
-            current_game: nextGameNumber
+            current_game: nextGameNumber,
+            active_pattern_id: String(firstPattern)
           })
           .eq('id', session.id);
 
@@ -199,7 +237,7 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
           .from('sessions_progress')
           .update({
             current_game_number: nextGameNumber,
-            current_win_pattern: firstPattern
+            current_win_pattern: String(firstPattern)
           })
           .eq('session_id', session.id);
           

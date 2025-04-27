@@ -1,3 +1,4 @@
+
 import React from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -49,20 +50,7 @@ export default function PlayerGameContent({
     }
   }, [gameType, autoMarking, setAutoMarking]);
 
-  React.useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        console.log('Tab became visible, refreshing game state');
-        window.location.reload();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
+  // Note: We're removing the visibility change effect since it's now handled by useBingoSync
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">

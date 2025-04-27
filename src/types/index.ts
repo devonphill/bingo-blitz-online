@@ -1,4 +1,3 @@
-
 // This file defines the core data structures used throughout the application.
 
 export type UserRole = 'superuser' | 'subuser';
@@ -19,17 +18,48 @@ export interface PrizeDetails {
   isNonCash?: boolean;
 }
 
-// --- New definition for the state of the currently active game ---
+// --- New definition for game configuration and patterns ---
+export interface GamePattern {
+  id: string;
+  game_config_id: string;
+  pattern_id: string;
+  pattern_order: number;
+  prize_amount?: string;
+  prize_description?: string;
+  is_non_cash: boolean;
+  created_at: string;
+}
+
+export interface GameConfiguration {
+  id: string;
+  session_id: string;
+  game_number: number;
+  game_type: GameType;
+  created_at: string;
+  updated_at: string;
+  patterns?: GamePattern[];
+}
+
+// --- New definition for called items ---
+export interface CalledItem {
+  id: string;
+  session_id: string;
+  game_number: number;
+  item_value: number;
+  called_at: string;
+  call_order: number;
+}
+
+// Current game state interface kept for backwards compatibility during migration
 export interface CurrentGameState {
   gameNumber: number;
-  gameType: GameType; // The specific type for this individual game instance
-  activePatternIds: string[]; // IDs/names of patterns selected by the caller for this game
-  calledItems: Array<any>; // Array of called numbers, strings, objects, etc., in order
-  lastCalledItem: any | null; // The most recently called item for display
-  prizes?: { [patternId: string]: PrizeDetails }; // Updated prize mapping for active patterns
-  status: 'pending' | 'active' | 'paused' | 'finished'; // Status of this specific game instance
+  gameType: GameType; 
+  activePatternIds: string[]; 
+  calledItems: Array<any>; 
+  lastCalledItem: any | null; 
+  prizes?: { [patternId: string]: PrizeDetails };
+  status: 'pending' | 'active' | 'paused' | 'finished';
 }
-// --- End of new definition ---
 
 // Game configuration interface - updated to include session_id
 export interface GameConfig {
@@ -37,26 +67,24 @@ export interface GameConfig {
   gameType: GameType;
   selectedPatterns: string[];
   prizes: { [patternId: string]: PrizeDetails };
-  session_id?: string; // Added session_id property
+  session_id?: string;
 }
 
 // Updated GameSession interface
 export interface GameSession {
   id: string;
   name: string;
-  gameType: GameType; // Overall session game type (can be used as default)
+  gameType: GameType;
   createdBy: string;
   accessCode: string;
-  status: 'pending' | 'active' | 'completed'; // Overall session status
+  status: 'pending' | 'active' | 'completed';
   createdAt: string;
   sessionDate?: string;
-  numberOfGames?: number; // Total number of games planned for the session (or current game number?) - clarify usage
-  // Add the new column representation
-  current_game_state: CurrentGameState | null; // Holds the state of the active game
-  // Add the new lifecycle_state property with explicit type definition
+  numberOfGames?: number;
+  current_game_state: CurrentGameState | null;
   lifecycle_state?: 'setup' | 'live' | 'ended';
-  // Add the games_config property
   games_config?: GameConfig[];
+  active_pattern_id?: string;
 }
 
 // Existing Player interface - no changes needed for Phase 1
