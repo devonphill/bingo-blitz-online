@@ -124,8 +124,8 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
           
         const gameState = sessionData.current_game_state as any;
         
-        if (gameState && 'calledItems' in gameState && Array.isArray(gameState.calledItems)) {
-          const existingCalls = gameState.calledItems || [];
+        if (gameState && 'calledItems' in gameState) {
+          const existingCalls = Array.isArray(gameState.calledItems) ? gameState.calledItems : [];
           
           const legacyCalledItems: CalledItem[] = existingCalls.map((item: any, index: number) => {
             if (typeof item === 'number') {
