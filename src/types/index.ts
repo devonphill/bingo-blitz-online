@@ -1,5 +1,4 @@
 
-
 // Any additional types needed for the app that aren't covered by the other interfaces
 import { Json } from './json';
 
@@ -178,4 +177,3 @@ export function parseGameConfigs(json: Json): GameConfig[] {
     session_id: item.session_id
   })) as GameConfig[];
 }
-
