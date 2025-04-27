@@ -1,4 +1,5 @@
 
+
 // Any additional types needed for the app that aren't covered by the other interfaces
 import { Json } from './json';
 
@@ -79,7 +80,7 @@ export function convertLegacyGameConfig(config: LegacyGameConfig): GameConfig {
       
       patterns[patternId] = {
         active: true,
-        isNonCash: Boolean(prize?.isNonCash),
+        isNonCash: Boolean(prize?.isNonCash || false),
         prizeAmount: prize?.amount || '0.00',
         description: prize?.description || ''
       };
@@ -177,3 +178,4 @@ export function parseGameConfigs(json: Json): GameConfig[] {
     session_id: item.session_id
   })) as GameConfig[];
 }
+
