@@ -60,8 +60,18 @@ export interface CurrentGameStateType {
   gameNumber: number;
   gameType: string;
   activePatternIds: string[];
-  calledItems: Array<number | { id?: string; value?: number; number?: number; called_at?: string }>;
-  lastCalledItem: number | { id?: string; value?: number; number?: number; called_at?: string } | null;
+  calledItems: Array<number | Record<string, any>>;
+  lastCalledItem: number | Record<string, any> | null;
   status: string;
   prizes?: Record<string, any>;
+}
+
+// Helper function to check if an object has the structure of a CurrentGameStateType
+export function isCurrentGameState(obj: any): obj is CurrentGameStateType {
+  return obj && 
+    typeof obj === 'object' &&
+    'gameNumber' in obj &&
+    'gameType' in obj &&
+    'activePatternIds' in obj &&
+    'calledItems' in obj;
 }

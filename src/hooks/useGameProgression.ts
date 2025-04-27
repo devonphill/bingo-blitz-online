@@ -1,3 +1,4 @@
+
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -73,7 +74,7 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
       }
       
       // Calculate next game number using the fetched data
-      const currentGameState = latestSessionData.current_game_state as { gameNumber?: number } || {};
+      const currentGameState = latestSessionData.current_game_state as Record<string, any> || {};
       const currentGameNumber = typeof currentGameState === 'object' && currentGameState && 'gameNumber' in currentGameState 
         ? (currentGameState.gameNumber as number) || 1 
         : latestSessionData.current_game || 1;
@@ -143,7 +144,7 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
         const firstPattern = await getFirstPatternForGame(session.id, nextGameNumber, gameType);
         
         // Setup the next game state with proper default values
-        const nextGameState = {
+        const nextGameState: Record<string, any> = {
           gameNumber: nextGameNumber,
           gameType: latestSessionData.game_type,
           activePatternIds: [String(firstPattern)], // Ensure we have strings

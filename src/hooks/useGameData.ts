@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { GameConfiguration, GamePattern, CalledItem, GameType } from '@/types';
-import { Json, isOfType, GameConfigurationType, GamePatternType, CalledItemType, SessionWithActivePattern, CurrentGameStateType } from '@/types/json';
+import { Json, isOfType, GameConfigurationType, GamePatternType, CalledItemType, SessionWithActivePattern, CurrentGameStateType, isCurrentGameState } from '@/types/json';
 
 // Existing type guard functions
 const isGamePattern = (obj: any): obj is GamePattern => {
@@ -248,16 +248,27 @@ export function useGameData(sessionId?: string, gameNumber?: number) {
           .single();
           
         let currentGameState = sessionData?.current_game_state || {};
+
+        // Safely handle the game state update with proper type checking
         if (typeof currentGameState === 'object') {
-          // Safe type casting for state update
-          const typedGameState = currentGameState as Record<string, any>;
+          // Safe handling of game state update
+          let updatedGameState: Record<string, any> = { ...currentGameState as Record<string, any> };
           
-          const updatedGameState = {
-            ...typedGameState,
-            calledItems: [...(Array.isArray(typedGameState.calledItems) ? typedGameState.calledItems : []), newNumber],
-            lastCalledItem: newNumber
-          };
+          // Initialize calledItems if it doesn't exist
+          if (!('calledItems' in updatedGameState)) {
+            updatedGameState.calledItems = [];
+          }
           
+          // Ensure calledItems is an array
+          if (!Array.isArray(updatedGameState.calledItems)) {
+            updatedGameState.calledItems = [];
+          }
+          
+          // Add the new number
+          updatedGameState.calledItems = [...updatedGameState.calledItems, newNumber];
+          updatedGameState.lastCalledItem = newNumber;
+          
+          // Update the session with properly typed game state
           const { error: updateError } = await supabase
             .from('game_sessions')
             .update({ current_game_state: updatedGameState as Json })
