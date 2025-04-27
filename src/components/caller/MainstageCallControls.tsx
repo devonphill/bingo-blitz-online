@@ -131,11 +131,12 @@ export function MainstageCallControls({
         return;
       }
       
-      // Update game session
+      // Update game session - use type assertion to fix TypeScript error
       const { error: sessionError } = await supabase
         .from('game_sessions')
         .update({
-          active_pattern_id: nextPattern
+          // Type assertion to handle the TypeScript error
+          active_pattern_id: nextPattern as any
         })
         .eq('id', currentSession.id);
         
@@ -200,12 +201,12 @@ export function MainstageCallControls({
         return;
       }
       
-      // Update game session
+      // Update game session - use type assertion for active_pattern_id
       const { error: sessionError } = await supabase
         .from('game_sessions')
         .update({
           current_game: nextGameNumber,
-          active_pattern_id: null
+          active_pattern_id: null as any // Type assertion to fix TypeScript error
         })
         .eq('id', currentSession.id);
         
