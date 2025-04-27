@@ -1,11 +1,12 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Bell } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { supabase } from '@/integrations/supabase/client';
 
 interface MainstageCallControlsProps {
   onCallNumber: () => void;
@@ -17,6 +18,8 @@ interface MainstageCallControlsProps {
   onCloseGame?: () => void;
   currentGameNumber?: number;
   numberOfGames?: number;
+  currentSession?: any;
+  activeWinPatterns?: string[];
 }
 
 export function MainstageCallControls({
@@ -28,7 +31,9 @@ export function MainstageCallControls({
   sessionStatus = 'pending',
   onCloseGame,
   currentGameNumber = 1,
-  numberOfGames = 1
+  numberOfGames = 1,
+  currentSession,
+  activeWinPatterns = []
 }: MainstageCallControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isClosingConfirmOpen, setIsClosingConfirmOpen] = useState(false);
@@ -44,17 +49,62 @@ export function MainstageCallControls({
     setIsClosingConfirmOpen(true);
   };
 
+  useEffect(() => {
+    if (isProcessingClose) {
+      console.log("Processing game close, will proceed with confirmation soon");
+    }
+  }, [isProcessingClose]);
+
   const confirmCloseGame = () => {
     if (onCloseGame) {
       setIsProcessingClose(true);
       
-      // Call the onCloseGame function and reset states after a delay
-      onCloseGame();
-      
-      // Reset states after a brief delay to provide visual feedback
+      // Call the onCloseGame function with a small delay to allow dialog to close
       setTimeout(() => {
-        setIsProcessingClose(false);
-        setIsClosingConfirmOpen(false);
+        onCloseGame();
+        
+        // Let UI update before resetting the states
+        setTimeout(() => {
+          setIsProcessingClose(false);
+          setIsClosingConfirmOpen(false);
+          
+          // Broadcast win pattern change to all players
+          if (currentSession?.id) {
+            console.log("Broadcasting pattern change due to game progression");
+            supabase.channel('player-game-updates')
+              .send({
+                type: 'broadcast',
+                event: 'claim-update',
+                payload: {
+                  sessionId: currentSession.id,
+                  patternChange: true,
+                  timestamp: new Date().toISOString()
+                }
+              }).then(() => {
+                console.log("Pattern change broadcast sent");
+              }).catch(err => {
+                console.error("Error broadcasting pattern change:", err);
+              });
+            
+            // Also send a dedicated game progression event
+            supabase.channel('game-progression-channel')
+              .send({
+                type: 'broadcast',
+                event: 'game-progression',
+                payload: {
+                  sessionId: currentSession.id,
+                  previousGame: currentGameNumber,
+                  newGame: isLastGame ? currentGameNumber : currentGameNumber + 1,
+                  previousPatterns: activeWinPatterns,
+                  timestamp: new Date().toISOString()
+                }
+              }).then(() => {
+                console.log("Game progression broadcast sent");
+              }).catch(err => {
+                console.error("Error broadcasting game progression:", err);
+              });
+          }
+        }, 500);
       }, 300);
       
       toast({
@@ -70,7 +120,8 @@ export function MainstageCallControls({
     currentGameNumber, 
     numberOfGames, 
     isLastGame, 
-    sessionStatus
+    sessionStatus,
+    activeWinPatterns
   });
 
   return (
@@ -111,7 +162,7 @@ export function MainstageCallControls({
           <div className="grid grid-cols-1 gap-3">
             <Button
               className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-              disabled={isCallingNumber || sessionStatus !== 'active'}
+              disabled={isCallingNumber || sessionStatus !== 'active' || isProcessingClose}
               onClick={() => {
                 setIsCallingNumber(true);
                 onCallNumber();

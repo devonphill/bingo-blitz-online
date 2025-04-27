@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -159,6 +160,16 @@ export function usePlayerGame(playerCode?: string | null) {
           if (lastCalledItem !== newLastCalledItem) {
             setLastCalledItem(newLastCalledItem);
           }
+          
+          // If the win patterns changed, reset claim status
+          if (matchingSession.current_game_state.activePatternIds &&
+              currentSession?.current_game_state?.activePatternIds &&
+              JSON.stringify(matchingSession.current_game_state.activePatternIds) !== 
+              JSON.stringify(currentSession.current_game_state.activePatternIds)) {
+            console.log("Win patterns changed, resetting claim status");
+            setClaimStatus(undefined);
+            setIsClaiming(false);
+          }
         }
       }
     }
@@ -197,6 +208,16 @@ export function usePlayerGame(playerCode?: string | null) {
                 const newLastCalledItem = updatedSession.current_game_state.lastCalledItem ?? null;
                 if (lastCalledItem !== newLastCalledItem) {
                   setLastCalledItem(newLastCalledItem);
+                }
+                
+                // If the win patterns changed, reset claim status
+                if (updatedSession.current_game_state.activePatternIds &&
+                    currentSession?.current_game_state?.activePatternIds &&
+                    JSON.stringify(updatedSession.current_game_state.activePatternIds) !== 
+                    JSON.stringify(currentSession.current_game_state.activePatternIds)) {
+                  console.log("Win patterns changed, resetting claim status");
+                  setClaimStatus(undefined);
+                  setIsClaiming(false);
                 }
               }
             }
@@ -320,15 +341,70 @@ export function usePlayerGame(playerCode?: string | null) {
             // Refresh session state to get latest win pattern state
             fetchSessions();
           }
+          
+          // If pattern change is indicated, reset claim status
+          if (payload.payload.patternChange === true) {
+            console.log("Resetting claim status due to pattern change");
+            resetClaimStatus();
+            
+            // Show toast for pattern change
+            if (payload.payload.nextPattern) {
+              const patternName = payload.payload.nextPattern === 'twoLines' ? 'Two Lines' : 
+                                  payload.payload.nextPattern === 'fullHouse' ? 'Full House' : 
+                                  payload.payload.nextPattern;
+              toast({
+                title: "Game Progress",
+                description: `Game has progressed to ${patternName}!`,
+                variant: "default"
+              });
+            }
+            
+            // Refresh session state to get latest win pattern
+            fetchSessions();
+          }
+        }
+      })
+      .subscribe();
+      
+    // Also listen for game progression events
+    const progressChannel = supabase.channel('game-progression-channel')
+      .on('broadcast', { event: 'game-progression' }, (payload) => {
+        console.log("Received game progression broadcast:", payload);
+        
+        if (payload.payload && payload.payload.sessionId === sessionId) {
+          console.log("Game progression update received");
+          resetClaimStatus();
+          
+          // Show toast for game progression
+          if (payload.payload.patternProgression && payload.payload.nextPattern) {
+            const patternName = payload.payload.nextPattern === 'twoLines' ? 'Two Lines' : 
+                                payload.payload.nextPattern === 'fullHouse' ? 'Full House' : 
+                                payload.payload.nextPattern;
+            toast({
+              title: "Pattern Progress",
+              description: `Game has progressed to ${patternName}!`,
+              variant: "default"
+            });
+          } else {
+            toast({
+              title: "Game Progress",
+              description: "Moving to next game!",
+              variant: "default"
+            });
+          }
+          
+          // Refresh to get the latest session state
+          fetchSessions();
         }
       })
       .subscribe();
       
     return () => {
-      console.log("Cleaning up broadcast channel");
+      console.log("Cleaning up broadcast channels");
       supabase.removeChannel(broadcastChannel);
+      supabase.removeChannel(progressChannel);
     };
-  }, [sessionId, resetClaimStatus, fetchSessions]);
+  }, [sessionId, resetClaimStatus, fetchSessions, toast]);
 
   const handleClaimBingo = useCallback(async (): Promise<boolean> => {
     if (!playerId || !sessionId || !playerName) {

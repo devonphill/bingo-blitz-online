@@ -33,6 +33,8 @@ interface ClaimVerificationSheetProps {
   currentWinPattern?: string | null;
   gameType?: string;
   onNext?: () => void;
+  currentSession?: any;
+  activeWinPatterns?: string[];
 }
 
 export default function ClaimVerificationSheet({
@@ -46,10 +48,12 @@ export default function ClaimVerificationSheet({
   onFalseClaim,
   currentWinPattern,
   gameType = 'mainstage',
-  onNext
+  onNext,
+  currentSession,
+  activeWinPatterns = []
 }: ClaimVerificationSheetProps) {
   const { toast } = useToast();
-  const { currentSession } = useSessionContext();
+  const { currentSession: contextSession } = useSessionContext();
   const [isClaimValid, setIsClaimValid] = useState(false);
   const [rankedTickets, setRankedTickets] = useState<any[]>([]);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
@@ -60,7 +64,10 @@ export default function ClaimVerificationSheet({
   const [validClaimsCount, setValidClaimsCount] = useState(0);
   const [isFullHouse, setIsFullHouse] = useState(false);
   const [shouldProgress, setShouldProgress] = useState(false);
+  const [isOneLine, setIsOneLine] = useState(false);
+  const [needsPatternProgression, setNeedsPatternProgression] = useState(false);
 
+  const session = currentSession || contextSession;
   const normalizedWinPattern = currentWinPattern && !currentWinPattern.includes('_') && 
     (gameType === 'mainstage' || gameType === '90-ball') 
       ? `MAINSTAGE_${currentWinPattern}` 
@@ -75,6 +82,12 @@ export default function ClaimVerificationSheet({
       const isFullHousePattern = normalizedWinPattern === 'MAINSTAGE_fullHouse' || 
                                normalizedWinPattern === 'fullHouse';
       setIsFullHouse(isFullHousePattern);
+      
+      const isOneLinePattern = normalizedWinPattern === 'MAINSTAGE_oneLine' || 
+                             normalizedWinPattern === 'oneLine';
+      setIsOneLine(isOneLinePattern);
+      
+      setNeedsPatternProgression(isOneLinePattern || normalizedWinPattern === 'MAINSTAGE_twoLines' || normalizedWinPattern === 'twoLines');
     }
     
     if (!isOpen) {
@@ -127,18 +140,29 @@ export default function ClaimVerificationSheet({
   }, [tickets, calledNumbers, normalizedWinPattern, gameType]);
 
   useEffect(() => {
-    if (shouldProgress && isFullHouse && onNext && !isProcessing) {
-      console.log("ClaimVerificationSheet: Progressing to next game after full house win");
-      
-      const timer = setTimeout(() => {
-        setShouldProgress(false);
-        onNext();
-        onClose();
-      }, 2000);
-      
-      return () => clearTimeout(timer);
+    if (shouldProgress && onNext && !isProcessing) {
+      if (isFullHouse) {
+        console.log("ClaimVerificationSheet: Progressing to next game after full house win");
+        
+        const timer = setTimeout(() => {
+          setShouldProgress(false);
+          onNext();
+          onClose();
+        }, 2000);
+        
+        return () => clearTimeout(timer);
+      } else if (needsPatternProgression) {
+        console.log("ClaimVerificationSheet: Win pattern confirmed, should progress to next pattern");
+        
+        const timer = setTimeout(() => {
+          setShouldProgress(false);
+          onClose();
+        }, 2000);
+        
+        return () => clearTimeout(timer);
+      }
     }
-  }, [shouldProgress, isFullHouse, onNext, onClose, isProcessing]);
+  }, [shouldProgress, isFullHouse, needsPatternProgression, onNext, onClose, isProcessing]);
 
   const handleValidClaim = async () => {
     if (isProcessing) return;
@@ -165,7 +189,7 @@ export default function ClaimVerificationSheet({
               type: 'broadcast',
               event: 'claim-update',
               payload: {
-                sessionId: currentSession?.id,
+                sessionId: session?.id,
                 result: 'valid',
                 timestamp: new Date().toISOString(),
                 pattern: normalizedWinPattern,
@@ -177,6 +201,45 @@ export default function ClaimVerificationSheet({
         }
         
         setShouldProgress(true);
+      } else if (needsPatternProgression) {
+        console.log("Pattern win validated, will progress to next pattern");
+        toast({
+          title: isOneLine ? "One Line Win" : "Two Lines Win",
+          description: `${isOneLine ? "One Line" : "Two Lines"} verified! Progressing to next pattern.`,
+        });
+        
+        try {
+          await supabase.channel('player-game-updates')
+            .send({
+              type: 'broadcast',
+              event: 'claim-update',
+              payload: {
+                sessionId: session?.id,
+                result: 'valid',
+                timestamp: new Date().toISOString(),
+                pattern: normalizedWinPattern,
+                patternChange: true,
+                nextPattern: isOneLine ? 'twoLines' : 'fullHouse'
+              }
+            });
+            
+          await supabase.channel('game-progression-channel')
+            .send({
+              type: 'broadcast',
+              event: 'game-progression',
+              payload: {
+                sessionId: session?.id,
+                patternProgression: true,
+                previousPattern: normalizedWinPattern,
+                nextPattern: isOneLine ? 'twoLines' : 'fullHouse',
+                timestamp: new Date().toISOString()
+              }
+            });
+        } catch (error) {
+          console.error('Error broadcasting pattern progression:', error);
+        }
+        
+        setShouldProgress(true);
       } else {
         try {
           await supabase.channel('player-game-updates')
@@ -184,7 +247,7 @@ export default function ClaimVerificationSheet({
               type: 'broadcast',
               event: 'claim-update',
               payload: {
-                sessionId: currentSession?.id,
+                sessionId: session?.id,
                 result: 'valid',
                 timestamp: new Date().toISOString(),
                 pattern: normalizedWinPattern,
@@ -207,7 +270,7 @@ export default function ClaimVerificationSheet({
   };
 
   const handlePrizeSharing = async (isShared: boolean) => {
-    if (!currentSession?.id || !validTickets.length) return;
+    if (!session?.id || !validTickets.length) return;
     
     try {
       const gameTypePrefix = gameType === 'mainstage' ? 'MAINSTAGE_' : 
@@ -216,8 +279,8 @@ export default function ClaimVerificationSheet({
       
       const promises = validTickets.map(async (ticket) => {
         const gameLog = {
-          session_id: currentSession.id,
-          game_number: currentSession.current_game_state?.gameNumber || 1,
+          session_id: session.id,
+          game_number: session.current_game_state?.gameNumber || 1,
           game_type: `${gameTypePrefix}${gameType || '90-ball'}`,
           win_pattern: normalizedWinPattern || 'MAINSTAGE_fullHouse',
           player_id: ticket.playerId,
@@ -243,30 +306,84 @@ export default function ClaimVerificationSheet({
         normalizedWinPattern?.includes('fullHouse') || 
         normalizedWinPattern?.includes('MAINSTAGE_fullHouse');
       
-      console.log("Is this a full house win?", isFullHouseWin);
-      
-      await supabase.channel('player-game-updates')
-        .send({
-          type: 'broadcast',
-          event: 'claim-update',
-          payload: {
-            sessionId: currentSession.id,
-            result: 'valid',
-            timestamp: new Date().toISOString(),
-            pattern: normalizedWinPattern,
-            isFullHouse: isFullHouseWin
-          }
-        });
-      
-      if (isFullHouse && onNext) {
-        console.log("Full house win validated in handlePrizeSharing, will progress to next game");
-        toast({
-          title: "Full House Win",
-          description: "Full house verified! Advancing to next game.",
-        });
+      const isOneLineWin = 
+        normalizedWinPattern?.includes('oneLine') || 
+        normalizedWinPattern?.includes('MAINSTAGE_oneLine');
         
+      const isTwoLinesWin =
+        normalizedWinPattern?.includes('twoLines') ||
+        normalizedWinPattern?.includes('MAINSTAGE_twoLines');
+      
+      console.log("Is this a full house win?", isFullHouseWin);
+      console.log("Is this a one line win?", isOneLineWin);
+      console.log("Is this a two lines win?", isTwoLinesWin);
+      
+      if (isFullHouseWin) {
+        await supabase.channel('player-game-updates')
+          .send({
+            type: 'broadcast',
+            event: 'claim-update',
+            payload: {
+              sessionId: session.id,
+              result: 'valid',
+              timestamp: new Date().toISOString(),
+              pattern: normalizedWinPattern,
+              isFullHouse: true
+            }
+          });
+          
+        if (onNext) {
+          console.log("Full house win validated in handlePrizeSharing, will progress to next game");
+          toast({
+            title: "Full House Win",
+            description: "Full house verified! Advancing to next game.",
+          });
+          
+          setShouldProgress(true);
+        }
+      } else if (isOneLineWin || isTwoLinesWin) {
+        await supabase.channel('player-game-updates')
+          .send({
+            type: 'broadcast',
+            event: 'claim-update',
+            payload: {
+              sessionId: session.id,
+              result: 'valid',
+              timestamp: new Date().toISOString(),
+              pattern: normalizedWinPattern,
+              patternChange: true,
+              nextPattern: isOneLineWin ? 'twoLines' : 'fullHouse'
+            }
+          });
+          
+        await supabase.channel('game-progression-channel')
+          .send({
+            type: 'broadcast',
+            event: 'game-progression',
+            payload: {
+              sessionId: session.id,
+              patternProgression: true,
+              previousPattern: normalizedWinPattern,
+              nextPattern: isOneLineWin ? 'twoLines' : 'fullHouse',
+              timestamp: new Date().toISOString()
+            }
+          });
+        
+        console.log("Pattern progression event sent");
         setShouldProgress(true);
       } else {
+        await supabase.channel('player-game-updates')
+          .send({
+            type: 'broadcast',
+            event: 'claim-update',
+            payload: {
+              sessionId: session.id,
+              result: 'valid',
+              timestamp: new Date().toISOString(),
+              pattern: normalizedWinPattern,
+              isFullHouse: false
+            }
+          });
         onClose();
       }
     } catch (error) {
@@ -300,6 +417,12 @@ export default function ClaimVerificationSheet({
         setTimeout(() => {
           onNext();
         }, 1500);
+      } else if (needsPatternProgression) {
+        console.log("Pattern win validated in confirmAction, will progress to next pattern");
+        toast({
+          title: isOneLine ? "One Line Win" : "Two Lines Win",
+          description: `${isOneLine ? "One Line" : "Two Lines"} verified! Progressing to next pattern.`,
+        });
       }
 
       supabase.channel('player-game-updates')
@@ -307,11 +430,13 @@ export default function ClaimVerificationSheet({
           type: 'broadcast',
           event: 'claim-update',
           payload: {
-            sessionId: currentSession?.id,
+            sessionId: session?.id,
             result: 'valid',
             timestamp: new Date().toISOString(),
             pattern: normalizedWinPattern,
-            isFullHouse: isFullHouse
+            isFullHouse: isFullHouse,
+            patternChange: needsPatternProgression,
+            nextPattern: isOneLine ? 'twoLines' : 'fullHouse'
           }
         });
     } else if (actionType === 'false') {
@@ -322,7 +447,7 @@ export default function ClaimVerificationSheet({
           type: 'broadcast',
           event: 'claim-update',
           payload: {
-            sessionId: currentSession?.id,
+            sessionId: session?.id,
             result: 'false',
             timestamp: new Date().toISOString(),
             pattern: normalizedWinPattern
@@ -358,6 +483,9 @@ export default function ClaimVerificationSheet({
               Current win pattern: <span className="font-semibold">{getWinPatternDisplayName(normalizedWinPattern)}</span>
               {isFullHouse && (
                 <span className="ml-2 text-blue-600">(Full House - will advance game)</span>
+              )}
+              {needsPatternProgression && !isFullHouse && (
+                <span className="ml-2 text-blue-600">(Will advance to next pattern)</span>
               )}
             </div>
             {validTickets.length > 0 && (
@@ -433,7 +561,7 @@ export default function ClaimVerificationSheet({
             </AlertDialogTitle>
             <AlertDialogDescription>
               {actionType === 'valid' 
-                ? `Are you sure this is a valid claim? This will ${isFullHouse ? 'complete the game and move to the next one' : 'update the game state and move to the next win pattern'}.` 
+                ? `Are you sure this is a valid claim? This will ${isFullHouse ? 'complete the game and move to the next one' : needsPatternProgression ? 'update the game state and move to the next win pattern' : 'validate the player\'s claim'}.` 
                 : 'Are you sure this is a false call? This will reject the player\'s claim.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -463,6 +591,14 @@ export default function ClaimVerificationSheet({
             toast({
               title: "Full House Win",
               description: "Full house verified! Advancing to next game.",
+            });
+            
+            setShouldProgress(true);
+          } else if (needsPatternProgression) {
+            console.log("Pattern win validated in sharing dialog, will progress to next pattern");
+            toast({
+              title: isOneLine ? "One Line Win" : "Two Lines Win",
+              description: `${isOneLine ? "One Line" : "Two Lines"} verified! Progressing to next pattern.`,
             });
             
             setShouldProgress(true);

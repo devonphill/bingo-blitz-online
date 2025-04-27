@@ -51,6 +51,15 @@ export default function PlayerGameLayout({
   const [localClaimStatus, setLocalClaimStatus] = useState<'pending' | 'validated' | 'rejected' | null>(null);
   const { toast } = useToast();
 
+  // Reset local claim status when the activeWinPatterns change (new win pattern becomes active)
+  useEffect(() => {
+    if (currentWinPattern) {
+      console.log("Win pattern changed, resetting claim status");
+      setLocalClaimStatus(null);
+      setLocalClaimValidating(false);
+    }
+  }, [currentWinPattern]);
+
   // Sync external claim status with local state
   useEffect(() => {
     if (claimStatus) {
@@ -65,6 +74,25 @@ export default function PlayerGameLayout({
       setLocalClaimValidating(false);
     }
   }, [claimStatus, isClaiming]);
+
+  // Auto-reset claim status after validation (to allow claiming for next pattern)
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
+    
+    if (localClaimStatus === 'validated' || localClaimStatus === 'rejected') {
+      console.log(`Setting up auto-reset for claim status: ${localClaimStatus}`);
+      
+      // Reset status after 5 seconds to allow claiming for next pattern
+      timer = setTimeout(() => {
+        console.log("Auto-resetting claim status");
+        setLocalClaimStatus(null);
+      }, 5000);
+    }
+    
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [localClaimStatus]);
 
   // Listen for claim result broadcasts
   useEffect(() => {
@@ -118,6 +146,39 @@ export default function PlayerGameLayout({
             setLocalClaimStatus('rejected');
             setLocalClaimValidating(false);
           }
+          
+          // Reset claim status when pattern changes due to game progression
+          if (payload.payload && 
+              payload.payload.sessionId === currentSession.id && 
+              payload.payload.patternChange === true) {
+            console.log("Pattern changed, resetting claim status");
+            setLocalClaimStatus(null);
+            setLocalClaimValidating(false);
+          }
+        }
+      )
+      .subscribe();
+    
+    // Listen for game progression updates
+    const progressChannel = supabase
+      .channel('game-progression-channel')
+      .on(
+        'broadcast',
+        { event: 'game-progression' },
+        (payload) => {
+          console.log("Received game progression broadcast:", payload);
+          
+          if (payload.payload && payload.payload.sessionId === currentSession.id) {
+            console.log("Game progressed, resetting claim status");
+            // Reset claim status when game progresses to new pattern
+            setLocalClaimStatus(null);
+            setLocalClaimValidating(false);
+            
+            toast({
+              title: "Game Progress",
+              description: "The game has progressed to a new pattern!",
+            });
+          }
         }
       )
       .subscribe();
@@ -125,6 +186,7 @@ export default function PlayerGameLayout({
     return () => {
       supabase.removeChannel(claimsChannel);
       supabase.removeChannel(gameUpdatesChannel);
+      supabase.removeChannel(progressChannel);
     };
   }, [currentSession?.id, playerCode, toast]);
 
