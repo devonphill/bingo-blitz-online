@@ -8,6 +8,7 @@ import { GameSetupView } from '@/components/caller/GameSetupView';
 import { LiveGameView } from '@/components/caller/LiveGameView';
 import ClaimVerificationSheet from '@/components/game/ClaimVerificationSheet';
 import { useSessionLifecycle } from '@/hooks/useSessionLifecycle';
+import { useSessionProgress } from '@/hooks/useSessionProgress';
 
 type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
@@ -28,6 +29,7 @@ export default function CallerSession() {
   const [currentClaim, setCurrentClaim] = useState<any>(null);
   const { toast } = useToast();
   const { setSessionLifecycle } = useSessionLifecycle(sessionId);
+  const { progress: sessionProgress } = useSessionProgress(sessionId);
 
   useEffect(() => {
     console.log("StateUpdate - currentGameType:", currentGameType);
@@ -181,7 +183,6 @@ export default function CallerSession() {
     };
 
     try {
-      // Convert the CurrentGameState to a plain JSON-compatible object
       const gameStateForSupabase = {
         gameNumber: updatedGameState.gameNumber,
         gameType: updatedGameState.gameType,
@@ -378,7 +379,6 @@ export default function CallerSession() {
         prizes: prizes
       };
       
-      // Create a plain JSON-compatible object for Supabase
       const gameStateForSupabase = {
         gameNumber: updatedGameState.gameNumber,
         gameType: updatedGameState.gameType,
@@ -389,42 +389,62 @@ export default function CallerSession() {
         prizes: JSON.parse(JSON.stringify(updatedGameState.prizes || {}))
       };
       
-      const { error } = await supabase
-        .from('game_sessions')
-        .update({ 
-          lifecycle_state: 'live',
-          status: 'active', // Update the session status to active
-          current_game_state: gameStateForSupabase as Json,
-          games_config: JSON.parse(JSON.stringify(gameConfigs)) as Json
-        })
-        .eq('id', sessionId);
+      let currentWinPattern = null;
+      if (patternsToCheck && patternsToCheck.length > 0) {
+        currentWinPattern = patternsToCheck[0];
+      }
 
-      if (error) {
-        console.error("Error starting game:", error);
+      const [sessionUpdate, progressUpdate] = await Promise.all([
+        supabase
+          .from('game_sessions')
+          .update({ 
+            lifecycle_state: 'live',
+            status: 'active', // Update the session status to active
+            current_game_state: gameStateForSupabase as Json,
+            games_config: JSON.parse(JSON.stringify(gameConfigs)) as Json
+          })
+          .eq('id', sessionId),
+          
+        supabase
+          .from('sessions_progress')
+          .update({
+            current_win_pattern: currentWinPattern
+          })
+          .eq('session_id', sessionId)
+      ]);
+
+      if (sessionUpdate.error) {
+        console.error("Error starting game:", sessionUpdate.error);
         toast({
           title: "Error",
           description: "Failed to start the game. Please try again.",
           variant: "destructive"
         });
         setIsGoingLive(false);
-      } else {
-        setSession(prevSession => {
-          if (!prevSession) return null;
-          return {
-            ...prevSession,
-            lifecycle_state: 'live',
-            status: 'active', // Update the local session status as well
-            current_game_state: updatedGameState
-          };
-        });
-        
-        toast({
-          title: "Game Started",
-          description: "The game is now live!",
-        });
-        
-        console.log("Game successfully set to live state");
+        return;
       }
+      
+      if (progressUpdate.error) {
+        console.error("Error updating session progress:", progressUpdate.error);
+      }
+
+      setSession(prevSession => {
+        if (!prevSession) return null;
+        return {
+          ...prevSession,
+          lifecycle_state: 'live',
+          status: 'active', // Update the local session status as well
+          current_game_state: updatedGameState
+        };
+      });
+      
+      toast({
+        title: "Game Started",
+        description: "The game is now live!",
+      });
+      
+      console.log("Game successfully set to live state");
+      
     } catch (err) {
       console.error("Exception during go live operation:", err);
       toast({
@@ -465,7 +485,6 @@ export default function CallerSession() {
       } : null);
 
       try {
-        // Create a plain JSON-compatible object for Supabase
         const gameStateForSupabase = {
           gameNumber: updatedGameState.gameNumber,
           gameType: updatedGameState.gameType,
@@ -594,7 +613,6 @@ export default function CallerSession() {
         description: `${currentClaim.playerName}'s claim has been validated.`
       });
       
-      // Save the game log data
       if (session && session.current_game_state) {
         const winPatternId = session.current_game_state.activePatternIds[0] || 'unknown';
         const winPrize = session.current_game_state.prizes?.[winPatternId];
@@ -641,7 +659,6 @@ export default function CallerSession() {
         }
       }
       
-      // Handle advancing to next pattern or game
       if (session && selectedPatterns.length > 1) {
         const currentPatternIndex = selectedPatterns.findIndex(p => p === selectedPatterns[0]);
         
@@ -661,7 +678,6 @@ export default function CallerSession() {
               activePatternIds: updatedPatterns
             };
             
-            // Create a plain JSON-compatible object for Supabase
             const gameStateForSupabase = {
               gameNumber: updatedGameState.gameNumber,
               gameType: updatedGameState.gameType,
@@ -672,11 +688,29 @@ export default function CallerSession() {
               prizes: JSON.parse(JSON.stringify(updatedGameState.prizes || {}))
             };
             
-            await supabase
-              .from('game_sessions')
-              .update({ current_game_state: gameStateForSupabase as Json })
-              .eq('id', sessionId);
+            const [sessionUpdate, progressUpdate] = await Promise.all([
+              supabase
+                .from('game_sessions')
+                .update({ current_game_state: gameStateForSupabase as Json })
+                .eq('id', sessionId),
+                
+              supabase
+                .from('sessions_progress')
+                .update({ 
+                  current_win_pattern: updatedPatterns[0],
+                  completed_win_patterns: supabase.sql`array_append(completed_win_patterns, ${completedPattern})`
+                })
+                .eq('session_id', sessionId)
+            ]);
               
+            if (sessionUpdate.error) {
+              console.error("Error updating game state:", sessionUpdate.error);
+            }
+            
+            if (progressUpdate.error) {
+              console.error("Error updating session progress:", progressUpdate.error);
+            }
+            
             setSelectedPatterns(updatedPatterns);
             setSession(prev => prev ? {
               ...prev,
@@ -691,13 +725,11 @@ export default function CallerSession() {
         } else if (session.current_game_state && 
                   session.numberOfGames && 
                   session.current_game_state.gameNumber < session.numberOfGames) {
-          // This was the last pattern and there are more games - prepare for next game
           const nextGameNumber = session.current_game_state.gameNumber + 1;
           const nextGameIndex = nextGameNumber - 1;
           const nextGameConfig = gameConfigs[nextGameIndex];
           
           if (nextGameConfig) {
-            // Reset for next game
             setCalledNumbers([]);
             setCurrentNumber(null);
             setCurrentGameType(nextGameConfig.gameType);
@@ -714,7 +746,6 @@ export default function CallerSession() {
               prizes: nextGameConfig.prizes || {}
             };
             
-            // Create a plain JSON-compatible object for Supabase
             const gameStateForSupabase = {
               gameNumber: nextGameState.gameNumber,
               gameType: nextGameState.gameType,
@@ -725,13 +756,32 @@ export default function CallerSession() {
               prizes: JSON.parse(JSON.stringify(nextGameState.prizes || {}))
             };
             
-            await supabase
-              .from('game_sessions')
-              .update({ 
-                current_game_state: gameStateForSupabase as Json,
-                current_game: nextGameNumber
-              })
-              .eq('id', sessionId);
+            const [sessionUpdate, progressUpdate] = await Promise.all([
+              supabase
+                .from('game_sessions')
+                .update({ 
+                  current_game_state: gameStateForSupabase as Json,
+                  current_game: nextGameNumber
+                })
+                .eq('id', sessionId),
+                
+              supabase
+                .from('sessions_progress')
+                .update({
+                  current_game_number: nextGameNumber,
+                  current_win_pattern: nextGameConfig.selectedPatterns ? nextGameConfig.selectedPatterns[0] : null,
+                  completed_win_patterns: []
+                })
+                .eq('session_id', sessionId)
+            ]);
+            
+            if (sessionUpdate.error) {
+              console.error("Error updating game state:", sessionUpdate.error);
+            }
+            
+            if (progressUpdate.error) {
+              console.error("Error updating session progress:", progressUpdate.error);
+            }
               
             setSession(prev => prev ? {
               ...prev,
@@ -878,6 +928,9 @@ export default function CallerSession() {
             prizes={prizes}
             gameConfigs={gameConfigs}
             sessionStatus={session.status}
+            onCloseGame={handleValidClaim}
+            currentGameNumber={sessionProgress?.current_game_number || session.current_game_state?.gameNumber || 1}
+            numberOfGames={sessionProgress?.max_game_number || session.numberOfGames || 1}
           />
           
           {currentClaim && (

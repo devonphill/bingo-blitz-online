@@ -48,6 +48,7 @@ export function LiveGameView({
   console.log("LiveGameView - prizes:", prizes);
   console.log("LiveGameView - gameConfigs:", gameConfigs);
   console.log("LiveGameView - sessionStatus:", sessionStatus);
+  console.log("LiveGameView - game numbers:", {currentGameNumber, numberOfGames});
 
   // Use the first game's configurations if available
   const currentGameConfig = gameConfigs.length > 0 ? gameConfigs[0] : null;
