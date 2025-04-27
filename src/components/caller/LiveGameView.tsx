@@ -1,8 +1,7 @@
-
 import React from 'react';
 import { WinPattern } from '@/types/winPattern';
 import { WinPatternStatusDisplay } from '@/components/game/WinPatternStatusDisplay';
-import CallControls from '@/components/caller/CallControls';
+import { MainstageCallControls } from '@/components/caller/MainstageCallControls';
 import BingoCard from '@/components/caller/BingoCard';
 import { GameType, PrizeDetails, GameConfig } from '@/types';
 
@@ -71,10 +70,8 @@ export function LiveGameView({
       />
       
       <div className="grid grid-cols-2 gap-6">
-        <CallControls
-          gameType={activeGameType}
+        <MainstageCallControls
           onCallNumber={onCallNumber}
-          onRecall={onRecall}
           lastCalledNumber={lastCalledNumber}
           totalCalls={calledNumbers.length}
           pendingClaims={pendingClaims}
