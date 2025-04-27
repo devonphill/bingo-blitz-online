@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { supabase } from '@/integrations/supabase/client';
+import { useSessionProgress } from '@/hooks/useSessionProgress';
 
 interface MainstageCallControlsProps {
   onCallNumber: () => void;
@@ -40,6 +41,7 @@ export function MainstageCallControls({
   const [isProcessingClose, setIsProcessingClose] = useState(false);
   const { toast } = useToast();
   const isLastGame = currentGameNumber >= numberOfGames;
+  const { progress } = useSessionProgress(currentSession?.id);
 
   const handleBellClick = () => {
     onViewClaims();
@@ -54,6 +56,32 @@ export function MainstageCallControls({
       console.log("Processing game close, will proceed with confirmation soon");
     }
   }, [isProcessingClose]);
+
+  // Effect to sync with session progress on load/refresh
+  useEffect(() => {
+    if (progress && currentSession) {
+      console.log("Syncing MainstageCallControls with session progress:", progress);
+      
+      // If we have progress data but the UI doesn't match it, we can sync the UI
+      // This is especially useful on page refresh
+      if (progress.current_win_pattern && activeWinPatterns && activeWinPatterns.length > 0) {
+        const progressPattern = progress.current_win_pattern;
+        const uiPattern = activeWinPatterns[0].replace('MAINSTAGE_', '');
+        
+        if (progressPattern !== uiPattern) {
+          console.log(`Pattern mismatch detected - DB: ${progressPattern}, UI: ${uiPattern}`);
+          // We don't update the state here as it's controlled by parent component
+          // Just logging for debugging
+        }
+      }
+      
+      if (progress.current_game_number !== currentGameNumber) {
+        console.log(`Game number mismatch detected - DB: ${progress.current_game_number}, UI: ${currentGameNumber}`);
+        // We don't update the state here as it's controlled by parent component
+        // Just logging for debugging
+      }
+    }
+  }, [progress, currentSession, activeWinPatterns, currentGameNumber]);
 
   const getPatternDisplayName = (pattern: string): string => {
     switch(pattern) {
@@ -231,7 +259,10 @@ export function MainstageCallControls({
     numberOfGames, 
     isLastGame, 
     sessionStatus,
-    activeWinPatterns
+    activeWinPatterns,
+    sessionProgress: progress ? 
+      `Game ${progress.current_game_number}/${progress.max_game_number}, Pattern: ${progress.current_win_pattern}` : 
+      'Not loaded'
   });
 
   return (

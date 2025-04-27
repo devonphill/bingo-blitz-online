@@ -51,6 +51,7 @@ export const useSessionProgress = (sessionId: string | undefined) => {
       }
     };
 
+    // Initial fetch
     fetchProgress();
 
     // Subscribe to real-time changes

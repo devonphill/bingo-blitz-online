@@ -178,7 +178,7 @@ export default function PlayerGame() {
       .subscribe();
       
     // Listen for game progression broadcasts
-    const progressionChannel = supabase.channel('game-progression-listener')
+    const progressChannel = supabase.channel('game-progression-listener')
       .on('broadcast', { event: 'game-progression' }, (payload) => {
         console.log("Received game progression broadcast in PlayerGame:", payload);
         if (payload.payload && payload.payload.sessionId === currentSession.id) {
@@ -212,7 +212,7 @@ export default function PlayerGame() {
     return () => {
       console.log("Cleaning up broadcast channels");
       supabase.removeChannel(broadcastChannel);
-      supabase.removeChannel(progressionChannel);
+      supabase.removeChannel(progressChannel);
     };
   }, [playerCode, currentSession?.id, isClaiming, resetClaimStatus, toast, forceRefresh]);
 
