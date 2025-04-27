@@ -1,87 +1,223 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Bell, PlayCircle, RotateCcw } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { Bell } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { GameType } from '@/types';
+import { useToast } from '@/hooks/use-toast';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
-interface CallControlsProps {
-  onCallNumber: () => void;
-  onRecall: () => void;
-  lastCalledNumber: number | null;
-  totalCalls: number;
-  pendingClaims: number;
-  onViewClaims: () => void;
-  gameType?: GameType;
+interface CallerControlsProps {
+  onCallNumber: (number: number) => void;
+  onEndGame: () => void;
+  onGoLive: () => Promise<void>;
+  remainingNumbers: number[];
+  sessionId: string;
+  winPatterns: string[];
+  onCheckClaims?: () => void;
+  claimCount?: number;
+  openClaimSheet: () => void;
+  gameType?: string;
   sessionStatus?: string;
+  onCloseGame?: () => void;
+  numberOfGames?: number;
+  currentGameNumber?: number;
 }
 
-export function CallControls({
-  onCallNumber,
-  onRecall,
-  lastCalledNumber,
-  totalCalls,
-  pendingClaims,
-  onViewClaims,
-  gameType = 'mainstage',
-  sessionStatus = 'pending'
-}: CallControlsProps) {
-  const gameActive = sessionStatus === 'active';
-  
-  return (
-    <Card className="shadow-md">
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between">
-          <span>Call Controls</span>
-          <Badge variant={gameActive ? "default" : "outline"}>
-            {gameActive ? "Live" : "Pending"}
-          </Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div className="rounded-md border border-gray-200 p-4 text-center">
-            <div className="text-sm text-gray-500">Last Call</div>
-            <div className="text-3xl font-bold mt-1">{lastCalledNumber || '-'}</div>
-          </div>
-          <div className="rounded-md border border-gray-200 p-4 text-center">
-            <div className="text-sm text-gray-500">Total Calls</div>
-            <div className="text-3xl font-bold mt-1">{totalCalls}</div>
-          </div>
-        </div>
+export default function CallerControls({ 
+  onCallNumber, 
+  onEndGame,
+  onGoLive,
+  remainingNumbers,
+  sessionId,
+  winPatterns,
+  claimCount = 0,
+  openClaimSheet,
+  gameType,
+  sessionStatus = 'pending',
+  onCloseGame,
+  numberOfGames = 1,
+  currentGameNumber = 1
+}: CallerControlsProps) {
+  const [isCallingNumber, setIsCallingNumber] = useState(false);
+  const [isGoingLive, setIsGoingLive] = useState(false);
+  const [isClosingConfirmOpen, setIsClosingConfirmOpen] = useState(false);
+  const { toast } = useToast();
 
-        <Button 
-          onClick={onCallNumber}
-          disabled={!gameActive}
-          className="w-full h-14 text-lg" 
-          variant={gameActive ? "default" : "outline"}
-        >
-          <PlayCircle className="mr-2 h-5 w-5" />
-          Call Number
-        </Button>
-        
-        <div className="grid grid-cols-2 gap-4">
-          <Button 
-            onClick={onRecall}
-            disabled={!lastCalledNumber || !gameActive}
-            variant="outline" 
-            className="w-full"
-          >
-            <RotateCcw className="mr-2 h-4 w-4" />
-            Recall
-          </Button>
+  const handleCallNumber = () => {
+    if (remainingNumbers.length === 0) {
+      toast({
+        title: "No more numbers",
+        description: "All numbers have been called.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsCallingNumber(true);
+    
+    setTimeout(() => {
+      const randomIndex = Math.floor(Math.random() * remainingNumbers.length);
+      const number = remainingNumbers[randomIndex];
+      
+      onCallNumber(number);
+      setIsCallingNumber(false);
+    }, 1000);
+  };
+
+  const handleGoLiveClick = async () => {
+    if (winPatterns.length === 0) {
+      toast({
+        title: "Error",
+        description: "At least one win pattern must be selected before going live",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsGoingLive(true);
+    try {
+      await onGoLive();
+    } catch (error) {
+      console.error('Error going live:', error);
+      toast({
+        title: "Error",
+        description: "Failed to start the game. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsGoingLive(false);
+    }
+  };
+
+  const handleBellClick = () => {
+    openClaimSheet();
+  };
+
+  const handleCloseGame = () => {
+    setIsClosingConfirmOpen(true);
+  };
+
+  const confirmCloseGame = () => {
+    if (onCloseGame) {
+      onCloseGame();
+    }
+    setIsClosingConfirmOpen(false);
+  };
+
+  const isLastGame = currentGameNumber >= numberOfGames;
+
+  return (
+    <>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-xl font-bold flex items-center justify-between">
+            <div className="flex items-center">
+              <span>Caller Controls</span>
+              <Badge className="ml-2" variant={sessionStatus === 'active' ? 'default' : 'outline'}>
+                {sessionStatus === 'active' ? 'Live' : 'Pending'}
+              </Badge>
+              {currentGameNumber && numberOfGames && (
+                <Badge className="ml-2" variant="outline">
+                  Game {currentGameNumber} of {numberOfGames}
+                </Badge>
+              )}
+            </div>
+            {claimCount > 0 && (
+              <Button 
+                size="sm" 
+                variant="outline" 
+                className="relative"
+                onClick={handleBellClick}
+              >
+                <Bell className="h-4 w-4 text-amber-500" />
+                <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center bg-amber-500">
+                  {claimCount}
+                </Badge>
+              </Button>
+            )}
+            {claimCount === 0 && (
+              <Button 
+                size="sm" 
+                variant="outline" 
+                className="relative"
+                onClick={handleBellClick}
+              >
+                <Bell className="h-4 w-4 text-gray-500" />
+              </Button>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="bg-gray-100 p-3 rounded-md text-center">
+            <div className="text-sm text-gray-500 mb-1">Remaining Numbers</div>
+            <div className="text-2xl font-bold">{remainingNumbers.length}</div>
+          </div>
           
-          <Button 
-            onClick={onViewClaims}
-            variant={pendingClaims > 0 ? "destructive" : "outline"}
-            className="w-full"
-          >
-            <Bell className="mr-2 h-4 w-4" />
-            {pendingClaims > 0 ? `Claims (${pendingClaims})` : 'View Claims'}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+          <div className="grid grid-cols-1 gap-3">
+            <Button
+              className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
+              disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active'}
+              onClick={handleCallNumber}
+            >
+              {isCallingNumber ? 'Calling...' : 'Call Next Number'}
+            </Button>
+            
+            {onCloseGame && (
+              <Button
+                variant="secondary"
+                onClick={handleCloseGame}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {isLastGame ? 'Complete Session' : 'Close Game'}
+              </Button>
+            )}
+            
+            <Button 
+              variant="destructive"
+              onClick={onEndGame}
+            >
+              End Game
+            </Button>
+            
+            <Button
+              className="bg-green-600 hover:bg-green-700 text-white"
+              disabled={isGoingLive || winPatterns.length === 0 || sessionStatus === 'active'}
+              onClick={handleGoLiveClick}
+            >
+              {isGoingLive ? 'Going Live...' : 'Go Live'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <AlertDialog 
+        open={isClosingConfirmOpen} 
+        onOpenChange={setIsClosingConfirmOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {isLastGame ? 'Complete Session?' : 'Close Game?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {isLastGame 
+                ? 'This will mark the session as completed. This action cannot be undone.' 
+                : 'This will close the current game and advance to the next one. This action cannot be undone.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmCloseGame}
+              className={isLastGame ? "bg-purple-600 hover:bg-purple-700" : "bg-blue-600 hover:bg-blue-700"}
+            >
+              {isLastGame ? 'Complete Session' : 'Close Game'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

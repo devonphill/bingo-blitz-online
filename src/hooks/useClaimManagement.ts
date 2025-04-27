@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -248,7 +249,7 @@ export function useClaimManagement(sessionId: string | undefined) {
       // Get current session state to determine active win patterns
       const { data: sessionData, error: sessionError } = await supabase
         .from('game_sessions')
-        .select('current_game_state')
+        .select('current_game_state, number_of_games, current_game')
         .eq('id', sessionId)
         .single();
         
@@ -431,7 +432,7 @@ export function useClaimManagement(sessionId: string | undefined) {
       console.error("Error validating claim:", error);
       return false;
     }
-  }, [currentClaim, sessionId, progressToNextGame, toast]);
+  }, [currentClaim, sessionId, progressToNextGame]);
 
   // Reject a claim
   const rejectClaim = useCallback(async () => {
@@ -454,13 +455,14 @@ export function useClaimManagement(sessionId: string | undefined) {
       
       // Broadcast the result to all players
       await supabase
-        .channel('game-updates')
+        .channel('player-game-updates')
         .send({
           type: 'broadcast',
-          event: 'claim-result',
+          event: 'claim-update',
           payload: { 
+            sessionId: sessionId,
             playerId: currentClaim.playerId,
-            result: 'rejected'
+            result: 'false'
           }
         });
       

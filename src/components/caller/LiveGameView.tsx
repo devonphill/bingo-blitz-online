@@ -19,7 +19,10 @@ interface LiveGameViewProps {
   onViewClaims: () => void;
   prizes?: { [patternId: string]: PrizeDetails };
   gameConfigs: GameConfig[];
-  sessionStatus?: string; // Add session status prop
+  sessionStatus?: string;
+  onCloseGame?: () => void;
+  currentGameNumber?: number;
+  numberOfGames?: number;
 }
 
 export function LiveGameView({
@@ -35,7 +38,10 @@ export function LiveGameView({
   onViewClaims,
   prizes = {},
   gameConfigs = [],
-  sessionStatus = 'pending' // Default to 'pending' if not provided
+  sessionStatus = 'pending',
+  onCloseGame,
+  currentGameNumber = 1,
+  numberOfGames = 1
 }: LiveGameViewProps) {
   const numberRange = gameType === 'mainstage' ? 90 : 75;
   
@@ -73,7 +79,10 @@ export function LiveGameView({
           totalCalls={calledNumbers.length}
           pendingClaims={pendingClaims}
           onViewClaims={onViewClaims}
-          sessionStatus={sessionStatus} // Pass the session status
+          sessionStatus={sessionStatus}
+          onCloseGame={onCloseGame}
+          currentGameNumber={currentGameNumber}
+          numberOfGames={numberOfGames}
         />
         
         <BingoCard

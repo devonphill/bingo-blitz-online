@@ -75,19 +75,28 @@ export default function PlayerGame() {
         console.log("Received claim update broadcast:", payload);
         if (payload.payload && payload.payload.sessionId === currentSession.id) {
           console.log("Refreshing game state due to claim update");
-          setAutoMarking(prev => !prev); // Toggle to force update
-          setTimeout(() => setAutoMarking(prev => !prev), 50); // Toggle back
           
+          // Force a refresh of the player game data to get the latest state
+          setAutoMarking(prev => !prev);
+          setTimeout(() => setAutoMarking(prev => !prev), 50);
+          
+          // If we receive a valid claim result and we're currently claiming, reset our claim status
           if (payload.payload.result === 'valid' && isClaiming) {
-            console.log("Resetting claim status due to valid result broadcast");
-            setTimeout(() => {
-              resetClaimStatus();
-            }, 500);
-          } else if (payload.payload.result === 'false' && isClaiming) {
-            console.log("Resetting claim status due to false result broadcast");
-            setTimeout(() => {
-              resetClaimStatus();
-            }, 500);
+            resetClaimStatus();
+            toast({
+              title: "Claim Verified",
+              description: "Your bingo claim has been verified!",
+              variant: "default"
+            });
+          } 
+          // If we receive a false claim result and we're currently claiming, reset our claim status
+          else if (payload.payload.result === 'false' && isClaiming) {
+            resetClaimStatus();
+            toast({
+              title: "Claim Rejected", 
+              description: "Your claim was not valid. Please check your card.",
+              variant: "destructive"
+            });
           }
         }
       })
@@ -97,7 +106,39 @@ export default function PlayerGame() {
       console.log("Cleaning up broadcast channel");
       supabase.removeChannel(broadcastChannel);
     };
-  }, [playerCode, currentSession?.id, isClaiming, resetClaimStatus]);
+  }, [playerCode, currentSession?.id, isClaiming, resetClaimStatus, toast]);
+
+  useEffect(() => {
+    if (!currentSession?.id) return;
+    
+    console.log("Setting up direct realtime subscription for game session");
+    
+    const channel = supabase
+      .channel(`player-game-session-${currentSession.id}`)
+      .on(
+        'postgres_changes',
+        { 
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'game_sessions',
+          filter: `id=eq.${currentSession.id}`
+        },
+        (payload) => {
+          console.log("Received direct database update:", payload);
+          
+          // Force a refresh to get the latest session state
+          if (payload.new && JSON.stringify(payload.new) !== JSON.stringify(payload.old)) {
+            setAutoMarking(prev => !prev);
+            setTimeout(() => setAutoMarking(prev => !prev), 50);
+          }
+        }
+      )
+      .subscribe();
+      
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentSession?.id, setAutoMarking]);
 
   const isInitialLoading = isLoading && loadingStep !== 'completed';
   const hasTickets = tickets && tickets.length > 0;

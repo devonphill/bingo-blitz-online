@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Check, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -63,7 +62,6 @@ export default function ClaimVerificationSheet({
 
   console.log("ClaimVerificationSheet rendered with isOpen:", isOpen, "playerName:", playerName);
 
-  // Normalize the currentWinPattern to include MAINSTAGE prefix if needed
   const normalizedWinPattern = currentWinPattern && !currentWinPattern.includes('_') && 
     (gameType === 'mainstage' || gameType === '90-ball') 
       ? `MAINSTAGE_${currentWinPattern}` 
@@ -77,8 +75,10 @@ export default function ClaimVerificationSheet({
       console.log("Ticket data:", tickets);
       console.log("Current win pattern:", normalizedWinPattern);
       
-      // Determine if this is a full house win pattern
-      setIsFullHouse(normalizedWinPattern === 'MAINSTAGE_fullHouse' || normalizedWinPattern === 'fullHouse');
+      const isFullHousePattern = normalizedWinPattern === 'MAINSTAGE_fullHouse' || 
+                                normalizedWinPattern === 'fullHouse';
+      console.log("Is this a full house pattern?", isFullHousePattern);
+      setIsFullHouse(isFullHousePattern);
     }
     
     if (!isOpen) {
@@ -142,15 +142,18 @@ export default function ClaimVerificationSheet({
       await handlePrizeSharing(false);
       onValidClaim();
       
-      // If this is fullHouse, progress to next game
       if (isFullHouse && onNext) {
-        console.log("Full house validated, will progress to next game");
+        console.log("Full house validated, explicitly progressing to next game");
+        toast({
+          title: "Full House Win",
+          description: "Full house verified! Advancing to next game.",
+        });
+        
         setTimeout(() => {
           onNext();
         }, 1500);
       }
 
-      // Send broadcast to update players' UI with more details
       try {
         await supabase.channel('player-game-updates')
           .send({
@@ -210,7 +213,12 @@ export default function ClaimVerificationSheet({
 
       await Promise.all(promises);
       
-      // Broadcast the claim result to update all player UIs
+      const isFullHouseWin = 
+        normalizedWinPattern?.includes('fullHouse') || 
+        normalizedWinPattern?.includes('MAINSTAGE_fullHouse');
+      
+      console.log("Is this a full house win?", isFullHouseWin, "Pattern:", normalizedWinPattern);
+      
       await supabase.channel('player-game-updates')
         .send({
           type: 'broadcast',
@@ -219,16 +227,25 @@ export default function ClaimVerificationSheet({
             sessionId: currentSession.id,
             result: 'valid',
             timestamp: new Date().toISOString(),
-            pattern: normalizedWinPattern
+            pattern: normalizedWinPattern,
+            isFullHouse: isFullHouseWin
           }
         });
       
-      // Check if this is a full house win pattern, and if so, trigger the game progression
       if (isFullHouse && onNext) {
         console.log("Full house win validated, will progress to next game");
+        toast({
+          title: "Full House Win",
+          description: "Full house verified! Advancing to next game.",
+        });
+        
+        setTimeout(() => {
+          onNext();
+          onClose();
+        }, 1000);
+      } else {
+        onClose();
       }
-
-      onClose();
     } catch (error) {
       console.error('Error saving game logs:', error);
       toast({
@@ -236,6 +253,7 @@ export default function ClaimVerificationSheet({
         description: "Failed to save game logs",
         variant: "destructive"
       });
+      onClose();
     }
   };
 
@@ -249,15 +267,18 @@ export default function ClaimVerificationSheet({
     if (actionType === 'valid') {
       onValidClaim();
       
-      // If this is a full house win pattern, trigger the game progression
       if (isFullHouse && onNext) {
         console.log("Full house validated in confirmAction, will progress to next game");
+        toast({
+          title: "Full House Win",
+          description: "Full house verified! Advancing to next game.",
+        });
+        
         setTimeout(() => {
           onNext();
         }, 1500);
       }
 
-      // Broadcast the claim result with additional information
       supabase.channel('player-game-updates')
         .send({
           type: 'broadcast',
@@ -273,7 +294,6 @@ export default function ClaimVerificationSheet({
     } else if (actionType === 'false') {
       onFalseClaim();
       
-      // Broadcast the claim result for false claims with additional information
       supabase.channel('player-game-updates')
         .send({
           type: 'broadcast',
@@ -288,11 +308,9 @@ export default function ClaimVerificationSheet({
     }
   };
 
-  // Get a display friendly name for the win pattern
   const getWinPatternDisplayName = (patternId: string | null | undefined): string => {
     if (!patternId) return 'Full House';
     
-    // Remove any prefix like MAINSTAGE_ for display
     const normalizedId = patternId.replace(/^[A-Z]+_/, '');
     
     switch (normalizedId) {
@@ -418,9 +436,13 @@ export default function ClaimVerificationSheet({
           setIsProcessing(true);
           onValidClaim();
           
-          // If this is a full house win pattern, trigger the game progression
           if (isFullHouse && onNext) {
             console.log("Full house win validated in sharing dialog, will progress to next game");
+            toast({
+              title: "Full House Win",
+              description: "Full house verified! Advancing to next game.",
+            });
+            
             setTimeout(() => {
               onNext();
             }, 1500);
