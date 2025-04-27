@@ -72,7 +72,7 @@ export function MainstageCallControls({
               className="relative"
               onClick={handleBellClick}
             >
-              <Bell className="h-4 w-4" className={pendingClaims > 0 ? "text-amber-500" : "text-gray-500"} />
+              <Bell className={`h-4 w-4 ${pendingClaims > 0 ? "text-amber-500" : "text-gray-500"}`} />
               {pendingClaims > 0 && (
                 <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center bg-amber-500">
                   {pendingClaims}
