@@ -73,7 +73,10 @@ export function convertLegacyGameConfig(config: LegacyGameConfig): GameConfig {
   
   if (Array.isArray(config.selectedPatterns)) {
     config.selectedPatterns.forEach(patternId => {
-      const prize = config.prizes?.[patternId] || {};
+      // Make sure prizes exist and have proper defaults
+      const prizes = config.prizes || {};
+      const prize = prizes[patternId] || {};
+      
       patterns[patternId] = {
         active: true,
         isNonCash: prize.isNonCash === true,

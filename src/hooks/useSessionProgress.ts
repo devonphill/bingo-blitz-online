@@ -13,8 +13,8 @@ export interface SessionProgress {
   current_game_type: GameType;
   created_at: string;
   updated_at: string;
-  called_numbers?: number[];
-  game_status?: 'pending' | 'active' | 'completed';
+  called_numbers: number[];
+  game_status: 'pending' | 'active' | 'completed';
 }
 
 export interface SessionProgressUpdate {
