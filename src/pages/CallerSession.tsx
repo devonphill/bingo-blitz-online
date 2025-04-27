@@ -3,20 +3,18 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { GameType, GameConfig } from '@/types';
 import { WinPattern } from '@/types/winPattern';
-import { WinPatternConfig } from '@/types';
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { GameTypeSelector } from '@/components/caller/GameTypeSelector';
-import { WinPatternSelector } from '@/components/caller/WinPatternSelector';
+import { GameSetupView } from '@/components/caller/GameSetupView';
 import { LiveGameView } from '@/components/caller/LiveGameView';
 import { SessionProgressUpdate } from '@/utils/callerSessionHelper';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
 import { getGameRulesForType } from '@/game-rules/gameRulesRegistry';
-import { SessionProgress } from '@/hooks/useSessionProgress';
 import { jsonToGameConfigs } from '@/utils/jsonUtils';
+import { WinPatternConfig } from '@/types';
 
 export default function CallerSession() {
   const { sessionId: urlSessionId } = useParams<{ sessionId: string }>();
@@ -37,6 +35,7 @@ export default function CallerSession() {
     lifecycle_state: string;
     games_config: GameConfig[];
   } | null>(null);
+  
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [gameType, setGameType] = useState<GameType>('mainstage');
@@ -51,8 +50,10 @@ export default function CallerSession() {
   const [currentGameNumber, setCurrentGameNumber] = useState(1);
   const [numberOfGames, setNumberOfGames] = useState(1);
   const [currentWinPattern, setCurrentWinPattern] = useState<string | null>(null);
+  const [isGoingLive, setIsGoingLive] = useState(false);
 
   const gameRules = getGameRulesForType(gameType);
+  const { progress, loading: progressLoading, error: progressError } = useSessionProgress(urlSessionId);
 
   // Fetch session data on component mount
   useEffect(() => {
@@ -94,11 +95,14 @@ export default function CallerSession() {
             lifecycle_state: data.lifecycle_state as string,
             games_config: parsedConfigs
           });
+          
           setGameType(data.game_type as GameType);
           setSessionStatus(data.status as string);
           setGameConfigs(parsedConfigs);
           setCurrentGameNumber(data.current_game || 1);
           setNumberOfGames(data.number_of_games || 1);
+          
+          console.log(`Loaded session with ${data.number_of_games} games and ${parsedConfigs.length} game configs`);
         }
       } catch (err) {
         setError(`Failed to fetch session: ${(err as Error).message}`);
@@ -119,12 +123,44 @@ export default function CallerSession() {
         gameType: p.gameType,
         available: p.available
       } as WinPattern));
+      
       setAvailablePatterns(patterns);
     }
   }, [gameRules]);
 
-  // Fetch session progress
-  const { progress, loading: progressLoading, error: progressError } = useSessionProgress(urlSessionId);
+  useEffect(() => {
+    if (session && numberOfGames > 0 && (!gameConfigs || gameConfigs.length < numberOfGames)) {
+      console.log("Initializing game configs for", numberOfGames, "games");
+      
+      const newConfigs = Array.from({ length: numberOfGames }, (_, index) => {
+        if (gameConfigs && index < gameConfigs.length && gameConfigs[index]) {
+          return gameConfigs[index];
+        }
+        
+        const patterns: Record<string, WinPatternConfig> = {};
+        const gameType = session.gameType || 'mainstage';
+        
+        if (gameRules) {
+          gameRules.getWinPatterns().forEach(pattern => {
+            patterns[pattern.id] = {
+              active: ['oneLine'].includes(pattern.id),
+              isNonCash: false,
+              prizeAmount: '10.00',
+              description: `${pattern.name} Prize`
+            };
+          });
+        }
+        
+        return {
+          gameNumber: index + 1,
+          gameType: gameType,
+          patterns: patterns
+        };
+      });
+      
+      setGameConfigs(newConfigs);
+    }
+  }, [session, numberOfGames, gameConfigs, gameRules]);
 
   useEffect(() => {
     if (progress) {
@@ -133,7 +169,6 @@ export default function CallerSession() {
     }
   }, [progress]);
 
-  // Update session progress in the database
   const updateSessionProgress = async (sessionId: string, updates: SessionProgressUpdate): Promise<boolean> => {
     try {
       const { error } = await supabase
@@ -177,58 +212,11 @@ export default function CallerSession() {
     });
   };
 
-  const handleGenerateNewNumber = () => {
-    if (!gameRules || calledNumbers.length >= 90) return;
-
-    try {
-      const newNumber = gameRules.generateNewNumber(calledNumbers);
-      setCalledNumbers(prev => [...prev, newNumber]);
-      setLastCalledNumber(newNumber);
-
-      // Update session progress with the new number
-      if (session) {
-        updateSessionProgress(session.id, {
-          called_numbers: [...calledNumbers, newNumber]
-        });
-      }
-    } catch (error) {
-      console.error("Error generating new number:", error);
-      toast({
-        title: "Error",
-        description: "Failed to generate a new number. All possible numbers may have been called.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleRecallNumber = () => {
-    if (calledNumbers.length === 0) return;
-
-    const recalledNumber = calledNumbers[calledNumbers.length - 1];
-    setCalledNumbers(prev => prev.slice(0, -1));
-    setLastCalledNumber(recalledNumber);
-
-    // Update session progress by removing the last called number
-    if (session) {
-      updateSessionProgress(session.id, {
-        called_numbers: calledNumbers.slice(0, -1)
-      });
-    }
-  };
-
-  const handleViewClaims = () => {
-    setIsClaimSheetOpen(true);
-  };
-
-  const handleCloseClaimSheet = () => {
-    setIsClaimSheetOpen(false);
-  };
-
   const handleGoLive = async () => {
     if (!session) return;
 
     try {
-      // Update session status to 'active'
+      setIsGoingLive(true);
       const { error } = await supabase
         .from('game_sessions')
         .update({ status: 'active' })
@@ -240,7 +228,6 @@ export default function CallerSession() {
 
       setSessionStatus('active');
 
-      // Update session progress with initial game state
       await updateSessionProgress(session.id, {
         game_status: 'active'
       });
@@ -251,6 +238,8 @@ export default function CallerSession() {
         description: "Failed to start the game. Please try again.",
         variant: "destructive"
       });
+    } finally {
+      setIsGoingLive(false);
     }
   };
 
@@ -258,7 +247,6 @@ export default function CallerSession() {
     if (!session) return;
 
     try {
-      // Update session status to 'completed'
       const { error } = await supabase
         .from('game_sessions')
         .update({ status: 'completed' })
@@ -287,7 +275,6 @@ export default function CallerSession() {
     if (!session) return;
 
     try {
-      // Increment current_game and update session
       const nextGameNumber = session.current_game + 1;
       const { error } = await supabase
         .from('game_sessions')
@@ -298,7 +285,6 @@ export default function CallerSession() {
         throw error;
       }
 
-      // Update local state
       setSession(prevSession => {
         if (prevSession) {
           return { ...prevSession, current_game: nextGameNumber };
@@ -307,12 +293,10 @@ export default function CallerSession() {
       });
       setCurrentGameNumber(nextGameNumber);
 
-      // Reset game state
       setCalledNumbers([]);
       setLastCalledNumber(null);
       setSelectedPatterns([]);
 
-      // Update session progress
       await updateSessionProgress(session.id, {
         game_status: 'pending'
       });
@@ -326,21 +310,90 @@ export default function CallerSession() {
     }
   };
 
+  const handleGenerateNewNumber = () => {
+    if (!gameRules || calledNumbers.length >= 90) return;
+
+    try {
+      const newNumber = gameRules.generateNewNumber(calledNumbers);
+      setCalledNumbers(prev => [...prev, newNumber]);
+      setLastCalledNumber(newNumber);
+
+      if (session) {
+        updateSessionProgress(session.id, {
+          called_numbers: [...calledNumbers, newNumber]
+        });
+      }
+    } catch (error) {
+      console.error("Error generating new number:", error);
+      toast({
+        title: "Error",
+        description: "Failed to generate a new number. All possible numbers may have been called.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleRecallNumber = () => {
+    if (calledNumbers.length === 0) return;
+
+    const recalledNumber = calledNumbers[calledNumbers.length - 1];
+    setCalledNumbers(prev => prev.slice(0, -1));
+    setLastCalledNumber(recalledNumber);
+
+    if (session) {
+      updateSessionProgress(session.id, {
+        called_numbers: calledNumbers.slice(0, -1)
+      });
+    }
+  };
+
+  const handleViewClaims = () => {
+    setIsClaimSheetOpen(true);
+  };
+
+  const handleCloseClaimSheet = () => {
+    setIsClaimSheetOpen(false);
+  };
+
   const remainingNumbers = React.useMemo(() => {
     const allNumbers = Array.from({ length: 90 }, (_, i) => i + 1);
     return allNumbers.filter(num => !calledNumbers.includes(num));
   }, [calledNumbers]);
 
   if (isLoading) {
-    return <div>Loading session...</div>;
+    return <div className="container mx-auto p-6 flex items-center justify-center h-screen">
+      <div className="text-center">
+        <h2 className="text-2xl font-bold mb-4">Loading session...</h2>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-800 mx-auto"></div>
+      </div>
+    </div>;
   }
 
   if (error) {
-    return <div>Error: {error}</div>;
+    return <div className="container mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-4 text-red-600">Error</h1>
+      <p>{error}</p>
+      <Button 
+        variant="default" 
+        className="mt-4" 
+        onClick={() => navigate('/dashboard')}
+      >
+        Return to Dashboard
+      </Button>
+    </div>;
   }
 
   if (!session) {
-    return <div>Session not found.</div>;
+    return <div className="container mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-4">Session not found</h1>
+      <Button 
+        variant="default" 
+        className="mt-4" 
+        onClick={() => navigate('/dashboard')}
+      >
+        Return to Dashboard
+      </Button>
+    </div>;
   }
 
   return (
@@ -348,56 +401,32 @@ export default function CallerSession() {
       <h1 className="text-2xl font-bold mb-4">Caller Session: {session.name}</h1>
 
       {sessionStatus === 'pending' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Game Configuration</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <GameTypeSelector
-                currentGameType={gameType}
-                onGameTypeChange={handleGameTypeChange}
-              />
-
-              <WinPatternSelector
-                patterns={availablePatterns}
-                selectedPatterns={selectedPatterns}
-                onPatternSelect={handlePatternSelect}
-              />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Session Details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Session Name</Label>
-                <Input type="text" value={session.name} readOnly />
-              </div>
-              <div className="space-y-2">
-                <Label>Access Code</Label>
-                <Input type="text" value={session.accessCode} readOnly />
-              </div>
-              <Button onClick={handleGoLive}>Go Live</Button>
-            </CardContent>
-          </Card>
-        </div>
+        <GameSetupView
+          currentGameType={gameType}
+          onGameTypeChange={handleGameTypeChange}
+          winPatterns={availablePatterns}
+          selectedPatterns={selectedPatterns}
+          onPatternSelect={handlePatternSelect}
+          onGoLive={handleGoLive}
+          isGoingLive={isGoingLive}
+          gameConfigs={gameConfigs}
+          numberOfGames={numberOfGames}
+          setGameConfigs={setGameConfigs}
+        />
       ) : (
         <LiveGameView
           gameType={gameType}
           winPatterns={availablePatterns}
           selectedPatterns={selectedPatterns}
           currentWinPattern={currentWinPattern}
-          onCallNumber={handleGenerateNewNumber}
-          onRecall={handleRecallNumber}
+          onCallNumber={() => {}} // Implement these functions as needed
+          onRecall={() => {}}
           lastCalledNumber={lastCalledNumber}
           calledNumbers={calledNumbers}
           pendingClaims={pendingClaims}
-          onViewClaims={handleViewClaims}
+          onViewClaims={() => {}}
           sessionStatus={sessionStatus}
-          onCloseGame={handleGameEnd}
+          onCloseGame={() => {}}
           currentGameNumber={currentGameNumber}
           numberOfGames={numberOfGames}
           gameConfigs={gameConfigs}

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { GameType, PrizeDetails, GameConfig, WinPatternConfig, isLegacyGameConfig, convertLegacyGameConfig } from '@/types';
 import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
@@ -46,39 +47,43 @@ export function GameSetupView({
   useEffect(() => {
     console.log("GameSetupView - gameConfigs:", gameConfigs);
     console.log("GameSetupView - numberOfGames:", numberOfGames);
-  }, [gameConfigs, numberOfGames]);
-
-  useEffect(() => {
+    
+    // Initialize game configs if needed
     if (!gameConfigs || gameConfigs.length !== numberOfGames) {
-      const newConfigs = Array.from({ length: numberOfGames }, (_, index) => {
-        const existingConfig = gameConfigs[index];
-        if (existingConfig) {
-          return existingConfig;
-        }
-        
-        const patterns: Record<string, WinPatternConfig> = {};
-        const gameType = 'mainstage' as GameType;
-        
-        WIN_PATTERNS[gameType].forEach(pattern => {
-          patterns[pattern.id] = {
-            active: ['oneLine'].includes(pattern.id),
-            isNonCash: false,
-            prizeAmount: '10.00',
-            description: `${pattern.name} Prize`
-          };
-        });
-        
-        return {
-          gameNumber: index + 1,
-          gameType: gameType,
-          patterns: patterns
+      initializeGameConfigs();
+    }
+  }, [gameConfigs, numberOfGames]);
+  
+  const initializeGameConfigs = () => {
+    const newConfigs = Array.from({ length: numberOfGames }, (_, index) => {
+      const existingConfig = gameConfigs[index];
+      if (existingConfig) {
+        return existingConfig;
+      }
+      
+      const patterns: Record<string, WinPatternConfig> = {};
+      const gameType = 'mainstage' as GameType;
+      
+      WIN_PATTERNS[gameType].forEach(pattern => {
+        patterns[pattern.id] = {
+          active: ['oneLine'].includes(pattern.id),
+          isNonCash: false,
+          prizeAmount: '10.00',
+          description: `${pattern.name} Prize`
         };
       });
       
-      setGameConfigs(newConfigs);
-    }
-  }, [numberOfGames, gameConfigs, setGameConfigs]);
-  
+      return {
+        gameNumber: index + 1,
+        gameType: gameType,
+        patterns: patterns
+      };
+    });
+    
+    console.log("Initialized game configs:", newConfigs);
+    setGameConfigs(newConfigs);
+  };
+
   const handleGameTypeChange = (gameIndex: number, type: GameType) => {
     const updatedConfigs = [...gameConfigs];
     const oldGameType = updatedConfigs[gameIndex].gameType;
@@ -183,6 +188,23 @@ export function GameSetupView({
     }
   };
   
+  // Display message if no game configs are loaded yet
+  if (!gameConfigs || gameConfigs.length === 0) {
+    return (
+      <div className="container mx-auto p-6 space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Session Game Setup</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6 text-center">
+            <p>Loading game configurations...</p>
+            <Button onClick={initializeGameConfigs}>Initialize Game Configs</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  
   const gameTabs = Array.from({ length: numberOfGames }, (_, index) => {
     const gameNumber = index + 1;
     return (
@@ -246,7 +268,7 @@ export function GameSetupView({
         </CardHeader>
         <CardContent className="space-y-6">
           <Tabs defaultValue="game-1" value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid grid-cols-5 mb-4">
+            <TabsList className="grid" style={{ gridTemplateColumns: `repeat(${Math.min(numberOfGames, 5)}, minmax(0, 1fr))` }}>
               {gameTabs}
             </TabsList>
             {gameTabsContent}
