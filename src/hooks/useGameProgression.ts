@@ -25,7 +25,10 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
         const gamesConfig = Array.isArray(sessionData.games_config) ? sessionData.games_config : [];
         const gameConfig = gamesConfig.find((config: any) => config?.gameNumber === gameNumber);
         
-        if (gameConfig?.selectedPatterns?.length > 0) {
+        if (gameConfig && typeof gameConfig === 'object' && 
+            'selectedPatterns' in gameConfig && 
+            Array.isArray(gameConfig.selectedPatterns) &&
+            gameConfig.selectedPatterns.length > 0) {
           console.log(`Found specific patterns for game ${gameNumber}:`, gameConfig.selectedPatterns);
           return gameConfig.selectedPatterns[0];
         }
