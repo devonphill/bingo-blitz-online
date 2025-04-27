@@ -6,8 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useParams } from 'react-router-dom';
-import { GameConfig } from '@/types';
-import { gameConfigsToJson } from '@/utils/jsonUtils';
+import { prepareForDatabase } from '@/utils/jsonUtils';
 
 export default function AddPlayers() {
   const { sessionId } = useParams();
@@ -85,17 +84,16 @@ export default function AddPlayers() {
     if (!sessionId || !currentSession) return;
     
     try {
-      // Convert games_config to the correct format for the database using our utility function
+      // Prepare the games_config for the database - this ensures JSON compatibility
       if (currentSession.games_config) {
-        const jsonReadyConfig = gameConfigsToJson(currentSession.games_config);
+        // Convert games_config to JSON-safe format
+        const jsonReadyConfig = prepareForDatabase(currentSession.games_config);
         
-        // Create a copy of the session with the properly formatted games_config
-        const sessionUpdates = {
+        await updateSession(sessionId, {
+          // Keep other properties but update games_config with the properly formatted data
           ...currentSession,
           games_config: jsonReadyConfig
-        };
-        
-        await updateSession(sessionId, sessionUpdates);
+        });
       }
     } catch (error) {
       console.error('Error updating session:', error);

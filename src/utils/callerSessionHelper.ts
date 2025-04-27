@@ -40,7 +40,9 @@ export function convertFromLegacyConfig(legacyConfig: LegacyGameConfig): GameCon
   
   if (Array.isArray(legacyConfig.selectedPatterns)) {
     legacyConfig.selectedPatterns.forEach(patternId => {
-      const prizeDetails = legacyConfig.prizes?.[patternId] || { amount: '0', isNonCash: false, description: '' };
+      // Ensure prizes exists and is an object before accessing it
+      const prizes = legacyConfig.prizes || {};
+      const prizeDetails = prizes[patternId] || { amount: '0', isNonCash: false, description: '' };
       
       patterns[patternId] = {
         active: true,
