@@ -6,25 +6,19 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/use-toast";
-import { useNavigate } from "react-router-dom";
 
 export default function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const { signIn, isLoading, error, role } = useAuth();
+  const { signIn, isLoading, error } = useAuth();
   const { toast } = useToast();
-  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await signIn(email, password);
       toast({ title: "Login successful", description: "Welcome back!" });
-      if (role === "superuser") {
-        navigate("/admin");
-      } else {
-        navigate("/dashboard");
-      }
+      // Login.tsx will handle the navigation based on role
     } catch (err) {
       // Error is handled in the AuthContext
       // No need to do anything here as it will be displayed from the error state

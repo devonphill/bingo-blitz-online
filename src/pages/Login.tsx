@@ -1,3 +1,4 @@
+
 import React, { useEffect } from 'react';
 import LoginForm from '@/components/auth/LoginForm';
 import { useAuth } from "@/contexts/AuthContext";
@@ -9,8 +10,11 @@ export default function Login() {
 
   useEffect(() => {
     if (!isLoading && user) {
-      if (role === "superuser") navigate("/admin");
-      else navigate("/dashboard");
+      if (role === "superuser") {
+        navigate("/admin");
+      } else {
+        navigate("/dashboard");
+      }
     }
   }, [user, isLoading, role, navigate]);
 
