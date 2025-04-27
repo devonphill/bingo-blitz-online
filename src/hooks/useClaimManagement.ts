@@ -1,7 +1,12 @@
+
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useGameProgression } from './useGameProgression';
+import { CurrentGameState } from '@/types';
+
+// Define a type for the Json value since it's missing from the supabase-js export
+type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
 
 export function useClaimManagement(sessionId: string | undefined) {
   const [showClaimSheet, setShowClaimSheet] = useState(false);
@@ -241,117 +246,129 @@ export function useClaimManagement(sessionId: string | undefined) {
       if (sessionError || !sessionData || !sessionData.current_game_state) {
         console.error("Error fetching session data:", sessionError);
       } else {
-        const currentGameState = sessionData.current_game_state;
-        const activePatterns = currentGameState.activePatternIds || [];
+        const currentGameState = sessionData.current_game_state as unknown as CurrentGameState;
         
-        if (activePatterns.length > 0) {
-          // Get current win pattern (first in the list)
-          const currentPattern = activePatterns[0];
+        // Check if current_game_state has activePatternIds and is an object
+        if (currentGameState && typeof currentGameState === 'object' && 'activePatternIds' in currentGameState) {
+          const activePatterns = currentGameState.activePatternIds || [];
           
-          // Get game progress record for this session
-          const { data: progressData, error: progressError } = await supabase
-            .from('game_progress')
-            .select('*')
-            .eq('session_id', sessionId)
-            .maybeSingle();
+          if (activePatterns.length > 0) {
+            // Get current win pattern (first in the list)
+            const currentPattern = activePatterns[0];
             
-          if (progressError) {
-            console.error("Error fetching game progress:", progressError);
-          }
-          
-          // Update game progress with completed pattern
-          if (progressData) {
-            // Add the current pattern to completed patterns list
-            const completedPatterns = [...(progressData.completed_win_patterns || [])];
-            if (!completedPatterns.includes(currentPattern)) {
-              completedPatterns.push(currentPattern);
-            }
-            
-            // Calculate the next active pattern
-            const remainingPatterns = activePatterns.filter(p => !completedPatterns.includes(p));
-            const nextPattern = remainingPatterns.length > 0 ? remainingPatterns[0] : null;
-            
-            console.log("Updating game progress:", {
-              completedPatterns,
-              nextPattern,
-              currentPattern
-            });
-            
-            // Update game progress
-            const { error: updateProgressError } = await supabase
+            // Get game progress record for this session
+            const { data: progressData, error: progressError } = await supabase
               .from('game_progress')
-              .update({
-                completed_win_patterns: completedPatterns,
-                current_win_pattern_id: nextPattern
-              })
-              .eq('id', progressData.id);
+              .select('*')
+              .eq('session_id', sessionId)
+              .maybeSingle();
               
-            if (updateProgressError) {
-              console.error("Error updating game progress:", updateProgressError);
+            if (progressError) {
+              console.error("Error fetching game progress:", progressError);
             }
             
-            // Update active patterns in game state
-            const updatedPatterns = activePatterns.filter(p => p !== currentPattern);
-            
-            if (updatedPatterns.length === 0 && shouldAdvanceGame) {
-              console.log("No patterns remaining - will advance game");
-            } else if (updatedPatterns.length > 0) {
-              console.log("Updating active patterns in game state:", updatedPatterns);
-              
-              const updatedGameState = {
-                ...currentGameState,
-                activePatternIds: updatedPatterns
-              };
-              
-              const { error: updateSessionError } = await supabase
-                .from('game_sessions')
-                .update({
-                  current_game_state: updatedGameState
-                })
-                .eq('id', sessionId);
-                
-              if (updateSessionError) {
-                console.error("Error updating session game state:", updateSessionError);
+            // Update game progress with completed pattern
+            if (progressData) {
+              // Add the current pattern to completed patterns list
+              const completedPatterns = [...(progressData.completed_win_patterns || [])];
+              if (!completedPatterns.includes(currentPattern)) {
+                completedPatterns.push(currentPattern);
               }
-            }
-          } else {
-            // Create new game progress record
-            const { error: createError } = await supabase
-              .from('game_progress')
-              .insert({
-                session_id: sessionId,
-                game_number: currentGameState.gameNumber || 1,
-                completed_win_patterns: [currentPattern],
-                current_win_pattern_id: activePatterns.length > 1 ? activePatterns[1] : null
+              
+              // Calculate the next active pattern
+              const remainingPatterns = activePatterns.filter(p => !completedPatterns.includes(p));
+              const nextPattern = remainingPatterns.length > 0 ? remainingPatterns[0] : null;
+              
+              console.log("Updating game progress:", {
+                completedPatterns,
+                nextPattern,
+                currentPattern
               });
               
-            if (createError) {
-              console.error("Error creating game progress:", createError);
-            }
-            
-            // Update active patterns in game state
-            const updatedPatterns = activePatterns.filter(p => p !== currentPattern);
-            
-            if (updatedPatterns.length === 0 && shouldAdvanceGame) {
-              console.log("No patterns remaining in new progress - will advance game");
-            } else if (updatedPatterns.length > 0) {
-              const updatedGameState = {
-                ...currentGameState,
-                activePatternIds: updatedPatterns
-              };
-              
-              const { error: updateSessionError } = await supabase
-                .from('game_sessions')
+              // Update game progress
+              const { error: updateProgressError } = await supabase
+                .from('game_progress')
                 .update({
-                  current_game_state: updatedGameState
+                  completed_win_patterns: completedPatterns,
+                  current_win_pattern_id: nextPattern
                 })
-                .eq('id', sessionId);
+                .eq('id', progressData.id);
                 
-              if (updateSessionError) {
-                console.error("Error updating session game state:", updateSessionError);
+              if (updateProgressError) {
+                console.error("Error updating game progress:", updateProgressError);
+              }
+              
+              // Update active patterns in game state
+              const updatedPatterns = activePatterns.filter(p => p !== currentPattern);
+              
+              if (updatedPatterns.length === 0 && shouldAdvanceGame) {
+                console.log("No patterns remaining - will advance game");
+              } else if (updatedPatterns.length > 0) {
+                console.log("Updating active patterns in game state:", updatedPatterns);
+                
+                const updatedGameState = {
+                  ...currentGameState,
+                  activePatternIds: updatedPatterns
+                };
+                
+                const { error: updateSessionError } = await supabase
+                  .from('game_sessions')
+                  .update({
+                    current_game_state: updatedGameState
+                  })
+                  .eq('id', sessionId);
+                  
+                if (updateSessionError) {
+                  console.error("Error updating session game state:", updateSessionError);
+                }
+              }
+            } else {
+              // Create new game progress record
+              // Make sure we have a valid gameNumber
+              let gameNumber = 1; // Default value
+              if (typeof currentGameState === 'object' && 'gameNumber' in currentGameState) {
+                gameNumber = currentGameState.gameNumber;
+              }
+              
+              const { error: createError } = await supabase
+                .from('game_progress')
+                .insert({
+                  session_id: sessionId,
+                  game_number: gameNumber,
+                  completed_win_patterns: [currentPattern],
+                  current_win_pattern_id: activePatterns.length > 1 ? activePatterns[1] : null
+                });
+                
+              if (createError) {
+                console.error("Error creating game progress:", createError);
+              }
+              
+              // Update active patterns in game state
+              const updatedPatterns = activePatterns.filter(p => p !== currentPattern);
+              
+              if (updatedPatterns.length === 0 && shouldAdvanceGame) {
+                console.log("No patterns remaining in new progress - will advance game");
+              } else if (updatedPatterns.length > 0) {
+                const updatedGameState = {
+                  ...currentGameState,
+                  activePatternIds: updatedPatterns
+                };
+                
+                const { error: updateSessionError } = await supabase
+                  .from('game_sessions')
+                  .update({
+                    current_game_state: updatedGameState
+                  })
+                  .eq('id', sessionId);
+                  
+                if (updateSessionError) {
+                  console.error("Error updating session game state:", updateSessionError);
+                }
               }
             }
           }
+        } else {
+          console.error("Invalid current_game_state format:", currentGameState);
         }
       }
       
