@@ -117,8 +117,9 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
         const { error } = await supabase
           .from('game_sessions')
           .update({ 
-            current_game_state: JSON.parse(JSON.stringify(nextGameState)),
-            status: 'active'
+            current_game_state: JSON.parse(JSON.stringify(nextGameState)) as unknown as Json,
+            status: 'active',
+            current_game: nextGameNumber
           })
           .eq('id', session.id);
 
@@ -136,20 +137,18 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
             description: `Moving to game ${nextGameNumber}`,
           });
           
-          // Clear any existing game progress for the new game
+          // Update session progress for the new game
           const { error: progressError } = await supabase
-            .from('game_progress')
-            .upsert({
-              session_id: session.id,
-              game_number: nextGameNumber,
-              completed_win_patterns: [],
-              current_win_pattern_id: nextGameConfig?.selectedPatterns?.[0] || null
-            }, {
-              onConflict: 'session_id, game_number'
-            });
+            .from('sessions_progress')
+            .update({
+              current_game_number: nextGameNumber,
+              current_win_pattern: nextGameConfig?.selectedPatterns?.[0] || null,
+              current_game_type: nextGameConfig?.gameType || latestSessionData.game_type
+            })
+            .eq('session_id', session.id);
             
           if (progressError) {
-            console.error("Error initializing game progress:", progressError);
+            console.error("Error updating session progress:", progressError);
           }
           
           // Broadcast game progression to all clients
@@ -165,6 +164,8 @@ export function useGameProgression(session: GameSession | null, onGameComplete?:
                   timestamp: new Date().toISOString()
                 }
               });
+            
+            console.log("Sent game progression broadcast");
           } catch (error) {
             console.error("Error broadcasting game progression:", error);
           }

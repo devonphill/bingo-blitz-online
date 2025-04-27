@@ -59,6 +59,7 @@ export default function ClaimVerificationSheet({
   const [showSharingDialog, setShowSharingDialog] = useState(false);
   const [validClaimsCount, setValidClaimsCount] = useState(0);
   const [isFullHouse, setIsFullHouse] = useState(false);
+  const [shouldProgress, setShouldProgress] = useState(false);
 
   const normalizedWinPattern = currentWinPattern && !currentWinPattern.includes('_') && 
     (gameType === 'mainstage' || gameType === '90-ball') 
@@ -125,6 +126,20 @@ export default function ClaimVerificationSheet({
     }
   }, [tickets, calledNumbers, normalizedWinPattern, gameType]);
 
+  useEffect(() => {
+    if (shouldProgress && isFullHouse && onNext && !isProcessing) {
+      console.log("ClaimVerificationSheet: Progressing to next game after full house win");
+      
+      const timer = setTimeout(() => {
+        setShouldProgress(false);
+        onNext();
+        onClose();
+      }, 2000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [shouldProgress, isFullHouse, onNext, onClose, isProcessing]);
+
   const handleValidClaim = async () => {
     if (isProcessing) return;
     
@@ -137,33 +152,48 @@ export default function ClaimVerificationSheet({
       await handlePrizeSharing(false);
       onValidClaim();
       
-      if (isFullHouse && onNext) {
-        console.log("Full house validated, explicitly progressing to next game");
+      if (isFullHouse) {
+        console.log("Full house validated, will progress to next game");
         toast({
           title: "Full House Win",
           description: "Full house verified! Advancing to next game.",
         });
         
-        setTimeout(() => {
-          onNext();
-        }, 1500);
-      }
-
-      try {
-        await supabase.channel('player-game-updates')
-          .send({
-            type: 'broadcast',
-            event: 'claim-update',
-            payload: {
-              sessionId: currentSession?.id,
-              result: 'valid',
-              timestamp: new Date().toISOString(),
-              pattern: normalizedWinPattern,
-              isFullHouse: isFullHouse
-            }
-          });
-      } catch (error) {
-        console.error('Error broadcasting claim update:', error);
+        try {
+          await supabase.channel('player-game-updates')
+            .send({
+              type: 'broadcast',
+              event: 'claim-update',
+              payload: {
+                sessionId: currentSession?.id,
+                result: 'valid',
+                timestamp: new Date().toISOString(),
+                pattern: normalizedWinPattern,
+                isFullHouse: true
+              }
+            });
+        } catch (error) {
+          console.error('Error broadcasting claim update:', error);
+        }
+        
+        setShouldProgress(true);
+      } else {
+        try {
+          await supabase.channel('player-game-updates')
+            .send({
+              type: 'broadcast',
+              event: 'claim-update',
+              payload: {
+                sessionId: currentSession?.id,
+                result: 'valid',
+                timestamp: new Date().toISOString(),
+                pattern: normalizedWinPattern,
+                isFullHouse: false
+              }
+            });
+        } catch (error) {
+          console.error('Error broadcasting claim update:', error);
+        }
       }
     }
   };
@@ -229,16 +259,13 @@ export default function ClaimVerificationSheet({
         });
       
       if (isFullHouse && onNext) {
-        console.log("Full house win validated, will progress to next game");
+        console.log("Full house win validated in handlePrizeSharing, will progress to next game");
         toast({
           title: "Full House Win",
           description: "Full house verified! Advancing to next game.",
         });
         
-        setTimeout(() => {
-          onNext();
-          onClose();
-        }, 1000);
+        setShouldProgress(true);
       } else {
         onClose();
       }
@@ -438,9 +465,7 @@ export default function ClaimVerificationSheet({
               description: "Full house verified! Advancing to next game.",
             });
             
-            setTimeout(() => {
-              onNext();
-            }, 1500);
+            setShouldProgress(true);
           }
         }}
         playerCount={validClaimsCount}

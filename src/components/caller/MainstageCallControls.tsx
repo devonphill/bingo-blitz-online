@@ -32,6 +32,7 @@ export function MainstageCallControls({
 }: MainstageCallControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isClosingConfirmOpen, setIsClosingConfirmOpen] = useState(false);
+  const [isProcessingClose, setIsProcessingClose] = useState(false);
   const { toast } = useToast();
   const isLastGame = currentGameNumber >= numberOfGames;
 
@@ -45,9 +46,24 @@ export function MainstageCallControls({
 
   const confirmCloseGame = () => {
     if (onCloseGame) {
+      setIsProcessingClose(true);
+      
+      // Call the onCloseGame function and reset states after a delay
       onCloseGame();
+      
+      // Reset states after a brief delay to provide visual feedback
+      setTimeout(() => {
+        setIsProcessingClose(false);
+        setIsClosingConfirmOpen(false);
+      }, 300);
+      
+      toast({
+        title: isLastGame ? "Session Completed" : "Game Advanced",
+        description: isLastGame 
+          ? "The session has been completed successfully." 
+          : `Advanced to game ${currentGameNumber + 1}`,
+      });
     }
-    setIsClosingConfirmOpen(false);
   };
 
   console.log("MainstageCallControls props:", { 
@@ -110,8 +126,9 @@ export function MainstageCallControls({
                 variant="secondary"
                 onClick={handleCloseGame}
                 className="bg-blue-600 hover:bg-blue-700 text-white"
+                disabled={isProcessingClose}
               >
-                {isLastGame ? 'Complete Session' : 'Close Game'}
+                {isProcessingClose ? 'Processing...' : isLastGame ? 'Complete Session' : 'Close Game'}
               </Button>
             )}
           </div>
@@ -134,12 +151,13 @@ export function MainstageCallControls({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isProcessingClose}>Cancel</AlertDialogCancel>
             <AlertDialogAction 
               onClick={confirmCloseGame}
               className={isLastGame ? "bg-purple-600 hover:bg-purple-700" : "bg-blue-600 hover:bg-blue-700"}
+              disabled={isProcessingClose}
             >
-              {isLastGame ? 'Complete Session' : 'Close Game'}
+              {isProcessingClose ? 'Processing...' : isLastGame ? 'Complete Session' : 'Close Game'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

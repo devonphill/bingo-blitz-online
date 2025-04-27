@@ -48,10 +48,15 @@ export default function PlayerGameLayout({
   numberOfGames = 1
 }: PlayerGameLayoutProps) {
   const [localClaimValidating, setLocalClaimValidating] = useState(false);
+  const [localClaimStatus, setLocalClaimStatus] = useState<'pending' | 'validated' | 'rejected' | null>(null);
   const { toast } = useToast();
 
-  // Reset claiming state based on external changes to claimStatus or isClaiming
+  // Sync external claim status with local state
   useEffect(() => {
+    if (claimStatus) {
+      setLocalClaimStatus(claimStatus);
+    }
+    
     if (claimStatus === 'validated' || claimStatus === 'rejected') {
       setLocalClaimValidating(false);
     }
@@ -80,6 +85,7 @@ export default function PlayerGameLayout({
             
             if (result === 'valid' || result === 'rejected') {
               setLocalClaimValidating(false);
+              setLocalClaimStatus(result === 'valid' ? 'validated' : 'rejected');
               
               toast({
                 title: result === 'valid' ? "Claim Verified!" : "Claim Rejected",
@@ -102,8 +108,14 @@ export default function PlayerGameLayout({
         { event: 'claim-update' },
         (payload) => {
           console.log("Received claim update broadcast:", payload);
-          // Force a refresh when any claim is processed
-          if (payload.payload && payload.payload.sessionId === currentSession.id) {
+          // Update claim status when any claim is processed
+          if (payload.payload && payload.payload.sessionId === currentSession.id && 
+              payload.payload.result === 'valid') {
+            setLocalClaimStatus('validated');
+            setLocalClaimValidating(false);
+          } else if (payload.payload && payload.payload.sessionId === currentSession.id && 
+              payload.payload.result === 'false') {
+            setLocalClaimStatus('rejected');
             setLocalClaimValidating(false);
           }
         }
@@ -117,8 +129,8 @@ export default function PlayerGameLayout({
   }, [currentSession?.id, playerCode, toast]);
 
   const handleClaimClick = async () => {
-    if (localClaimValidating || isClaiming || claimStatus === 'pending') {
-      console.log("Claim already in progress, ignoring click");
+    if (localClaimValidating || isClaiming || localClaimStatus === 'validated') {
+      console.log("Claim already in progress or validated, ignoring click");
       return;
     }
     
@@ -188,6 +200,7 @@ export default function PlayerGameLayout({
   }
   
   const isClaimInProgress = localClaimValidating || isClaiming || claimStatus === 'pending';
+  const isClaimValidated = localClaimStatus === 'validated' || claimStatus === 'validated';
   
   return (
     <div className="min-h-screen w-full flex bg-gray-50">
@@ -209,17 +222,21 @@ export default function PlayerGameLayout({
           <Button
             className={`w-full ${isClaimInProgress
               ? 'bg-orange-500 hover:bg-orange-600' 
-              : 'bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary'
+              : isClaimValidated
+                ? 'bg-green-500 hover:bg-green-600'
+                : 'bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary'
             }`}
             onClick={handleClaimClick}
-            disabled={isClaimInProgress}
+            disabled={isClaimInProgress || isClaimValidated}
           >
             {isClaimInProgress ? (
               <span className="flex items-center">
                 <Loader className="animate-spin mr-2 h-4 w-4" />
                 VALIDATING CLAIM...
               </span>
-            ) : "CLAIM NOW!"}
+            ) : isClaimValidated ? 
+              "CLAIM VALIDATED!" : 
+              "CLAIM NOW!"}
           </Button>
           
           {isClaimInProgress && (
