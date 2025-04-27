@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import CreateSessionForm from '@/components/dashboard/CreateSessionForm';
@@ -12,8 +12,13 @@ import DashboardSidebar from '@/components/dashboard/DashboardSidebar';
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
-  const { sessions } = useSessionContext();
+  const { sessions, fetchSessions, isLoading } = useSessionContext();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    // Fetch sessions when the dashboard loads
+    fetchSessions();
+  }, [fetchSessions]);
 
   const handleLogout = () => {
     logout();
@@ -50,7 +55,11 @@ export default function Dashboard() {
               <CreateSessionForm />
             </div>
             
-            {sessions.length === 0 ? (
+            {isLoading ? (
+              <div className="flex justify-center items-center h-48">
+                <p className="text-gray-500">Loading sessions...</p>
+              </div>
+            ) : sessions.length === 0 ? (
               <div className="bg-white shadow rounded-lg p-6 text-center">
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No Sessions Yet</h3>
                 <p className="text-gray-500 mb-4">Create your first bingo session to get started</p>

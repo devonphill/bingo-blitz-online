@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,6 +9,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { GameType } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSessionContext } from '@/contexts/SessionProvider';
 
 const ALL_GAME_TYPES: GameType[] = ['mainstage', 'party', 'quiz', 'music', 'logo'];
 
@@ -18,8 +20,10 @@ export default function CreateSessionForm() {
   const [sessionTime, setSessionTime] = useState('');
   const [numberOfGames, setNumberOfGames] = useState(1);
   const [open, setOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
+  const { fetchSessions } = useSessionContext();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,6 +43,9 @@ export default function CreateSessionForm() {
       });
       return;
     }
+    
+    setIsSubmitting(true);
+    
     const accessCode = Math.floor(100000 + Math.random() * 900000).toString();
     const sessionDateObj = new Date(`${sessionDate}T${sessionTime}`);
     const payload = {
@@ -54,26 +61,44 @@ export default function CreateSessionForm() {
     
     console.log("Creating session with payload:", payload);
     
-    const { error } = await supabase.from('game_sessions').insert([payload]);
-    if (error) {
-      console.error("Session creation error:", error);
+    try {
+      const { error } = await supabase.from('game_sessions').insert([payload]);
+      
+      if (error) {
+        console.error("Session creation error:", error);
+        toast({
+          title: 'Error',
+          description: error.message || 'Failed to create session',
+          variant: 'destructive'
+        });
+        return;
+      }
+      
+      // Refresh the sessions list after successful creation
+      await fetchSessions();
+      
+      toast({
+        title: 'Success',
+        description: 'Game session created successfully',
+      });
+      
+      // Reset the form
+      setSessionName('');
+      setGameType('mainstage');
+      setSessionDate('');
+      setSessionTime('');
+      setNumberOfGames(1);
+      setOpen(false);
+    } catch (err) {
+      console.error("Error creating session:", err);
       toast({
         title: 'Error',
-        description: error.message || 'Failed to create session',
+        description: 'An unexpected error occurred',
         variant: 'destructive'
       });
-      return;
+    } finally {
+      setIsSubmitting(false);
     }
-    toast({
-      title: 'Success',
-      description: 'Game session created successfully',
-    });
-    setSessionName('');
-    setGameType('mainstage');
-    setSessionDate('');
-    setSessionTime('');
-    setNumberOfGames(1);
-    setOpen(false);
   };
 
   return (
@@ -146,7 +171,9 @@ export default function CreateSessionForm() {
             </select>
           </div>
           <DialogFooter>
-            <Button type="submit">Create Session</Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? 'Creating...' : 'Create Session'}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

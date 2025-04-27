@@ -79,9 +79,9 @@ export function convertLegacyGameConfig(config: LegacyGameConfig): GameConfig {
       
       patterns[patternId] = {
         active: true,
-        isNonCash: Boolean(prize?.isNonCash || false),
-        prizeAmount: prize?.amount || '0.00',
-        description: prize?.description || ''
+        isNonCash: prize?.isNonCash ?? false,
+        prizeAmount: prize?.amount ?? '0.00',
+        description: prize?.description ?? ''
       };
     });
   }
@@ -91,6 +91,19 @@ export function convertLegacyGameConfig(config: LegacyGameConfig): GameConfig {
     gameType: config.gameType || 'mainstage',
     patterns
   };
+}
+
+export interface SessionProgress {
+  id: string;
+  session_id: string;
+  current_game_number: number;
+  max_game_number: number;
+  current_win_pattern: string | null;
+  current_game_type: GameType;
+  created_at: string;
+  updated_at: string;
+  called_numbers: number[];
+  game_status: 'pending' | 'active' | 'completed';
 }
 
 export interface PrizeDetails {
@@ -109,19 +122,6 @@ export interface Ticket {
   layoutMask: number;
   numbers: number[];
   timeStamp?: string;
-}
-
-export interface SessionProgress {
-  id: string;
-  session_id: string;
-  current_game_number: number;
-  max_game_number: number;
-  current_win_pattern: string | null;
-  current_game_type: GameType;
-  created_at: string;
-  updated_at: string;
-  called_numbers?: number[];
-  game_status?: 'pending' | 'active' | 'completed';
 }
 
 export interface Player {
