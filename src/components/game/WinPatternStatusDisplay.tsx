@@ -25,17 +25,18 @@ export function WinPatternStatusDisplay({
     const bBaseId = b.id.replace('MAINSTAGE_', '');
     
     // Try to find these in standard order arrays
-    const aIndex = Object.values(DEFAULT_PATTERN_ORDER).findIndex(
-      arr => arr.includes(aBaseId)
+    const gameTypes = Object.keys(DEFAULT_PATTERN_ORDER) as Array<keyof typeof DEFAULT_PATTERN_ORDER>;
+    const aGameTypeIndex = gameTypes.findIndex(type => 
+      DEFAULT_PATTERN_ORDER[type].includes(aBaseId as any)
     );
-    const bIndex = Object.values(DEFAULT_PATTERN_ORDER).findIndex(
-      arr => arr.includes(bBaseId)
+    const bGameTypeIndex = gameTypes.findIndex(type => 
+      DEFAULT_PATTERN_ORDER[type].includes(bBaseId as any)
     );
     
-    // If both found in same array, compare positions within that array
-    if (aIndex !== -1 && bIndex !== -1 && aIndex === bIndex) {
-      const orderArray = Object.values(DEFAULT_PATTERN_ORDER)[aIndex];
-      return orderArray.indexOf(aBaseId) - orderArray.indexOf(bBaseId);
+    // If both found in same standard order array
+    if (aGameTypeIndex !== -1 && bGameTypeIndex !== -1 && aGameTypeIndex === bGameTypeIndex) {
+      const orderArray = DEFAULT_PATTERN_ORDER[gameTypes[aGameTypeIndex]];
+      return orderArray.indexOf(aBaseId as any) - orderArray.indexOf(bBaseId as any);
     }
     
     // Otherwise sort by active status first, then by name

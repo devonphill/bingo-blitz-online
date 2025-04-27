@@ -115,6 +115,15 @@ export function convertLegacyGameConfig(legacy: LegacyGameConfig): GameConfig {
   };
 }
 
+// Add DEFAULT_PATTERN_ORDER to define the standard order of win patterns
+export const DEFAULT_PATTERN_ORDER = {
+  mainstage: ['oneLine', 'twoLines', 'fullHouse'],
+  party: ['corners', 'oneLine', 'twoLines', 'threeLines', 'fullHouse'],
+  quiz: ['oneLine', 'twoLines', 'fullHouse'],
+  music: ['oneLine', 'twoLines', 'fullHouse'],
+  logo: ['oneLine', 'twoLines', 'fullHouse']
+} as const;
+
 // Game session type
 export interface GameSession {
   id: string;
