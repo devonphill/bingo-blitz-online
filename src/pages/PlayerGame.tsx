@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -9,6 +10,7 @@ import { WIN_PATTERNS } from '@/types/winPattern';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
+import { PrizeDetails } from '@/types';
 
 export default function PlayerGame() {
   const { playerCode: urlPlayerCode } = useParams<{ playerCode: string }>();
@@ -216,6 +218,19 @@ export default function PlayerGame() {
 
   const currentWinPattern = activeWinPatterns.length > 0 ? activeWinPatterns[0] : null;
 
+  // Convert complex prize objects to strings for the layout component
+  const simplifiedPrizes: { [key: string]: string } = {};
+  if (winPrizes) {
+    Object.entries(winPrizes).forEach(([key, prize]) => {
+      if (typeof prize === 'string') {
+        simplifiedPrizes[key] = prize;
+      } else if (prize && typeof prize === 'object') {
+        const prizeDetail = prize as PrizeDetails;
+        simplifiedPrizes[key] = prizeDetail.amount || prizeDetail.description || 'Prize';
+      }
+    });
+  }
+
   return (
     <PlayerGameLayout
       tickets={tickets || []}
@@ -225,7 +240,7 @@ export default function PlayerGame() {
       autoMarking={autoMarking}
       setAutoMarking={setAutoMarking}
       playerCode={playerCode || ''}
-      winPrizes={winPrizes || {}}
+      winPrizes={simplifiedPrizes}
       activeWinPatterns={activeWinPatterns || []}
       currentWinPattern={currentWinPattern}
       onClaimBingo={handleClaimBingo}

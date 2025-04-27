@@ -226,7 +226,7 @@ export function useClaimManagement(sessionId: string | undefined) {
         await supabase
           .from('sessions_progress')
           .update({
-            current_win_pattern: activeWinPattern || null
+            current_win_pattern: null // Reset the current win pattern after validation
           })
           .eq('session_id', sessionId);
       }
