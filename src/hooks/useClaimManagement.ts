@@ -3,9 +3,9 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useGameProgression } from './useGameProgression';
-import { CurrentGameState } from '@/types';
+import { CurrentGameState, GameType, PrizeDetails } from '@/types';
 
-// Define a type for the Json value since it's missing from the supabase-js export
+// Define a recursive Json type that can handle nested objects
 type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
 
 export function useClaimManagement(sessionId: string | undefined) {
@@ -246,10 +246,16 @@ export function useClaimManagement(sessionId: string | undefined) {
       if (sessionError || !sessionData || !sessionData.current_game_state) {
         console.error("Error fetching session data:", sessionError);
       } else {
-        const currentGameState = sessionData.current_game_state as unknown as CurrentGameState;
+        const gameStateData = sessionData.current_game_state as Json;
         
-        // Check if current_game_state has activePatternIds and is an object
-        if (currentGameState && typeof currentGameState === 'object' && 'activePatternIds' in currentGameState) {
+        // Safely check if the gameState is an object with activePatternIds
+        if (
+          typeof gameStateData === 'object' && 
+          gameStateData !== null && 
+          !Array.isArray(gameStateData) && 
+          'activePatternIds' in gameStateData
+        ) {
+          const currentGameState = gameStateData as unknown as CurrentGameState;
           const activePatterns = currentGameState.activePatternIds || [];
           
           if (activePatterns.length > 0) {
@@ -306,15 +312,27 @@ export function useClaimManagement(sessionId: string | undefined) {
               } else if (updatedPatterns.length > 0) {
                 console.log("Updating active patterns in game state:", updatedPatterns);
                 
-                const updatedGameState = {
+                // Create a safe updated game state object
+                const updatedGameStateObj: CurrentGameState = {
                   ...currentGameState,
                   activePatternIds: updatedPatterns
+                };
+                
+                // Convert to a JSON-compatible object for supabase
+                const gameStateForSupabase = {
+                  gameNumber: updatedGameStateObj.gameNumber,
+                  gameType: updatedGameStateObj.gameType,
+                  activePatternIds: updatedGameStateObj.activePatternIds,
+                  calledItems: updatedGameStateObj.calledItems,
+                  lastCalledItem: updatedGameStateObj.lastCalledItem,
+                  status: updatedGameStateObj.status,
+                  prizes: updatedGameStateObj.prizes ? JSON.parse(JSON.stringify(updatedGameStateObj.prizes)) : {}
                 };
                 
                 const { error: updateSessionError } = await supabase
                   .from('game_sessions')
                   .update({
-                    current_game_state: updatedGameState
+                    current_game_state: gameStateForSupabase as Json
                   })
                   .eq('id', sessionId);
                   
@@ -326,8 +344,15 @@ export function useClaimManagement(sessionId: string | undefined) {
               // Create new game progress record
               // Make sure we have a valid gameNumber
               let gameNumber = 1; // Default value
-              if (typeof currentGameState === 'object' && 'gameNumber' in currentGameState) {
-                gameNumber = currentGameState.gameNumber;
+              if (
+                typeof gameStateData === 'object' &&
+                gameStateData !== null &&
+                !Array.isArray(gameStateData) && 
+                'gameNumber' in gameStateData
+              ) {
+                // Safe access with type checking
+                const gameNumberValue = (gameStateData as any).gameNumber;
+                gameNumber = typeof gameNumberValue === 'number' ? gameNumberValue : 1;
               }
               
               const { error: createError } = await supabase
@@ -349,15 +374,27 @@ export function useClaimManagement(sessionId: string | undefined) {
               if (updatedPatterns.length === 0 && shouldAdvanceGame) {
                 console.log("No patterns remaining in new progress - will advance game");
               } else if (updatedPatterns.length > 0) {
-                const updatedGameState = {
-                  ...currentGameState,
+                // Create a safe updated game state object
+                const updatedGameStateObj: CurrentGameState = {
+                  ...(currentGameState as CurrentGameState),
                   activePatternIds: updatedPatterns
+                };
+                
+                // Convert to a JSON-compatible object for supabase
+                const gameStateForSupabase = {
+                  gameNumber: updatedGameStateObj.gameNumber,
+                  gameType: updatedGameStateObj.gameType,
+                  activePatternIds: updatedGameStateObj.activePatternIds,
+                  calledItems: updatedGameStateObj.calledItems,
+                  lastCalledItem: updatedGameStateObj.lastCalledItem,
+                  status: updatedGameStateObj.status,
+                  prizes: updatedGameStateObj.prizes ? JSON.parse(JSON.stringify(updatedGameStateObj.prizes)) : {}
                 };
                 
                 const { error: updateSessionError } = await supabase
                   .from('game_sessions')
                   .update({
-                    current_game_state: updatedGameState
+                    current_game_state: gameStateForSupabase as Json
                   })
                   .eq('id', sessionId);
                   
@@ -368,7 +405,7 @@ export function useClaimManagement(sessionId: string | undefined) {
             }
           }
         } else {
-          console.error("Invalid current_game_state format:", currentGameState);
+          console.error("Invalid current_game_state format:", gameStateData);
         }
       }
       
