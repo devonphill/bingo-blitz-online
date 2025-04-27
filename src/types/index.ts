@@ -1,3 +1,4 @@
+
 // Any additional types needed for the app that aren't covered by the other interfaces
 import { Json } from './json';
 
@@ -29,7 +30,7 @@ export interface GameConfig {
   session_id?: string;
   // For backward compatibility
   selectedPatterns?: string[];
-  prizes?: Record<string, any>;
+  prizes?: Record<string, PrizeDetails>;
 }
 
 export interface GameState {

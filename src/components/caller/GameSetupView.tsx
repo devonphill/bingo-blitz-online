@@ -157,7 +157,7 @@ export function GameSetupView({
       const { data, error } = await supabase
         .from('game_sessions')
         .update({ 
-          games_config: JSON.parse(gameConfigsJson)
+          games_config: gameConfigs
         })
         .eq('id', localStorage.getItem('currentSessionId'))
         .select('games_config');
