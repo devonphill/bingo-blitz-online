@@ -48,7 +48,7 @@ export function GameTypeChanger() {
         </Button>
         <Button 
           variant={currentSession?.gameType === 'party' ? 'default' : 'outline'}
-          onClick={() => changeGameType('party' as GameType)}
+          onClick={() => changeGameType('party')}
         >
           Party Bingo
         </Button>

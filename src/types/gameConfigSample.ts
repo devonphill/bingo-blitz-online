@@ -1,5 +1,5 @@
 
-import { GameConfig } from './index';
+import { GameConfig, WinPatternConfig } from './index';
 
 // Sample game configuration that can be used for manual updates
 export const sampleGameConfig: GameConfig[] = [

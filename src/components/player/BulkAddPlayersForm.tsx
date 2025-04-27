@@ -1,174 +1,122 @@
 
-import React, { useState, ChangeEvent } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { AdminTempPlayer, TempPlayer } from '@/types';
+import React, { useState } from 'react';
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { AdminTempPlayer, TempPlayer } from "@/types";
+import { useSessionContext } from "@/contexts/SessionProvider";
+import { useToast } from "@/hooks/use-toast";
 import { generateAccessCode } from '@/utils/accessCodeGenerator';
-import { useToast } from '@/hooks/use-toast';
 
-interface BulkAddPlayersFormProps {
-  onSubmit: (players: AdminTempPlayer[]) => Promise<boolean>;
-  isLoading: boolean;
-}
-
-export function BulkAddPlayersForm({ onSubmit, isLoading }: BulkAddPlayersFormProps) {
-  const [players, setPlayers] = useState<AdminTempPlayer[]>([
-    { nickname: "", email: "", ticketCount: 1, playerCode: generateAccessCode(6), tickets: 1 }
-  ]);
+export function BulkAddPlayersForm() {
+  const [bulkData, setBulkData] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { bulkAddPlayers, currentSession } = useSessionContext();
   const { toast } = useToast();
-  
-  const handleAddRow = () => {
-    setPlayers([
-      ...players,
-      { nickname: "", email: "", ticketCount: 1, playerCode: generateAccessCode(6), tickets: 1 }
-    ]);
-  };
-  
-  const handleRemoveRow = (index: number) => {
-    if (players.length <= 1) {
-      toast({
-        title: "Cannot remove",
-        description: "You must have at least one player",
-        variant: "destructive"
+
+  const parseBulkData = (data: string): AdminTempPlayer[] => {
+    const lines = data.trim().split('\n');
+    return lines
+      .filter(line => line.trim())
+      .map(line => {
+        const [nickname, email, ticketsStr, playerCode] = line.split(',').map(part => part.trim());
+        const tickets = parseInt(ticketsStr || '1', 10);
+        
+        return {
+          nickname: nickname || 'Guest',
+          email: email || '',
+          tickets: tickets,
+          ticketCount: tickets,
+          playerCode: playerCode || generateAccessCode(6)
+        };
       });
-      return;
-    }
-    
-    const updatedPlayers = [...players];
-    updatedPlayers.splice(index, 1);
-    setPlayers(updatedPlayers);
   };
-  
-  const handleInputChange = (index: number, field: keyof AdminTempPlayer, value: string | number) => {
-    const updatedPlayers = [...players];
-    
-    if (field === 'ticketCount') {
-      // Ensure ticket count is between 1 and 10
-      const numValue = typeof value === 'string' ? parseInt(value, 10) : value;
-      updatedPlayers[index][field] = Math.max(1, Math.min(10, isNaN(numValue) ? 1 : numValue));
-      updatedPlayers[index].tickets = updatedPlayers[index].ticketCount; // Keep tickets in sync
-    } else if (field === 'playerCode') {
-      // Force uppercase for player code
-      updatedPlayers[index][field] = typeof value === 'string' ? value.toUpperCase() : value;
-    } else {
-      updatedPlayers[index][field] = value;
-    }
-    
-    setPlayers(updatedPlayers);
-  };
-  
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate all players have names
-    const invalidPlayers = players.filter(p => !p.nickname.trim());
-    if (invalidPlayers.length > 0) {
+    if (!currentSession) {
       toast({
-        title: "Missing information",
-        description: "All players must have a name",
+        title: "Error",
+        description: "No session selected",
         variant: "destructive"
       });
       return;
     }
     
-    // Try to submit the players
-    const success = await onSubmit(players);
-    
-    if (success) {
-      toast({
-        title: "Success",
-        description: `Added ${players.length} players to the session`,
-      });
+    try {
+      setIsSubmitting(true);
+      const parsedPlayers = parseBulkData(bulkData);
       
-      // Reset the form with one empty row
-      setPlayers([
-        { nickname: "", email: "", ticketCount: 1, playerCode: generateAccessCode(6), tickets: 1 }
-      ]);
+      if (parsedPlayers.length === 0) {
+        toast({
+          title: "Error",
+          description: "No valid player data found",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      const result = await bulkAddPlayers(currentSession.id, parsedPlayers);
+      
+      if (result.success) {
+        toast({
+          title: "Players Added",
+          description: `Successfully added ${result.count} players`
+        });
+        setBulkData('');
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to add players",
+          variant: "destructive"
+        });
+      }
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: (err as Error).message || "An error occurred",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
-  
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Add Multiple Players</CardTitle>
+        <CardTitle>Bulk Add Players</CardTitle>
+        <CardDescription>
+          Add multiple players at once by entering each player on a new line with the format:
+          <br />
+          <code>Name, Email, Tickets, PlayerCode (optional)</code>
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit}>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email (Optional)</TableHead>
-                  <TableHead>Ticket Count</TableHead>
-                  <TableHead>Player Code</TableHead>
-                  <TableHead className="w-24">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {players.map((player, index) => (
-                  <TableRow key={index}>
-                    <TableCell>
-                      <Input
-                        value={player.nickname}
-                        onChange={(e: ChangeEvent<HTMLInputElement>) => handleInputChange(index, 'nickname', e.target.value)}
-                        placeholder="Player name"
-                        required
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        type="email"
-                        value={player.email || ''}
-                        onChange={(e) => handleInputChange(index, 'email', e.target.value)}
-                        placeholder="Email (optional)"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={10}
-                        value={player.ticketCount}
-                        onChange={(e) => handleInputChange(index, 'ticketCount', e.target.value)}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        value={player.playerCode}
-                        onChange={(e) => handleInputChange(index, 'playerCode', e.target.value)}
-                        maxLength={6}
-                        minLength={6}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleRemoveRow(index)}
-                      >
-                        Delete
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="bulkData">Player Data</Label>
+              <Textarea
+                id="bulkData"
+                value={bulkData}
+                onChange={(e) => setBulkData(e.target.value)}
+                placeholder="John Doe, john@example.com, 2&#10;Jane Smith, jane@example.com, 3"
+                rows={10}
+                className="resize-none"
+              />
+            </div>
           </div>
-          
-          <div className="flex justify-between mt-4">
-            <Button type="button" variant="outline" onClick={handleAddRow}>
-              + Add Player
-            </Button>
-            <Button type="submit" disabled={isLoading}>
-              {isLoading ? "Adding Players..." : "Save All Players"}
-            </Button>
-          </div>
+          <Button type="submit" className="mt-4" disabled={isSubmitting || !bulkData.trim()}>
+            {isSubmitting ? "Adding Players..." : "Add Players"}
+          </Button>
         </form>
       </CardContent>
+      <CardFooter className="flex justify-between text-sm text-muted-foreground">
+        <p>Example: Mark Smith, mark@example.com, 2</p>
+      </CardFooter>
     </Card>
   );
 }

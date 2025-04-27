@@ -117,7 +117,7 @@ export async function recordWinClaim(
     const gameType = sessionData.game_type;
     const sessionName = sessionData.name;
     
-    // Insert the claim - match column names exactly as defined in the database
+    // Insert the claim with correctly named fields
     const { data, error } = await supabase
       .from('universal_game_logs')
       .insert({

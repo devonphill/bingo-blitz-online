@@ -63,17 +63,20 @@ export function useSessionProgress(sessionId?: string) {
           
           if (!payload.new) return;
           
+          // Safe property access with defaults for database fields that might not exist
+          const newData = payload.new || {};
+          
           const updatedProgress: SessionProgress = {
-            id: payload.new.id || '',
-            session_id: payload.new.session_id || '',
-            current_game_number: payload.new.current_game_number || 1,
-            max_game_number: payload.new.max_game_number || 1,
-            current_win_pattern: payload.new.current_win_pattern || null,
-            current_game_type: (payload.new.current_game_type as GameType) || 'mainstage',
-            created_at: payload.new.created_at || '',
-            updated_at: payload.new.updated_at || '',
-            called_numbers: payload.new.called_numbers || [],
-            game_status: payload.new.game_status || 'pending'
+            id: newData.id || '',
+            session_id: newData.session_id || '',
+            current_game_number: newData.current_game_number || 1,
+            max_game_number: newData.max_game_number || 1,
+            current_win_pattern: newData.current_win_pattern || null,
+            current_game_type: (newData.current_game_type as GameType) || 'mainstage',
+            created_at: newData.created_at || '',
+            updated_at: newData.updated_at || '',
+            called_numbers: newData.called_numbers || [],
+            game_status: newData.game_status || 'pending'
           };
           
           setProgress(updatedProgress);

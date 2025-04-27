@@ -1,220 +1,258 @@
 
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Player, AdminTempPlayer, TempPlayer } from '@/types';
-import { v4 as uuidv4 } from 'uuid';
+import { Player, TempPlayer, AdminTempPlayer } from '@/types';
 import { generateAccessCode } from '@/utils/accessCodeGenerator';
+import { useToast } from '@/hooks/use-toast';
 
 export function usePlayers() {
   const [players, setPlayers] = useState<Player[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const { toast } = useToast();
 
   const fetchPlayers = useCallback(async (sessionId: string) => {
-    setIsLoading(true);
-    setError(null);
-    
     try {
+      setLoading(true);
+      setError('');
+      
       const { data, error } = await supabase
         .from('players')
         .select('*')
         .eq('session_id', sessionId);
+
+      if (error) throw error;
       
-      if (error) {
-        console.error('Error fetching players:', error);
-        setError(error.message);
-        return;
-      }
-      
-      if (data) {
-        // Convert raw data to Player objects with proper property names
-        const playerObjects: Player[] = data.map(player => ({
-          id: player.id,
-          nickname: player.nickname,
-          sessionId: player.session_id,
-          tickets: player.tickets,
-          playerCode: player.player_code,
-          joinedAt: player.joined_at,
-          email: player.email
-        }));
-        
-        setPlayers(playerObjects);
-      }
+      // Convert database schema to app schema
+      const mappedPlayers: Player[] = data.map((player) => ({
+        id: player.id,
+        nickname: player.nickname,
+        sessionId: player.session_id,
+        tickets: player.tickets,
+        playerCode: player.player_code,
+        joinedAt: player.joined_at,
+        email: player.email
+      }));
+
+      setPlayers(mappedPlayers);
     } catch (err) {
-      console.error('Exception in fetchPlayers:', err);
-      setError('An unexpected error occurred');
+      setError((err as Error).message);
+      console.error('Error fetching players:', err);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   }, []);
   
-  const addPlayer = useCallback(async (sessionId: string, player: TempPlayer): Promise<string | null> => {
-    setIsLoading(true);
-    setError(null);
-    
+  const addPlayer = useCallback(async (sessionId: string, player: TempPlayer) => {
     try {
+      setLoading(true);
+      setError('');
+      
       const { data, error } = await supabase
         .from('players')
-        .insert({
-          session_id: sessionId,
-          nickname: player.nickname,
-          tickets: player.tickets,
-          player_code: player.playerCode,
-          email: player.email
-        })
-        .select('id')
+        .insert([
+          { 
+            session_id: sessionId,
+            nickname: player.nickname,
+            email: player.email,
+            tickets: player.tickets,
+            player_code: player.playerCode || generateAccessCode(6)
+          }
+        ])
+        .select()
         .single();
+
+      if (error) throw error;
       
-      if (error) {
-        console.error('Error adding player:', error);
-        setError(error.message);
-        return null;
-      }
-      
-      // Add new player to local state
       const newPlayer: Player = {
         id: data.id,
-        nickname: player.nickname,
-        sessionId,
-        tickets: player.tickets,
-        playerCode: player.playerCode,
-        joinedAt: new Date().toISOString(),
-        email: player.email
+        nickname: data.nickname,
+        sessionId: data.session_id,
+        tickets: data.tickets,
+        playerCode: data.player_code,
+        joinedAt: data.joined_at,
+        email: data.email
       };
       
       setPlayers(prev => [...prev, newPlayer]);
-      return data.id;
       
+      return data.id;
     } catch (err) {
-      console.error('Exception in addPlayer:', err);
-      setError('An unexpected error occurred while adding player');
+      setError((err as Error).message);
+      console.error('Error adding player:', err);
       return null;
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   }, []);
   
-  const addBulkPlayers = useCallback(async (sessionId: string, tempPlayers: AdminTempPlayer[]): Promise<boolean> => {
-    setIsLoading(true);
-    setError(null);
-    
+  const joinSession = useCallback(async (nickname: string, sessionId: string, email?: string) => {
     try {
-      const playersData = tempPlayers.map(player => ({
+      setLoading(true);
+      setError('');
+      
+      const playerCode = generateAccessCode(6);
+      
+      const { data, error } = await supabase
+        .from('players')
+        .insert([
+          { 
+            session_id: sessionId,
+            nickname: nickname,
+            email: email || null,
+            tickets: 1, // Default ticket allocation
+            player_code: playerCode
+          }
+        ])
+        .select()
+        .single();
+
+      if (error) throw error;
+      
+      const player: Player = {
+        id: data.id,
+        nickname: data.nickname,
+        sessionId: data.session_id,
+        tickets: data.tickets,
+        playerCode: data.player_code,
+        joinedAt: data.joined_at,
+        email: data.email
+      };
+      
+      setPlayers(prev => [...prev, player]);
+      
+      return { success: true, playerCode, playerId: data.id };
+    } catch (err) {
+      setError((err as Error).message);
+      console.error('Error joining session:', err);
+      return { success: false, error: (err as Error).message };
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const bulkAddPlayers = useCallback(async (sessionId: string, tempPlayers: AdminTempPlayer[]) => {
+    try {
+      setLoading(true);
+      setError('');
+      
+      const playersToInsert = tempPlayers.map(player => ({
         session_id: sessionId,
         nickname: player.nickname,
-        tickets: player.ticketCount,
-        player_code: player.playerCode || generateAccessCode(6),
+        email: player.email,
+        tickets: player.tickets || player.ticketCount || 1,
+        player_code: player.playerCode || generateAccessCode(6)
+      }));
+      
+      const { data, error } = await supabase
+        .from('players')
+        .insert(playersToInsert)
+        .select();
+
+      if (error) throw error;
+      
+      // Convert database schema to app schema
+      const newPlayers: Player[] = data.map((player) => ({
+        id: player.id,
+        nickname: player.nickname,
+        sessionId: player.session_id,
+        tickets: player.tickets,
+        playerCode: player.player_code,
+        joinedAt: player.joined_at,
         email: player.email
       }));
       
-      const { error } = await supabase
-        .from('players')
-        .insert(playersData);
+      setPlayers(prev => [...prev, ...newPlayers]);
       
-      if (error) {
-        console.error('Error adding bulk players:', error);
-        setError(error.message);
-        return false;
-      }
+      toast({
+        title: "Success",
+        description: `Added ${newPlayers.length} players to the session.`,
+      });
       
-      // Reload players from database to get their IDs
-      await fetchPlayers(sessionId);
-      return true;
-      
+      return { success: true, count: newPlayers.length };
     } catch (err) {
-      console.error('Exception in addBulkPlayers:', err);
-      setError('An unexpected error occurred while adding players');
-      return false;
+      setError((err as Error).message);
+      console.error('Error bulk adding players:', err);
+      return { success: false, error: (err as Error).message };
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
-  }, [fetchPlayers]);
-  
-  const getPlayerByCode = useCallback((code: string): Player | undefined => {
-    return players.find(p => p.playerCode === code);
-  }, [players]);
-  
-  const updatePlayer = useCallback(async (playerId: string, updates: Partial<Player>): Promise<boolean> => {
-    setIsLoading(true);
-    setError(null);
-    
+  }, [toast]);
+
+  const removePlayer = useCallback(async (playerId: string) => {
     try {
-      // Convert Player properties to database column names
-      const dbUpdates: Record<string, any> = {};
-      if ('nickname' in updates) dbUpdates.nickname = updates.nickname;
-      if ('tickets' in updates) dbUpdates.tickets = updates.tickets;
-      if ('playerCode' in updates) dbUpdates.player_code = updates.playerCode;
-      if ('email' in updates) dbUpdates.email = updates.email;
+      setLoading(true);
+      setError('');
       
-      const { error } = await supabase
-        .from('players')
-        .update(dbUpdates)
-        .eq('id', playerId);
-      
-      if (error) {
-        console.error('Error updating player:', error);
-        setError(error.message);
-        return false;
-      }
-      
-      // Update local state
-      setPlayers(prev => 
-        prev.map(player => 
-          player.id === playerId ? { ...player, ...updates } : player
-        )
-      );
-      
-      return true;
-    } catch (err) {
-      console.error('Exception in updatePlayer:', err);
-      setError('An unexpected error occurred while updating player');
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-  
-  const deletePlayer = useCallback(async (playerId: string): Promise<boolean> => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
       const { error } = await supabase
         .from('players')
         .delete()
         .eq('id', playerId);
+
+      if (error) throw error;
       
-      if (error) {
-        console.error('Error deleting player:', error);
-        setError(error.message);
-        return false;
-      }
-      
-      // Update local state
       setPlayers(prev => prev.filter(player => player.id !== playerId));
       return true;
-      
     } catch (err) {
-      console.error('Exception in deletePlayer:', err);
-      setError('An unexpected error occurred while deleting player');
+      setError((err as Error).message);
+      console.error('Error removing player:', err);
       return false;
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   }, []);
-  
+
+  const updatePlayer = useCallback(async (playerId: string, updates: Partial<Player>) => {
+    try {
+      setLoading(true);
+      setError('');
+      
+      // Convert app schema to database schema
+      const dbUpdates: any = {};
+      if (updates.nickname) dbUpdates.nickname = updates.nickname;
+      if (updates.email) dbUpdates.email = updates.email;
+      if (updates.tickets) dbUpdates.tickets = updates.tickets;
+      if (updates.playerCode) dbUpdates.player_code = updates.playerCode;
+      
+      const { data, error } = await supabase
+        .from('players')
+        .update(dbUpdates)
+        .eq('id', playerId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      
+      const updatedPlayer: Player = {
+        id: data.id,
+        nickname: data.nickname,
+        sessionId: data.session_id,
+        tickets: data.tickets,
+        playerCode: data.player_code,
+        joinedAt: data.joined_at,
+        email: data.email
+      };
+      
+      setPlayers(prev => prev.map(p => p.id === playerId ? updatedPlayer : p));
+      return true;
+    } catch (err) {
+      setError((err as Error).message);
+      console.error('Error updating player:', err);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   return {
     players,
     fetchPlayers,
     addPlayer,
-    addBulkPlayers,
-    getPlayerByCode,
+    removePlayer,
     updatePlayer,
-    deletePlayer,
-    isLoading,
+    joinSession,
+    bulkAddPlayers,
+    loading,
     error
   };
 }
-
-// Re-export types for convenience
-export type { Player, AdminTempPlayer, TempPlayer };

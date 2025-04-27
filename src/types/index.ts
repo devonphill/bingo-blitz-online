@@ -2,13 +2,17 @@
 // Any additional types needed for the app that aren't covered by the other interfaces
 import { Json } from './json';
 
-export type GameType = 'mainstage' | '75ball' | '90ball' | 'quickfire';
+export type GameType = 'mainstage' | '75ball' | '90ball' | 'quickfire' | 'party' | 'quiz' | 'music' | 'logo';
 
 export const DEFAULT_PATTERN_ORDER: Record<GameType, string[]> = {
   'mainstage': ['oneLine', 'twoLines', 'fullHouse'],
   '75ball': ['pattern1', 'pattern2', 'pattern3'],
   '90ball': ['oneLine', 'twoLines', 'fullHouse'],
-  'quickfire': ['oneNumber', 'twoNumbers', 'threeNumbers']
+  'quickfire': ['oneNumber', 'twoNumbers', 'threeNumbers'],
+  'party': ['oneLine', 'twoLines', 'fullHouse'],
+  'quiz': ['oneLine', 'twoLines', 'fullHouse'],
+  'music': ['oneLine', 'twoLines', 'fullHouse'],
+  'logo': ['oneLine', 'twoLines', 'fullHouse']
 };
 
 export interface WinPatternConfig {
@@ -25,6 +29,16 @@ export interface GameConfig {
   session_id?: string;
 }
 
+export interface GameState {
+  gameNumber: number;
+  gameType: GameType;
+  activePatternIds: string[];
+  calledItems: any[];
+  lastCalledItem: any | null;
+  status: 'pending' | 'active' | 'completed';
+  prizes: Record<string, any>;
+}
+
 export interface LegacyGameConfig {
   gameNumber: number;
   gameType: GameType;
@@ -36,6 +50,11 @@ export interface LegacyGameConfig {
       description: string;
     };
   };
+}
+
+// Helper function to get default patterns for a game type
+export function getDefaultPatternsForType(gameType: GameType): string[] {
+  return DEFAULT_PATTERN_ORDER[gameType] || ['oneLine', 'twoLines', 'fullHouse'];
 }
 
 export function isLegacyGameConfig(config: any): boolean {
@@ -134,4 +153,17 @@ export interface GameSession {
   current_game: number;
   lifecycle_state: 'setup' | 'live' | 'ended' | 'completed';
   games_config: GameConfig[];
+}
+
+// Helper function to safely convert Json to specific types
+export function parseGameConfigs(json: Json): GameConfig[] {
+  if (!json || !Array.isArray(json)) {
+    return [];
+  }
+  
+  return json.map((item: any) => ({
+    gameNumber: item.gameNumber || 1,
+    gameType: item.gameType || 'mainstage',
+    patterns: item.patterns || {}
+  })) as GameConfig[];
 }

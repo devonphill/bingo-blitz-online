@@ -46,7 +46,8 @@ const GAME_RULES_MAP: Record<string, GameRule> = {
 };
 
 export function GameRulesManager() {
-  const gameTypes: GameType[] = ['mainstage', 'party', 'quiz', 'music', 'logo'];
+  // Use the GameType type from index.ts 
+  const gameTypes = ['mainstage', 'party', 'quiz', 'music', 'logo'] as GameType[];
 
   return (
     <Card className="w-full max-w-4xl mx-auto">

@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { GameSession, GameState, Ticket, GameType, GameConfig } from '@/types';
+import { parseGameConfigs } from '@/types';
 
 export function usePlayerGame(playerCode: string | null | undefined) {
   // State for player info
@@ -70,6 +71,8 @@ export function usePlayerGame(playerCode: string | null | undefined) {
         }
         
         // Create GameSession object with proper typing
+        const gameConfigs = parseGameConfigs(sessionData.games_config);
+        
         setCurrentSession({
           id: sessionData.id,
           name: sessionData.name,
@@ -82,9 +85,7 @@ export function usePlayerGame(playerCode: string | null | undefined) {
           numberOfGames: sessionData.number_of_games,
           current_game: sessionData.current_game,
           lifecycle_state: sessionData.lifecycle_state as 'setup' | 'live' | 'ended' | 'completed',
-          games_config: Array.isArray(sessionData.games_config) 
-            ? sessionData.games_config as GameConfig[]
-            : []
+          games_config: gameConfigs
         });
         
         // Set game type correctly

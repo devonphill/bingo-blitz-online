@@ -6,8 +6,8 @@ export interface WinPattern {
   available: boolean;
 }
 
-// Define GameType to include all possible game types
-export type GameType = 'mainstage' | 'party' | 'quiz' | 'music' | 'logo' | '90-ball' | '75-ball' | 'speed' | 'custom';
+// Define GameType to match the one in types/index.ts
+export type GameType = 'mainstage' | '75ball' | '90ball' | 'quickfire' | 'party' | 'quiz' | 'music' | 'logo' | 'speed' | 'custom';
 
 export const WIN_PATTERNS: { [key in GameType]: WinPattern[] } = {
   mainstage: [
@@ -37,14 +37,14 @@ export const WIN_PATTERNS: { [key in GameType]: WinPattern[] } = {
     { id: 'twoLines', name: 'Two Lines', gameType: 'logo', available: true },
     { id: 'fullHouse', name: 'Full House', gameType: 'logo', available: true }
   ],
-  '90-ball': [
-    { id: 'oneLine', name: 'One Line', gameType: '90-ball', available: true },
-    { id: 'twoLines', name: 'Two Lines', gameType: '90-ball', available: true },
-    { id: 'fullHouse', name: 'Full House', gameType: '90-ball', available: true }
+  '90ball': [
+    { id: 'oneLine', name: 'One Line', gameType: '90ball', available: true },
+    { id: 'twoLines', name: 'Two Lines', gameType: '90ball', available: true },
+    { id: 'fullHouse', name: 'Full House', gameType: '90ball', available: true }
   ],
-  '75-ball': [
-    { id: 'oneLine', name: 'One Line', gameType: '75-ball', available: true },
-    { id: 'coverAll', name: 'Cover All', gameType: '75-ball', available: true }
+  '75ball': [
+    { id: 'oneLine', name: 'One Line', gameType: '75ball', available: true },
+    { id: 'coverAll', name: 'Cover All', gameType: '75ball', available: true }
   ],
   speed: [
     { id: 'oneLine', name: 'One Line', gameType: 'speed', available: true },
@@ -54,6 +54,11 @@ export const WIN_PATTERNS: { [key in GameType]: WinPattern[] } = {
     { id: 'oneLine', name: 'One Line', gameType: 'custom', available: true },
     { id: 'twoLines', name: 'Two Lines', gameType: 'custom', available: true },
     { id: 'fullHouse', name: 'Full House', gameType: 'custom', available: true }
+  ],
+  quickfire: [
+    { id: 'oneNumber', name: 'One Number', gameType: 'quickfire', available: true },
+    { id: 'twoNumbers', name: 'Two Numbers', gameType: 'quickfire', available: true },
+    { id: 'threeNumbers', name: 'Three Numbers', gameType: 'quickfire', available: true }
   ]
 };
 

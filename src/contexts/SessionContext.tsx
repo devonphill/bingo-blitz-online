@@ -1,86 +1,94 @@
 
-import React, { createContext, useContext, ReactNode } from "react";
-import { GameSession, Player } from "@/types";
-import { usePlayers, AdminTempPlayer } from "./usePlayers";
-import { useTickets } from "./useTickets";
-import { useSessions } from "./useSessions";
+import React, { createContext, useContext } from 'react';
+import { useSessions } from './useSessions';
+import { usePlayers } from './usePlayers';
+import { TempPlayer, AdminTempPlayer, GameSession, Player } from '@/types';
 
-// Define the context type
-interface SessionContextType {
+interface SessionContextProps {
   sessions: GameSession[];
   currentSession: GameSession | null;
-  setCurrentSession: (sessionId: string | null) => void;
-  getSessionByCode: (code: string) => GameSession | null;
   fetchSessions: () => Promise<void>;
+  createSession: (sessionData: Partial<GameSession>) => Promise<string | null>;
   updateSession: (sessionId: string, updates: Partial<GameSession>) => Promise<boolean>;
-  isLoading: boolean;
-  error: string | null;
-  // Player logic
+  deleteSession: (sessionId: string) => Promise<boolean>;
+  fetchSessionById: (sessionId: string) => Promise<GameSession | null>;
+  setCurrentSession: (session: GameSession | null) => void;
+  joinSessionWithCode: (accessCode: string) => Promise<any>;
   players: Player[];
-  joinSession: ReturnType<typeof usePlayers>["joinSession"];
-  addPlayer: ReturnType<typeof usePlayers>["addPlayer"];
-  bulkAddPlayers: (sessionId: string, newPlayers: AdminTempPlayer[]) => Promise<{ success: boolean; message?: string }>;
-  // Ticket logic
-  assignTicketsToPlayer: ReturnType<typeof useTickets>["assignTicketsToPlayer"];
-  getPlayerAssignedTickets: ReturnType<typeof useTickets>["getPlayerAssignedTickets"];
+  fetchPlayers: (sessionId: string) => Promise<void>;
+  addPlayer: (sessionId: string, player: TempPlayer) => Promise<string | null>;
+  removePlayer: (playerId: string) => Promise<boolean>;
+  updatePlayer: (playerId: string, updates: Partial<Player>) => Promise<boolean>;
+  joinSession: (nickname: string, sessionId: string, email?: string) => Promise<any>;
+  bulkAddPlayers: (sessionId: string, players: AdminTempPlayer[]) => Promise<any>;
+  loading: boolean;
+  error: string;
 }
 
-const SessionContext = createContext<SessionContextType | undefined>(undefined);
+const SessionContext = createContext<SessionContextProps | undefined>(undefined);
 
-export function SessionProvider({ children }: { children: ReactNode }) {
-  // Split out session logic
+export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const {
     sessions,
     currentSession,
-    setCurrentSession: setSessionById,
-    getSessionByCode,
     fetchSessions,
+    createSession,
     updateSession,
-    isLoading,
-    error
+    deleteSession,
+    fetchSessionById,
+    setCurrentSession,
+    joinSessionWithCode,
+    loading: sessionsLoading,
+    error: sessionsError
   } = useSessions();
 
-  // Create a wrapper function for setCurrentSession that accepts a string
-  const setCurrentSession = (sessionId: string | null) => {
-    setSessionById(sessionId);
-  };
+  const {
+    players,
+    fetchPlayers,
+    addPlayer,
+    removePlayer,
+    updatePlayer,
+    joinSession,
+    bulkAddPlayers,
+    loading: playersLoading,
+    error: playersError
+  } = usePlayers();
 
-  // Ticket and player hooks (delegated)
-  const ticketHook = useTickets();
-  const playerHook = usePlayers(
-    sessions,
-    fetchSessions,
-    ticketHook.assignTicketsToPlayer
-  );
+  const loading = sessionsLoading || playersLoading;
+  const error = sessionsError || playersError;
 
   return (
     <SessionContext.Provider
       value={{
         sessions,
         currentSession,
-        setCurrentSession,
-        getSessionByCode,
         fetchSessions,
+        createSession,
         updateSession,
-        isLoading,
-        error,
-        players: playerHook.players,
-        joinSession: playerHook.joinSession,
-        addPlayer: playerHook.addPlayer,
-        bulkAddPlayers: playerHook.bulkAddPlayers,
-        assignTicketsToPlayer: ticketHook.assignTicketsToPlayer,
-        getPlayerAssignedTickets: ticketHook.getPlayerAssignedTickets,
+        deleteSession,
+        fetchSessionById,
+        setCurrentSession,
+        joinSessionWithCode,
+        players,
+        fetchPlayers,
+        addPlayer,
+        removePlayer,
+        updatePlayer,
+        joinSession,
+        bulkAddPlayers,
+        loading,
+        error
       }}
     >
       {children}
     </SessionContext.Provider>
   );
-}
+};
 
-export function useSession() {
+export const useSessionContext = () => {
   const context = useContext(SessionContext);
   if (context === undefined) {
-    throw new Error("useSession must be used within a SessionProvider");
+    throw new Error('useSessionContext must be used within a SessionProvider');
   }
   return context;
-}
+};
