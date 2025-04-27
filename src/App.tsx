@@ -12,6 +12,7 @@ import { AuthContextProvider } from '@/contexts/AuthContext';
 import { SessionProvider } from './contexts/SessionProvider';
 import NotFound from './pages/NotFound';
 import AdminDashboard from './pages/AdminDashboard';
+import CallerSession from './pages/CallerSession';
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/admin/*" element={<AdminDashboard />} />
+              <Route path="/caller/session/:sessionId" element={<CallerSession />} />
               <Route path="/caller/*" element={<Dashboard />} />
               <Route path="/player/join" element={<PlayerJoin />} />
               <Route path="/404" element={<NotFound />} />

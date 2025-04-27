@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,7 +30,7 @@ export default function SessionCard({ session }: SessionCardProps) {
   const { fetchSessions } = useSessionContext();
   
   const handleStartCalling = () => {
-    navigate(`/session/${session.id}`);
+    navigate(`/caller/session/${session.id}`);
   };
   
   const handleAddPlayers = () => {

@@ -1,4 +1,3 @@
-
 // Any additional types needed for the app that aren't covered by the other interfaces
 import { Json } from './json';
 
@@ -56,7 +55,6 @@ export interface LegacyGameConfig {
   };
 }
 
-// Helper function to get default patterns for a game type
 export function getDefaultPatternsForType(gameType: GameType): string[] {
   return DEFAULT_PATTERN_ORDER[gameType] || ['oneLine', 'twoLines', 'fullHouse'];
 }
@@ -164,7 +162,6 @@ export interface GameSession {
   games_config: GameConfig[];
 }
 
-// Helper function to safely convert Json to specific types
 export function parseGameConfigs(json: Json): GameConfig[] {
   if (!json || !Array.isArray(json)) {
     return [];
