@@ -5,6 +5,15 @@ import { Json } from './json';
 // Core game types
 export type GameType = 'mainstage' | 'party' | '75-ball' | '90-ball' | 'quiz' | 'music' | 'logo';
 
+// Default pattern ordering for UI display
+export const DEFAULT_PATTERN_ORDER = {
+  mainstage: ['oneLine', 'twoLines', 'fullHouse'],
+  party: ['corners', 'oneLine', 'twoLines', 'threeLines', 'fullHouse'],
+  quiz: ['oneLine', 'twoLines', 'fullHouse'],
+  music: ['oneLine', 'twoLines', 'fullHouse'],
+  logo: ['oneLine', 'twoLines', 'fullHouse']
+};
+
 // Session progress type for tracking game state
 export interface SessionProgress {
   id: string;
@@ -53,6 +62,37 @@ export interface LegacyGameConfig {
   }>;
 }
 
+// Helper functions for game config conversion
+export function isLegacyGameConfig(config: any): config is LegacyGameConfig {
+  return config && 
+    typeof config === 'object' && 
+    'gameNumber' in config && 
+    'gameType' in config && 
+    'selectedPatterns' in config &&
+    'prizes' in config;
+}
+
+export function convertLegacyGameConfig(legacy: LegacyGameConfig): GameConfig {
+  const patterns: Record<string, WinPatternConfig> = {};
+  
+  // Convert each pattern in the legacy config
+  legacy.selectedPatterns.forEach(patternId => {
+    const prize = legacy.prizes[patternId];
+    patterns[patternId] = {
+      active: true,
+      isNonCash: prize?.isNonCash || false,
+      prizeAmount: prize?.amount || '0.00',
+      description: prize?.description || ''
+    };
+  });
+  
+  return {
+    gameNumber: legacy.gameNumber,
+    gameType: legacy.gameType,
+    patterns
+  };
+}
+
 // Game session type
 export interface GameSession {
   id: string;
@@ -68,6 +108,17 @@ export interface GameSession {
   games_config?: GameConfig[];
   current_game?: number;
   active_pattern_id?: string;
+}
+
+// Player type
+export interface Player {
+  id: string;
+  nickname: string;
+  player_code: string;
+  session_id: string;
+  joined_at: string;
+  tickets: number;
+  email?: string;
 }
 
 // Ticket type
