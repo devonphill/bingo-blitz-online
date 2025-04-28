@@ -38,6 +38,8 @@ export function useSessionProgress(sessionId: string | undefined) {
     async function fetchSessionProgress() {
       setLoading(true);
       try {
+        console.log(`Fetching session progress for: ${sessionId}`);
+        
         const { data, error } = await supabase
           .from('sessions_progress')
           .select('*')
@@ -49,6 +51,7 @@ export function useSessionProgress(sessionId: string | undefined) {
         }
 
         if (data) {
+          console.log("Loaded session progress:", data);
           setProgress({
             id: data.id,
             session_id: data.session_id,
@@ -86,8 +89,10 @@ export function useSessionProgress(sessionId: string | undefined) {
         (payload: RealtimePostgresChangesPayload<any>) => {
           const newData = payload.new;
           console.log("Received real-time update for session progress:", newData);
+          
           setProgress(prev => {
             if (!prev) return null;
+            
             return {
               ...prev,
               current_game_number: newData.current_game_number,
@@ -100,9 +105,12 @@ export function useSessionProgress(sessionId: string | undefined) {
           });
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log("Session progress subscription status:", status);
+      });
 
     return () => {
+      console.log("Unsubscribing from session progress changes");
       subscription.unsubscribe();
     };
   }, [sessionId]);

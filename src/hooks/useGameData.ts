@@ -36,7 +36,10 @@ export function useGameData(sessionId: string | undefined) {
       const gameType = data.game_type || 'mainstage';
 
       // Check if games_config exists and is not empty
-      if (data.games_config && Array.isArray(data.games_config) && data.games_config.length > 0) {
+      if (data.games_config && (
+          (Array.isArray(data.games_config) && data.games_config.length > 0) || 
+          (typeof data.games_config === 'object' && Object.keys(data.games_config).length > 0)
+      )) {
         console.log("Using existing games_config from database:", data.games_config);
         configs = jsonToGameConfigs(data.games_config);
         console.log("Parsed game configs:", configs);
@@ -45,7 +48,7 @@ export function useGameData(sessionId: string | undefined) {
         // Create default configs for all games
         configs = Array.from({ length: numberOfGames }, (_, i) => {
           const gameNumber = i + 1;
-          return createDefaultGameConfig(gameNumber, gameType as GameType);
+          return createDefaultGameConfig(gameNumber, gameType as GameType, sessionId);
         });
         
         console.log("Created default game configs:", configs);
@@ -81,8 +84,15 @@ export function useGameData(sessionId: string | undefined) {
 
     try {
       console.log("Saving game configs:", configs);
+      
+      // Ensure session_id is set on all configs
+      const configsWithSessionId = configs.map(config => ({
+        ...config,
+        session_id: sessionId
+      }));
+      
       // Convert to JSON-compatible format using utility function
-      const jsonConfigs = gameConfigsToJson(configs);
+      const jsonConfigs = gameConfigsToJson(configsWithSessionId);
       console.log("JSON configs to save:", jsonConfigs);
       
       const { error, data } = await supabase
@@ -97,7 +107,7 @@ export function useGameData(sessionId: string | undefined) {
       }
       
       console.log("Game configs saved successfully, response:", data);
-      setGameConfigs(configs);
+      setGameConfigs(configsWithSessionId);
       return true;
     } catch (err) {
       console.error('Error saving game configs:', err);
@@ -175,7 +185,7 @@ export function useGameData(sessionId: string | undefined) {
   }, [gameConfigs]);
 
   // Helper function to create a default game configuration
-  function createDefaultGameConfig(gameNumber: number, gameType: GameType = 'mainstage'): GameConfig {
+  function createDefaultGameConfig(gameNumber: number, gameType: GameType = 'mainstage', sessionId?: string): GameConfig {
     console.log(`Creating default game config for game ${gameNumber}, type ${gameType}`);
     const patterns: Record<string, WinPatternConfig> = {};
     

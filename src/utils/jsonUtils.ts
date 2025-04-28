@@ -38,7 +38,15 @@ export function parseJson<T>(jsonData: string | Json | null): T | null {
  * @returns A JSON-compatible representation of the data
  */
 export function toJsonSafe<T>(data: T): Json {
-  return JSON.parse(JSON.stringify(data));
+  if (!data) return null;
+  
+  try {
+    // Perform a deep copy via JSON to ensure all data is serializable
+    return JSON.parse(JSON.stringify(data));
+  } catch (err) {
+    console.error('Error converting to safe JSON:', err);
+    return null;
+  }
 }
 
 /**
@@ -69,7 +77,12 @@ export function gameConfigsToJson(configs: GameConfig[]): Json {
       
       if (!patterns) {
         console.warn("gameConfigsToJson: No patterns found in config");
-        return { gameNumber, gameType, patterns: {}, session_id };
+        return { 
+          gameNumber: gameNumber || 1, 
+          gameType: gameType || 'mainstage', 
+          patterns: {}, 
+          session_id 
+        };
       }
       
       // First pass: add active patterns in order
@@ -92,12 +105,15 @@ export function gameConfigsToJson(configs: GameConfig[]): Json {
         }
       });
       
-      return {
-        gameNumber,
-        gameType,
+      const result = {
+        gameNumber: gameNumber || 1,
+        gameType: gameType || 'mainstage',
         patterns: processedPatterns,
         session_id
       };
+      
+      console.log("Processed game config:", result);
+      return result;
     }).filter(item => item !== null); // Filter out any null items
     
     console.log('Processed game configs for JSON storage:', safeCopy);
@@ -129,7 +145,7 @@ export function jsonToGameConfigs(jsonData: Json): GameConfig[] {
     }
     
     // Type check and sanitize each game config
-    return parsed.filter(item => item && typeof item === 'object').map((item: any) => {
+    const result = parsed.filter(item => item && typeof item === 'object').map((item: any) => {
       // Ensure patterns is an object
       const patterns = typeof item.patterns === 'object' && item.patterns !== null 
         ? item.patterns 
@@ -142,6 +158,9 @@ export function jsonToGameConfigs(jsonData: Json): GameConfig[] {
         session_id: item.session_id
       };
     });
+    
+    console.log('Parsed game configs:', result);
+    return result;
   } catch (err) {
     console.error('Error parsing game configs:', err);
     return [];
