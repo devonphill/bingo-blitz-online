@@ -1,7 +1,7 @@
 
 import React, { useMemo } from "react";
 import BingoTicketDisplay from "@/components/game/BingoTicketDisplay";
-import { calculateTicketProgress } from "@/utils/ticketUtils";
+import { calculateTicketProgress, processTicketLayout } from "@/utils/ticketUtils";
 
 interface PlayerTicketsPanelProps {
   tickets: any[];
@@ -107,6 +107,3 @@ export default function PlayerTicketsPanel({
     </div>
   );
 }
-
-// Import utility at the top
-import { processTicketLayout } from "@/utils/ticketUtils";

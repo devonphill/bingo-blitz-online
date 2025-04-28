@@ -1,8 +1,8 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Ticket } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
-import { cacheTickets, getCachedTickets } from '@/utils/ticketUtils';
+import { cacheTickets, getCachedTickets, processTicketLayout } from '@/utils/ticketUtils';
 
 interface UseTicketsResult {
   tickets: Ticket[];
@@ -16,7 +16,7 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const fetchTickets = async () => {
+  const fetchTickets = useCallback(async () => {
     if (!playerCode || !sessionId) {
       setError("Missing player code or session ID");
       setIsLoading(false);
@@ -31,7 +31,7 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
       const cachedTickets = getCachedTickets(playerCode, sessionId);
       
       if (cachedTickets && cachedTickets.length > 0) {
-        console.log(`Using ${cachedTickets.length} cached tickets`);
+        console.log(`Using ${cachedTickets.length} cached tickets from session storage`);
         setTickets(cachedTickets);
         setIsLoading(false);
         return;
@@ -84,11 +84,18 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
         perm: ticket.perm
       }));
       
+      // Pre-process ticket layouts and cache the processed results
+      mappedTickets.forEach(ticket => {
+        // Process the layout once to ensure it's ready for display
+        const grid = processTicketLayout(ticket.numbers, ticket.layoutMask);
+        // Additional metadata could be added here if needed
+      });
+      
       // Cache tickets in session storage
       cacheTickets(playerCode, sessionId, mappedTickets);
       
       setTickets(mappedTickets);
-      console.log(`Loaded ${mappedTickets.length} tickets from database`);
+      console.log(`Loaded ${mappedTickets.length} tickets from database and cached them`);
     } catch (err) {
       const errorMsg = (err as Error).message;
       console.error('Error in fetchTickets:', errorMsg, err);
@@ -96,12 +103,12 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [playerCode, sessionId]);
   
   // Initial fetch
   useEffect(() => {
     fetchTickets();
-  }, [playerCode, sessionId]);
+  }, [fetchTickets]);
   
   return {
     tickets,

@@ -1,86 +1,57 @@
-
-import { Ticket } from "@/types";
-
 /**
- * Process a ticket's layout mask to create a proper 3x9 grid
- * with 5 numbers per row as per 90-ball bingo rules.
+ * Process a ticket layout based on the numbers array and layout mask
+ * @param numbers Array of ticket numbers
+ * @param layoutMask Bitmask indicating cell positioning
+ * @returns 2D array representing the ticket grid with null for empty cells
  */
-export function processTicketLayout(numbers: number[], layoutMask?: number): (number | null)[][] {
-  // Default empty grid
-  const grid: (number | null)[][] = [[], [], []];
-  
-  if (!numbers || numbers.length === 0) {
-    console.error("No numbers provided for ticket");
-    // Return empty rows
-    return [Array(9).fill(null), Array(9).fill(null), Array(9).fill(null)];
-  }
-  
+export function processTicketLayout(
+  numbers: number[],
+  layoutMask?: number
+): (number | null)[][] {
+  // Default to standard 90-ball bingo layout (3 rows x 9 columns) if no mask provided
   if (!layoutMask) {
-    console.error("No layout mask provided for ticket");
-    // Fallback to simple grid generation
-    return createFallbackGrid(numbers);
-  }
-  
-  try {
-    // Convert layoutMask to binary and pad to 27 bits (3 rows x 9 columns)
-    const maskBinary = layoutMask.toString(2).padStart(27, "0").split("").reverse();
-    let numIdx = 0;
+    console.warn("No layout mask provided, using default 90-ball layout");
+    // Create a default grid with 3 rows, 9 columns, all null
+    const defaultGrid = Array(3).fill(null).map(() => Array(9).fill(null));
     
-    // Process each bit in the layout mask
-    for (let i = 0; i < 27; i++) {
-      const rowIdx = Math.floor(i / 9);
-      const colIdx = i % 9;
-      
-      // If the bit is 1, place a number from the numbers array
-      if (maskBinary[i] === "1") {
-        if (numIdx < numbers.length) {
-          grid[rowIdx][colIdx] = numbers[numIdx++];
-        } else {
-          console.warn(`Not enough numbers for layout mask at position ${i}`);
-          grid[rowIdx][colIdx] = null;
-        }
-      } else {
-        // If the bit is 0, place null (empty cell)
-        grid[rowIdx][colIdx] = null;
-      }
-    }
-    
-    // Validate for 90-ball bingo (5 numbers per row)
+    // Place numbers in the grid (standard 90-ball bingo has 5 numbers per row)
+    let numbersIndex = 0;
     for (let row = 0; row < 3; row++) {
-      const nonNullCount = grid[row].filter(cell => cell !== null).length;
-      if (nonNullCount !== 5) {
-        console.warn(`Row ${row} has ${nonNullCount} numbers instead of expected 5. Layout mask may be incorrect.`);
+      // For each row, place 5 numbers in random positions
+      const positions = Array(9).fill(0).map((_, i) => i)
+        .sort(() => Math.random() - 0.5)
+        .slice(0, 5);
+      
+      for (const col of positions) {
+        if (numbersIndex < numbers.length) {
+          defaultGrid[row][col] = numbers[numbersIndex++];
+        }
       }
     }
     
-    return grid;
-  } catch (error) {
-    console.error("Error processing ticket layout mask:", error);
-    return createFallbackGrid(numbers);
+    return defaultGrid;
   }
-}
 
-/**
- * Create a fallback grid when layout mask is invalid or missing
- */
-function createFallbackGrid(numbers: number[]): (number | null)[][] {
-  const grid: (number | null)[][] = [
-    Array(9).fill(null),
-    Array(9).fill(null),
-    Array(9).fill(null)
-  ];
+  // Create the initial grid (3 rows x 9 columns)
+  const grid: (number | null)[][] = Array(3).fill(null).map(() => Array(9).fill(null));
   
-  let numIdx = 0;
-  for (let row = 0; row < 3 && numIdx < numbers.length; row++) {
-    // Ensure exactly 5 numbers per row
-    const placedInRow = 0;
-    for (let col = 0; col < 9 && placedInRow < 5 && numIdx < numbers.length; col++) {
-      // Try to place numbers in correct columns based on value
-      const num = numbers[numIdx];
-      const expectedCol = num <= 9 ? 0 : Math.floor((num - 1) / 10);
-      if (col === expectedCol) {
-        grid[row][col] = num;
-        numIdx++;
+  // The layout mask is a binary representation where 1s indicate a cell that should contain a number
+  // Convert the mask to a binary string, pad with leading zeros if needed
+  const maskBinary = layoutMask.toString(2).padStart(27, '0');
+  
+  // Extract digits from the binary string, reverse to match the standard reading order
+  const bits = maskBinary.split('').reverse();
+  
+  // Populate the grid using the mask
+  let numbersIndex = 0;
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 9; col++) {
+      const bitIndex = row * 9 + col;
+      
+      if (bits[bitIndex] === '1' && numbersIndex < numbers.length) {
+        grid[row][col] = numbers[numbersIndex++];
+      } else {
+        grid[row][col] = null;
       }
     }
   }
@@ -89,153 +60,147 @@ function createFallbackGrid(numbers: number[]): (number | null)[][] {
 }
 
 /**
- * Calculate how many more numbers are needed for a win pattern
+ * Cache tickets for a player and session in session storage
+ */
+export function cacheTickets(playerCode: string, sessionId: string, tickets: any[]): void {
+  try {
+    const cacheKey = `tickets_${playerCode}_${sessionId}`;
+    sessionStorage.setItem(cacheKey, JSON.stringify(tickets));
+    console.log(`Cached ${tickets.length} tickets for player ${playerCode} in session ${sessionId}`);
+  } catch (err) {
+    console.error('Error caching tickets:', err);
+    // Fallback: try to store without stringifying first (for older browsers)
+    try {
+      const cacheKey = `tickets_${playerCode}_${sessionId}`;
+      sessionStorage.setItem(cacheKey, JSON.stringify({
+        tickets: tickets.map(t => ({ 
+          id: t.id,
+          playerId: t.playerId,
+          sessionId: t.sessionId,
+          numbers: t.numbers,
+          serial: t.serial,
+          position: t.position,
+          layoutMask: t.layoutMask || t.layout_mask,
+          perm: t.perm
+        }))
+      }));
+    } catch (e) {
+      console.error('Failed to cache tickets even with fallback:', e);
+    }
+  }
+}
+
+/**
+ * Retrieve cached tickets for a player and session from session storage
+ */
+export function getCachedTickets(playerCode: string, sessionId: string): any[] | null {
+  try {
+    const cacheKey = `tickets_${playerCode}_${sessionId}`;
+    const cachedData = sessionStorage.getItem(cacheKey);
+    
+    if (!cachedData) return null;
+    
+    // Try to parse the cached data
+    const tickets = JSON.parse(cachedData);
+    
+    // Check if the result is an array of tickets or nested within a 'tickets' property
+    if (Array.isArray(tickets)) {
+      return tickets;
+    } else if (tickets && Array.isArray(tickets.tickets)) {
+      return tickets.tickets;
+    }
+    
+    return null;
+  } catch (err) {
+    console.error('Error retrieving cached tickets:', err);
+    return null;
+  }
+}
+
+/**
+ * Calculate ticket progress based on called numbers and win pattern
  */
 export function calculateTicketProgress(
   grid: (number | null)[][],
   calledNumbers: number[],
   winPattern: string
-): { 
-  isWinner: boolean;
+): {
   numbersToGo: number;
+  isWinner: boolean;
   completedLines: number;
   linesToGo: number;
 } {
-  // Default response
-  const result = {
-    isWinner: false,
+  // Default progress object
+  const progress = {
     numbersToGo: Infinity,
+    isWinner: false,
     completedLines: 0,
-    linesToGo: 0
+    linesToGo: 1, // Default to one line for basic patterns
   };
   
-  if (!grid || grid.length === 0) return result;
-  
-  // Calculate completed lines
-  const completedLineCount = grid.filter(row => {
-    const rowNumbers = row.filter(num => num !== null) as number[];
-    return rowNumbers.every(num => calledNumbers.includes(num));
-  }).length;
-  
-  result.completedLines = completedLineCount;
-  
-  // Determine lines needed based on win pattern
-  let linesNeeded = 0;
-  if (winPattern === "oneLine") linesNeeded = 1;
-  else if (winPattern === "twoLines") linesNeeded = 2;
-  else if (winPattern === "fullHouse") linesNeeded = 3;
-  
-  result.linesToGo = Math.max(0, linesNeeded - completedLineCount);
-  
-  // Check if this is a winning ticket for the current pattern
-  result.isWinner = completedLineCount >= linesNeeded;
-  
-  // Calculate how many more numbers are needed for the win
-  if (result.isWinner) {
-    result.numbersToGo = 0;
-  } else {
-    const lineNeededCounts: number[] = [];
-    
-    grid.forEach(row => {
-      // Skip completed lines
-      const rowNumbers = row.filter(num => num !== null) as number[];
-      const markedCount = rowNumbers.filter(num => calledNumbers.includes(num)).length;
-      
-      if (markedCount < rowNumbers.length) {
-        // This row needs more numbers
-        lineNeededCounts.push(rowNumbers.length - markedCount);
-      }
-    });
-    
-    // Sort lines by how many numbers they need
-    lineNeededCounts.sort((a, b) => a - b);
-    
-    // How many more lines needed?
-    const moreLines = linesNeeded - completedLineCount;
-    
-    if (moreLines <= 0 || lineNeededCounts.length === 0) {
-      result.numbersToGo = 0;
-    } else {
-      // Get the N easiest lines to complete
-      const relevantLines = lineNeededCounts.slice(0, moreLines);
-      result.numbersToGo = relevantLines.reduce((sum, count) => sum + count, 0);
-    }
+  // No grid or no called numbers
+  if (!grid || !grid.length || !calledNumbers || !calledNumbers.length) {
+    return progress;
   }
-  
-  return result;
-}
 
-/**
- * Get the one-to-go numbers for a ticket based on current win pattern
- */
-export function getOneToGoNumbers(
-  grid: (number | null)[][],
-  calledNumbers: number[],
-  winPattern: string
-): number[] {
-  const oneTGs: number[] = [];
-  
-  // Determine how many lines are needed for this pattern
-  let linesNeeded = 0;
-  if (winPattern === "oneLine") linesNeeded = 1;
-  else if (winPattern === "twoLines") linesNeeded = 2;
-  else if (winPattern === "fullHouse") linesNeeded = 3;
-  
-  // Count completed lines
-  const completedLines = grid.filter(row => {
+  // Count marked numbers in each row
+  const rowCounts = grid.map(row => {
     const rowNumbers = row.filter(num => num !== null) as number[];
-    return rowNumbers.every(num => calledNumbers.includes(num));
-  }).length;
-  
-  if (completedLines >= linesNeeded) {
-    // Already a winner, no 1TG numbers
-    return [];
-  }
-  
-  // For each uncompleted line, check if it's one away
-  grid.forEach(row => {
-    const rowNumbers = row.filter(num => num !== null) as number[];
-    const unmarkedNumbers = rowNumbers.filter(num => !calledNumbers.includes(num));
-    
-    // If this row is one number away from completion
-    if (unmarkedNumbers.length === 1) {
-      oneTGs.push(unmarkedNumbers[0]);
-    }
+    const markedCount = rowNumbers.filter(num => calledNumbers.includes(num)).length;
+    const totalCount = rowNumbers.length;
+    return { markedCount, totalCount, remaining: totalCount - markedCount };
   });
   
-  return oneTGs;
-}
-
-/**
- * Cache the ticket data in session storage
- */
-export function cacheTickets(playerCode: string, sessionId: string, tickets: Ticket[]): void {
-  if (!tickets || tickets.length === 0) return;
+  // Calculate completed lines and numbers to go based on win pattern
+  switch (winPattern) {
+    case 'oneLine':
+      // For one line, find the row closest to completion
+      progress.completedLines = rowCounts.filter(r => r.remaining === 0).length;
+      progress.linesToGo = Math.max(1 - progress.completedLines, 0);
+      progress.numbersToGo = rowCounts.length > 0 ? 
+        Math.min(...rowCounts.map(r => r.remaining)) : 
+        Infinity;
+      progress.isWinner = progress.completedLines >= 1;
+      break;
+      
+    case 'twoLines':
+      // For two lines, count completed rows
+      progress.completedLines = rowCounts.filter(r => r.remaining === 0).length;
+      progress.linesToGo = Math.max(2 - progress.completedLines, 0);
+      
+      // Sort rows by remaining numbers and calculate how many more to go
+      const sortedRows = [...rowCounts].sort((a, b) => a.remaining - b.remaining);
+      if (progress.completedLines >= 2) {
+        progress.numbersToGo = 0;
+      } else if (progress.completedLines === 1 && sortedRows.length > 1) {
+        progress.numbersToGo = sortedRows[0].remaining;
+      } else if (sortedRows.length >= 2) {
+        progress.numbersToGo = sortedRows[0].remaining + sortedRows[1].remaining;
+      }
+      
+      progress.isWinner = progress.completedLines >= 2;
+      break;
+      
+    case 'fullHouse':
+      // For full house, all numbers need to be called
+      const allTicketNumbers = grid.flat().filter(n => n !== null) as number[];
+      const unmarkedCount = allTicketNumbers.filter(n => !calledNumbers.includes(n)).length;
+      progress.numbersToGo = unmarkedCount;
+      progress.completedLines = rowCounts.filter(r => r.remaining === 0).length;
+      progress.linesToGo = grid.length - progress.completedLines;
+      progress.isWinner = unmarkedCount === 0;
+      break;
+      
+    default:
+      // Default to one line behavior
+      progress.completedLines = rowCounts.filter(r => r.remaining === 0).length;
+      progress.linesToGo = 1 - progress.completedLines;
+      progress.numbersToGo = rowCounts.length > 0 ? 
+        Math.min(...rowCounts.map(r => r.remaining)) : 
+        Infinity;
+      progress.isWinner = progress.completedLines >= 1;
+      break;
+  }
   
-  try {
-    const cacheKey = `bingo_tickets_${playerCode}_${sessionId}`;
-    window.sessionStorage.setItem(cacheKey, JSON.stringify(tickets));
-    console.log(`Cached ${tickets.length} tickets for player ${playerCode}`);
-  } catch (error) {
-    console.error("Error caching tickets in session storage:", error);
-  }
-}
-
-/**
- * Retrieve cached ticket data from session storage
- */
-export function getCachedTickets(playerCode: string, sessionId: string): Ticket[] | null {
-  try {
-    const cacheKey = `bingo_tickets_${playerCode}_${sessionId}`;
-    const cachedData = window.sessionStorage.getItem(cacheKey);
-    
-    if (!cachedData) return null;
-    
-    const tickets = JSON.parse(cachedData) as Ticket[];
-    console.log(`Retrieved ${tickets.length} cached tickets for player ${playerCode}`);
-    return tickets;
-  } catch (error) {
-    console.error("Error retrieving cached tickets from session storage:", error);
-    return null;
-  }
+  return progress;
 }
