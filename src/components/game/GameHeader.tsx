@@ -1,96 +1,57 @@
 
 import React from "react";
-import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import { Menu, SlidersHorizontal } from "lucide-react";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+import { Switch } from "../ui/switch";
+import { Label } from "../ui/label";
+import { Badge } from "../ui/badge";
+import { Wifi, WifiOff } from 'lucide-react';
 
-export interface GameHeaderProps {
+interface GameHeaderProps {
   sessionName: string;
   accessCode: string;
   activeWinPattern?: string | null;
   autoMarking: boolean;
   setAutoMarking: (value: boolean) => void;
+  isConnected?: boolean;
 }
 
-const GameHeader: React.FC<GameHeaderProps> = ({ 
-  sessionName, 
+export default function GameHeader({
+  sessionName,
   accessCode,
   activeWinPattern,
   autoMarking,
-  setAutoMarking
-}) => {
-  // Format the win pattern for display
-  const formatWinPatternName = (pattern: string): string => {
-    switch(pattern) {
-      case 'oneLine': return 'One Line';
-      case 'twoLines': return 'Two Lines';
-      case 'fullHouse': return 'Full House';
-      case 'pattern': return 'Pattern';
-      case 'blackout': return 'Blackout';
-      default: return pattern;
-    }
-  };
-
+  setAutoMarking,
+  isConnected = true
+}: GameHeaderProps) {
   return (
-    <header className="bg-white shadow-sm w-full sticky top-0 z-10">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center">
-        <Sheet>
-          <SheetTrigger asChild>
-            <Button variant="ghost" size="icon" className="mr-4">
-              <Menu className="h-5 w-5" />
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left">
-            <SheetHeader>
-              <SheetTitle>Menu</SheetTitle>
-            </SheetHeader>
-            <div className="mt-4">
-              <Button variant="ghost" className="w-full justify-start" onClick={() => window.location.href = '/dashboard'}>
-                Dashboard
-              </Button>
-            </div>
-          </SheetContent>
-        </Sheet>
-
-        <div className="flex-1">
-          <h1 className="text-xl font-bold text-bingo-primary">Bingo Blitz</h1>
-          <div className="flex items-center gap-2 mt-1">
-            <div className="text-sm text-gray-500">Session: {sessionName}</div>
-            {activeWinPattern && (
-              <div className="text-sm font-medium text-bingo-primary bg-bingo-primary/10 px-2 py-0.5 rounded">
-                {formatWinPatternName(activeWinPattern)}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <SlidersHorizontal className="h-4 w-4 text-gray-500" />
-            <Switch
-              id="auto-marking"
-              checked={autoMarking}
-              onCheckedChange={setAutoMarking}
-            />
-            <label htmlFor="auto-marking" className="text-sm font-medium">
-              Auto Marking
-            </label>
-          </div>
-          
-          <div className="bg-gray-100 px-3 py-1 rounded-full text-sm">
-            Access Code: <span className="font-mono font-bold">{accessCode}</span>
-          </div>
+    <div className="p-4 flex justify-between items-center">
+      <div>
+        <h1 className="text-xl font-bold mb-1">{sessionName}</h1>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">Code: {accessCode}</span>
+          {isConnected ? (
+            <Badge variant="outline" className="flex items-center gap-1 text-green-600 border-green-600">
+              <Wifi className="h-3 w-3" /> Connected
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="flex items-center gap-1 text-red-600 border-red-600">
+              <WifiOff className="h-3 w-3" /> Offline
+            </Badge>
+          )}
         </div>
       </div>
-    </header>
+      <div className="flex flex-col items-end">
+        {activeWinPattern && (
+          <Badge className="mb-2">{activeWinPattern}</Badge>
+        )}
+        <div className="flex items-center space-x-2">
+          <Switch
+            id="auto-marking"
+            checked={autoMarking}
+            onCheckedChange={setAutoMarking}
+          />
+          <Label htmlFor="auto-marking">Auto Mark</Label>
+        </div>
+      </div>
+    </div>
   );
-};
-
-export default GameHeader;
+}

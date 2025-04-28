@@ -1,4 +1,3 @@
-
 import React, { useEffect } from 'react';
 import { WinPattern } from '@/types/winPattern';
 import { WinPatternStatusDisplay } from '@/components/game/WinPatternStatusDisplay';
@@ -130,7 +129,6 @@ export function LiveGameView({
     }
   }, [sessionId, actualCurrentWinPattern, activePrizes, updateProgress]);
 
-  // IMPORTANT: First broadcast the number via real-time channels BEFORE updating the database
   useEffect(() => {
     if (sessionId && lastCalledNumber !== null) {
       const timestamp = Date.now();
@@ -140,35 +138,43 @@ export function LiveGameView({
         ? activePrizes[actualCurrentWinPattern] 
         : null;
       
-      // Create a broadcast channel for the session
+      const broadcastPayload = {
+        sessionId,
+        lastCalledNumber,
+        calledNumbers,
+        activeWinPattern: actualCurrentWinPattern,
+        activePatterns,
+        prizeInfo,
+        timestamp
+      };
+      
       const broadcastChannel = supabase.channel('number-broadcast');
       
-      // Send broadcast first, immediately, before any DB operations
       broadcastChannel.send({
         type: 'broadcast',
         event: 'number-called',
-        payload: {
-          sessionId,
-          lastCalledNumber,
-          calledNumbers,
-          activeWinPattern: actualCurrentWinPattern,
-          activePatterns,
-          prizeInfo,
-          timestamp
-        }
+        payload: broadcastPayload
       }).then(() => {
         console.log('Number broadcast sent successfully!');
         
-        // After broadcast is sent, update the database (this is non-blocking)
         if (updateProgress) {
           updateProgress({
-            called_numbers: calledNumbers
+            called_numbers: calledNumbers,
+            current_win_pattern: actualCurrentWinPattern
           }).then((success) => {
             console.log('Database update with called numbers: ', success ? 'succeeded' : 'failed');
           });
         }
       }).catch(error => {
         console.error('Error broadcasting number:', error);
+        setTimeout(() => {
+          console.log('Retrying broadcast...');
+          broadcastChannel.send({
+            type: 'broadcast',
+            event: 'number-called',
+            payload: broadcastPayload
+          }).catch(e => console.error('Retry broadcast failed:', e));
+        }, 1000);
       });
     }
   }, [lastCalledNumber, calledNumbers, sessionId, actualCurrentWinPattern, activePatterns, activePrizes, updateProgress]);

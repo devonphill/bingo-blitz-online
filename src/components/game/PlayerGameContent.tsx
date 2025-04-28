@@ -40,17 +40,31 @@ export default function PlayerGameContent({
   claimStatus,
   gameType = '90-ball'
 }: PlayerGameContentProps) {
-  useBingoSync();
+  // Use our enhanced real-time sync hook
+  const { gameState, isConnected } = useBingoSync();
 
-  const currentWinPattern = activeWinPatterns.length > 0 ? activeWinPatterns[0] : null;
+  const currentWinPattern = 
+    // First check real-time updates
+    gameState.currentWinPattern || 
+    // Fall back to prop values
+    (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
 
+  // Merge real-time called numbers with prop values, giving priority to real-time
+  const mergedCalledNumbers = gameState.calledNumbers.length > 0 
+    ? gameState.calledNumbers 
+    : calledNumbers;
+
+  // Use real-time last called number or fall back to props
+  const mergedCurrentNumber = gameState.lastCalledNumber !== null
+    ? gameState.lastCalledNumber
+    : currentNumber;
+
+  // Force auto-marking for Mainstage games
   React.useEffect(() => {
     if (gameType?.toUpperCase().includes('MAINSTAGE') && !autoMarking) {
       setAutoMarking(true);
     }
   }, [gameType, autoMarking, setAutoMarking]);
-
-  // Note: We're removing the visibility change effect since it's now handled by useBingoSync
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
@@ -61,6 +75,7 @@ export default function PlayerGameContent({
           activeWinPattern={currentWinPattern}
           autoMarking={autoMarking}
           setAutoMarking={setAutoMarking}
+          isConnected={isConnected}
         />
       </div>
       
@@ -68,7 +83,7 @@ export default function PlayerGameContent({
         <div className="mb-4">
           <BingoWinProgress
             tickets={tickets}
-            calledNumbers={calledNumbers}
+            calledNumbers={mergedCalledNumbers}
             activeWinPatterns={[currentWinPattern].filter(Boolean) as string[]}
             currentWinPattern={currentWinPattern}
             handleClaimBingo={onClaimBingo}
@@ -80,7 +95,7 @@ export default function PlayerGameContent({
         
         <BingoCardGrid
           tickets={tickets}
-          calledNumbers={calledNumbers}
+          calledNumbers={mergedCalledNumbers}
           autoMarking={autoMarking}
           activeWinPatterns={[currentWinPattern].filter(Boolean) as string[]}
           currentWinPattern={currentWinPattern}
