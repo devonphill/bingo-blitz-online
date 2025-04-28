@@ -13,6 +13,7 @@ import { SessionProvider } from './contexts/SessionProvider';
 import NotFound from './pages/NotFound';
 import AdminDashboard from './pages/AdminDashboard';
 import CallerSession from './pages/CallerSession';
+import AddPlayers from './pages/AddPlayers';
 
 function App() {
   return (
@@ -30,6 +31,7 @@ function App() {
               <Route path="/caller/session/:sessionId" element={<CallerSession />} />
               <Route path="/caller/*" element={<Dashboard />} />
               <Route path="/player/join" element={<PlayerJoin />} />
+              <Route path="/session/:sessionId/players/add" element={<AddPlayers />} />
               <Route path="/404" element={<NotFound />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

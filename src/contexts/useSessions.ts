@@ -98,7 +98,7 @@ export function useSessions() {
       toast({
         title: "Warning",
         description: `Session with ID ${sessionId} not found.`,
-        variant: "warning"
+        variant: "destructive" // Changed from "warning" to "destructive"
       });
     }
   }, [sessions, toast]);

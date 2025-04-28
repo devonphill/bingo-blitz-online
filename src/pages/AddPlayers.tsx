@@ -6,47 +6,70 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Loader } from 'lucide-react';
 
 export default function AddPlayers() {
+  const navigate = useNavigate();
   const { sessionId } = useParams();
   const [nickname, setNickname] = useState('');
   const [email, setEmail] = useState('');
   const [tickets, setTickets] = useState(1);
   const [isAddingPlayer, setIsAddingPlayer] = useState(false);
-  const [players, setPlayers] = useState<any[]>([]);
+  const [pageLoading, setPageLoading] = useState(true);
+  
   const { 
     currentSession, 
     setCurrentSession, 
-    updateSession,
+    fetchSessions,
     addPlayer,
     fetchPlayers,
-    players: sessionPlayers
+    players,
+    isLoading
   } = useSessionContext();
   
   useEffect(() => {
-    // Set current session
-    if (sessionId) {
-      setCurrentSession(sessionId);
-    }
+    const loadSessionData = async () => {
+      setPageLoading(true);
+      
+      try {
+        if (!sessionId) {
+          throw new Error("No session ID provided");
+        }
+        
+        console.log("Initializing AddPlayers page with sessionId:", sessionId);
+        
+        // Fetch all sessions if needed
+        await fetchSessions();
+        
+        // Set current session
+        setCurrentSession(sessionId);
+        
+        // Fetch players for this session
+        if (fetchPlayers) {
+          console.log("Fetching players for session:", sessionId);
+          await fetchPlayers(sessionId);
+        } else {
+          console.warn("fetchPlayers function not available in context");
+        }
+      } catch (error) {
+        console.error("Error loading session data:", error);
+      } finally {
+        setPageLoading(false);
+      }
+    };
     
-    // Fetch players for this session if context provides the method
-    if (sessionId && fetchPlayers) {
-      fetchPlayers(sessionId);
-    }
-  }, [sessionId, setCurrentSession, fetchPlayers]);
-  
-  // Update local players state when context players change
-  useEffect(() => {
-    if (sessionPlayers) {
-      setPlayers(sessionPlayers);
-    }
-  }, [sessionPlayers]);
+    loadSessionData();
+  }, [sessionId, setCurrentSession, fetchSessions, fetchPlayers]);
 
   const handleAddPlayer = async () => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      console.error("No session ID available");
+      return;
+    }
+    
     if (!nickname.trim()) {
-      alert('Please enter a nickname');
+      console.error("Nickname is required");
       return;
     }
     
@@ -54,6 +77,7 @@ export default function AddPlayers() {
     
     try {
       if (addPlayer) {
+        console.log(`Adding player ${nickname} to session ${sessionId}`);
         const playerId = await addPlayer(sessionId, {
           nickname,
           email,
@@ -62,16 +86,20 @@ export default function AddPlayers() {
         });
         
         if (playerId) {
+          console.log("Player added successfully with ID:", playerId);
+          
           // Clear form
           setNickname('');
           setEmail('');
           setTickets(1);
           
-          // Refresh players if needed
+          // Refresh players
           if (fetchPlayers) {
-            fetchPlayers(sessionId);
+            await fetchPlayers(sessionId);
           }
         }
+      } else {
+        console.error("addPlayer function not available in context");
       }
     } catch (error) {
       console.error('Error adding player:', error);
@@ -80,20 +108,37 @@ export default function AddPlayers() {
     }
   };
 
-  const handleUpdateSession = async () => {
-    if (!sessionId || !currentSession) return;
-    
-    try {
-      if (currentSession.games_config) {
-        // Use the game configs directly
-        await updateSession(sessionId, {
-          ...currentSession,
-        });
-      }
-    } catch (error) {
-      console.error('Error updating session:', error);
-    }
-  };
+  if (pageLoading || isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Loader className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p>Loading player data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If no session is found after loading
+  if (!currentSession && !pageLoading) {
+    return (
+      <div className="p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Session Not Found</CardTitle>
+            <CardDescription>
+              The requested session could not be found.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => navigate('/dashboard')}>
+              Return to Dashboard
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">
@@ -157,7 +202,7 @@ export default function AddPlayers() {
           
           {/* Players list */}
           <div className="mt-8">
-            <h3 className="text-lg font-medium mb-4">Current Players ({players.length})</h3>
+            <h3 className="text-lg font-medium mb-4">Current Players ({players?.length || 0})</h3>
             <div className="overflow-auto max-h-80">
               <table className="w-full text-left">
                 <thead>
@@ -169,15 +214,16 @@ export default function AddPlayers() {
                   </tr>
                 </thead>
                 <tbody>
-                  {players.map(player => (
-                    <tr key={player.id} className="border-b hover:bg-gray-50">
-                      <td className="py-2 px-4">{player.nickname}</td>
-                      <td className="py-2 px-4">{player.playerCode}</td>
-                      <td className="py-2 px-4">{player.email || '-'}</td>
-                      <td className="py-2 px-4">{player.tickets}</td>
-                    </tr>
-                  ))}
-                  {players.length === 0 && (
+                  {players && players.length > 0 ? (
+                    players.map(player => (
+                      <tr key={player.id} className="border-b hover:bg-gray-50">
+                        <td className="py-2 px-4">{player.nickname}</td>
+                        <td className="py-2 px-4">{player.playerCode}</td>
+                        <td className="py-2 px-4">{player.email || '-'}</td>
+                        <td className="py-2 px-4">{player.tickets}</td>
+                      </tr>
+                    ))
+                  ) : (
                     <tr>
                       <td colSpan={4} className="py-4 text-center text-gray-500">
                         No players added yet
