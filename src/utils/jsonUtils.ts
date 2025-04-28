@@ -61,8 +61,6 @@ export function gameConfigsToJson(configs: GameConfig[]): Json {
   }
   
   try {
-    console.log("Converting game configs to JSON:", configs);
-    
     // Create a clean version with only the required fields to avoid circular references
     const simplifiedConfigs = configs.map(config => {
       if (!config) {
@@ -92,9 +90,6 @@ export function gameConfigsToJson(configs: GameConfig[]): Json {
       };
     }).filter(item => item !== null);
     
-    console.log('Processed game configs for JSON storage:', simplifiedConfigs);
-    
-    // Convert to string and back to ensure we have a clean JSON object
     return JSON.parse(JSON.stringify(simplifiedConfigs));
   } catch (err) {
     console.error("Error in gameConfigsToJson:", err);
@@ -140,7 +135,8 @@ export function jsonToGameConfigs(jsonData: Json): GameConfig[] {
       if (item.patterns && typeof item.patterns === 'object') {
         Object.entries(item.patterns).forEach(([patternId, config]: [string, any]) => {
           patterns[patternId] = {
-            active: config?.active === true, // Only true if explicitly set to true
+            // IMPORTANT: Never default to true! Only set to true if explicitly set to true in the database
+            active: config?.active === true,
             isNonCash: config?.isNonCash === true,
             prizeAmount: config?.prizeAmount || '10.00',
             description: config?.description || `${patternId} Prize`
@@ -156,7 +152,6 @@ export function jsonToGameConfigs(jsonData: Json): GameConfig[] {
       };
     });
     
-    console.log('Parsed game configs from JSON:', result);
     return result;
   } catch (err) {
     console.error('Error parsing game configs:', err);

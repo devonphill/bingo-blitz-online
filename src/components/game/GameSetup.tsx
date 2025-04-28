@@ -42,9 +42,9 @@ export function GameSetup() {
     console.log("Existing configs from database:", existingConfigs);
     
     if (existingConfigs.length < numberOfGames) {
-      console.log("Creating new configs with preset prizes");
+      console.log("Creating new configs with NO active patterns");
       
-      // Initialize configs for all games with a new pattern structure
+      // Initialize configs for all games with a new pattern structure and NO active patterns
       const newConfigs: GameConfig[] = Array.from({ length: numberOfGames }, (_, index) => {
         // Use existing config if available, otherwise create new one
         const existingConfig = existingConfigs[index];
@@ -54,10 +54,10 @@ export function GameSetup() {
         const patternIds = WIN_PATTERNS[gameType].map(pattern => pattern.id);
         const patterns: GameConfig['patterns'] = {};
         
-        // Initialize each pattern with default values
+        // Initialize each pattern with default values - NONE active
         patternIds.forEach(patternId => {
           patterns[patternId] = {
-            active: patternId === 'oneLine' || patternId === 'fullHouse', // Default active patterns
+            active: false, // No patterns active by default
             isNonCash: false,
             prizeAmount: '10.00',
             description: `${patternId} Prize`

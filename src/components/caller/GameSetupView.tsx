@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { GameType, PrizeDetails, GameConfig, WinPatternConfig, isLegacyGameConfig, convertLegacyGameConfig } from '@/types';
 import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
@@ -70,7 +69,7 @@ export function GameSetupView({
       
       WIN_PATTERNS[gameType].forEach(pattern => {
         patterns[pattern.id] = {
-          active: ['oneLine'].includes(pattern.id),
+          active: false,
           isNonCash: false,
           prizeAmount: '10.00',
           description: `${pattern.name} Prize`

@@ -43,29 +43,11 @@ export function useGameData(sessionId: string | undefined) {
         console.log("Using existing games_config from database:", data.games_config);
         configs = jsonToGameConfigs(data.games_config);
         console.log("Parsed game configs:", configs);
-        
-        // Ensure none of the patterns are marked active by default
-        configs = configs.map(config => {
-          const patterns: Record<string, WinPatternConfig> = {};
-          
-          Object.entries(config.patterns || {}).forEach(([patternId, pattern]) => {
-            patterns[patternId] = {
-              ...pattern,
-              // Ensure active is false unless explicitly set to true in the database
-              active: pattern.active === true
-            };
-          });
-          
-          return {
-            ...config,
-            patterns
-          };
-        });
       } 
       
-      // If no configs or fewer configs than needed, create defaults WITHOUT active patterns
+      // If no configs or fewer configs than needed, create defaults with NO active patterns
       if (configs.length < numberOfGames) {
-        console.log("Creating default configs for missing games");
+        console.log("Creating default configs for missing games - NO ACTIVE PATTERNS");
         
         // Keep existing configs and add new ones as needed
         const newConfigs = Array.from({ length: numberOfGames }, (_, i) => {
@@ -268,8 +250,8 @@ export function useGameData(sessionId: string | undefined) {
     const defaultPatterns = getDefaultPatternsForType(gameType);
     defaultPatterns.forEach(patternId => {
       patterns[patternId] = {
-        // Only activate first pattern if specified
-        active: activateFirstPattern && patternId === 'oneLine',
+        // IMPORTANT: Always initialize as false unless specifically requested otherwise
+        active: false,
         isNonCash: false,
         prizeAmount: '10.00',
         description: `${patternId} Prize`
