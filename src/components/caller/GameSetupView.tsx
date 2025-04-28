@@ -42,6 +42,7 @@ export function GameSetupView({
 }: GameSetupViewProps) {
   const [activeTab, setActiveTab] = useState("game-1");
   const [isSaving, setIsSaving] = useState(false);
+  const [lastSavedConfig, setLastSavedConfig] = useState("");
   const { toast } = useToast();
   
   useEffect(() => {
@@ -51,6 +52,9 @@ export function GameSetupView({
     // Initialize game configs if needed
     if (!gameConfigs || gameConfigs.length !== numberOfGames) {
       initializeGameConfigs();
+    } else {
+      // Store the initial configuration as a JSON string for comparison
+      setLastSavedConfig(JSON.stringify(gameConfigs));
     }
   }, [gameConfigs, numberOfGames]);
   
@@ -82,6 +86,10 @@ export function GameSetupView({
     
     console.log("Initialized game configs:", newConfigs);
     setGameConfigs(newConfigs);
+    // Store the initial configuration
+    setLastSavedConfig(JSON.stringify(newConfigs));
+    // Auto-save the initialized configurations
+    saveGameConfigs(newConfigs);
   };
 
   const handleGameTypeChange = (gameIndex: number, type: GameType) => {
@@ -95,6 +103,7 @@ export function GameSetupView({
       if (existingPattern) {
         patterns[pattern.id] = existingPattern;
       } else {
+        // For new patterns, set defaults
         patterns[pattern.id] = {
           active: ['oneLine'].includes(pattern.id),
           isNonCash: false,
@@ -149,11 +158,24 @@ export function GameSetupView({
     };
     
     setGameConfigs(updatedConfigs);
-    // We don't auto-save on prize changes to avoid too many requests
+    
+    // Debounced save for prize changes
+    const timer = setTimeout(() => {
+      saveGameConfigs(updatedConfigs);
+    }, 1000);
+    
+    return () => clearTimeout(timer);
   };
   
   const saveGameConfigs = async (configsToSave = gameConfigs) => {
     if (isSaving) return;
+    
+    // Check if there are any changes since last save
+    const currentConfigJson = JSON.stringify(configsToSave);
+    if (currentConfigJson === lastSavedConfig) {
+      console.log("No changes detected since last save, skipping");
+      return;
+    }
     
     setIsSaving(true);
     try {
@@ -184,6 +206,8 @@ export function GameSetupView({
         });
       } else {
         console.log("Game configs saved successfully:", data);
+        // Update the last saved config
+        setLastSavedConfig(currentConfigJson);
         toast({
           title: "Success",
           description: "Game configurations saved successfully.",

@@ -47,11 +47,44 @@ export function toJsonSafe<T>(data: T): Json {
  * @returns A JSON-compatible representation of the GameConfig array
  */
 export function gameConfigsToJson(configs: GameConfig[]): Json {
-  // Deep copy to ensure we don't modify the original object
-  const safeCopy = JSON.parse(JSON.stringify(configs));
+  // Make a deep copy to ensure we don't modify the original object
+  const safeCopy = configs.map(config => {
+    const { gameNumber, gameType, patterns, session_id } = config;
+    
+    // Ensure patterns are properly formatted with order information
+    const processedPatterns: Record<string, any> = {};
+    let orderCounter = 1;
+    
+    // First pass: add active patterns in order
+    Object.entries(patterns).forEach(([patternId, patternConfig]) => {
+      if (patternConfig.active) {
+        processedPatterns[patternId] = {
+          ...patternConfig,
+          orderOfPlay: orderCounter++
+        };
+      }
+    });
+    
+    // Second pass: add inactive patterns with null order
+    Object.entries(patterns).forEach(([patternId, patternConfig]) => {
+      if (!patternConfig.active) {
+        processedPatterns[patternId] = {
+          ...patternConfig,
+          orderOfPlay: null
+        };
+      }
+    });
+    
+    return {
+      gameNumber,
+      gameType,
+      patterns: processedPatterns,
+      session_id
+    };
+  });
   
-  // Additional sanitization if needed (e.g., removing undefined values)
-  return safeCopy;
+  console.log('Processed game configs for JSON storage:', safeCopy);
+  return JSON.parse(JSON.stringify(safeCopy));
 }
 
 /**
