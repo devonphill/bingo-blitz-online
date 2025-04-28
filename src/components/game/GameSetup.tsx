@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { useSessionContext } from "@/contexts/SessionProvider";
@@ -284,7 +283,14 @@ export function GameSetup() {
   };
 
   const saveGameSettings = async () => {
-    if (!currentSession) return;
+    if (!currentSession) {
+      toast({
+        title: "Error",
+        description: "No active session found",
+        variant: "destructive"
+      });
+      return;
+    }
     
     const hasNoActivePatterns = gameConfigs.some(config => {
       return !Object.values(config.patterns || {}).some(pattern => pattern.active);
@@ -304,6 +310,7 @@ export function GameSetup() {
     try {
       console.log("Saving game settings:");
       console.log("Game configs to save:", gameConfigs);
+      console.log("Session ID:", currentSession.id);
       
       // Convert game configs to JSON format that ensures patterns are only active if explicitly true
       const jsonConfigs = gameConfigsToJson(gameConfigs);
@@ -347,7 +354,7 @@ export function GameSetup() {
       console.error("Error saving game settings:", error);
       toast({
         title: "Error",
-        description: "Failed to save game settings.",
+        description: `Failed to save game settings: ${(error as Error).message}`,
         variant: "destructive"
       });
     } finally {

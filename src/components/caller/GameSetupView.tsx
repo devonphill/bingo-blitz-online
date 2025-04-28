@@ -24,6 +24,7 @@ interface GameSetupViewProps {
   gameConfigs: GameConfig[];
   numberOfGames: number;
   setGameConfigs: (configs: GameConfig[]) => void;
+  sessionId?: string; // Add sessionId prop to receive it from parent
 }
 
 export function GameSetupView({
@@ -38,7 +39,8 @@ export function GameSetupView({
   onPrizeChange,
   gameConfigs,
   numberOfGames,
-  setGameConfigs
+  setGameConfigs,
+  sessionId // Receive sessionId from parent
 }: GameSetupViewProps) {
   const [activeTab, setActiveTab] = useState("game-1");
   const [isSaving, setIsSaving] = useState(false);
@@ -48,6 +50,7 @@ export function GameSetupView({
   useEffect(() => {
     console.log("GameSetupView - initialized with gameConfigs:", gameConfigs);
     console.log("GameSetupView - numberOfGames:", numberOfGames);
+    console.log("GameSetupView - sessionId:", sessionId);
     
     // Initialize game configs if needed
     if (!gameConfigs || gameConfigs.length !== numberOfGames) {
@@ -221,10 +224,10 @@ export function GameSetupView({
       console.log("Converting configs to JSON for database save:", configsToSave);
       
       const jsonConfigs = gameConfigsToJson(configsToSave);
-      const sessionId = localStorage.getItem('currentSessionId');
       
+      // Use the passed sessionId prop instead of localStorage
       if (!sessionId) {
-        throw new Error("No session ID found");
+        throw new Error("No session ID provided to GameSetupView");
       }
       
       console.log(`Saving game configs to database for session ${sessionId}:`, jsonConfigs);

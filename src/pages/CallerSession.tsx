@@ -55,7 +55,6 @@ export default function CallerSession() {
   const gameRules = getGameRulesForType(gameType);
   const { progress, loading: progressLoading, error: progressError } = useSessionProgress(urlSessionId);
 
-  // Fetch session data on component mount
   useEffect(() => {
     async function fetchSessionData() {
       if (!urlSessionId) {
@@ -412,6 +411,7 @@ export default function CallerSession() {
           gameConfigs={gameConfigs}
           numberOfGames={numberOfGames}
           setGameConfigs={setGameConfigs}
+          sessionId={urlSessionId}
         />
       ) : (
         <LiveGameView

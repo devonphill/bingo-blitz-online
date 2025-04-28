@@ -4,12 +4,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { GameSession, GameConfig } from '@/types';
 import { convertFromLegacyConfig } from '@/utils/callerSessionHelper';
 import { jsonToGameConfigs, gameConfigsToJson } from '@/utils/jsonUtils';
+import { useToast } from '@/hooks/use-toast';
 
 export function useSessions() {
   const [sessions, setSessions] = useState<GameSession[]>([]);
   const [currentSession, setCurrentSession] = useState<GameSession | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const fetchSessions = useCallback(async () => {
     setIsLoading(true);
@@ -71,10 +73,15 @@ export function useSessions() {
       const errorMessage = `An error occurred while fetching sessions: ${(err as Error).message}`;
       console.error(errorMessage);
       setError(errorMessage);
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive"
+      });
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [toast]);
 
   const setSessionById = useCallback((sessionId: string | null) => {
     if (!sessionId) {
@@ -88,8 +95,13 @@ export function useSessions() {
       setCurrentSession(session);
     } else {
       console.warn(`Session with ID ${sessionId} not found.`);
+      toast({
+        title: "Warning",
+        description: `Session with ID ${sessionId} not found.`,
+        variant: "warning"
+      });
     }
-  }, [sessions]);
+  }, [sessions, toast]);
 
   const getSessionByCode = useCallback((code: string): GameSession | null => {
     return sessions.find(s => s.accessCode === code) || null;
@@ -100,6 +112,10 @@ export function useSessions() {
     setError(null);
     
     try {
+      if (!sessionId) {
+        throw new Error("No session ID provided for update");
+      }
+      
       console.log(`Updating session ${sessionId} with:`, updates);
       
       // Convert the updates to database column names
@@ -158,11 +174,16 @@ export function useSessions() {
       const errorMessage = `Failed to update session: ${(err as Error).message}`;
       console.error(errorMessage);
       setError(errorMessage);
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive"
+      });
       return false;
     } finally {
       setIsLoading(false);
     }
-  }, [currentSession]);
+  }, [currentSession, toast]);
 
   return {
     sessions,
