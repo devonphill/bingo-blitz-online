@@ -114,16 +114,13 @@ export default function PlayerTicketsPanel({
               .sort((a, b) => autoMarking ? a.minToGo - b.minToGo : a.position - b.position)
               .map((ticket) => (
                 <div key={ticket.serial} className="border rounded-lg p-4">
-                  <div className="flex justify-between items-center mb-2">
+                  <div className="flex justify-between items-center mb-3">
+                    <div className="text-sm font-medium">
+                      Serial: <span className="font-mono">{ticket.serial}</span>
+                    </div>
                     <div className="text-sm font-medium">
                       Perm: <span className="font-mono">{ticket.perm}</span>
                     </div>
-                    <div className="text-sm font-medium">
-                      Position: <span className="font-mono">{ticket.position}</span>
-                    </div>
-                  </div>
-                  <div className="text-xs text-gray-500 mb-4">
-                    Serial: <span className="font-mono">{ticket.serial}</span>
                   </div>
                   {(() => {
                     // Handle both layoutMask and layout_mask property naming

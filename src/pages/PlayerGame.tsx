@@ -103,6 +103,14 @@ export default function PlayerGame() {
             if (calledNumbers && Array.isArray(calledNumbers)) {
               console.log("Updating called numbers from broadcast:", calledNumbers.length);
               setRealtimeCalledNumbers(calledNumbers);
+
+              // Show toast for new number
+              if (lastCalledNumber !== null && lastCalledNumber !== undefined) {
+                toast({
+                  title: "New Number Called",
+                  description: `Number ${lastCalledNumber} has been called`
+                });
+              }
             }
             
             if (lastCalledNumber !== null && lastCalledNumber !== undefined) {
@@ -128,7 +136,7 @@ export default function PlayerGame() {
       console.log("Cleaning up number update listener");
       supabase.removeChannel(numberChannel);
     };
-  }, [currentSession?.id]);
+  }, [currentSession?.id, toast]);
   
   // Create a wrapper function that matches the expected signature
   const handleClaimBingo = useCallback(() => {

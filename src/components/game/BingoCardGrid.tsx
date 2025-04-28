@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import BingoCell from "./BingoCell";
 import BingoCard from "./BingoCard";
@@ -38,10 +39,17 @@ export default function BingoCardGrid({
     <div className="space-y-6">
       {tickets.map((ticket, index) => (
         <div key={ticket.serial || index} className="p-4 bg-white rounded-lg shadow">
-          <div className="mb-2 text-sm text-gray-500">Ticket #{index + 1}</div>
+          <div className="flex justify-between items-center mb-3">
+            <div className="text-sm font-medium">
+              Serial: <span className="font-mono">{ticket.serial}</span>
+            </div>
+            <div className="text-sm font-medium">
+              Perm: <span className="font-mono">{ticket.perm}</span>
+            </div>
+          </div>
           <BingoCard
             numbers={ticket.numbers}
-            layoutMask={ticket.layoutMask}
+            layoutMask={ticket.layoutMask || ticket.layout_mask}
             calledNumbers={calledNumbers}
             autoMarking={autoMarking}
             activeWinPatterns={activeWinPatterns}
