@@ -74,9 +74,11 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
         return;
       }
       
+      console.log('Raw ticket data from DB:', ticketData);
+      
       // Map database ticket fields to our Ticket interface
       const mappedTickets: Ticket[] = ticketData.map(ticket => {
-        // Ensure layoutMask is present
+        // Ensure layout_mask is present
         if (ticket.layout_mask === undefined) {
           console.warn(`Ticket ${ticket.serial} missing layout mask:`, ticket);
           toast.error(`Ticket ${ticket.serial} has no layout information`);

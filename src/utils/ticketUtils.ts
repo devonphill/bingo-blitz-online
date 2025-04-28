@@ -44,6 +44,7 @@ export function processTicketLayout(
   
   // The layout mask is a binary representation where 1s indicate a cell that should contain a number
   // Convert the mask to a binary string, pad with leading zeros if needed
+  // We need 27 bits for a 3x9 grid
   const maskBinary = layoutMask.toString(2).padStart(27, '0');
   
   console.log(`Processing layout mask ${layoutMask} -> binary ${maskBinary}`);
@@ -57,7 +58,7 @@ export function processTicketLayout(
     for (let col = 0; col < 9; col++) {
       const bitIndex = row * 9 + col;
       
-      if (bits[bitIndex] === '1' && numbersIndex < numbers.length) {
+      if (bitIndex < bits.length && bits[bitIndex] === '1' && numbersIndex < numbers.length) {
         grid[row][col] = numbers[numbersIndex++];
       } else {
         grid[row][col] = null;
@@ -68,6 +69,15 @@ export function processTicketLayout(
   // Debug log: count how many numbers were placed on the grid
   const numbersPlaced = grid.flat().filter(cell => cell !== null).length;
   console.log(`Layout mask placed ${numbersPlaced}/${numbers.length} numbers on the grid`);
+  
+  // Verify if mask placed the correct number of cells (15 for a 90-ball ticket)
+  if (numbersPlaced !== numbers.length) {
+    console.error(`Layout problem: Mask placed ${numbersPlaced} numbers but ticket has ${numbers.length} numbers`, {
+      layoutMask,
+      maskBinary,
+      numbers
+    });
+  }
   
   return grid;
 }

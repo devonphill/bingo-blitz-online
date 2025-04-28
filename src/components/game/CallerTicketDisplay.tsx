@@ -7,6 +7,7 @@ interface CallerTicketDisplayProps {
     numbers: number[];
     serial: string;
     layoutMask?: number;
+    layout_mask?: number;
     perm?: number;
     position?: number;
   };
@@ -23,12 +24,17 @@ export default function CallerTicketDisplay({
   
   // Process grid layout from mask - memoized to avoid recalculating
   const gridCells = useMemo(() => {
-    if (!ticket.numbers || !ticket.layoutMask) {
+    // Handle both layoutMask and layout_mask property naming
+    const layoutMask = ticket.layoutMask ?? ticket.layout_mask;
+    
+    if (!ticket.numbers || layoutMask === undefined) {
       console.warn("Missing ticket data for layout", ticket);
       return Array(3).fill(null).map(() => Array(9).fill(null));
     }
-    return processTicketLayout(ticket.numbers, ticket.layoutMask);
-  }, [ticket.numbers, ticket.layoutMask]);
+    
+    console.log(`Processing ticket layout with mask ${layoutMask} for ticket ${ticket.serial}`);
+    return processTicketLayout(ticket.numbers, layoutMask);
+  }, [ticket]);
 
   // Create flashing effect for the most recent called number
   useEffect(() => {

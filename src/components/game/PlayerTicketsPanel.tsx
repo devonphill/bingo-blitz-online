@@ -38,10 +38,10 @@ export default function PlayerTicketsPanel({
 
     const ticketsWithProgress = tickets.map(ticket => {
       // Handle both layoutMask and layout_mask property naming
-      const layoutMask = ticket.layoutMask || ticket.layout_mask;
+      const layoutMask = ticket.layoutMask ?? ticket.layout_mask;
       
       // Make sure layoutMask exists before processing
-      if (!layoutMask) {
+      if (layoutMask === undefined || layoutMask === null) {
         console.warn("Ticket without layoutMask encountered:", ticket);
         return { ...ticket, minToGo: Infinity };
       }
@@ -85,9 +85,9 @@ export default function PlayerTicketsPanel({
               .sort((a, b) => autoMarking ? a.minToGo - b.minToGo : (a.position || 0) - (b.position || 0))
               .map((ticket) => {
                 // Handle both layoutMask and layout_mask property naming
-                const layoutMask = ticket.layoutMask || ticket.layout_mask;
+                const layoutMask = ticket.layoutMask ?? ticket.layout_mask;
                 
-                if (!layoutMask) {
+                if (layoutMask === undefined || layoutMask === null) {
                   console.error("Missing layoutMask for ticket", ticket);
                   return null;
                 }
