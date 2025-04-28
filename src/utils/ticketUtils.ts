@@ -204,3 +204,80 @@ export function calculateTicketProgress(
   
   return progress;
 }
+
+/**
+ * Get numbers that are one away from completing a winning pattern
+ * @param grid The ticket grid
+ * @param calledNumbers Array of called numbers
+ * @param winPattern The current win pattern
+ * @returns Array of numbers that would complete a win if called
+ */
+export function getOneToGoNumbers(
+  grid: (number | null)[][],
+  calledNumbers: number[],
+  winPattern: string
+): number[] {
+  const oneToGoNumbers: number[] = [];
+  
+  switch (winPattern) {
+    case 'oneLine':
+      // For one line, check each row
+      grid.forEach(row => {
+        const rowNumbers = row.filter(cell => cell !== null) as number[];
+        const unmarkedNumbers = rowNumbers.filter(num => !calledNumbers.includes(num));
+        
+        // If only one number is needed to complete this row, add it to one-to-go
+        if (unmarkedNumbers.length === 1) {
+          oneToGoNumbers.push(unmarkedNumbers[0]);
+        }
+      });
+      break;
+      
+    case 'twoLines':
+      // For two lines pattern, check how many complete lines we already have
+      const completeLines = grid.filter(row => {
+        const rowNumbers = row.filter(cell => cell !== null) as number[];
+        return rowNumbers.every(num => calledNumbers.includes(num));
+      }).length;
+      
+      // If we already have one line complete, check others for one-to-go
+      if (completeLines === 1) {
+        grid.forEach(row => {
+          const rowNumbers = row.filter(cell => cell !== null) as number[];
+          const unmarkedNumbers = rowNumbers.filter(num => !calledNumbers.includes(num));
+          
+          // If only one number is needed to complete this row, add it to one-to-go
+          if (unmarkedNumbers.length === 1) {
+            oneToGoNumbers.push(unmarkedNumbers[0]);
+          }
+        });
+      }
+      break;
+      
+    case 'fullHouse':
+      // For full house, check all numbers on the ticket
+      const allTicketNumbers = grid.flat().filter(cell => cell !== null) as number[];
+      const unmarkedNumbers = allTicketNumbers.filter(num => !calledNumbers.includes(num));
+      
+      // If only one number is needed to complete the whole ticket
+      if (unmarkedNumbers.length === 1) {
+        oneToGoNumbers.push(unmarkedNumbers[0]);
+      }
+      break;
+      
+    default:
+      // Default to checking for one line
+      grid.forEach(row => {
+        const rowNumbers = row.filter(cell => cell !== null) as number[];
+        const unmarkedNumbers = rowNumbers.filter(num => !calledNumbers.includes(num));
+        
+        // If only one number is needed to complete this row, add it to one-to-go
+        if (unmarkedNumbers.length === 1) {
+          oneToGoNumbers.push(unmarkedNumbers[0]);
+        }
+      });
+      break;
+  }
+  
+  return oneToGoNumbers;
+}
