@@ -1,5 +1,5 @@
 
-import { Json } from '@/types';
+import { Json } from '@/types/json';
 import { GameConfig } from '@/types';
 
 /**
