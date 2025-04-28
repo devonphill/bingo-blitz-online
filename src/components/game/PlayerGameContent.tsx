@@ -40,8 +40,8 @@ export default function PlayerGameContent({
   claimStatus,
   gameType = '90-ball'
 }: PlayerGameContentProps) {
-  // Use our enhanced real-time sync hook
-  const { gameState, isConnected } = useBingoSync();
+  // Use our enhanced real-time sync hook with the session ID
+  const { gameState, isConnected, connectionState } = useBingoSync(currentSession?.id);
 
   const currentWinPattern = 
     // First check real-time updates
@@ -76,6 +76,7 @@ export default function PlayerGameContent({
           autoMarking={autoMarking}
           setAutoMarking={setAutoMarking}
           isConnected={isConnected}
+          connectionState={connectionState}
         />
       </div>
       

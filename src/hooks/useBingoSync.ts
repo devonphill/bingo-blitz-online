@@ -1,124 +1,127 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useToast } from './use-toast';
 import { useSessionStorage } from './useSessionStorage';
+import { useToast } from './use-toast';
 
-export function useBingoSync() {
-  const [isConnected, setIsConnected] = useState(false);
-  const [lastSyncTimestamp, setLastSyncTimestamp] = useState<number>(0);
-  const connectionAttempts = useRef(0);
-  const { toast } = useToast();
-  const [gameState, setGameState] = useSessionStorage<{
-    calledNumbers: number[];
-    lastCalledNumber: number | null;
-    currentWinPattern: string | null;
-    prizeInfo: any;
-    timestamp: number;
-  }>('bingo_game_state', {
-    calledNumbers: [],
+interface GameState {
+  lastCalledNumber: number | null;
+  calledNumbers: number[];
+  currentWinPattern: string | null;
+  activePatterns: string[];
+  prizes: any;
+  timestamp: number;
+}
+
+export function useBingoSync(sessionId?: string) {
+  const [gameState, setGameState] = useSessionStorage<GameState>('bingo_game_state', {
     lastCalledNumber: null,
+    calledNumbers: [],
     currentWinPattern: null,
-    prizeInfo: null,
+    activePatterns: [],
+    prizes: {},
     timestamp: 0
   });
+  
+  const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [connectionState, setConnectionState] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
+  const instanceId = useRef<string>(`instance-${Date.now()}`);
+  const reconnectTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const channelRef = useRef<any>(null);
+  const { toast } = useToast();
 
-  // Function to handle connection drops and reconnects
+  // Set up real-time listeners for game updates
   useEffect(() => {
-    // Check if browser is visible to manage connection
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        console.log('[useBingoSync] Page is now visible, ensuring connection');
-        // No need to reconnect - Supabase handles this automatically
-        // Just update our UI state
-        setIsConnected(true);
-      } else {
-        console.log('[useBingoSync] Page is now hidden');
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    if (!sessionId) {
+      console.log("No session ID provided to useBingoSync, skipping setup");
+      setConnectionState('disconnected');
+      return;
+    }
     
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
-
-  // Setup the real-time subscription
-  useEffect(() => {
-    console.log(`[useBingoSync] Setting up real-time connection`);
-    connectionAttempts.current++;
+    console.log(`[useBingoSync] Setting up real-time listeners for session ${sessionId} (${instanceId.current})`);
+    setConnectionState('connecting');
     
-    // Use a dedicated real-time channel for number broadcasts with retry logic
+    // Create a channel for number updates
     const channel = supabase
-      .channel(`player-sync-${Date.now()}`)
+      .channel(`numbers-${instanceId.current}`)
       .on('broadcast', 
         { event: 'number-called' }, 
         (payload) => {
-          console.log("[useBingoSync] Received number broadcast:", payload);
+          console.log(`[useBingoSync] Received broadcast:`, payload);
           
-          if (payload.payload) {
-            const { 
-              calledNumbers: newNumbers, 
-              lastCalledNumber, 
-              activeWinPattern, 
-              prizeInfo, 
-              timestamp 
-            } = payload.payload;
+          if (payload.payload && payload.payload.sessionId === sessionId) {
+            const { lastCalledNumber, calledNumbers, activeWinPattern, activePatterns, prizeInfo, timestamp } = payload.payload;
             
-            // Check if this update is newer than our last processed update
-            if (!timestamp || (gameState.timestamp && timestamp <= gameState.timestamp)) {
-              console.log(`[useBingoSync] Ignoring outdated update with timestamp: ${timestamp}`);
-              return;
+            // Ensure we have valid data before updating state
+            if (calledNumbers && Array.isArray(calledNumbers)) {
+              console.log(`[useBingoSync] Updating game state with ${calledNumbers.length} called numbers and current pattern: ${activeWinPattern}`);
+              
+              setGameState(prev => ({
+                lastCalledNumber: lastCalledNumber !== undefined ? lastCalledNumber : prev.lastCalledNumber,
+                calledNumbers: calledNumbers || prev.calledNumbers,
+                currentWinPattern: activeWinPattern || prev.currentWinPattern,
+                activePatterns: activePatterns || prev.activePatterns,
+                prizes: prizeInfo || prev.prizes,
+                timestamp: timestamp || Date.now()
+              }));
+              
+              if (lastCalledNumber !== null && lastCalledNumber !== undefined) {
+                // Show toast for new number
+                toast({
+                  title: "New Number Called",
+                  description: `Number ${lastCalledNumber} has been called`,
+                  duration: 3000
+                });
+              }
             }
             
-            // Update our local state cache
-            setGameState({
-              calledNumbers: newNumbers || gameState.calledNumbers,
-              lastCalledNumber: lastCalledNumber !== undefined ? lastCalledNumber : gameState.lastCalledNumber,
-              currentWinPattern: activeWinPattern || gameState.currentWinPattern,
-              prizeInfo: prizeInfo || gameState.prizeInfo,
-              timestamp: timestamp || Date.now()
-            });
-            
-            // Only show toast for new numbers to avoid spamming
-            if (lastCalledNumber !== null && 
-                lastCalledNumber !== undefined && 
-                lastCalledNumber !== gameState.lastCalledNumber) {
-              toast({
-                title: "New Number Called",
-                description: `Number ${lastCalledNumber} has been called`,
-                duration: 3000
-              });
+            // Mark as connected when we receive a valid payload
+            if (!isConnected) {
+              setIsConnected(true);
+              setConnectionState('connected');
+              console.log(`[useBingoSync] Connection established`);
             }
           }
-        }
-      )
+        })
       .subscribe((status) => {
-        console.log(`[useBingoSync] Subscription status: ${status}`);
-        setIsConnected(status === 'SUBSCRIBED');
-        
+        console.log(`[useBingoSync] Channel status: ${status}, session: ${sessionId}`);
         if (status === 'SUBSCRIBED') {
-          // Reset connection attempts on successful connection
-          connectionAttempts.current = 0;
+          setIsConnected(true);
+          setConnectionState('connected');
         } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-          // Handle reconnection if needed
           setIsConnected(false);
+          setConnectionState('disconnected');
+          
+          // Attempt to reconnect after a delay
+          if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
+          reconnectTimeout.current = setTimeout(() => {
+            console.log('[useBingoSync] Attempting to reconnect...');
+            channelRef.current?.subscribe();
+          }, 3000);
         }
       });
     
-    // Cleanup function
+    // Store the channel reference for potential reconnection
+    channelRef.current = channel;
+    
     return () => {
-      console.log(`[useBingoSync] Cleaning up subscription`);
+      console.log(`[useBingoSync] Cleaning up channel for ${sessionId}`);
+      if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
       supabase.removeChannel(channel);
     };
-  }, [toast]);
+  }, [sessionId, toast, setGameState]);
 
-  // Return game state and connection status
   return {
     gameState,
     isConnected,
-    lastSyncTimestamp,
-    connectionAttempts: connectionAttempts.current
+    connectionState,
+    // Add a method to manually sync with the latest state if needed
+    syncGameState: (newState: Partial<GameState>) => {
+      setGameState(prev => ({
+        ...prev,
+        ...newState,
+        timestamp: Date.now()
+      }));
+    }
   };
 }

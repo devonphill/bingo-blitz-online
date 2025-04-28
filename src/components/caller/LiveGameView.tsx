@@ -24,6 +24,7 @@ interface LiveGameViewProps {
   onCloseGame?: () => void;
   currentGameNumber?: number;
   numberOfGames?: number;
+  sessionId?: string;
 }
 
 export function LiveGameView({
@@ -42,11 +43,12 @@ export function LiveGameView({
   sessionStatus = 'pending',
   onCloseGame,
   currentGameNumber = 1,
-  numberOfGames = 1
+  numberOfGames = 1,
+  sessionId
 }: LiveGameViewProps) {
   const numberRange = gameType === 'mainstage' ? 90 : 75;
-  const sessionId = gameConfigs.length > 0 && gameConfigs[0].session_id ? gameConfigs[0].session_id : undefined;
-  const { progress, updateProgress } = useSessionProgress(sessionId);
+  const effectiveSessionId = sessionId || (gameConfigs.length > 0 && gameConfigs[0].session_id ? gameConfigs[0].session_id : undefined);
+  const { progress, updateProgress } = useSessionProgress(effectiveSessionId);
   
   console.log("LiveGameView - prizes:", prizes);
   console.log("LiveGameView - gameConfigs:", gameConfigs);
@@ -54,7 +56,7 @@ export function LiveGameView({
   console.log("LiveGameView - game numbers:", {currentGameNumber, numberOfGames});
   console.log("LiveGameView - selectedPatterns:", selectedPatterns);
   console.log("LiveGameView - session progress:", progress);
-  console.log("LiveGameView - sessionId:", sessionId);
+  console.log("LiveGameView - sessionId:", effectiveSessionId);
   
   const currentGameConfig = gameConfigs.find(config => config.gameNumber === (progress?.current_game_number || currentGameNumber));
   const activeGameType = currentGameConfig?.gameType || gameType;
@@ -106,7 +108,7 @@ export function LiveGameView({
   }, [progress, currentGameNumber]);
 
   useEffect(() => {
-    if (sessionId && actualCurrentWinPattern && updateProgress) {
+    if (effectiveSessionId && actualCurrentWinPattern && updateProgress) {
       const prizeInfo = activePrizes[actualCurrentWinPattern];
       
       if (prizeInfo) {
@@ -127,10 +129,10 @@ export function LiveGameView({
         console.log(`No prize info available for pattern ${actualCurrentWinPattern}`);
       }
     }
-  }, [sessionId, actualCurrentWinPattern, activePrizes, updateProgress]);
+  }, [effectiveSessionId, actualCurrentWinPattern, activePrizes, updateProgress]);
 
   useEffect(() => {
-    if (sessionId && lastCalledNumber !== null) {
+    if (effectiveSessionId && lastCalledNumber !== null) {
       const timestamp = Date.now();
       console.log('Broadcasting called number to players with timestamp:', timestamp);
       
@@ -139,7 +141,7 @@ export function LiveGameView({
         : null;
       
       const broadcastPayload = {
-        sessionId,
+        sessionId: effectiveSessionId,
         lastCalledNumber,
         calledNumbers,
         activeWinPattern: actualCurrentWinPattern,
@@ -177,7 +179,7 @@ export function LiveGameView({
         }, 1000);
       });
     }
-  }, [lastCalledNumber, calledNumbers, sessionId, actualCurrentWinPattern, activePatterns, activePrizes, updateProgress]);
+  }, [lastCalledNumber, calledNumbers, effectiveSessionId, actualCurrentWinPattern, activePatterns, activePrizes, updateProgress]);
 
   return (
     <div className="space-y-6 p-6">
@@ -203,7 +205,7 @@ export function LiveGameView({
           currentGameNumber={progress?.current_game_number || currentGameNumber}
           numberOfGames={progress?.max_game_number || numberOfGames}
           activeWinPatterns={activePatterns}
-          currentSession={{id: sessionId}}
+          currentSession={{id: effectiveSessionId}}
           prizesInfo={currentPatternPrizeInfo}
         />
         

@@ -12,6 +12,7 @@ interface GameHeaderProps {
   autoMarking: boolean;
   setAutoMarking: (value: boolean) => void;
   isConnected?: boolean;
+  connectionState?: 'connected' | 'connecting' | 'disconnected';
 }
 
 export default function GameHeader({
@@ -20,7 +21,8 @@ export default function GameHeader({
   activeWinPattern,
   autoMarking,
   setAutoMarking,
-  isConnected = true
+  isConnected = true,
+  connectionState = 'connected'
 }: GameHeaderProps) {
   return (
     <div className="p-4 flex justify-between items-center">
@@ -28,9 +30,13 @@ export default function GameHeader({
         <h1 className="text-xl font-bold mb-1">{sessionName}</h1>
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-500">Code: {accessCode}</span>
-          {isConnected ? (
+          {connectionState === 'connected' || isConnected ? (
             <Badge variant="outline" className="flex items-center gap-1 text-green-600 border-green-600">
               <Wifi className="h-3 w-3" /> Connected
+            </Badge>
+          ) : connectionState === 'connecting' ? (
+            <Badge variant="outline" className="flex items-center gap-1 text-amber-600 border-amber-600">
+              <Wifi className="h-3 w-3" /> Connecting...
             </Badge>
           ) : (
             <Badge variant="outline" className="flex items-center gap-1 text-red-600 border-red-600">
