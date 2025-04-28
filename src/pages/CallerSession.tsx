@@ -333,6 +333,25 @@ export default function CallerSession() {
         console.log("Updating session progress with new called number:", newNumber);
         updateSessionProgress(session.id, {
           called_numbers: updatedCalledNumbers
+        }).then(() => {
+          console.log("Session progress updated successfully");
+          const broadcastChannel = supabase.channel('number-broadcast');
+          broadcastChannel.send({
+            type: 'broadcast', 
+            event: 'number-called',
+            payload: {
+              sessionId: session.id,
+              lastCalledNumber: newNumber,
+              calledNumbers: updatedCalledNumbers,
+              activeWinPattern: currentWinPattern
+            }
+          }).then(() => {
+            console.log("Number broadcast sent successfully");
+          }).catch(error => {
+            console.error("Error broadcasting number:", error);
+          });
+        }).catch(error => {
+          console.error("Error updating session progress:", error);
         });
       }
     } catch (error) {

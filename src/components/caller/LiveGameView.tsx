@@ -104,6 +104,8 @@ export function LiveGameView({
   // Get prize info for current win pattern
   const currentPatternPrizeInfo = actualCurrentWinPattern && activePrizes[actualCurrentWinPattern] 
     ? [activePrizes[actualCurrentWinPattern]] : [];
+  
+  console.log("Current pattern prize info:", currentPatternPrizeInfo);
 
   // Add effect to handle game number changes
   useEffect(() => {
@@ -120,7 +122,7 @@ export function LiveGameView({
 
   // Effect to broadcast number changes to players
   useEffect(() => {
-    if (sessionId && lastCalledNumber !== null && calledNumbers.length > 0) {
+    if (sessionId && lastCalledNumber !== null) {
       const broadcastChannel = supabase.channel('number-broadcast');
       
       console.log('Broadcasting called number to players:', lastCalledNumber);
@@ -133,7 +135,8 @@ export function LiveGameView({
           lastCalledNumber,
           calledNumbers,
           activeWinPattern: actualCurrentWinPattern,
-          activePatterns
+          activePatterns,
+          prizeInfo: currentPatternPrizeInfo.length > 0 ? currentPatternPrizeInfo[0] : null
         }
       }).then(() => {
         console.log('Number broadcast sent successfully');
@@ -141,7 +144,7 @@ export function LiveGameView({
         console.error('Error broadcasting number:', error);
       });
     }
-  }, [lastCalledNumber, calledNumbers, sessionId, actualCurrentWinPattern, activePatterns]);
+  }, [lastCalledNumber, calledNumbers, sessionId, actualCurrentWinPattern, activePatterns, currentPatternPrizeInfo]);
 
   return (
     <div className="space-y-6 p-6">

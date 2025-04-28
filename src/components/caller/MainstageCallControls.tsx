@@ -58,8 +58,10 @@ export function MainstageCallControls({
     getPatternDisplayName(activeWinPatterns[0]) : 'None';
     
   // Get prize information for the current pattern
-  const currentPrizeInfo = activeWinPatterns.length > 0 && prizesInfo && prizesInfo[0] ? 
+  const currentPrizeInfo = activeWinPatterns.length > 0 && prizesInfo && prizesInfo.length > 0 ? 
     prizesInfo[0] : null;
+
+  console.log("MainstageCallControls render with prize info:", currentPrizeInfo);
 
   return (
     <Card className="bg-white shadow-md rounded-lg">

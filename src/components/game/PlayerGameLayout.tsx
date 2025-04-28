@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader } from "lucide-react";
@@ -54,6 +53,7 @@ export default function PlayerGameLayout({
   const [lastWinPattern, setLastWinPattern] = useState<string | null>(null);
   const [localCalledNumbers, setLocalCalledNumbers] = useState<number[]>(calledNumbers || []);
   const [localCurrentNumber, setLocalCurrentNumber] = useState<number | null>(currentNumber);
+  const [prizeInfo, setPrizeInfo] = useState<any>(null);
   const { toast } = useToast();
   const instanceId = useRef(Date.now());
   const resetTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -62,7 +62,6 @@ export default function PlayerGameLayout({
     console.log(`PlayerGameLayout rendered with instance ID: ${instanceId.current}, pattern: ${currentWinPattern}`);
   }, [currentWinPattern]);
 
-  // Initialize with props
   useEffect(() => {
     setLocalCalledNumbers(calledNumbers || []);
     setLocalCurrentNumber(currentNumber);
@@ -96,7 +95,6 @@ export default function PlayerGameLayout({
     }
   };
 
-  // Listen for real-time number updates
   useEffect(() => {
     if (!currentSession?.id) return;
     
@@ -111,15 +109,14 @@ export default function PlayerGameLayout({
           console.log("Received number broadcast:", payload);
           
           if (payload.payload && payload.payload.sessionId === currentSession.id) {
-            const { lastCalledNumber, calledNumbers, activeWinPattern } = payload.payload;
+            const { lastCalledNumber, calledNumbers, activeWinPattern, prizeInfo } = payload.payload;
             
             console.log(`Updating numbers: Last=${lastCalledNumber}, Total=${calledNumbers?.length}`);
+            console.log("Received prize info:", prizeInfo);
             
-            // Update local state with the new numbers
             if (lastCalledNumber !== null && lastCalledNumber !== undefined) {
               setLocalCurrentNumber(lastCalledNumber);
               
-              // Show toast for the new number
               toast({
                 title: "New Number Called",
                 description: `Number ${lastCalledNumber} has been called`,
@@ -130,11 +127,13 @@ export default function PlayerGameLayout({
               setLocalCalledNumbers(calledNumbers);
             }
             
-            // Handle pattern change if needed
+            if (prizeInfo) {
+              setPrizeInfo(prizeInfo);
+            }
+            
             if (activeWinPattern && activeWinPattern !== currentWinPattern) {
               setLastWinPattern(currentWinPattern);
               
-              // Show toast for pattern change
               const patternName = getPatternDisplayName(activeWinPattern);
               toast({
                 title: "Pattern Changed",
@@ -377,12 +376,7 @@ export default function PlayerGameLayout({
   const isClaimValidated = localClaimStatus === 'validated' || claimStatus === 'validated';
   
   const currentWinPatternDisplay = currentWinPattern ? getPatternDisplayName(currentWinPattern) : 'None';
-  
-  // Get the prize description and amount for display
-  let prizeDisplay = '';
-  if (currentWinPattern && winPrizes && winPrizes[currentWinPattern]) {
-    prizeDisplay = winPrizes[currentWinPattern];
-  }
+  const prizeDisplay = getPrizeDisplay();
   
   return (
     <div className="min-h-screen w-full flex bg-gray-50">
