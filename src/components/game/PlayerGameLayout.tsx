@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader } from "lucide-react";
@@ -51,6 +52,8 @@ export default function PlayerGameLayout({
   const [localClaimValidating, setLocalClaimValidating] = useState(false);
   const [localClaimStatus, setLocalClaimStatus] = useState<'pending' | 'validated' | 'rejected' | null>(null);
   const [lastWinPattern, setLastWinPattern] = useState<string | null>(null);
+  const [localCalledNumbers, setLocalCalledNumbers] = useState<number[]>(calledNumbers || []);
+  const [localCurrentNumber, setLocalCurrentNumber] = useState<number | null>(currentNumber);
   const { toast } = useToast();
   const instanceId = useRef(Date.now());
   const resetTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -58,6 +61,12 @@ export default function PlayerGameLayout({
   useEffect(() => {
     console.log(`PlayerGameLayout rendered with instance ID: ${instanceId.current}, pattern: ${currentWinPattern}`);
   }, [currentWinPattern]);
+
+  // Initialize with props
+  useEffect(() => {
+    setLocalCalledNumbers(calledNumbers || []);
+    setLocalCurrentNumber(currentNumber);
+  }, [calledNumbers, currentNumber]);
 
   useEffect(() => {
     if (currentWinPattern && currentWinPattern !== lastWinPattern) {
@@ -87,9 +96,63 @@ export default function PlayerGameLayout({
     }
   };
 
+  // Listen for real-time number updates
   useEffect(() => {
-    console.log(`PlayerGameLayout (instance ${instanceId.current}): External claim status updated to:`, claimStatus);
+    if (!currentSession?.id) return;
     
+    console.log(`Setting up real-time number listener for session ${currentSession.id}`);
+    
+    const numberChannel = supabase
+      .channel('number-updates')
+      .on(
+        'broadcast',
+        { event: 'number-called' },
+        (payload) => {
+          console.log("Received number broadcast:", payload);
+          
+          if (payload.payload && payload.payload.sessionId === currentSession.id) {
+            const { lastCalledNumber, calledNumbers, activeWinPattern } = payload.payload;
+            
+            console.log(`Updating numbers: Last=${lastCalledNumber}, Total=${calledNumbers?.length}`);
+            
+            // Update local state with the new numbers
+            if (lastCalledNumber !== null && lastCalledNumber !== undefined) {
+              setLocalCurrentNumber(lastCalledNumber);
+              
+              // Show toast for the new number
+              toast({
+                title: "New Number Called",
+                description: `Number ${lastCalledNumber} has been called`,
+              });
+            }
+            
+            if (calledNumbers && Array.isArray(calledNumbers)) {
+              setLocalCalledNumbers(calledNumbers);
+            }
+            
+            // Handle pattern change if needed
+            if (activeWinPattern && activeWinPattern !== currentWinPattern) {
+              setLastWinPattern(currentWinPattern);
+              
+              // Show toast for pattern change
+              const patternName = getPatternDisplayName(activeWinPattern);
+              toast({
+                title: "Pattern Changed",
+                description: `New pattern: ${patternName}`,
+              });
+            }
+          }
+        }
+      )
+      .subscribe();
+    
+    return () => {
+      console.log("Unsubscribing from number updates channel");
+      supabase.removeChannel(numberChannel);
+    };
+  }, [currentSession?.id, toast, currentWinPattern]);
+
+  useEffect(() => {
     if (claimStatus !== undefined) {
       setLocalClaimStatus(claimStatus);
     }
@@ -315,6 +378,12 @@ export default function PlayerGameLayout({
   
   const currentWinPatternDisplay = currentWinPattern ? getPatternDisplayName(currentWinPattern) : 'None';
   
+  // Get the prize description and amount for display
+  let prizeDisplay = '';
+  if (currentWinPattern && winPrizes && winPrizes[currentWinPattern]) {
+    prizeDisplay = winPrizes[currentWinPattern];
+  }
+  
   return (
     <div className="min-h-screen w-full flex bg-gray-50">
       <div className="flex flex-col" style={{width:'30%', minWidth:240, maxWidth:400}}>
@@ -363,9 +432,9 @@ export default function PlayerGameLayout({
               <p className="text-sm text-gray-300">
                 Current Win Pattern: <span className="font-bold text-white">{currentWinPatternDisplay}</span>
               </p>
-              {winPrizes && winPrizes[currentWinPattern] && (
+              {prizeDisplay && (
                 <p className="text-sm text-gray-300 mt-1">
-                  Prize: <span className="font-bold text-white">{winPrizes[currentWinPattern]}</span>
+                  Prize: <span className="font-bold text-white">{prizeDisplay}</span>
                 </p>
               )}
             </div>
@@ -373,9 +442,9 @@ export default function PlayerGameLayout({
         </div>
         
         <div className="bg-black text-white p-4 border-t border-gray-700 sticky bottom-0" style={{ height: '30vw', maxHeight: '400px' }}>
-          <CurrentNumberDisplay number={currentNumber} sizePx={Math.min(window.innerWidth * 0.25, 350)} gameType={gameType} />
+          <CurrentNumberDisplay number={localCurrentNumber} sizePx={Math.min(window.innerWidth * 0.25, 350)} gameType={gameType} />
           <div className="text-xs text-gray-400 mt-2 text-center">
-            {calledNumbers.length} numbers called
+            {localCalledNumbers.length} numbers called
           </div>
         </div>
       </div>

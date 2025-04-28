@@ -17,6 +17,11 @@ interface MainstageCallControlsProps {
   numberOfGames?: number;
   activeWinPatterns: string[];
   currentSession: {id?: string};
+  prizesInfo?: {
+    amount?: string;
+    description?: string;
+    isNonCash?: boolean;
+  }[];
 }
 
 export function MainstageCallControls({
@@ -30,7 +35,8 @@ export function MainstageCallControls({
   currentGameNumber = 1,
   numberOfGames = 1,
   activeWinPatterns,
-  currentSession
+  currentSession,
+  prizesInfo = []
 }: MainstageCallControlsProps) {
   const isGameActive = sessionStatus === 'active';
   const isGameCompleted = sessionStatus === 'completed';
@@ -50,6 +56,10 @@ export function MainstageCallControls({
 
   const currentPatternDisplay = activeWinPatterns.length > 0 ? 
     getPatternDisplayName(activeWinPatterns[0]) : 'None';
+    
+  // Get prize information for the current pattern
+  const currentPrizeInfo = activeWinPatterns.length > 0 && prizesInfo && prizesInfo[0] ? 
+    prizesInfo[0] : null;
 
   return (
     <Card className="bg-white shadow-md rounded-lg">
@@ -76,6 +86,13 @@ export function MainstageCallControls({
               <span>Current Pattern:</span>
               <Badge className="font-medium bg-green-600">{currentPatternDisplay}</Badge>
             </div>
+            {currentPrizeInfo && (
+              <div className="mt-1 px-2 py-1 bg-gray-50 rounded-md text-sm">
+                <div className="font-semibold">{currentPrizeInfo.description || 'Prize'}</div>
+                <div>{currentPrizeInfo.isNonCash ? 'Non-Cash Prize' : 
+                  (currentPrizeInfo.amount ? `£${currentPrizeInfo.amount}` : '')}</div>
+              </div>
+            )}
             {activeWinPatterns.length > 1 && (
               <div className="text-xs text-gray-500">
                 Next patterns: {activeWinPatterns.slice(1).map(getPatternDisplayName).join(', ')}

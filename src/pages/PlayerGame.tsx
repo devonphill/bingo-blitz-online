@@ -7,12 +7,18 @@ import { useSessionProgress } from '@/hooks/useSessionProgress';
 import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 import PlayerGameLayout from '@/components/game/PlayerGameLayout';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function PlayerGame() {
   const { playerCode: urlPlayerCode } = useParams<{ playerCode: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [loadingPlayerCode, setLoadingPlayerCode] = useState(true);
+  
+  // State for realtime updates
+  const [realtimeCalledNumbers, setRealtimeCalledNumbers] = useState<number[]>([]);
+  const [realtimeLastCalled, setRealtimeLastCalled] = useState<number | null>(null);
+  const [realtimePattern, setRealtimePattern] = useState<string | null>(null);
   
   // Use stored player code or URL parameter
   useEffect(() => {
@@ -77,6 +83,47 @@ export default function PlayerGame() {
   // Get session progress from the database for authoritative game state
   const { progress: sessionProgress } = useSessionProgress(currentSession?.id);
   
+  // Set up realtime listener for number updates
+  useEffect(() => {
+    if (!currentSession?.id) return;
+    
+    console.log("Setting up realtime number update listener");
+    
+    const numberChannel = supabase
+      .channel('player-number-updates')
+      .on('broadcast', 
+        { event: 'number-called' }, 
+        (payload) => {
+          console.log("Received number broadcast in player game:", payload);
+          
+          if (payload.payload && payload.payload.sessionId === currentSession.id) {
+            const { calledNumbers, lastCalledNumber, activeWinPattern } = payload.payload;
+            
+            if (calledNumbers && Array.isArray(calledNumbers)) {
+              console.log("Updating called numbers from broadcast:", calledNumbers.length);
+              setRealtimeCalledNumbers(calledNumbers);
+            }
+            
+            if (lastCalledNumber !== null && lastCalledNumber !== undefined) {
+              console.log("Updating last called number from broadcast:", lastCalledNumber);
+              setRealtimeLastCalled(lastCalledNumber);
+            }
+            
+            if (activeWinPattern) {
+              console.log("Updating active win pattern from broadcast:", activeWinPattern);
+              setRealtimePattern(activeWinPattern);
+            }
+          }
+        }
+      )
+      .subscribe();
+    
+    return () => {
+      console.log("Cleaning up number update listener");
+      supabase.removeChannel(numberChannel);
+    };
+  }, [currentSession?.id]);
+  
   // Create a wrapper function that matches the expected signature
   const handleClaimBingo = useCallback(() => {
     if (!tickets || tickets.length === 0) {
@@ -134,8 +181,16 @@ export default function PlayerGame() {
     );
   }
 
-  // Prioritize sessionProgress as the source of truth for current win pattern
-  const currentWinPattern = sessionProgress?.current_win_pattern || 
+  // Use realtime data if available, otherwise use data from hooks
+  const finalCalledNumbers = realtimeCalledNumbers.length > 0 ? realtimeCalledNumbers : 
+                            (sessionProgress?.called_numbers || calledItems || []);
+  
+  const finalLastCalledNumber = realtimeLastCalled !== null ? realtimeLastCalled :
+                              (finalCalledNumbers.length > 0 ? finalCalledNumbers[finalCalledNumbers.length - 1] : lastCalledItem);
+  
+  // Prioritize sessionProgress as the source of truth for current win pattern, then realtime updates
+  const currentWinPattern = realtimePattern || 
+                           sessionProgress?.current_win_pattern || 
                            (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
 
   // Get game numbers from session progress or fallback to game state
@@ -151,8 +206,8 @@ export default function PlayerGame() {
     <React.Fragment>
       <PlayerGameLayout
         tickets={tickets || []}
-        calledNumbers={calledItems || []}
-        currentNumber={lastCalledItem}
+        calledNumbers={finalCalledNumbers}
+        currentNumber={finalLastCalledNumber}
         currentSession={currentSession}
         autoMarking={autoMarking}
         setAutoMarking={setAutoMarking}
@@ -172,8 +227,8 @@ export default function PlayerGame() {
         <GameTypePlayspace
           gameType={gameType}
           tickets={tickets || []}
-          calledNumbers={calledItems || []}
-          lastCalledNumber={lastCalledItem}
+          calledNumbers={finalCalledNumbers}
+          lastCalledNumber={finalLastCalledNumber}
           autoMarking={autoMarking}
           setAutoMarking={setAutoMarking}
           handleClaimBingo={handleClaimBingo}

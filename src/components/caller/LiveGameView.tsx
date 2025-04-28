@@ -6,6 +6,7 @@ import { MainstageCallControls } from '@/components/caller/MainstageCallControls
 import BingoCard from '@/components/caller/BingoCard';
 import { GameType, PrizeDetails, GameConfig } from '@/types';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
+import { supabase } from '@/integrations/supabase/client';
 
 interface LiveGameViewProps {
   gameType: GameType;
@@ -100,6 +101,10 @@ export function LiveGameView({
   // Get all win patterns for the active game type
   const availablePatterns = activeGameType ? winPatterns.filter(p => p.gameType === activeGameType) : winPatterns;
 
+  // Get prize info for current win pattern
+  const currentPatternPrizeInfo = actualCurrentWinPattern && activePrizes[actualCurrentWinPattern] 
+    ? [activePrizes[actualCurrentWinPattern]] : [];
+
   // Add effect to handle game number changes
   useEffect(() => {
     if (progress && currentGameNumber) {
@@ -112,6 +117,31 @@ export function LiveGameView({
       }
     }
   }, [progress, currentGameNumber]);
+
+  // Effect to broadcast number changes to players
+  useEffect(() => {
+    if (sessionId && lastCalledNumber !== null && calledNumbers.length > 0) {
+      const broadcastChannel = supabase.channel('number-broadcast');
+      
+      console.log('Broadcasting called number to players:', lastCalledNumber);
+      
+      broadcastChannel.send({
+        type: 'broadcast',
+        event: 'number-called',
+        payload: {
+          sessionId,
+          lastCalledNumber,
+          calledNumbers,
+          activeWinPattern: actualCurrentWinPattern,
+          activePatterns
+        }
+      }).then(() => {
+        console.log('Number broadcast sent successfully');
+      }).catch(error => {
+        console.error('Error broadcasting number:', error);
+      });
+    }
+  }, [lastCalledNumber, calledNumbers, sessionId, actualCurrentWinPattern, activePatterns]);
 
   return (
     <div className="space-y-6 p-6">
@@ -138,6 +168,7 @@ export function LiveGameView({
           numberOfGames={progress?.max_game_number || numberOfGames}
           activeWinPatterns={activePatterns}
           currentSession={{id: sessionId}}
+          prizesInfo={currentPatternPrizeInfo}
         />
         
         <BingoCard
