@@ -332,6 +332,15 @@ export default function PlayerGameLayout({
     }
   };
 
+  const getPrizeDisplay = () => {
+    if (!currentWinPattern || !winPrizes || !winPrizes[currentWinPattern]) {
+      return null;
+    }
+    
+    const prizeInfo = winPrizes[currentWinPattern];
+    return `£${prizeInfo}`;
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
