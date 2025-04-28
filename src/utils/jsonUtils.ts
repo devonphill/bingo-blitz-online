@@ -47,44 +47,64 @@ export function toJsonSafe<T>(data: T): Json {
  * @returns A JSON-compatible representation of the GameConfig array
  */
 export function gameConfigsToJson(configs: GameConfig[]): Json {
-  // Make a deep copy to ensure we don't modify the original object
-  const safeCopy = configs.map(config => {
-    const { gameNumber, gameType, patterns, session_id } = config;
-    
-    // Ensure patterns are properly formatted with order information
-    const processedPatterns: Record<string, any> = {};
-    let orderCounter = 1;
-    
-    // First pass: add active patterns in order
-    Object.entries(patterns).forEach(([patternId, patternConfig]) => {
-      if (patternConfig.active) {
-        processedPatterns[patternId] = {
-          ...patternConfig,
-          orderOfPlay: orderCounter++
-        };
-      }
-    });
-    
-    // Second pass: add inactive patterns with null order
-    Object.entries(patterns).forEach(([patternId, patternConfig]) => {
-      if (!patternConfig.active) {
-        processedPatterns[patternId] = {
-          ...patternConfig,
-          orderOfPlay: null
-        };
-      }
-    });
-    
-    return {
-      gameNumber,
-      gameType,
-      patterns: processedPatterns,
-      session_id
-    };
-  });
+  if (!configs || !Array.isArray(configs) || configs.length === 0) {
+    console.warn("gameConfigsToJson: Empty or invalid configs array provided");
+    return [];
+  }
   
-  console.log('Processed game configs for JSON storage:', safeCopy);
-  return JSON.parse(JSON.stringify(safeCopy));
+  try {
+    // Make a deep copy to ensure we don't modify the original object
+    const safeCopy = configs.map(config => {
+      if (!config) {
+        console.warn("gameConfigsToJson: Invalid config item in array");
+        return null;
+      }
+      
+      const { gameNumber, gameType, patterns, session_id } = config;
+      
+      // Ensure patterns are properly formatted with order information
+      const processedPatterns: Record<string, any> = {};
+      let orderCounter = 1;
+      
+      if (!patterns) {
+        console.warn("gameConfigsToJson: No patterns found in config");
+        return { gameNumber, gameType, patterns: {}, session_id };
+      }
+      
+      // First pass: add active patterns in order
+      Object.entries(patterns).forEach(([patternId, patternConfig]) => {
+        if (patternConfig && patternConfig.active) {
+          processedPatterns[patternId] = {
+            ...patternConfig,
+            orderOfPlay: orderCounter++
+          };
+        }
+      });
+      
+      // Second pass: add inactive patterns with null order
+      Object.entries(patterns).forEach(([patternId, patternConfig]) => {
+        if (patternConfig && !patternConfig.active) {
+          processedPatterns[patternId] = {
+            ...patternConfig,
+            orderOfPlay: null
+          };
+        }
+      });
+      
+      return {
+        gameNumber,
+        gameType,
+        patterns: processedPatterns,
+        session_id
+      };
+    }).filter(item => item !== null); // Filter out any null items
+    
+    console.log('Processed game configs for JSON storage:', safeCopy);
+    return JSON.parse(JSON.stringify(safeCopy));
+  } catch (err) {
+    console.error("Error in gameConfigsToJson:", err);
+    return [];
+  }
 }
 
 /**
@@ -93,7 +113,10 @@ export function gameConfigsToJson(configs: GameConfig[]): Json {
  * @returns Parsed GameConfig array or empty array if invalid
  */
 export function jsonToGameConfigs(jsonData: Json): GameConfig[] {
-  if (!jsonData) return [];
+  if (!jsonData) {
+    console.log("jsonToGameConfigs: No data provided, returning empty array");
+    return [];
+  }
   
   try {
     const parsed = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
@@ -104,7 +127,7 @@ export function jsonToGameConfigs(jsonData: Json): GameConfig[] {
     }
     
     // Type check and sanitize each game config
-    return parsed.map((item: any) => {
+    return parsed.filter(item => item && typeof item === 'object').map((item: any) => {
       // Ensure patterns is an object
       const patterns = typeof item.patterns === 'object' && item.patterns !== null 
         ? item.patterns 
