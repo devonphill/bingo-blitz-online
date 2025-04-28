@@ -18,6 +18,8 @@ export default function PlayerTicketsPanel({
   activeWinPatterns,
   currentWinPattern
 }: PlayerTicketsPanelProps) {
+  console.log(`Rendering PlayerTicketsPanel with ${tickets?.length || 0} tickets`);
+  
   if (!tickets || tickets.length === 0) {
     return (
       <div className="bg-white shadow rounded-lg p-6">
@@ -31,11 +33,11 @@ export default function PlayerTicketsPanel({
   
   // Debug ticket data
   console.log(`Rendering ${tickets.length} tickets:`, tickets.map(t => ({
-    serial: t.serial,
-    perm: t.perm,
-    position: t.position,
-    hasLayoutMask: t.layoutMask !== undefined || t.layout_mask !== undefined,
-    layoutMaskValue: t.layoutMask || t.layout_mask,
+    serial: t.serial || 'Unknown',
+    perm: t.perm || 'Unknown',
+    position: t.position || 'Unknown',
+    hasLayoutMask: (t.layoutMask !== undefined) || (t.layout_mask !== undefined),
+    layoutMaskValue: t.layoutMask || t.layout_mask || 0,
     numbersCount: t.numbers?.length || 0
   })));
 
@@ -48,7 +50,7 @@ export default function PlayerTicketsPanel({
 
     const ticketsWithProgress = tickets.map(ticket => {
       // Handle both layoutMask and layout_mask property naming
-      const layoutMask = ticket.layoutMask ?? ticket.layout_mask;
+      const layoutMask = ticket.layoutMask ?? ticket.layout_mask ?? 0;
       
       // Make sure layoutMask exists before processing
       if (layoutMask === undefined || layoutMask === null) {
@@ -57,7 +59,7 @@ export default function PlayerTicketsPanel({
       }
       
       // Process ticket grid and get progress
-      const grid = processTicketLayout(ticket.numbers, layoutMask);
+      const grid = processTicketLayout(ticket.numbers || [], layoutMask);
       const progress = calculateTicketProgress(grid, calledNumbers, effectiveWinPattern || "oneLine");
       
       // Return ticket with additional progress info
@@ -88,33 +90,40 @@ export default function PlayerTicketsPanel({
       {/* Group tickets by perm (strip) */}
       {Array.from(new Set(sortedTickets.map(t => t.perm))).map(perm => (
         <div key={`perm-${perm}`} className="mb-8">
-          <h3 className="text-lg font-semibold text-gray-800 mb-3 bg-gray-100 p-2 rounded-md">Strip #{perm}</h3>
+          <h3 className="text-lg font-semibold text-gray-800 mb-3 bg-gray-100 p-2 rounded-md">Strip #{perm || 'Unknown'}</h3>
           <div className="grid grid-cols-1 gap-6">
             {sortedTickets
               .filter(t => t.perm === perm)
               .sort((a, b) => autoMarking ? a.minToGo - b.minToGo : (a.position || 0) - (b.position || 0))
               .map((ticket) => {
                 // Handle both layoutMask and layout_mask property naming
-                const layoutMask = ticket.layoutMask ?? ticket.layout_mask;
+                const layoutMask = ticket.layoutMask ?? ticket.layout_mask ?? 0;
                 
-                if (layoutMask === undefined || layoutMask === null) {
-                  console.error("Missing layoutMask for ticket", ticket);
-                  return null;
+                // Make sure we have a valid ticket
+                if (!ticket.numbers || !Array.isArray(ticket.numbers) || ticket.numbers.length === 0) {
+                  console.error("Invalid ticket data:", ticket);
+                  return (
+                    <div key={ticket.serial || Math.random().toString()} 
+                         className="border border-red-300 rounded-lg p-4 bg-red-50">
+                      <div className="text-red-600">Invalid ticket data</div>
+                    </div>
+                  );
                 }
                 
                 return (
-                  <div key={ticket.serial} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+                  <div key={ticket.serial || Math.random().toString()} 
+                       className="border rounded-lg p-4 hover:shadow-md transition-shadow">
                     <div className="mb-1 flex justify-between items-center text-sm text-gray-500">
                       <span>Position: {ticket.position || 'N/A'}</span>
                       {ticket.minToGo !== undefined && <span>{ticket.minToGo} to go</span>}
                     </div>
                     <BingoTicketDisplay
-                      numbers={ticket.numbers}
+                      numbers={ticket.numbers || []}
                       layoutMask={layoutMask}
                       calledNumbers={calledNumbers}
-                      serial={ticket.serial}
-                      perm={ticket.perm}
-                      position={ticket.position}
+                      serial={ticket.serial || 'Unknown'}
+                      perm={ticket.perm || 0}
+                      position={ticket.position || 0}
                       autoMarking={autoMarking}
                       currentWinPattern={effectiveWinPattern}
                       showProgress={true}

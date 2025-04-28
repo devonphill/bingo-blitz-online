@@ -88,13 +88,15 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
           id: ticket.id,
           playerId: ticket.player_id,
           sessionId: ticket.session_id,
-          numbers: ticket.numbers,
-          serial: ticket.serial,
-          position: ticket.position,
-          layoutMask: ticket.layout_mask, // This maps layout_mask from DB to layoutMask in our interface
-          perm: ticket.perm
+          numbers: ticket.numbers || [],
+          serial: ticket.serial || `Unknown-${Math.random().toString(36).substring(2, 7)}`,
+          position: ticket.position || 0,
+          layoutMask: ticket.layout_mask || 0, // Map layout_mask from DB to layoutMask in our interface
+          perm: ticket.perm || 0
         };
       });
+      
+      console.log('Mapped tickets:', mappedTickets);
       
       // Cache tickets in session storage
       cacheTickets(playerCode, sessionId, mappedTickets);

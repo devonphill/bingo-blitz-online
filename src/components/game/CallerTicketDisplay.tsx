@@ -22,13 +22,23 @@ export default function CallerTicketDisplay({
 }: CallerTicketDisplayProps) {
   const [flashingNumber, setFlashingNumber] = useState<number | null>(null);
   
+  // Debug log the ticket
+  console.log(`Caller ticket display:`, {
+    serial: ticket.serial,
+    perm: ticket.perm,
+    position: ticket.position,
+    layoutMask: ticket.layoutMask,
+    layout_mask: ticket.layout_mask,
+    numbersLength: ticket.numbers?.length || 0
+  });
+  
   // Process grid layout from mask - memoized to avoid recalculating
   const gridCells = useMemo(() => {
     // Handle both layoutMask and layout_mask property naming
-    const layoutMask = ticket.layoutMask ?? ticket.layout_mask;
+    const layoutMask = ticket.layoutMask ?? ticket.layout_mask ?? 0;
     
-    if (!ticket.numbers || layoutMask === undefined) {
-      console.warn("Missing ticket data for layout", ticket);
+    if (!ticket.numbers || !Array.isArray(ticket.numbers) || ticket.numbers.length === 0) {
+      console.warn("Missing ticket numbers data for layout", ticket);
       return Array(3).fill(null).map(() => Array(9).fill(null));
     }
     
@@ -64,7 +74,7 @@ export default function CallerTicketDisplay({
   }, [lastCalledNumber, ticket.numbers]);
 
   // If grid cells aren't ready yet, show loading state
-  if (gridCells.length === 0) {
+  if (!gridCells || gridCells.length === 0) {
     return (
       <div className="flex flex-col">
         <div className="grid grid-cols-9 gap-1 p-2 border rounded">
@@ -101,9 +111,9 @@ export default function CallerTicketDisplay({
       
       {/* Make ticket information more visible */}
       <div className="mt-2 text-xs text-gray-700 flex justify-between border-t pt-2">
-        <div className="font-semibold">Serial: <span className="font-mono bg-gray-100 px-1 rounded text-black">{ticket.serial}</span></div>
-        {ticket.perm && <div className="font-semibold">Perm: <span className="font-mono bg-gray-100 px-1 rounded text-black">{ticket.perm}</span></div>}
-        {ticket.position && <div className="font-semibold">Position: <span className="font-mono bg-gray-100 px-1 rounded text-black">{ticket.position}</span></div>}
+        <div className="font-semibold">Serial: <span className="font-mono bg-gray-100 px-1 rounded text-black">{ticket.serial || 'Unknown'}</span></div>
+        {ticket.perm !== undefined && <div className="font-semibold">Perm: <span className="font-mono bg-gray-100 px-1 rounded text-black">{ticket.perm}</span></div>}
+        {ticket.position !== undefined && <div className="font-semibold">Position: <span className="font-mono bg-gray-100 px-1 rounded text-black">{ticket.position}</span></div>}
       </div>
     </div>
   );

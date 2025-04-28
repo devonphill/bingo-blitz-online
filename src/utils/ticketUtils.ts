@@ -1,306 +1,264 @@
 
-/**
- * Process a ticket layout based on the numbers array and layout mask
- * @param numbers Array of ticket numbers
- * @param layoutMask Bitmask indicating cell positioning
- * @returns 2D array representing the ticket grid with null for empty cells
- */
-export function processTicketLayout(
-  numbers: number[],
-  layoutMask?: number
-): (number | null)[][] {
-  // Check for valid inputs
-  if (!numbers || !Array.isArray(numbers)) {
-    console.error("Invalid numbers array provided to processTicketLayout:", numbers);
-    return Array(3).fill(null).map(() => Array(9).fill(null));
-  }
+import { toast } from 'sonner';
 
-  // Create the initial grid (3 rows x 9 columns)
-  const grid: (number | null)[][] = Array(3).fill(null).map(() => Array(9).fill(null));
+/**
+ * Cache tickets in session storage
+ */
+export function cacheTickets(playerCode: string, sessionId: string, tickets: any[]) {
+  try {
+    const key = `tickets_${playerCode}_${sessionId}`;
+    sessionStorage.setItem(key, JSON.stringify(tickets));
+  } catch (err) {
+    console.error('Error caching tickets:', err);
+  }
+}
+
+/**
+ * Get cached tickets from session storage
+ */
+export function getCachedTickets(playerCode: string, sessionId: string): any[] | null {
+  try {
+    const key = `tickets_${playerCode}_${sessionId}`;
+    const cached = sessionStorage.getItem(key);
+    return cached ? JSON.parse(cached) : null;
+  } catch (err) {
+    console.error('Error getting cached tickets:', err);
+    return null;
+  }
+}
+
+/**
+ * Process a bingo ticket layout using a mask
+ * @param numbers Array of numbers to place in the grid
+ * @param layoutMask Mask defining which cells contain numbers (1) vs empty cells (0)
+ * @returns A 3x9 grid with numbers positioned according to the mask
+ */
+export function processTicketLayout(numbers: number[], layoutMask: number): (number | null)[][] {
+  // Always create a 3x9 grid initialized with null values
+  const grid: (number | null)[][] = [
+    Array(9).fill(null),
+    Array(9).fill(null),
+    Array(9).fill(null)
+  ];
   
-  // If no layout mask is provided, create a fallback 90-ball layout
-  if (layoutMask === undefined || layoutMask === null) {
-    console.warn("No layout mask provided, using default 90-ball layout");
-    
-    // Standard 90-ball bingo has 5 numbers per row
-    let numbersIndex = 0;
-    for (let row = 0; row < 3; row++) {
-      // For each row, place 5 numbers in random positions
-      const positions = Array(9).fill(0).map((_, i) => i)
-        .sort(() => Math.random() - 0.5)
-        .slice(0, 5);
-      
-      for (const col of positions) {
-        if (numbersIndex < numbers.length) {
-          grid[row][col] = numbers[numbersIndex++];
-        }
-      }
-    }
-    
+  console.log(`Processing layout with mask ${layoutMask} and ${numbers?.length || 0} numbers`);
+  
+  // Check for invalid inputs
+  if (!numbers || !Array.isArray(numbers) || numbers.length === 0) {
+    console.error('Invalid numbers array provided to processTicketLayout:', numbers);
     return grid;
   }
-
-  // The layout mask is a binary representation where 1s indicate a cell that should contain a number
-  // Convert the mask to a binary string, pad with leading zeros if needed
-  // We need 27 bits for a 3x9 grid
+  
+  if (layoutMask === undefined || layoutMask === null) {
+    console.error('Invalid layout mask provided to processTicketLayout:', layoutMask);
+    return grid;
+  }
+  
+  // Convert mask to binary string with leading zeros (27 bits for 3x9 grid)
   const maskBinary = layoutMask.toString(2).padStart(27, '0');
+  console.log(`Mask binary: ${maskBinary}`);
   
-  console.log(`Processing layout mask ${layoutMask} -> binary ${maskBinary}`);
+  // Place numbers into the grid according to the mask
+  let numberIndex = 0;
   
-  // Important: We need to interpret the bits in the correct order
-  // In 90-ball bingo, the mask should represent all 27 positions (3 rows x 9 columns)
-  // starting from the top-left and going row by row
-  
-  let numbersIndex = 0;
-  for (let i = 0; i < maskBinary.length && i < 27; i++) {
-    // Calculate row and column from the bit index
-    // Using integer division for row and modulo for column
-    const row = Math.floor(i / 9);
-    const col = i % 9;
+  // Process each row independently to ensure correct number placement
+  for (let row = 0; row < 3; row++) {
+    // Get mask bits for this row
+    const startBitPosition = row * 9;
+    const endBitPosition = startBitPosition + 9;
+    const rowMaskBits = maskBinary.substring(startBitPosition, endBitPosition);
     
-    // Check if this position should have a number (bit is 1)
-    if (maskBinary[maskBinary.length - 1 - i] === '1') {
-      if (numbersIndex < numbers.length) {
-        grid[row][col] = numbers[numbersIndex++];
+    // Count how many numbers we need in this row
+    const numbersInRow = rowMaskBits.split('1').length - 1;
+    console.log(`Row ${row} mask: ${rowMaskBits}, needs ${numbersInRow} numbers`);
+    
+    // Place numbers in the row where mask bit is 1
+    for (let col = 0; col < 9; col++) {
+      // Check if this position should have a number (1 in the mask)
+      const bitPosition = startBitPosition + col;
+      const shouldHaveNumber = maskBinary.charAt(bitPosition) === '1';
+      
+      if (shouldHaveNumber && numberIndex < numbers.length) {
+        grid[row][col] = numbers[numberIndex];
+        numberIndex++;
       }
     }
   }
-  
-  // Debug log: count how many numbers were placed on the grid
-  const numbersPlaced = grid.flat().filter(cell => cell !== null).length;
-  console.log(`Layout mask placed ${numbersPlaced}/${numbers.length} numbers on the grid`);
-  
-  // Verify if mask placed the correct number of cells (15 for a 90-ball ticket)
-  if (numbersPlaced !== numbers.length) {
-    console.error(`Layout problem: Mask placed ${numbersPlaced} numbers but ticket has ${numbers.length} numbers`, {
-      layoutMask,
-      maskBinary,
-      numbers,
-      grid
-    });
-  }
+
+  // Log success and counts
+  const totalNumbers = grid.flat().filter(Boolean).length;
+  console.log(`Successfully processed ${totalNumbers} numbers into grid. Layout mask: ${layoutMask}`);
   
   return grid;
 }
 
 /**
- * Cache tickets for a player and session in session storage
- */
-export function cacheTickets(playerCode: string, sessionId: string, tickets: any[]): void {
-  try {
-    const cacheKey = `tickets_${playerCode}_${sessionId}`;
-    sessionStorage.setItem(cacheKey, JSON.stringify(tickets));
-    console.log(`Cached ${tickets.length} tickets for player ${playerCode} in session ${sessionId}`);
-  } catch (err) {
-    console.error('Error caching tickets:', err);
-    // Fallback: try to store without stringifying first (for older browsers)
-    try {
-      const cacheKey = `tickets_${playerCode}_${sessionId}`;
-      sessionStorage.setItem(cacheKey, JSON.stringify({
-        tickets: tickets.map(t => ({ 
-          id: t.id,
-          playerId: t.playerId,
-          sessionId: t.sessionId,
-          numbers: t.numbers,
-          serial: t.serial,
-          position: t.position,
-          layoutMask: t.layoutMask || t.layout_mask,
-          perm: t.perm
-        }))
-      }));
-    } catch (e) {
-      console.error('Failed to cache tickets even with fallback:', e);
-    }
-  }
-}
-
-/**
- * Retrieve cached tickets for a player and session from session storage
- */
-export function getCachedTickets(playerCode: string, sessionId: string): any[] | null {
-  try {
-    const cacheKey = `tickets_${playerCode}_${sessionId}`;
-    const cachedData = sessionStorage.getItem(cacheKey);
-    
-    if (!cachedData) return null;
-    
-    // Try to parse the cached data
-    const tickets = JSON.parse(cachedData);
-    
-    // Check if the result is an array of tickets or nested within a 'tickets' property
-    if (Array.isArray(tickets)) {
-      return tickets;
-    } else if (tickets && Array.isArray(tickets.tickets)) {
-      return tickets.tickets;
-    }
-    
-    return null;
-  } catch (err) {
-    console.error('Error retrieving cached tickets:', err);
-    return null;
-  }
-}
-
-/**
- * Calculate ticket progress based on called numbers and win pattern
+ * Calculate progress of a ticket toward winning
  */
 export function calculateTicketProgress(
   grid: (number | null)[][],
   calledNumbers: number[],
   winPattern: string
-): {
-  numbersToGo: number;
-  isWinner: boolean;
-  completedLines: number;
-  linesToGo: number;
-} {
-  // Default progress object
-  const progress = {
-    numbersToGo: Infinity,
-    isWinner: false,
-    completedLines: 0,
-    linesToGo: 1, // Default to one line for basic patterns
+): { isWinner: boolean; numbersToGo: number; completedLines: number; linesToGo: number } {
+  // Default result
+  const result = { 
+    isWinner: false, 
+    numbersToGo: 0, 
+    completedLines: 0, 
+    linesToGo: 0 
   };
   
-  // No grid or no called numbers
-  if (!grid || !grid.length || !calledNumbers || !calledNumbers.length) {
-    return progress;
+  if (!grid || !calledNumbers || !winPattern) {
+    console.warn('Missing input to calculateTicketProgress', { grid, calledNumbers, winPattern });
+    return result;
   }
-
+  
   // Count marked numbers in each row
-  const rowCounts = grid.map(row => {
-    const rowNumbers = row.filter(num => num !== null) as number[];
-    const markedCount = rowNumbers.filter(num => calledNumbers.includes(num)).length;
-    const totalCount = rowNumbers.length;
-    return { markedCount, totalCount, remaining: totalCount - markedCount };
+  const rowCounts: number[] = [0, 0, 0];
+  let totalNumbersInGrid = 0;
+  let totalMarkedNumbers = 0;
+  
+  // Calculate marked numbers per row
+  grid.forEach((row, rowIndex) => {
+    row.forEach(number => {
+      if (number !== null) {
+        totalNumbersInGrid++;
+        if (calledNumbers.includes(number)) {
+          totalMarkedNumbers++;
+          rowCounts[rowIndex]++;
+        }
+      }
+    });
   });
   
-  // Calculate completed lines and numbers to go based on win pattern
-  switch (winPattern) {
-    case 'oneLine':
-      // For one line, find the row closest to completion
-      progress.completedLines = rowCounts.filter(r => r.remaining === 0).length;
-      progress.linesToGo = Math.max(1 - progress.completedLines, 0);
-      progress.numbersToGo = rowCounts.length > 0 ? 
-        Math.min(...rowCounts.map(r => r.remaining)) : 
-        Infinity;
-      progress.isWinner = progress.completedLines >= 1;
-      break;
+  // Count numbers in each row
+  const numbersInRow: number[] = grid.map(row => row.filter(cell => cell !== null).length);
+  
+  // Calculate patterns based on win pattern type
+  switch (winPattern.replace('MAINSTAGE_', '')) {
+    case 'oneLine': {
+      // Check if any row is complete
+      const completedLines = rowCounts.filter((marked, index) => marked === numbersInRow[index] && marked > 0).length;
+      const isWinner = completedLines >= 1;
       
-    case 'twoLines':
-      // For two lines, count completed rows
-      progress.completedLines = rowCounts.filter(r => r.remaining === 0).length;
-      progress.linesToGo = Math.max(2 - progress.completedLines, 0);
-      
-      // Sort rows by remaining numbers and calculate how many more to go
-      const sortedRows = [...rowCounts].sort((a, b) => a.remaining - b.remaining);
-      if (progress.completedLines >= 2) {
-        progress.numbersToGo = 0;
-      } else if (progress.completedLines === 1 && sortedRows.length > 1) {
-        progress.numbersToGo = sortedRows[0].remaining;
-      } else if (sortedRows.length >= 2) {
-        progress.numbersToGo = sortedRows[0].remaining + sortedRows[1].remaining;
+      // Find row closest to completion
+      let minNumbersToGo = Infinity;
+      for (let i = 0; i < 3; i++) {
+        if (numbersInRow[i] > 0) {
+          const remaining = numbersInRow[i] - rowCounts[i];
+          if (remaining < minNumbersToGo) {
+            minNumbersToGo = remaining;
+          }
+        }
       }
       
-      progress.isWinner = progress.completedLines >= 2;
-      break;
+      return { 
+        isWinner,
+        numbersToGo: isWinner ? 0 : minNumbersToGo,
+        completedLines,
+        linesToGo: isWinner ? 0 : 1 - completedLines
+      };
+    }
+    
+    case 'twoLines': {
+      // Check if at least two rows are complete
+      const completedLines = rowCounts.filter((marked, index) => marked === numbersInRow[index] && marked > 0).length;
+      const isWinner = completedLines >= 2;
       
+      return {
+        isWinner,
+        numbersToGo: isWinner ? 0 : (numbersInRow[0] + numbersInRow[1] + numbersInRow[2]) - (rowCounts[0] + rowCounts[1] + rowCounts[2]),
+        completedLines,
+        linesToGo: isWinner ? 0 : 2 - completedLines
+      };
+    }
+    
     case 'fullHouse':
-      // For full house, all numbers need to be called
-      const allTicketNumbers = grid.flat().filter(n => n !== null) as number[];
-      const unmarkedCount = allTicketNumbers.filter(n => !calledNumbers.includes(n)).length;
-      progress.numbersToGo = unmarkedCount;
-      progress.completedLines = rowCounts.filter(r => r.remaining === 0).length;
-      progress.linesToGo = grid.length - progress.completedLines;
-      progress.isWinner = unmarkedCount === 0;
-      break;
+    case 'blackout': {
+      // Check if all numbers are marked
+      const isWinner = totalMarkedNumbers === totalNumbersInGrid;
       
+      return {
+        isWinner,
+        numbersToGo: totalNumbersInGrid - totalMarkedNumbers,
+        completedLines: rowCounts.filter((marked, index) => marked === numbersInRow[index] && marked > 0).length,
+        linesToGo: 3 - rowCounts.filter((marked, index) => marked === numbersInRow[index] && marked > 0).length
+      };
+    }
+    
     default:
-      // Default to one line behavior
-      progress.completedLines = rowCounts.filter(r => r.remaining === 0).length;
-      progress.linesToGo = 1 - progress.completedLines;
-      progress.numbersToGo = rowCounts.length > 0 ? 
-        Math.min(...rowCounts.map(r => r.remaining)) : 
-        Infinity;
-      progress.isWinner = progress.completedLines >= 1;
-      break;
+      console.warn('Unknown win pattern:', winPattern);
+      return result;
   }
-  
-  return progress;
 }
 
 /**
- * Get numbers that are one away from completing a winning pattern
- * @param grid The ticket grid
- * @param calledNumbers Array of called numbers
- * @param winPattern The current win pattern
- * @returns Array of numbers that would complete a win if called
+ * Get numbers that would complete a line if called
  */
 export function getOneToGoNumbers(
   grid: (number | null)[][],
   calledNumbers: number[],
   winPattern: string
 ): number[] {
+  if (!grid || !calledNumbers || !winPattern) {
+    return [];
+  }
+
   const oneToGoNumbers: number[] = [];
   
-  switch (winPattern) {
-    case 'oneLine':
-      // For one line, check each row
-      grid.forEach(row => {
-        const rowNumbers = row.filter(cell => cell !== null) as number[];
-        const unmarkedNumbers = rowNumbers.filter(num => !calledNumbers.includes(num));
-        
-        // If only one number is needed to complete this row, add it to one-to-go
-        if (unmarkedNumbers.length === 1) {
-          oneToGoNumbers.push(unmarkedNumbers[0]);
+  // Get winPattern without "MAINSTAGE_" prefix if present
+  const pattern = winPattern.replace('MAINSTAGE_', '');
+  
+  // For oneLine, check each row to see if it's one number away from completion
+  if (pattern === 'oneLine') {
+    grid.forEach(row => {
+      const numbersInRow = row.filter(n => n !== null);
+      const markedInRow = numbersInRow.filter(n => calledNumbers.includes(n!));
+      
+      // If this row is one number away from completion
+      if (markedInRow.length === numbersInRow.length - 1 && numbersInRow.length > 0) {
+        // Find the unmarked number
+        const unmarked = numbersInRow.find(n => n !== null && !calledNumbers.includes(n));
+        if (unmarked) {
+          oneToGoNumbers.push(unmarked);
         }
-      });
-      break;
-      
-    case 'twoLines':
-      // For two lines pattern, check how many complete lines we already have
-      const completeLines = grid.filter(row => {
-        const rowNumbers = row.filter(cell => cell !== null) as number[];
-        return rowNumbers.every(num => calledNumbers.includes(num));
-      }).length;
-      
-      // If we already have one line complete, check others for one-to-go
-      if (completeLines === 1) {
-        grid.forEach(row => {
-          const rowNumbers = row.filter(cell => cell !== null) as number[];
-          const unmarkedNumbers = rowNumbers.filter(num => !calledNumbers.includes(num));
-          
-          // If only one number is needed to complete this row, add it to one-to-go
-          if (unmarkedNumbers.length === 1) {
-            oneToGoNumbers.push(unmarkedNumbers[0]);
+      }
+    });
+  } 
+  // For twoLines, if we already have one complete line, check remaining lines
+  else if (pattern === 'twoLines') {
+    const completedLines = grid.filter(row => {
+      const numbersInRow = row.filter(n => n !== null);
+      const markedInRow = numbersInRow.filter(n => calledNumbers.includes(n!));
+      return numbersInRow.length > 0 && markedInRow.length === numbersInRow.length;
+    }).length;
+    
+    // If we already have one line complete, check for one-away in other lines
+    if (completedLines === 1) {
+      grid.forEach(row => {
+        const numbersInRow = row.filter(n => n !== null);
+        const markedInRow = numbersInRow.filter(n => calledNumbers.includes(n!));
+        
+        // If not complete but one away
+        if (markedInRow.length === numbersInRow.length - 1 && markedInRow.length < numbersInRow.length) {
+          // Find the unmarked number
+          const unmarked = numbersInRow.find(n => n !== null && !calledNumbers.includes(n));
+          if (unmarked) {
+            oneToGoNumbers.push(unmarked);
           }
-        });
-      }
-      break;
-      
-    case 'fullHouse':
-      // For full house, check all numbers on the ticket
-      const allTicketNumbers = grid.flat().filter(cell => cell !== null) as number[];
-      const unmarkedNumbers = allTicketNumbers.filter(num => !calledNumbers.includes(num));
-      
-      // If only one number is needed to complete the whole ticket
-      if (unmarkedNumbers.length === 1) {
-        oneToGoNumbers.push(unmarkedNumbers[0]);
-      }
-      break;
-      
-    default:
-      // Default to checking for one line
-      grid.forEach(row => {
-        const rowNumbers = row.filter(cell => cell !== null) as number[];
-        const unmarkedNumbers = rowNumbers.filter(num => !calledNumbers.includes(num));
-        
-        // If only one number is needed to complete this row, add it to one-to-go
-        if (unmarkedNumbers.length === 1) {
-          oneToGoNumbers.push(unmarkedNumbers[0]);
         }
       });
-      break;
+    }
+  }
+  // For fullHouse, check if we're one number away from all numbers marked
+  else if (pattern === 'fullHouse' || pattern === 'blackout') {
+    const allNumbers = grid.flat().filter(n => n !== null) as number[];
+    const unmarkedNumbers = allNumbers.filter(n => !calledNumbers.includes(n));
+    
+    // If there's exactly one number left to be called
+    if (unmarkedNumbers.length === 1) {
+      oneToGoNumbers.push(unmarkedNumbers[0]);
+    }
   }
   
   return oneToGoNumbers;

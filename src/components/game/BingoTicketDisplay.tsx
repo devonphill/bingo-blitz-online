@@ -30,26 +30,50 @@ export default function BingoTicketDisplay({
   const [recentlyMarked, setRecentlyMarked] = useState<Set<string>>(new Set());
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
   
+  console.log(`Rendering BingoTicketDisplay:`, { 
+    serial, 
+    perm, 
+    position, 
+    layoutMask, 
+    numbers: Array.isArray(numbers) ? numbers.length : 'Not an array',
+    effectiveLayoutMask: layoutMask || 0 // Use 0 as fallback
+  });
+  
   // Process grid layout from mask - memoized to avoid recalculating
   const grid = useMemo(() => {
-    if (!numbers || layoutMask === undefined || layoutMask === null) {
-      console.error("Missing numbers or layoutMask for ticket", { serial, perm, numbers, layoutMask });
+    // Log more detailed information about the inputs
+    console.log(`Processing ticket layout for ${serial}:`, { 
+      numbers: Array.isArray(numbers) ? numbers.length : 'Not an array',
+      layoutMask: layoutMask || 0,
+      perm: perm || 'Unknown',
+      position: position || 'Unknown'
+    });
+    
+    if (!numbers || !Array.isArray(numbers) || numbers.length === 0) {
+      console.error(`Missing or invalid numbers array for ticket ${serial}:`, numbers);
       return Array(3).fill(null).map(() => Array(9).fill(null));
     }
     
-    console.log(`Processing ticket layout for ${serial} with mask ${layoutMask}`);
+    if (layoutMask === undefined || layoutMask === null) {
+      console.error(`Missing layoutMask for ticket ${serial}, falling back to 0`, { layoutMask });
+      return Array(3).fill(null).map(() => Array(9).fill(null));
+    }
+    
+    // Use the refactored processTicketLayout function
     const processedGrid = processTicketLayout(numbers, layoutMask);
     
     // Debug log the grid to see if it's correct
     const numbersInGrid = processedGrid.flat().filter(n => n !== null).length;
     console.log(`Grid for ticket ${serial} contains ${numbersInGrid}/${numbers.length} numbers`, 
-      { row1: processedGrid[0].filter(n => n !== null).length,
+      { 
+        row1: processedGrid[0].filter(n => n !== null).length,
         row2: processedGrid[1].filter(n => n !== null).length, 
-        row3: processedGrid[2].filter(n => n !== null).length 
+        row3: processedGrid[2].filter(n => n !== null).length,
+        allNumbers: processedGrid.flat().filter(n => n !== null)
       });
     
     return processedGrid;
-  }, [numbers, layoutMask, serial, perm]);
+  }, [numbers, layoutMask, serial, perm, position]);
   
   // Calculate one-to-go numbers
   const oneTGNumbers = useMemo(() => {
@@ -131,6 +155,23 @@ export default function BingoTicketDisplay({
     return recentlyMarked.has(`${row},${col}`);
   };
 
+  // If there's an issue with the grid, show a valid empty grid
+  if (!grid || grid.length !== 3) {
+    console.error(`Invalid grid for ticket ${serial}`, grid);
+    return (
+      <div className="flex flex-col">
+        <div className="bg-red-100 text-red-800 p-2 rounded-md mb-2">
+          Error displaying ticket
+        </div>
+        <div className="grid grid-cols-9 gap-1">
+          {Array(27).fill(null).map((_, i) => (
+            <div key={i} className="aspect-square bg-gray-100"></div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col">
       <div className="grid grid-cols-9 gap-1">
@@ -152,8 +193,8 @@ export default function BingoTicketDisplay({
       
       {/* Ticket Information - Make serial and perm numbers very visible */}
       <div className="mt-2 text-xs text-gray-700 flex justify-between border-t pt-2">
-        <div className="font-semibold">Serial: <span className="font-mono bg-gray-100 px-1 py-0.5 rounded text-black">{serial}</span></div>
-        <div className="font-semibold">Perm: <span className="font-mono bg-gray-100 px-1 py-0.5 rounded text-black">{perm}</span>{position ? ` | Pos: ${position}` : ''}</div>
+        <div className="font-semibold">Serial: <span className="font-mono bg-gray-100 px-1 py-0.5 rounded text-black">{serial || 'Unknown'}</span></div>
+        <div className="font-semibold">Perm: <span className="font-mono bg-gray-100 px-1 py-0.5 rounded text-black">{perm || 'Unknown'}</span>{position ? ` | Pos: ${position}` : ''}</div>
       </div>
       
       {/* Progress Display (optional) */}
