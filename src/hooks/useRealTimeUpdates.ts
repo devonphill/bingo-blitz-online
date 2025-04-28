@@ -18,8 +18,9 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
     
     console.log(`[useRealTimeUpdates] Setting up real-time updates for session ${sessionId}, instance ${instanceId.current}`);
     
+    // Use a dedicated real-time channel for number broadcasts
     const numberChannel = supabase
-      .channel(`player-realtime-${instanceId.current}`)
+      .channel(`player-numbers-${instanceId.current}`)
       .on('broadcast', 
         { event: 'number-called' }, 
         (payload) => {
@@ -105,7 +106,9 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
             }
           }
         })
-      .subscribe();
+      .subscribe((status) => {
+        console.log(`[useRealTimeUpdates] Claims channel status: ${status}`);
+      });
       
     return () => {
       supabase.removeChannel(claimsChannel);

@@ -130,20 +130,20 @@ export function LiveGameView({
     }
   }, [sessionId, actualCurrentWinPattern, activePrizes, updateProgress]);
 
-  // Modified to ensure broadcast happens before database update
+  // IMPORTANT: First broadcast the number via real-time channels BEFORE updating the database
   useEffect(() => {
     if (sessionId && lastCalledNumber !== null) {
-      const broadcastChannel = supabase.channel('number-broadcast');
-      
-      console.log('Broadcasting called number to players:', lastCalledNumber);
+      const timestamp = Date.now();
+      console.log('Broadcasting called number to players with timestamp:', timestamp);
       
       const prizeInfo = actualCurrentWinPattern && activePrizes[actualCurrentWinPattern] 
         ? activePrizes[actualCurrentWinPattern] 
         : null;
       
-      const timestamp = new Date().getTime();
+      // Create a broadcast channel for the session
+      const broadcastChannel = supabase.channel('number-broadcast');
       
-      // Send broadcast first, before database update
+      // Send broadcast first, immediately, before any DB operations
       broadcastChannel.send({
         type: 'broadcast',
         event: 'number-called',
@@ -157,12 +157,21 @@ export function LiveGameView({
           timestamp
         }
       }).then(() => {
-        console.log('Number broadcast sent successfully with timestamp:', timestamp);
+        console.log('Number broadcast sent successfully!');
+        
+        // After broadcast is sent, update the database (this is non-blocking)
+        if (updateProgress) {
+          updateProgress({
+            called_numbers: calledNumbers
+          }).then((success) => {
+            console.log('Database update with called numbers: ', success ? 'succeeded' : 'failed');
+          });
+        }
       }).catch(error => {
         console.error('Error broadcasting number:', error);
       });
     }
-  }, [lastCalledNumber, calledNumbers, sessionId, actualCurrentWinPattern, activePatterns, activePrizes]);
+  }, [lastCalledNumber, calledNumbers, sessionId, actualCurrentWinPattern, activePatterns, activePrizes, updateProgress]);
 
   return (
     <div className="space-y-6 p-6">

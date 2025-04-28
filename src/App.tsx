@@ -16,6 +16,7 @@ import CallerSession from './pages/CallerSession';
 import AddPlayers from './pages/AddPlayers';
 import PlayerGame from './pages/PlayerGame';
 import AddTokens from './pages/AddTokens';
+import { Footer } from './components/Footer';
 
 function App() {
   return (
@@ -40,6 +41,7 @@ function App() {
               <Route path="/404" element={<NotFound />} />
               <Route path="*" element={<Navigate to="/404" replace />} />
             </Routes>
+            <Footer />
           </Router>
         </SessionProvider>
       </AuthContextProvider>
