@@ -14,11 +14,32 @@ export default function Dashboard() {
   const { user, logout } = useAuth();
   const { sessions, fetchSessions, isLoading } = useSessionContext();
   const navigate = useNavigate();
+  const [tokenCount, setTokenCount] = useState<number | null>(null);
 
   useEffect(() => {
     // Fetch sessions when the dashboard loads
     fetchSessions();
-  }, [fetchSessions]);
+
+    // Fetch token count
+    if (user) {
+      fetchTokenCount();
+    }
+  }, [fetchSessions, user]);
+
+  const fetchTokenCount = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('token_count')
+        .eq('id', user?.id)
+        .single();
+
+      if (error) throw error;
+      setTokenCount(data?.token_count ?? 0);
+    } catch (err) {
+      console.error('Error fetching token count:', err);
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -39,6 +60,9 @@ export default function Dashboard() {
                 <h1 className="text-2xl font-bold text-bingo-primary">Bingo Blitz</h1>
               </div>
               <div className="flex items-center space-x-4">
+                <div className="text-sm font-medium">
+                  Credits: {tokenCount ?? '...'}
+                </div>
                 <Button variant="outline" size="sm" onClick={handleLogout}>
                   Logout
                 </Button>

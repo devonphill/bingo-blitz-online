@@ -226,6 +226,7 @@ export type Database = {
           full_name: string | null
           id: string
           role: string
+          token_count: number | null
           updated_at: string
           username: string
         }
@@ -235,6 +236,7 @@ export type Database = {
           full_name?: string | null
           id: string
           role?: string
+          token_count?: number | null
           updated_at?: string
           username: string
         }
@@ -244,6 +246,7 @@ export type Database = {
           full_name?: string | null
           id?: string
           role?: string
+          token_count?: number | null
           updated_at?: string
           username?: string
         }
