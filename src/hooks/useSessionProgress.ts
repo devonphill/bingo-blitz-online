@@ -85,6 +85,7 @@ export function useSessionProgress(sessionId: string | undefined) {
         },
         (payload: RealtimePostgresChangesPayload<any>) => {
           const newData = payload.new;
+          console.log("Received real-time update for session progress:", newData);
           setProgress(prev => {
             if (!prev) return null;
             return {

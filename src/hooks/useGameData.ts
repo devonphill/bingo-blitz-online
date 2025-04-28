@@ -5,7 +5,7 @@ import { GameConfig, WinPatternConfig, GameType } from '@/types';
 import { normalizeGameConfig } from '@/utils/gameConfigHelper';
 import { getDefaultPatternsForType } from '@/types';
 import { Json } from '@/types/json';
-import { gameConfigsToJson } from '@/utils/jsonUtils';
+import { gameConfigsToJson, jsonToGameConfigs } from '@/utils/jsonUtils';
 
 export function useGameData(sessionId: string | undefined) {
   const [gameConfigs, setGameConfigs] = useState<GameConfig[]>([]);
@@ -33,29 +33,37 @@ export function useGameData(sessionId: string | undefined) {
       console.log("Fetched session data:", data);
       let configs: GameConfig[] = [];
       const numberOfGames = data.number_of_games || 1;
+      const gameType = data.game_type || 'mainstage';
 
       // Check if games_config exists and is not empty
       if (data.games_config && Array.isArray(data.games_config) && data.games_config.length > 0) {
         console.log("Using existing games_config from database:", data.games_config);
-        configs = (data.games_config as any[]).map(config => normalizeGameConfig(config));
+        configs = jsonToGameConfigs(data.games_config);
+        console.log("Parsed game configs:", configs);
       } else {
         console.log("No valid games_config found, creating defaults");
         // Create default configs for all games
-        configs = Array.from({ length: numberOfGames }, (_, i) => 
-          createDefaultGameConfig(i + 1, (data.game_type || 'mainstage') as GameType)
-        );
+        configs = Array.from({ length: numberOfGames }, (_, i) => {
+          const gameNumber = i + 1;
+          return createDefaultGameConfig(gameNumber, gameType as GameType);
+        });
+        
+        console.log("Created default game configs:", configs);
         
         // Save these default configs to the database
         const jsonConfigs = gameConfigsToJson(configs);
-        const { error: saveError } = await supabase
+        console.log("Saving default configs to database:", jsonConfigs);
+        
+        const { error: saveError, data: saveData } = await supabase
           .from('game_sessions')
           .update({ games_config: jsonConfigs })
-          .eq('id', sessionId);
+          .eq('id', sessionId)
+          .select('games_config');
           
         if (saveError) {
           console.error("Error saving default game configs:", saveError);
         } else {
-          console.log("Saved default game configs to database");
+          console.log("Saved default game configs to database, response:", saveData);
         }
       }
 
@@ -75,18 +83,20 @@ export function useGameData(sessionId: string | undefined) {
       console.log("Saving game configs:", configs);
       // Convert to JSON-compatible format using utility function
       const jsonConfigs = gameConfigsToJson(configs);
+      console.log("JSON configs to save:", jsonConfigs);
       
-      const { error } = await supabase
+      const { error, data } = await supabase
         .from('game_sessions')
         .update({ games_config: jsonConfigs })
-        .eq('id', sessionId);
+        .eq('id', sessionId)
+        .select('games_config');
 
       if (error) {
         console.error("Error from Supabase:", error);
         throw error;
       }
       
-      console.log("Game configs saved successfully");
+      console.log("Game configs saved successfully, response:", data);
       setGameConfigs(configs);
       return true;
     } catch (err) {
@@ -182,7 +192,8 @@ export function useGameData(sessionId: string | undefined) {
     return {
       gameNumber,
       gameType,
-      patterns
+      patterns,
+      session_id: sessionId
     };
   }
 

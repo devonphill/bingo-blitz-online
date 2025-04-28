@@ -1,5 +1,5 @@
 
-import { Json } from '@/types/json';
+import { Json } from '@/types';
 import { GameConfig } from '@/types';
 
 /**
@@ -53,6 +53,7 @@ export function gameConfigsToJson(configs: GameConfig[]): Json {
   }
   
   try {
+    console.log("Converting game configs to JSON:", configs);
     // Make a deep copy to ensure we don't modify the original object
     const safeCopy = configs.map(config => {
       if (!config) {
