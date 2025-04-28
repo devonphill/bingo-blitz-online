@@ -77,7 +77,7 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
       // Map database ticket fields to our Ticket interface
       const mappedTickets: Ticket[] = ticketData.map(ticket => {
         // Ensure layoutMask is present
-        if (ticket.layout_mask === undefined && ticket.layoutMask === undefined) {
+        if (ticket.layout_mask === undefined) {
           console.warn(`Ticket ${ticket.serial} missing layout mask:`, ticket);
           toast.error(`Ticket ${ticket.serial} has no layout information`);
         }
@@ -89,7 +89,7 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
           numbers: ticket.numbers,
           serial: ticket.serial,
           position: ticket.position,
-          layoutMask: ticket.layout_mask || ticket.layoutMask || 0,
+          layoutMask: ticket.layout_mask,
           perm: ticket.perm
         };
       });
