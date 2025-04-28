@@ -4,7 +4,7 @@ import { useSessions } from './useSessions';
 import { usePlayers } from './usePlayers';
 import { useTickets } from './useTickets';
 import type { GameSession, Player, TempPlayer } from '@/types';
-import { AdminTempPlayer } from '@/types/index';
+import { AdminTempPlayer } from './usePlayers';
 
 interface SessionContextType {
   sessions: GameSession[];
@@ -46,8 +46,12 @@ export function SessionProvider({ children }: SessionProviderProps) {
   
   const ticketsHook = useTickets();
   
-  // Initialize usePlayers without arguments
-  const playersHook = usePlayers();
+  // Initialize usePlayers with the ticketsHook.assignTicketsToPlayer function
+  const playersHook = usePlayers(
+    sessions,
+    fetchSessions,
+    ticketsHook.assignTicketsToPlayer
+  );
 
   // Create a wrapper function for setCurrentSession that accepts a string
   const setCurrentSession = (sessionId: string | null) => {
@@ -66,9 +70,12 @@ export function SessionProvider({ children }: SessionProviderProps) {
     players: playersHook.players,
     joinSession: async (playerCode: string) => {
       try {
+        console.log("Provider: Joining session with player code", playerCode);
         const result = await playersHook.joinSession(playerCode);
+        console.log("Provider: Join session result", result);
         return result;
       } catch (error) {
+        console.error("Provider: Error joining session", error);
         return { 
           success: false, 
           error: (error as Error).message 

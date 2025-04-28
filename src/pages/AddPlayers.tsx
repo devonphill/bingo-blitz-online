@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Loader } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 export default function AddPlayers() {
   const navigate = useNavigate();
@@ -17,6 +18,7 @@ export default function AddPlayers() {
   const [tickets, setTickets] = useState(1);
   const [isAddingPlayer, setIsAddingPlayer] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
+  const { toast } = useToast();
   
   const { 
     currentSession, 
@@ -34,13 +36,16 @@ export default function AddPlayers() {
       
       try {
         if (!sessionId) {
-          throw new Error("No session ID provided");
+          toast({
+            title: "Error",
+            description: "No session ID provided",
+            variant: "destructive"
+          });
+          navigate('/dashboard');
+          return;
         }
         
         console.log("Initializing AddPlayers page with sessionId:", sessionId);
-        
-        // Fetch all sessions if needed
-        await fetchSessions();
         
         // Set current session
         setCurrentSession(sessionId);
@@ -51,25 +56,43 @@ export default function AddPlayers() {
           await fetchPlayers(sessionId);
         } else {
           console.warn("fetchPlayers function not available in context");
+          toast({
+            title: "Warning",
+            description: "Could not fetch existing players",
+            variant: "destructive"
+          });
         }
       } catch (error) {
         console.error("Error loading session data:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load session data",
+          variant: "destructive"
+        });
       } finally {
         setPageLoading(false);
       }
     };
     
     loadSessionData();
-  }, [sessionId, setCurrentSession, fetchSessions, fetchPlayers]);
+  }, [sessionId, setCurrentSession, fetchPlayers, navigate, toast]);
 
   const handleAddPlayer = async () => {
     if (!sessionId) {
-      console.error("No session ID available");
+      toast({
+        title: "Error",
+        description: "No session ID available",
+        variant: "destructive"
+      });
       return;
     }
     
     if (!nickname.trim()) {
-      console.error("Nickname is required");
+      toast({
+        title: "Error",
+        description: "Nickname is required",
+        variant: "destructive"
+      });
       return;
     }
     
@@ -87,6 +110,10 @@ export default function AddPlayers() {
         
         if (playerId) {
           console.log("Player added successfully with ID:", playerId);
+          toast({
+            title: "Success",
+            description: `Player ${nickname} was added successfully`,
+          });
           
           // Clear form
           setNickname('');
@@ -99,10 +126,19 @@ export default function AddPlayers() {
           }
         }
       } else {
-        console.error("addPlayer function not available in context");
+        toast({
+          title: "Error",
+          description: "Add player function not available",
+          variant: "destructive"
+        });
       }
     } catch (error) {
       console.error('Error adding player:', error);
+      toast({
+        title: "Error",
+        description: "Failed to add player",
+        variant: "destructive"
+      });
     } finally {
       setIsAddingPlayer(false);
     }

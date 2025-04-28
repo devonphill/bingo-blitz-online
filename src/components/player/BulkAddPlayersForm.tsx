@@ -1,13 +1,11 @@
 
-// Fix the BulkAddPlayersForm component with proper typings and error handling
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { AdminTempPlayer } from '@/types';
 import { useToast } from '@/hooks/use-toast';
-import { Input } from '@/components/ui/input';
-import { useSessionContext } from '@/contexts/SessionProvider';
 import { Textarea } from '@/components/ui/textarea';
+import { useSessionContext } from '@/contexts/SessionProvider';
 import { generatePlayerCode } from '@/utils/accessCodeGenerator';
+import { AdminTempPlayer } from '@/contexts/usePlayers';
 
 export default function BulkAddPlayersForm({ sessionId }: { sessionId: string }) {
   const [isAdding, setIsAdding] = useState(false);
@@ -52,8 +50,11 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
         return;
       }
 
+      console.log("Bulk adding players:", players);
+
       if (bulkAddPlayers) {
         const result = await bulkAddPlayers(sessionId, players);
+        console.log("Bulk add result:", result);
         
         if (result.success) {
           toast({
