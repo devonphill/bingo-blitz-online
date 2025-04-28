@@ -251,6 +251,7 @@ export type Database = {
       }
       sessions_progress: {
         Row: {
+          called_numbers: number[] | null
           created_at: string
           current_game_number: number
           current_game_type: string
@@ -261,6 +262,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          called_numbers?: number[] | null
           created_at?: string
           current_game_number?: number
           current_game_type: string
@@ -271,6 +273,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          called_numbers?: number[] | null
           created_at?: string
           current_game_number?: number
           current_game_type?: string
