@@ -1,5 +1,5 @@
 
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { usePlayerGame } from '@/hooks/usePlayerGame';
@@ -7,22 +7,26 @@ import { useSessionProgress } from '@/hooks/useSessionProgress';
 import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 import PlayerGameLayout from '@/components/game/PlayerGameLayout';
-import { Ticket } from '@/types';
 
 export default function PlayerGame() {
   const { playerCode: urlPlayerCode } = useParams<{ playerCode: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-
+  const [loadingPlayerCode, setLoadingPlayerCode] = useState(true);
+  
   // Use stored player code or URL parameter
   useEffect(() => {
-    console.log("PlayerGame initialized with playerCode:", urlPlayerCode);
+    console.log("PlayerGame initialized with playerCode from URL:", urlPlayerCode);
     const storedPlayerCode = localStorage.getItem('playerCode');
     
     if (urlPlayerCode) {
       console.log("Storing player code from URL:", urlPlayerCode);
       localStorage.setItem('playerCode', urlPlayerCode);
-    } else if (!storedPlayerCode) {
+      setLoadingPlayerCode(false);
+    } else if (storedPlayerCode) {
+      console.log("Found stored player code, redirecting:", storedPlayerCode);
+      navigate(`/player/game/${storedPlayerCode}`, { replace: true });
+    } else {
       console.log("No player code found, redirecting to join page");
       toast({
         title: 'Player Code Missing',
@@ -33,6 +37,18 @@ export default function PlayerGame() {
     }
   }, [urlPlayerCode, navigate, toast]);
 
+  // Only proceed if we have a player code from the URL or localStorage
+  if (!urlPlayerCode && loadingPlayerCode) {
+    return (
+      <PlayerGameLoader 
+        isLoading={true} 
+        errorMessage={null} 
+        currentSession={null}
+        loadingStep="initializing"
+      />
+    );
+  }
+  
   const playerCode = urlPlayerCode || localStorage.getItem('playerCode');
   console.log("Using player code:", playerCode);
   

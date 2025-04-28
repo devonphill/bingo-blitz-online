@@ -43,7 +43,7 @@ export default function PlayerJoinForm() {
         
         // Navigate to the player game page with the player code in the URL
         console.log("Navigating to game page with player code:", playerCode);
-        navigate(`/player/game/${playerCode}`);
+        navigate(`/player/game/${playerCode}`, { replace: true });
       } else {
         console.error("Error joining game:", result.error);
         toast({

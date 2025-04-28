@@ -38,7 +38,7 @@ function App() {
               <Route path="/session/:sessionId/players/add" element={<AddPlayers />} />
               <Route path="/add-tokens" element={<AddTokens />} />
               <Route path="/404" element={<NotFound />} />
-              <Route path="*" element={<NotFound />} />
+              <Route path="*" element={<Navigate to="/404" replace />} />
             </Routes>
           </Router>
         </SessionProvider>
