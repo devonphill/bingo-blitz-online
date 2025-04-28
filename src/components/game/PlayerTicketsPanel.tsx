@@ -1,4 +1,3 @@
-
 import React, { useMemo } from "react";
 import BingoTicketDisplay from "@/components/game/BingoTicketDisplay";
 import { calculateTicketProgress, processTicketLayout } from "@/utils/ticketUtils";
@@ -20,6 +19,18 @@ export default function PlayerTicketsPanel({
 }: PlayerTicketsPanelProps) {
   console.log(`Rendering PlayerTicketsPanel with ${tickets?.length || 0} tickets`);
   
+  // Debug ticket data in more detail
+  if (tickets && tickets.length > 0) {
+    console.log('First ticket details:', {
+      serial: tickets[0].serial || 'Unknown',
+      perm: tickets[0].perm || 'Unknown',
+      position: tickets[0].position || 'Unknown',
+      layoutMask: tickets[0].layoutMask || tickets[0].layout_mask,
+      numbersLength: tickets[0].numbers?.length || 0,
+      firstFewNumbers: tickets[0].numbers?.slice(0, 5)
+    });
+  }
+  
   if (!tickets || tickets.length === 0) {
     return (
       <div className="bg-white shadow rounded-lg p-6">
@@ -31,16 +42,6 @@ export default function PlayerTicketsPanel({
     );
   }
   
-  // Debug ticket data
-  console.log(`Rendering ${tickets.length} tickets:`, tickets.map(t => ({
-    serial: t.serial || 'Unknown',
-    perm: t.perm || 'Unknown',
-    position: t.position || 'Unknown',
-    hasLayoutMask: (t.layoutMask !== undefined) || (t.layout_mask !== undefined),
-    layoutMaskValue: t.layoutMask || t.layout_mask || 0,
-    numbersCount: t.numbers?.length || 0
-  })));
-
   // Get the actual win pattern to use
   const effectiveWinPattern = currentWinPattern || (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
 
@@ -98,6 +99,13 @@ export default function PlayerTicketsPanel({
               .map((ticket) => {
                 // Handle both layoutMask and layout_mask property naming
                 const layoutMask = ticket.layoutMask ?? ticket.layout_mask ?? 0;
+                
+                // Log detailed info about each ticket before rendering
+                console.log(`Rendering ticket ${ticket.serial || 'Unknown'}:`, {
+                  layoutMask,
+                  hasNumbers: !!ticket.numbers && Array.isArray(ticket.numbers),
+                  numbersLength: ticket.numbers?.length || 0
+                });
                 
                 // Make sure we have a valid ticket
                 if (!ticket.numbers || !Array.isArray(ticket.numbers) || ticket.numbers.length === 0) {

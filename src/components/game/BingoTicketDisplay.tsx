@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState, useEffect } from "react";
 import { processTicketLayout, getOneToGoNumbers, calculateTicketProgress } from "@/utils/ticketUtils";
 import BingoCell from "./BingoCell";
@@ -139,21 +138,21 @@ export default function BingoTicketDisplay({
   };
 
   // Determines if a cell should be marked as called
-  const isCellMarked = (row: number, col: number, value: number | null) => {
+  function isCellMarked(row: number, col: number, value: number | null) {
     if (value === null) return false;
     if (autoMarking) return calledNumbers.includes(value);
     return markedCells?.has(`${row},${col}`) || false;
-  };
+  }
 
   // Checks if a number is one-to-go
-  const isCell1TG = (value: number | null) => {
+  function isCell1TG(value: number | null) {
     return value !== null && oneTGNumbers.includes(value);
-  };
+  }
   
   // Checks if a cell was recently marked (for animation)
-  const isCellRecentlyMarked = (row: number, col: number) => {
+  function isCellRecentlyMarked(row: number, col: number) {
     return recentlyMarked.has(`${row},${col}`);
-  };
+  }
 
   // If there's an issue with the grid, show a valid empty grid
   if (!grid || grid.length !== 3) {
@@ -174,6 +173,12 @@ export default function BingoTicketDisplay({
 
   return (
     <div className="flex flex-col">
+      {/* Ticket Serial & Perm Information - Make VERY visible at top */}
+      <div className="mb-2 p-1 bg-gray-100 rounded-md flex justify-between items-center text-sm">
+        <div className="font-bold text-black">Ticket: <span className="font-mono bg-yellow-100 px-2 py-1 rounded text-black">{serial || 'Unknown'}</span></div>
+        <div className="text-gray-700">Perm: <span className="font-semibold">{perm || 'Unknown'}</span>{position ? ` | Pos: ${position}` : ''}</div>
+      </div>
+      
       <div className="grid grid-cols-9 gap-1">
         {grid.map((row, rowIndex) => (
           React.Children.toArray(row.map((cell, colIndex) => (
@@ -189,12 +194,6 @@ export default function BingoTicketDisplay({
             />
           )))
         ))}
-      </div>
-      
-      {/* Ticket Information - Make serial and perm numbers very visible */}
-      <div className="mt-2 text-xs text-gray-700 flex justify-between border-t pt-2">
-        <div className="font-semibold">Serial: <span className="font-mono bg-gray-100 px-1 py-0.5 rounded text-black">{serial || 'Unknown'}</span></div>
-        <div className="font-semibold">Perm: <span className="font-mono bg-gray-100 px-1 py-0.5 rounded text-black">{perm || 'Unknown'}</span>{position ? ` | Pos: ${position}` : ''}</div>
       </div>
       
       {/* Progress Display (optional) */}

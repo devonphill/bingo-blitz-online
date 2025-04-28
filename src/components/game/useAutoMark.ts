@@ -21,9 +21,13 @@ export function useAutoMark({ numbers, layoutMask, calledNumbers, autoMarking }:
   }, [numbers, layoutMask]);
 
   function generateCardFromNumbersAndMask(numbers: number[], mask: number): Array<Array<number | null>> {
-    const maskBinary = mask.toString(2).padStart(27, "0").split("").reverse();
+    // IMPORTANT: Changed this line - removed .reverse() to fix the layout issue
+    const maskBinary = mask.toString(2).padStart(27, "0").split("");
+    console.log(`Processing layout mask ${mask} with binary: ${maskBinary.join('')}`);
+    
     const filled: (number | null)[][] = [[], [], []];
     let numIdx = 0;
+    
     for (let i = 0; i < 27; i++) {
       const rowIdx = Math.floor(i / 9);
       if (maskBinary[i] === "1") {
@@ -32,6 +36,10 @@ export function useAutoMark({ numbers, layoutMask, calledNumbers, autoMarking }:
         filled[rowIdx].push(null);
       }
     }
+    
+    // Debug log the distribution of numbers across rows
+    console.log(`Distribution of numbers in grid: Row1=${filled[0].filter(n => n !== null).length}, Row2=${filled[1].filter(n => n !== null).length}, Row3=${filled[2].filter(n => n !== null).length}`);
+    
     return filled;
   }
 

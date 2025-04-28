@@ -55,6 +55,7 @@ export function processTicketLayout(numbers: number[], layoutMask: number): (num
   }
   
   // Convert mask to binary string with leading zeros (27 bits for 3x9 grid)
+  // IMPORTANT: Removed .reverse() to ensure consistent processing with useAutoMark.ts
   const maskBinary = layoutMask.toString(2).padStart(27, '0');
   console.log(`Mask binary: ${maskBinary}`);
   
@@ -88,6 +89,7 @@ export function processTicketLayout(numbers: number[], layoutMask: number): (num
   // Log success and counts
   const totalNumbers = grid.flat().filter(Boolean).length;
   console.log(`Successfully processed ${totalNumbers} numbers into grid. Layout mask: ${layoutMask}`);
+  console.log(`Distribution of numbers in grid: Row1=${grid[0].filter(n => n !== null).length}, Row2=${grid[1].filter(n => n !== null).length}, Row3=${grid[2].filter(n => n !== null).length}`);
   
   return grid;
 }
