@@ -56,14 +56,17 @@ export function useBingoSync(sessionId?: string) {
             if (calledNumbers && Array.isArray(calledNumbers)) {
               console.log(`[useBingoSync] Updating game state with ${calledNumbers.length} called numbers and current pattern: ${activeWinPattern}`);
               
-              setGameState(prev => ({
-                lastCalledNumber: lastCalledNumber !== undefined ? lastCalledNumber : prev.lastCalledNumber,
-                calledNumbers: calledNumbers || prev.calledNumbers,
-                currentWinPattern: activeWinPattern || prev.currentWinPattern,
-                activePatterns: activePatterns || prev.activePatterns,
-                prizes: prizeInfo || prev.prizes,
+              // Create a new state object directly without using a function
+              const newGameState: GameState = {
+                lastCalledNumber: lastCalledNumber !== undefined ? lastCalledNumber : gameState.lastCalledNumber,
+                calledNumbers: calledNumbers || gameState.calledNumbers,
+                currentWinPattern: activeWinPattern || gameState.currentWinPattern,
+                activePatterns: activePatterns || gameState.activePatterns,
+                prizes: prizeInfo || gameState.prizes,
                 timestamp: timestamp || Date.now()
-              }));
+              };
+              
+              setGameState(newGameState);
               
               if (lastCalledNumber !== null && lastCalledNumber !== undefined) {
                 // Show toast for new number
@@ -117,11 +120,12 @@ export function useBingoSync(sessionId?: string) {
     connectionState,
     // Add a method to manually sync with the latest state if needed
     syncGameState: (newState: Partial<GameState>) => {
-      setGameState(prev => ({
-        ...prev,
+      const updatedState: GameState = {
+        ...gameState,
         ...newState,
         timestamp: Date.now()
-      }));
+      };
+      setGameState(updatedState);
     }
   };
 }
