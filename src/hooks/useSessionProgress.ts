@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
@@ -93,32 +94,35 @@ export function useSessionProgress(sessionId: string | undefined) {
           const newData = payload.new;
           console.log("Received real-time update for session progress:", newData);
           
-          setProgress(prev => {
-            if (!prev) {
+          // Ensure the update is for our session
+          if (newData.session_id === sessionId) {
+            setProgress(prev => {
+              if (!prev) {
+                return {
+                  id: newData.id,
+                  session_id: newData.session_id,
+                  current_game_number: newData.current_game_number,
+                  max_game_number: newData.max_game_number,
+                  current_game_type: newData.current_game_type,
+                  current_win_pattern: newData.current_win_pattern,
+                  called_numbers: newData.called_numbers || [],
+                  game_status: newData.game_status,
+                  created_at: newData.created_at,
+                  updated_at: newData.updated_at
+                };
+              }
+              
               return {
-                id: newData.id,
-                session_id: newData.session_id,
+                ...prev,
                 current_game_number: newData.current_game_number,
-                max_game_number: newData.max_game_number,
                 current_game_type: newData.current_game_type,
                 current_win_pattern: newData.current_win_pattern,
-                called_numbers: newData.called_numbers || [],
+                called_numbers: newData.called_numbers || prev.called_numbers || [],
                 game_status: newData.game_status,
-                created_at: newData.created_at,
-                updated_at: newData.updated_at
+                updated_at: newData.updated_at,
               };
-            }
-            
-            return {
-              ...prev,
-              current_game_number: newData.current_game_number,
-              current_game_type: newData.current_game_type,
-              current_win_pattern: newData.current_win_pattern,
-              called_numbers: newData.called_numbers || prev.called_numbers || [],
-              game_status: newData.game_status,
-              updated_at: newData.updated_at,
-            };
-          });
+            });
+          }
         }
       )
       .subscribe((status) => {

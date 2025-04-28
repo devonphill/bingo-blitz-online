@@ -50,7 +50,7 @@ export function toJsonSafe<T>(data: T): Json {
 }
 
 /**
- * Specifically prepares GameConfig[] for database storage by ensuring it's in a JSON-safe format
+ * Specifically prepares GameConfig[] for database storage, ensuring only necessary data is included
  * @param configs Array of GameConfig objects
  * @returns A JSON-compatible representation of the GameConfig array
  */
@@ -62,34 +62,40 @@ export function gameConfigsToJson(configs: GameConfig[]): Json {
   
   try {
     console.log("Converting game configs to JSON:", configs);
-    // Make a deep copy to ensure we don't modify the original object
-    const safeCopy = configs.map(config => {
+    
+    // Create a clean version with only the required fields to avoid circular references
+    const simplifiedConfigs = configs.map(config => {
       if (!config) {
         console.warn("gameConfigsToJson: Invalid config item in array");
         return null;
       }
       
-      // Ensure required fields are present
-      const gameNumber = config.gameNumber || 1;
-      const gameType = config.gameType || 'mainstage';
-      const session_id = config.session_id; 
-      const patterns = config.patterns || {};
+      const patterns: Record<string, any> = {};
       
-      // Create a new object with all required properties
-      const result = {
-        gameNumber,
-        gameType,
+      // Only copy pattern properties we need in the database
+      if (config.patterns) {
+        Object.entries(config.patterns).forEach(([patternId, patternConfig]) => {
+          patterns[patternId] = {
+            active: !!patternConfig.active,
+            isNonCash: !!patternConfig.isNonCash,
+            prizeAmount: patternConfig.prizeAmount || '10.00',
+            description: patternConfig.description || ''
+          };
+        });
+      }
+      
+      return {
+        gameNumber: config.gameNumber || 1,
+        gameType: config.gameType || 'mainstage',
         patterns,
-        session_id
+        session_id: config.session_id
       };
-      
-      console.log("Processed game config:", result);
-      return result;
-    }).filter(item => item !== null); // Filter out any null items
+    }).filter(item => item !== null);
     
-    console.log('Processed game configs for JSON storage:', safeCopy);
-    // Convert the array to a JSON-compatible format
-    return JSON.parse(JSON.stringify(safeCopy));
+    console.log('Processed game configs for JSON storage:', simplifiedConfigs);
+    
+    // Convert to string and back to ensure we have a clean JSON object
+    return JSON.parse(JSON.stringify(simplifiedConfigs));
   } catch (err) {
     console.error("Error in gameConfigsToJson:", err);
     return [];
@@ -108,6 +114,7 @@ export function jsonToGameConfigs(jsonData: Json): GameConfig[] {
   }
   
   try {
+    // Parse string if needed
     const parsed = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
     
     // If the data is empty or not an array, return an empty array
@@ -116,22 +123,40 @@ export function jsonToGameConfigs(jsonData: Json): GameConfig[] {
       return [];
     }
     
-    // Type check and sanitize each game config
-    const result = parsed.filter(item => item && typeof item === 'object').map((item: any) => {
+    // Convert each item to a proper GameConfig
+    const result = parsed.map((item: any) => {
+      if (!item || typeof item !== 'object') {
+        return {
+          gameNumber: 1,
+          gameType: 'mainstage',
+          patterns: {},
+          session_id: undefined
+        };
+      }
+      
       // Ensure patterns is an object
-      const patterns = typeof item.patterns === 'object' && item.patterns !== null 
-        ? item.patterns 
-        : {};
+      const patterns: Record<string, any> = {};
+      
+      if (item.patterns && typeof item.patterns === 'object') {
+        Object.entries(item.patterns).forEach(([patternId, config]: [string, any]) => {
+          patterns[patternId] = {
+            active: config?.active === true, // Only true if explicitly set to true
+            isNonCash: config?.isNonCash === true,
+            prizeAmount: config?.prizeAmount || '10.00',
+            description: config?.description || `${patternId} Prize`
+          };
+        });
+      }
       
       return {
         gameNumber: typeof item.gameNumber === 'number' ? item.gameNumber : 1,
         gameType: item.gameType || 'mainstage',
-        patterns,
+        patterns: patterns,
         session_id: item.session_id
       };
     });
     
-    console.log('Parsed game configs:', result);
+    console.log('Parsed game configs from JSON:', result);
     return result;
   } catch (err) {
     console.error('Error parsing game configs:', err);
