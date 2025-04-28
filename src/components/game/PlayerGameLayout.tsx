@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader } from "lucide-react";
+import { Loader, LogOut } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useNavigate } from "react-router-dom";
 import CurrentNumberDisplay from "./CurrentNumberDisplay";
 import { GameType, Ticket } from "@/types";
 
@@ -48,6 +49,7 @@ export default function PlayerGameLayout({
   numberOfGames = 1,
   tickets
 }: PlayerGameLayoutProps) {
+  const navigate = useNavigate();
   const [localClaimValidating, setLocalClaimValidating] = useState(false);
   const [localClaimStatus, setLocalClaimStatus] = useState<'pending' | 'validated' | 'rejected' | null>(null);
   const [lastWinPattern, setLastWinPattern] = useState<string | null>(null);
@@ -359,6 +361,15 @@ export default function PlayerGameLayout({
     return null;
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('playerCode');
+    toast({
+      title: "Logged out",
+      description: "You have been logged out successfully.",
+    });
+    navigate('/');
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -409,7 +420,19 @@ export default function PlayerGameLayout({
     <div className="min-h-screen w-full flex bg-gray-50">
       <div className="flex flex-col" style={{width:'30%', minWidth:240, maxWidth:400}}>
         <div className="flex-1 bg-black text-white p-4">
-          <h1 className="text-xl font-bold mb-4">Bingo Game Info</h1>
+          <div className="flex justify-between items-center mb-4">
+            <h1 className="text-xl font-bold">Bingo Game Info</h1>
+            <Button 
+              variant="outline" 
+              size="sm"
+              className="text-white border-white hover:bg-gray-800" 
+              onClick={handleLogout}
+            >
+              <LogOut className="h-4 w-4 mr-1" />
+              Logout
+            </Button>
+          </div>
+
           {gameType && (
             <div className="mb-4 p-2 bg-gray-800 rounded">
               <p className="text-sm text-gray-300">
