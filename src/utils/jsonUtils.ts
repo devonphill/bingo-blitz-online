@@ -69,46 +69,17 @@ export function gameConfigsToJson(configs: GameConfig[]): Json {
         return null;
       }
       
-      const { gameNumber, gameType, patterns, session_id } = config;
+      // Ensure required fields are present
+      const gameNumber = config.gameNumber || 1;
+      const gameType = config.gameType || 'mainstage';
+      const session_id = config.session_id; 
+      const patterns = config.patterns || {};
       
-      // Ensure patterns are properly formatted with order information
-      const processedPatterns: Record<string, any> = {};
-      let orderCounter = 1;
-      
-      if (!patterns) {
-        console.warn("gameConfigsToJson: No patterns found in config");
-        return { 
-          gameNumber: gameNumber || 1, 
-          gameType: gameType || 'mainstage', 
-          patterns: {}, 
-          session_id 
-        };
-      }
-      
-      // First pass: add active patterns in order
-      Object.entries(patterns).forEach(([patternId, patternConfig]) => {
-        if (patternConfig && patternConfig.active) {
-          processedPatterns[patternId] = {
-            ...patternConfig,
-            orderOfPlay: orderCounter++
-          };
-        }
-      });
-      
-      // Second pass: add inactive patterns with null order
-      Object.entries(patterns).forEach(([patternId, patternConfig]) => {
-        if (patternConfig && !patternConfig.active) {
-          processedPatterns[patternId] = {
-            ...patternConfig,
-            orderOfPlay: null
-          };
-        }
-      });
-      
+      // Create a new object with all required properties
       const result = {
-        gameNumber: gameNumber || 1,
-        gameType: gameType || 'mainstage',
-        patterns: processedPatterns,
+        gameNumber,
+        gameType,
+        patterns,
         session_id
       };
       
@@ -117,6 +88,7 @@ export function gameConfigsToJson(configs: GameConfig[]): Json {
     }).filter(item => item !== null); // Filter out any null items
     
     console.log('Processed game configs for JSON storage:', safeCopy);
+    // Convert the array to a JSON-compatible format
     return JSON.parse(JSON.stringify(safeCopy));
   } catch (err) {
     console.error("Error in gameConfigsToJson:", err);

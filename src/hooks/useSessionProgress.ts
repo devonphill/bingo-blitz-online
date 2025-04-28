@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
@@ -35,6 +34,8 @@ export function useSessionProgress(sessionId: string | undefined) {
       return;
     }
 
+    let subscription: any;
+
     async function fetchSessionProgress() {
       setLoading(true);
       try {
@@ -64,6 +65,8 @@ export function useSessionProgress(sessionId: string | undefined) {
             created_at: data.created_at,
             updated_at: data.updated_at
           });
+        } else {
+          console.log("No session progress found, should be created by trigger");
         }
       } catch (err) {
         console.error('Error in useSessionProgress:', err);
@@ -76,7 +79,7 @@ export function useSessionProgress(sessionId: string | undefined) {
     fetchSessionProgress();
 
     // Set up a real-time subscription to updates
-    const subscription = supabase
+    subscription = supabase
       .channel('session-progress-changes')
       .on(
         'postgres_changes',
@@ -91,7 +94,20 @@ export function useSessionProgress(sessionId: string | undefined) {
           console.log("Received real-time update for session progress:", newData);
           
           setProgress(prev => {
-            if (!prev) return null;
+            if (!prev) {
+              return {
+                id: newData.id,
+                session_id: newData.session_id,
+                current_game_number: newData.current_game_number,
+                max_game_number: newData.max_game_number,
+                current_game_type: newData.current_game_type,
+                current_win_pattern: newData.current_win_pattern,
+                called_numbers: newData.called_numbers || [],
+                game_status: newData.game_status,
+                created_at: newData.created_at,
+                updated_at: newData.updated_at
+              };
+            }
             
             return {
               ...prev,
@@ -111,9 +127,39 @@ export function useSessionProgress(sessionId: string | undefined) {
 
     return () => {
       console.log("Unsubscribing from session progress changes");
-      subscription.unsubscribe();
+      if (subscription) {
+        subscription.unsubscribe();
+      }
     };
   }, [sessionId]);
 
-  return { progress, loading, error };
+  const updateProgress = async (updates: SessionProgressUpdate): Promise<boolean> => {
+    if (!sessionId || !progress) return false;
+    
+    try {
+      console.log("Updating session progress with:", updates);
+      
+      const { error } = await supabase
+        .from('sessions_progress')
+        .update(updates)
+        .eq('session_id', sessionId);
+        
+      if (error) {
+        console.error("Error updating session progress:", error);
+        return false;
+      }
+      
+      return true;
+    } catch (err) {
+      console.error("Exception updating session progress:", err);
+      return false;
+    }
+  };
+
+  return { 
+    progress, 
+    loading, 
+    error,
+    updateProgress
+  };
 }

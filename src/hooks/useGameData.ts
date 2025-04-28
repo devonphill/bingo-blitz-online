@@ -1,16 +1,16 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { GameConfig, WinPatternConfig, GameType } from '@/types';
-import { normalizeGameConfig } from '@/utils/gameConfigHelper';
 import { getDefaultPatternsForType } from '@/types';
-import { Json } from '@/types/json';
 import { gameConfigsToJson, jsonToGameConfigs } from '@/utils/jsonUtils';
+import { useToast } from '@/hooks/use-toast';
 
 export function useGameData(sessionId: string | undefined) {
   const [gameConfigs, setGameConfigs] = useState<GameConfig[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const { toast } = useToast();
 
   const fetchGameConfigs = useCallback(async () => {
     if (!sessionId) return;
@@ -43,44 +43,69 @@ export function useGameData(sessionId: string | undefined) {
         console.log("Using existing games_config from database:", data.games_config);
         configs = jsonToGameConfigs(data.games_config);
         console.log("Parsed game configs:", configs);
-      } else {
-        console.log("No valid games_config found, creating defaults");
-        // Create default configs for all games
-        configs = Array.from({ length: numberOfGames }, (_, i) => {
+      } 
+      
+      // If no configs or fewer configs than needed, create defaults
+      if (configs.length < numberOfGames) {
+        console.log("Creating default configs for missing games");
+        
+        // Keep existing configs and add new ones as needed
+        const newConfigs = Array.from({ length: numberOfGames }, (_, i) => {
           const gameNumber = i + 1;
+          
+          // Use existing config if available
+          if (i < configs.length && configs[i]) {
+            return configs[i];
+          }
+          
+          // Otherwise create a default config
           return createDefaultGameConfig(gameNumber, gameType as GameType, sessionId);
         });
         
-        console.log("Created default game configs:", configs);
+        configs = newConfigs;
+        console.log("Created game configs:", configs);
         
         // Save these default configs to the database
         const jsonConfigs = gameConfigsToJson(configs);
         console.log("Saving default configs to database:", jsonConfigs);
         
-        const { error: saveError, data: saveData } = await supabase
+        const { error: saveError } = await supabase
           .from('game_sessions')
           .update({ games_config: jsonConfigs })
-          .eq('id', sessionId)
-          .select('games_config');
+          .eq('id', sessionId);
           
         if (saveError) {
           console.error("Error saving default game configs:", saveError);
+          toast({
+            title: "Error",
+            description: "Failed to save default game configurations",
+            variant: "destructive"
+          });
         } else {
-          console.log("Saved default game configs to database, response:", saveData);
+          console.log("Saved default game configs to database");
         }
       }
 
       setGameConfigs(configs);
+      setIsInitialized(true);
     } catch (err) {
       console.error('Error fetching game configs:', err);
-      setError('Failed to fetch game configurations');
+      setError(`Failed to fetch game configurations: ${(err as Error).message}`);
+      toast({
+        title: "Error",
+        description: "Failed to load game configurations",
+        variant: "destructive"
+      });
     } finally {
       setIsLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, toast]);
 
   const saveGameConfigs = useCallback(async (configs: GameConfig[]): Promise<boolean> => {
-    if (!sessionId || !configs.length) return false;
+    if (!sessionId || !configs.length) {
+      console.error("Cannot save game configs: missing session ID or configs");
+      return false;
+    }
 
     try {
       console.log("Saving game configs:", configs);
@@ -95,34 +120,51 @@ export function useGameData(sessionId: string | undefined) {
       const jsonConfigs = gameConfigsToJson(configsWithSessionId);
       console.log("JSON configs to save:", jsonConfigs);
       
-      const { error, data } = await supabase
+      const { error } = await supabase
         .from('game_sessions')
         .update({ games_config: jsonConfigs })
-        .eq('id', sessionId)
-        .select('games_config');
+        .eq('id', sessionId);
 
       if (error) {
-        console.error("Error from Supabase:", error);
-        throw error;
+        console.error("Error saving game configs to Supabase:", error);
+        toast({
+          title: "Error",
+          description: "Failed to save game configurations",
+          variant: "destructive"
+        });
+        return false;
       }
       
-      console.log("Game configs saved successfully, response:", data);
+      console.log("Game configs saved successfully");
       setGameConfigs(configsWithSessionId);
+      toast({
+        title: "Success",
+        description: "Game configurations saved successfully",
+      });
       return true;
     } catch (err) {
       console.error('Error saving game configs:', err);
-      setError('Failed to save game configurations');
+      setError(`Failed to save game configurations: ${(err as Error).message}`);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred while saving",
+        variant: "destructive"
+      });
       return false;
     }
-  }, [sessionId]);
+  }, [sessionId, toast]);
 
   const updateGameConfig = useCallback(async (
     gameNumber: number, 
     updates: Partial<GameConfig>
   ): Promise<boolean> => {
+    console.log(`Updating game ${gameNumber} with:`, updates);
     const configIndex = gameConfigs.findIndex(c => c.gameNumber === gameNumber);
     
-    if (configIndex < 0) return false;
+    if (configIndex < 0) {
+      console.error(`Game number ${gameNumber} not found in configs`);
+      return false;
+    }
     
     const newConfigs = [...gameConfigs];
     newConfigs[configIndex] = { ...newConfigs[configIndex], ...updates };
@@ -135,9 +177,13 @@ export function useGameData(sessionId: string | undefined) {
     patternId: string,
     updates: Partial<WinPatternConfig>
   ): Promise<boolean> => {
+    console.log(`Updating pattern ${patternId} for game ${gameNumber} with:`, updates);
     const configIndex = gameConfigs.findIndex(c => c.gameNumber === gameNumber);
     
-    if (configIndex < 0) return false;
+    if (configIndex < 0) {
+      console.error(`Game number ${gameNumber} not found in configs`);
+      return false;
+    }
     
     const currentConfig = gameConfigs[configIndex];
     
@@ -208,8 +254,10 @@ export function useGameData(sessionId: string | undefined) {
   }
 
   useEffect(() => {
-    fetchGameConfigs();
-  }, [fetchGameConfigs]);
+    if (!isInitialized) {
+      fetchGameConfigs();
+    }
+  }, [fetchGameConfigs, isInitialized]);
 
   return {
     gameConfigs,
@@ -220,6 +268,7 @@ export function useGameData(sessionId: string | undefined) {
     getActivePatterns,
     getCurrentGamePatterns,
     isLoading,
-    error
+    error,
+    isInitialized
   };
 }
