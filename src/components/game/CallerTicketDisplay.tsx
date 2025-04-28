@@ -23,6 +23,10 @@ export default function CallerTicketDisplay({
   
   // Process grid layout from mask - memoized to avoid recalculating
   const gridCells = useMemo(() => {
+    if (!ticket.numbers || !ticket.layoutMask) {
+      console.warn("Missing ticket data for layout", ticket);
+      return Array(3).fill(null).map(() => Array(9).fill(null));
+    }
     return processTicketLayout(ticket.numbers, ticket.layoutMask);
   }, [ticket.numbers, ticket.layoutMask]);
 
@@ -78,9 +82,12 @@ export default function CallerTicketDisplay({
           )))
         ))}
       </div>
-      <div className="mt-2 text-xs text-gray-600 flex justify-between">
-        <div>Serial: <span className="font-mono">{ticket.serial}</span></div>
-        {ticket.perm && <div>Perm: <span className="font-mono">{ticket.perm}</span></div>}
+      
+      {/* Make ticket information more visible */}
+      <div className="mt-2 text-xs text-gray-700 flex justify-between border-t pt-2">
+        <div className="font-semibold">Serial: <span className="font-mono bg-gray-100 px-1 rounded">{ticket.serial}</span></div>
+        {ticket.perm && <div className="font-semibold">Perm: <span className="font-mono bg-gray-100 px-1 rounded">{ticket.perm}</span></div>}
+        {ticket.position && <div className="font-semibold">Position: <span className="font-mono bg-gray-100 px-1 rounded">{ticket.position}</span></div>}
       </div>
     </div>
   );

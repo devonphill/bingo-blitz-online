@@ -1,3 +1,4 @@
+
 /**
  * Process a ticket layout based on the numbers array and layout mask
  * @param numbers Array of ticket numbers
@@ -8,8 +9,14 @@ export function processTicketLayout(
   numbers: number[],
   layoutMask?: number
 ): (number | null)[][] {
+  // Check for valid inputs
+  if (!numbers || !Array.isArray(numbers)) {
+    console.error("Invalid numbers array provided to processTicketLayout:", numbers);
+    return Array(3).fill(null).map(() => Array(9).fill(null));
+  }
+
   // Default to standard 90-ball bingo layout (3 rows x 9 columns) if no mask provided
-  if (!layoutMask) {
+  if (layoutMask === undefined || layoutMask === null) {
     console.warn("No layout mask provided, using default 90-ball layout");
     // Create a default grid with 3 rows, 9 columns, all null
     const defaultGrid = Array(3).fill(null).map(() => Array(9).fill(null));
@@ -39,6 +46,8 @@ export function processTicketLayout(
   // Convert the mask to a binary string, pad with leading zeros if needed
   const maskBinary = layoutMask.toString(2).padStart(27, '0');
   
+  console.log(`Processing layout mask ${layoutMask} -> binary ${maskBinary}`);
+  
   // Extract digits from the binary string, reverse to match the standard reading order
   const bits = maskBinary.split('').reverse();
   
@@ -55,6 +64,10 @@ export function processTicketLayout(
       }
     }
   }
+  
+  // Debug log: count how many numbers were placed on the grid
+  const numbersPlaced = grid.flat().filter(cell => cell !== null).length;
+  console.log(`Layout mask placed ${numbersPlaced}/${numbers.length} numbers on the grid`);
   
   return grid;
 }

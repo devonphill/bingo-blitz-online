@@ -32,8 +32,12 @@ export default function BingoTicketDisplay({
   
   // Process grid layout from mask - memoized to avoid recalculating
   const grid = useMemo(() => {
+    if (!numbers || !layoutMask) {
+      console.error("Missing numbers or layoutMask for ticket", { serial, perm });
+      return Array(3).fill(null).map(() => Array(9).fill(null));
+    }
     return processTicketLayout(numbers, layoutMask);
-  }, [numbers, layoutMask]);
+  }, [numbers, layoutMask, serial, perm]);
   
   // Calculate one-to-go numbers
   const oneTGNumbers = useMemo(() => {
@@ -135,10 +139,10 @@ export default function BingoTicketDisplay({
         ))}
       </div>
       
-      {/* Ticket Information */}
-      <div className="mt-2 text-xs text-gray-600 flex justify-between">
-        <div>Serial: <span className="font-mono">{serial}</span></div>
-        <div>Perm: <span className="font-mono">{perm}</span>{position ? ` | Pos: ${position}` : ''}</div>
+      {/* Ticket Information - Improve visibility of serial and perm numbers */}
+      <div className="mt-2 text-xs text-gray-700 flex justify-between border-t pt-2">
+        <div className="font-semibold">Serial: <span className="font-mono bg-gray-100 px-1 rounded">{serial}</span></div>
+        <div className="font-semibold">Perm: <span className="font-mono bg-gray-100 px-1 rounded">{perm}</span>{position ? ` | Pos: ${position}` : ''}</div>
       </div>
       
       {/* Progress Display (optional) */}

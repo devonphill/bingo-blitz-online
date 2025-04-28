@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Ticket } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { cacheTickets, getCachedTickets, processTicketLayout } from '@/utils/ticketUtils';
+import { toast } from 'sonner';
 
 interface UseTicketsResult {
   tickets: Ticket[];
@@ -57,7 +58,8 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
         .from('assigned_tickets')
         .select('*')
         .eq('player_id', playerId)
-        .eq('session_id', sessionId);
+        .eq('session_id', sessionId)
+        .order('perm, position');
         
       if (ticketError) {
         setError(`Error fetching tickets: ${ticketError.message}`);
@@ -73,22 +75,40 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
       }
       
       // Map database ticket fields to our Ticket interface
-      const mappedTickets: Ticket[] = ticketData.map(ticket => ({
-        id: ticket.id,
-        playerId: ticket.player_id,
-        sessionId: ticket.session_id,
-        numbers: ticket.numbers,
-        serial: ticket.serial,
-        position: ticket.position,
-        layoutMask: ticket.layout_mask,
-        perm: ticket.perm
-      }));
+      const mappedTickets: Ticket[] = ticketData.map(ticket => {
+        // Ensure layoutMask is present
+        if (ticket.layout_mask === undefined && ticket.layoutMask === undefined) {
+          console.warn(`Ticket ${ticket.serial} missing layout mask:`, ticket);
+          toast.error(`Ticket ${ticket.serial} has no layout information`);
+        }
+        
+        return {
+          id: ticket.id,
+          playerId: ticket.player_id,
+          sessionId: ticket.session_id,
+          numbers: ticket.numbers,
+          serial: ticket.serial,
+          position: ticket.position,
+          layoutMask: ticket.layout_mask || ticket.layoutMask || 0,
+          perm: ticket.perm
+        };
+      });
       
       // Pre-process ticket layouts and cache the processed results
       mappedTickets.forEach(ticket => {
         // Process the layout once to ensure it's ready for display
-        const grid = processTicketLayout(ticket.numbers, ticket.layoutMask);
-        // Additional metadata could be added here if needed
+        try {
+          const grid = processTicketLayout(ticket.numbers, ticket.layoutMask);
+          const numbersPlaced = grid.flat().filter(cell => cell !== null).length;
+          if (numbersPlaced !== ticket.numbers.length) {
+            console.warn(`Ticket ${ticket.serial}: Layout mask placed only ${numbersPlaced}/${ticket.numbers.length} numbers on the grid`, {
+              layoutMask: ticket.layoutMask,
+              numbers: ticket.numbers
+            });
+          }
+        } catch (e) {
+          console.error(`Error processing layout for ticket ${ticket.serial}:`, e);
+        }
       });
       
       // Cache tickets in session storage
