@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Ticket } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
-import { cacheTickets, getCachedTickets, processTicketLayout } from '@/utils/ticketUtils';
+import { cacheTickets, getCachedTickets } from '@/utils/ticketUtils';
 import { toast } from 'sonner';
 
 interface UseTicketsResult {
@@ -78,7 +78,7 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
       
       // Map database ticket fields to our Ticket interface
       const mappedTickets: Ticket[] = ticketData.map(ticket => {
-        // Ensure layout_mask is present
+        // Ensure the layout_mask is present
         if (ticket.layout_mask === undefined) {
           console.warn(`Ticket ${ticket.serial} missing layout mask:`, ticket);
           toast.error(`Ticket ${ticket.serial} has no layout information`);
@@ -91,26 +91,9 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
           numbers: ticket.numbers,
           serial: ticket.serial,
           position: ticket.position,
-          layoutMask: ticket.layout_mask,
+          layoutMask: ticket.layout_mask, // This maps layout_mask from DB to layoutMask in our interface
           perm: ticket.perm
         };
-      });
-      
-      // Pre-process ticket layouts and cache the processed results
-      mappedTickets.forEach(ticket => {
-        // Process the layout once to ensure it's ready for display
-        try {
-          const grid = processTicketLayout(ticket.numbers, ticket.layoutMask);
-          const numbersPlaced = grid.flat().filter(cell => cell !== null).length;
-          if (numbersPlaced !== ticket.numbers.length) {
-            console.warn(`Ticket ${ticket.serial}: Layout mask placed only ${numbersPlaced}/${ticket.numbers.length} numbers on the grid`, {
-              layoutMask: ticket.layoutMask,
-              numbers: ticket.numbers
-            });
-          }
-        } catch (e) {
-          console.error(`Error processing layout for ticket ${ticket.serial}:`, e);
-        }
       });
       
       // Cache tickets in session storage

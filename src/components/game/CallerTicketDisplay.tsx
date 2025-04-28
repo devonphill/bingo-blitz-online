@@ -33,7 +33,17 @@ export default function CallerTicketDisplay({
     }
     
     console.log(`Processing ticket layout with mask ${layoutMask} for ticket ${ticket.serial}`);
-    return processTicketLayout(ticket.numbers, layoutMask);
+    const processedGrid = processTicketLayout(ticket.numbers, layoutMask);
+    
+    // Debug log the grid to verify it's correct
+    const numbersInGrid = processedGrid.flat().filter(n => n !== null).length;
+    console.log(`Grid for ticket ${ticket.serial} contains ${numbersInGrid}/${ticket.numbers.length} numbers`, 
+      { row1: processedGrid[0].filter(n => n !== null).length,
+        row2: processedGrid[1].filter(n => n !== null).length, 
+        row3: processedGrid[2].filter(n => n !== null).length 
+      });
+    
+    return processedGrid;
   }, [ticket]);
 
   // Create flashing effect for the most recent called number
@@ -91,9 +101,9 @@ export default function CallerTicketDisplay({
       
       {/* Make ticket information more visible */}
       <div className="mt-2 text-xs text-gray-700 flex justify-between border-t pt-2">
-        <div className="font-semibold">Serial: <span className="font-mono bg-gray-100 px-1 rounded">{ticket.serial}</span></div>
-        {ticket.perm && <div className="font-semibold">Perm: <span className="font-mono bg-gray-100 px-1 rounded">{ticket.perm}</span></div>}
-        {ticket.position && <div className="font-semibold">Position: <span className="font-mono bg-gray-100 px-1 rounded">{ticket.position}</span></div>}
+        <div className="font-semibold">Serial: <span className="font-mono bg-gray-100 px-1 rounded text-black">{ticket.serial}</span></div>
+        {ticket.perm && <div className="font-semibold">Perm: <span className="font-mono bg-gray-100 px-1 rounded text-black">{ticket.perm}</span></div>}
+        {ticket.position && <div className="font-semibold">Position: <span className="font-mono bg-gray-100 px-1 rounded text-black">{ticket.position}</span></div>}
       </div>
     </div>
   );

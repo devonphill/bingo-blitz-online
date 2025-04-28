@@ -36,7 +36,19 @@ export default function BingoTicketDisplay({
       console.error("Missing numbers or layoutMask for ticket", { serial, perm, numbers, layoutMask });
       return Array(3).fill(null).map(() => Array(9).fill(null));
     }
-    return processTicketLayout(numbers, layoutMask);
+    
+    console.log(`Processing ticket layout for ${serial} with mask ${layoutMask}`);
+    const processedGrid = processTicketLayout(numbers, layoutMask);
+    
+    // Debug log the grid to see if it's correct
+    const numbersInGrid = processedGrid.flat().filter(n => n !== null).length;
+    console.log(`Grid for ticket ${serial} contains ${numbersInGrid}/${numbers.length} numbers`, 
+      { row1: processedGrid[0].filter(n => n !== null).length,
+        row2: processedGrid[1].filter(n => n !== null).length, 
+        row3: processedGrid[2].filter(n => n !== null).length 
+      });
+    
+    return processedGrid;
   }, [numbers, layoutMask, serial, perm]);
   
   // Calculate one-to-go numbers
@@ -123,9 +135,8 @@ export default function BingoTicketDisplay({
     <div className="flex flex-col">
       <div className="grid grid-cols-9 gap-1">
         {grid.map((row, rowIndex) => (
-          row.map((cell, colIndex) => (
+          React.Children.toArray(row.map((cell, colIndex) => (
             <BingoCell
-              key={`${rowIndex}-${colIndex}`}
               rowIndex={rowIndex}
               colIndex={colIndex}
               value={cell}
@@ -135,14 +146,14 @@ export default function BingoTicketDisplay({
               is1TG={isCell1TG(cell)}
               isRecentlyMarked={isCellRecentlyMarked(rowIndex, colIndex)}
             />
-          ))
+          )))
         ))}
       </div>
       
-      {/* Ticket Information - Improve visibility of serial and perm numbers */}
+      {/* Ticket Information - Make serial and perm numbers very visible */}
       <div className="mt-2 text-xs text-gray-700 flex justify-between border-t pt-2">
-        <div className="font-semibold">Serial: <span className="font-mono bg-gray-100 px-1 py-0.5 rounded">{serial}</span></div>
-        <div className="font-semibold">Perm: <span className="font-mono bg-gray-100 px-1 py-0.5 rounded">{perm}</span>{position ? ` | Pos: ${position}` : ''}</div>
+        <div className="font-semibold">Serial: <span className="font-mono bg-gray-100 px-1 py-0.5 rounded text-black">{serial}</span></div>
+        <div className="font-semibold">Perm: <span className="font-mono bg-gray-100 px-1 py-0.5 rounded text-black">{perm}</span>{position ? ` | Pos: ${position}` : ''}</div>
       </div>
       
       {/* Progress Display (optional) */}

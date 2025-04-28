@@ -28,6 +28,16 @@ export default function PlayerTicketsPanel({
       </div>
     );
   }
+  
+  // Debug ticket data
+  console.log(`Rendering ${tickets.length} tickets:`, tickets.map(t => ({
+    serial: t.serial,
+    perm: t.perm,
+    position: t.position,
+    hasLayoutMask: t.layoutMask !== undefined || t.layout_mask !== undefined,
+    layoutMaskValue: t.layoutMask || t.layout_mask,
+    numbersCount: t.numbers?.length || 0
+  })));
 
   // Get the actual win pattern to use
   const effectiveWinPattern = currentWinPattern || (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);

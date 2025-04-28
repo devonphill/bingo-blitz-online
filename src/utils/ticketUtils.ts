@@ -15,13 +15,14 @@ export function processTicketLayout(
     return Array(3).fill(null).map(() => Array(9).fill(null));
   }
 
-  // Default to standard 90-ball bingo layout (3 rows x 9 columns) if no mask provided
+  // Create the initial grid (3 rows x 9 columns)
+  const grid: (number | null)[][] = Array(3).fill(null).map(() => Array(9).fill(null));
+  
+  // If no layout mask is provided, create a fallback 90-ball layout
   if (layoutMask === undefined || layoutMask === null) {
     console.warn("No layout mask provided, using default 90-ball layout");
-    // Create a default grid with 3 rows, 9 columns, all null
-    const defaultGrid = Array(3).fill(null).map(() => Array(9).fill(null));
     
-    // Place numbers in the grid (standard 90-ball bingo has 5 numbers per row)
+    // Standard 90-ball bingo has 5 numbers per row
     let numbersIndex = 0;
     for (let row = 0; row < 3; row++) {
       // For each row, place 5 numbers in random positions
@@ -31,17 +32,14 @@ export function processTicketLayout(
       
       for (const col of positions) {
         if (numbersIndex < numbers.length) {
-          defaultGrid[row][col] = numbers[numbersIndex++];
+          grid[row][col] = numbers[numbersIndex++];
         }
       }
     }
     
-    return defaultGrid;
+    return grid;
   }
 
-  // Create the initial grid (3 rows x 9 columns)
-  const grid: (number | null)[][] = Array(3).fill(null).map(() => Array(9).fill(null));
-  
   // The layout mask is a binary representation where 1s indicate a cell that should contain a number
   // Convert the mask to a binary string, pad with leading zeros if needed
   // We need 27 bits for a 3x9 grid
@@ -49,19 +47,21 @@ export function processTicketLayout(
   
   console.log(`Processing layout mask ${layoutMask} -> binary ${maskBinary}`);
   
-  // Extract digits from the binary string, reverse to match the standard reading order
-  const bits = maskBinary.split('').reverse();
+  // Important: We need to interpret the bits in the correct order
+  // In 90-ball bingo, the mask should represent all 27 positions (3 rows x 9 columns)
+  // starting from the top-left and going row by row
   
-  // Populate the grid using the mask
   let numbersIndex = 0;
-  for (let row = 0; row < 3; row++) {
-    for (let col = 0; col < 9; col++) {
-      const bitIndex = row * 9 + col;
-      
-      if (bitIndex < bits.length && bits[bitIndex] === '1' && numbersIndex < numbers.length) {
+  for (let i = 0; i < maskBinary.length && i < 27; i++) {
+    // Calculate row and column from the bit index
+    // Using integer division for row and modulo for column
+    const row = Math.floor(i / 9);
+    const col = i % 9;
+    
+    // Check if this position should have a number (bit is 1)
+    if (maskBinary[maskBinary.length - 1 - i] === '1') {
+      if (numbersIndex < numbers.length) {
         grid[row][col] = numbers[numbersIndex++];
-      } else {
-        grid[row][col] = null;
       }
     }
   }
@@ -75,7 +75,8 @@ export function processTicketLayout(
     console.error(`Layout problem: Mask placed ${numbersPlaced} numbers but ticket has ${numbers.length} numbers`, {
       layoutMask,
       maskBinary,
-      numbers
+      numbers,
+      grid
     });
   }
   
