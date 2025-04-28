@@ -47,7 +47,11 @@ export function toJsonSafe<T>(data: T): Json {
  * @returns A JSON-compatible representation of the GameConfig array
  */
 export function gameConfigsToJson(configs: GameConfig[]): Json {
-  return prepareForDatabase(configs);
+  // Deep copy to ensure we don't modify the original object
+  const safeCopy = JSON.parse(JSON.stringify(configs));
+  
+  // Additional sanitization if needed (e.g., removing undefined values)
+  return safeCopy;
 }
 
 /**
@@ -62,15 +66,24 @@ export function jsonToGameConfigs(jsonData: Json): GameConfig[] {
     const parsed = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
     
     if (!Array.isArray(parsed)) {
+      console.warn('jsonToGameConfigs: Data is not an array, returning empty array');
       return [];
     }
     
-    return parsed.map((item: any) => ({
-      gameNumber: item.gameNumber || 1,
-      gameType: item.gameType || 'mainstage',
-      patterns: item.patterns || {},
-      session_id: item.session_id
-    }));
+    // Type check and sanitize each game config
+    return parsed.map((item: any) => {
+      // Ensure patterns is an object
+      const patterns = typeof item.patterns === 'object' && item.patterns !== null 
+        ? item.patterns 
+        : {};
+      
+      return {
+        gameNumber: typeof item.gameNumber === 'number' ? item.gameNumber : 1,
+        gameType: item.gameType || 'mainstage',
+        patterns,
+        session_id: item.session_id
+      };
+    });
   } catch (err) {
     console.error('Error parsing game configs:', err);
     return [];

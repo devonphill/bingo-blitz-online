@@ -111,6 +111,8 @@ export function GameSetupView({
     };
     
     setGameConfigs(updatedConfigs);
+    // Auto-save when game type changes
+    saveGameConfigs(updatedConfigs);
   };
   
   const handlePatternSelect = (gameIndex: number, pattern: WinPattern) => {
@@ -132,6 +134,8 @@ export function GameSetupView({
     }
     
     setGameConfigs(updatedConfigs);
+    // Auto-save when patterns are selected/deselected
+    saveGameConfigs(updatedConfigs);
   };
   
   const handlePrizeChange = (gameIndex: number, patternId: string, prizeDetails: PrizeDetails) => {
@@ -145,22 +149,30 @@ export function GameSetupView({
     };
     
     setGameConfigs(updatedConfigs);
+    // We don't auto-save on prize changes to avoid too many requests
   };
   
-  const saveGameConfigs = async () => {
+  const saveGameConfigs = async (configsToSave = gameConfigs) => {
     if (isSaving) return;
     
     setIsSaving(true);
     try {
       // Convert GameConfig[] to a JSON-compatible format for the database
-      const jsonConfigs = gameConfigsToJson(gameConfigs);
+      const jsonConfigs = gameConfigsToJson(configsToSave);
+      const sessionId = localStorage.getItem('currentSessionId');
+      
+      if (!sessionId) {
+        throw new Error("No session ID found");
+      }
+      
+      console.log("Saving game configs to database:", jsonConfigs);
       
       const { data, error } = await supabase
         .from('game_sessions')
         .update({ 
           games_config: jsonConfigs
         })
-        .eq('id', localStorage.getItem('currentSessionId'))
+        .eq('id', sessionId)
         .select('games_config');
         
       if (error) {
@@ -277,7 +289,7 @@ export function GameSetupView({
           
           <div className="flex gap-4">
             <Button 
-              onClick={saveGameConfigs} 
+              onClick={() => saveGameConfigs()}
               disabled={isSaving}
               className="flex-1"
             >
@@ -285,7 +297,10 @@ export function GameSetupView({
             </Button>
             
             <Button 
-              onClick={onGoLive}
+              onClick={async () => {
+                await saveGameConfigs();
+                onGoLive();
+              }}
               disabled={isGoingLive || (gameConfigs.length > 0 && !Object.values(gameConfigs[0].patterns).some(p => p.active))}
               variant="default"
               className="flex-1"
