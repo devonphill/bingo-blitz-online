@@ -12,6 +12,8 @@ export interface SessionProgress {
   current_win_pattern: string | null;
   called_numbers: number[];
   game_status: string | null;
+  current_prize: string | null;
+  current_prize_description: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -22,6 +24,8 @@ export interface SessionProgressUpdate {
   current_game_type?: string;
   called_numbers?: number[];
   game_status?: string;
+  current_prize?: string;
+  current_prize_description?: string;
 }
 
 export function useSessionProgress(sessionId: string | undefined) {
@@ -63,6 +67,8 @@ export function useSessionProgress(sessionId: string | undefined) {
             current_win_pattern: data.current_win_pattern,
             called_numbers: data.called_numbers || [],
             game_status: data.game_status,
+            current_prize: data.current_prize,
+            current_prize_description: data.current_prize_description,
             created_at: data.created_at,
             updated_at: data.updated_at
           });
@@ -107,6 +113,8 @@ export function useSessionProgress(sessionId: string | undefined) {
                   current_win_pattern: newData.current_win_pattern,
                   called_numbers: newData.called_numbers || [],
                   game_status: newData.game_status,
+                  current_prize: newData.current_prize,
+                  current_prize_description: newData.current_prize_description,
                   created_at: newData.created_at,
                   updated_at: newData.updated_at
                 };
@@ -119,6 +127,8 @@ export function useSessionProgress(sessionId: string | undefined) {
                 current_win_pattern: newData.current_win_pattern,
                 called_numbers: newData.called_numbers || prev.called_numbers || [],
                 game_status: newData.game_status,
+                current_prize: newData.current_prize,
+                current_prize_description: newData.current_prize_description,
                 updated_at: newData.updated_at,
               };
             });

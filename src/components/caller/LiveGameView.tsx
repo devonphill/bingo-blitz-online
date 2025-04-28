@@ -48,7 +48,7 @@ export function LiveGameView({
   const numberRange = gameType === 'mainstage' ? 90 : 75;
   // Get the session_id safely from the gameConfigs array
   const sessionId = gameConfigs.length > 0 && gameConfigs[0].session_id ? gameConfigs[0].session_id : undefined;
-  const { progress } = useSessionProgress(sessionId);
+  const { progress, updateProgress } = useSessionProgress(sessionId);
   
   console.log("LiveGameView - prizes:", prizes);
   console.log("LiveGameView - gameConfigs:", gameConfigs);
@@ -120,12 +120,42 @@ export function LiveGameView({
     }
   }, [progress, currentGameNumber]);
 
+  // Effect to update session progress with current win pattern and prize info
+  useEffect(() => {
+    if (sessionId && actualCurrentWinPattern && updateProgress) {
+      const prizeInfo = activePrizes[actualCurrentWinPattern];
+      
+      if (prizeInfo) {
+        console.log(`Updating session progress with pattern: ${actualCurrentWinPattern}, prize: ${prizeInfo.amount}, description: ${prizeInfo.description}`);
+        
+        updateProgress({
+          current_win_pattern: actualCurrentWinPattern,
+          current_prize: prizeInfo.amount,
+          current_prize_description: prizeInfo.description
+        }).then(success => {
+          if (success) {
+            console.log("Successfully updated session progress with pattern and prize info");
+          } else {
+            console.error("Failed to update session progress with pattern and prize info");
+          }
+        });
+      } else {
+        console.log(`No prize info available for pattern ${actualCurrentWinPattern}`);
+      }
+    }
+  }, [sessionId, actualCurrentWinPattern, activePrizes, updateProgress]);
+
   // Effect to broadcast number changes to players
   useEffect(() => {
     if (sessionId && lastCalledNumber !== null) {
       const broadcastChannel = supabase.channel('number-broadcast');
       
       console.log('Broadcasting called number to players:', lastCalledNumber);
+      
+      // Get the current prize details for this pattern
+      const prizeInfo = actualCurrentWinPattern && activePrizes[actualCurrentWinPattern] 
+        ? activePrizes[actualCurrentWinPattern] 
+        : null;
       
       broadcastChannel.send({
         type: 'broadcast',
@@ -136,7 +166,7 @@ export function LiveGameView({
           calledNumbers,
           activeWinPattern: actualCurrentWinPattern,
           activePatterns,
-          prizeInfo: currentPatternPrizeInfo.length > 0 ? currentPatternPrizeInfo[0] : null
+          prizeInfo
         }
       }).then(() => {
         console.log('Number broadcast sent successfully');
@@ -144,7 +174,7 @@ export function LiveGameView({
         console.error('Error broadcasting number:', error);
       });
     }
-  }, [lastCalledNumber, calledNumbers, sessionId, actualCurrentWinPattern, activePatterns, currentPatternPrizeInfo]);
+  }, [lastCalledNumber, calledNumbers, sessionId, actualCurrentWinPattern, activePatterns, activePrizes]);
 
   return (
     <div className="space-y-6 p-6">

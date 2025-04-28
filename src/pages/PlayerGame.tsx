@@ -19,6 +19,7 @@ export default function PlayerGame() {
   const [realtimeCalledNumbers, setRealtimeCalledNumbers] = useState<number[]>([]);
   const [realtimeLastCalled, setRealtimeLastCalled] = useState<number | null>(null);
   const [realtimePattern, setRealtimePattern] = useState<string | null>(null);
+  const [realtimePrizeInfo, setRealtimePrizeInfo] = useState<any>(null);
   
   // Use stored player code or URL parameter
   useEffect(() => {
@@ -97,7 +98,7 @@ export default function PlayerGame() {
           console.log("Received number broadcast in player game:", payload);
           
           if (payload.payload && payload.payload.sessionId === currentSession.id) {
-            const { calledNumbers, lastCalledNumber, activeWinPattern } = payload.payload;
+            const { calledNumbers, lastCalledNumber, activeWinPattern, prizeInfo } = payload.payload;
             
             if (calledNumbers && Array.isArray(calledNumbers)) {
               console.log("Updating called numbers from broadcast:", calledNumbers.length);
@@ -112,6 +113,11 @@ export default function PlayerGame() {
             if (activeWinPattern) {
               console.log("Updating active win pattern from broadcast:", activeWinPattern);
               setRealtimePattern(activeWinPattern);
+            }
+            
+            if (prizeInfo) {
+              console.log("Updating prize info from broadcast:", prizeInfo);
+              setRealtimePrizeInfo(prizeInfo);
             }
           }
         }
@@ -145,9 +151,10 @@ export default function PlayerGame() {
       sessionState: currentSession?.lifecycle_state,
       sessionStatus: currentSession?.status,
       gameState: currentGameState?.status,
-      errorMessage
+      errorMessage,
+      sessionProgress
     });
-  }, [isLoading, loadingStep, tickets, currentSession, currentGameState, errorMessage]);
+  }, [isLoading, loadingStep, tickets, currentSession, currentGameState, errorMessage, sessionProgress]);
   
   // Only attempt to render the game if we have all needed data
   const isInitialLoading = isLoading && loadingStep !== 'completed';
@@ -201,6 +208,24 @@ export default function PlayerGame() {
                        currentSession?.numberOfGames || 
                        1;
 
+  // Prepare prize info - from realtime update, session progress, or original props
+  let finalWinPrizes = winPrizes;
+  if (sessionProgress?.current_win_pattern && sessionProgress?.current_prize) {
+    // Add prize from session progress to the win prizes object
+    finalWinPrizes = {
+      ...finalWinPrizes,
+      [sessionProgress.current_win_pattern]: sessionProgress.current_prize
+    };
+  }
+
+  // If we have realtime prize info, prioritize it
+  if (realtimePrizeInfo && currentWinPattern) {
+    finalWinPrizes = {
+      ...finalWinPrizes,
+      [currentWinPattern]: realtimePrizeInfo.amount
+    };
+  }
+
   console.log("Rendering main player game interface");
   return (
     <React.Fragment>
@@ -212,7 +237,7 @@ export default function PlayerGame() {
         autoMarking={autoMarking}
         setAutoMarking={setAutoMarking}
         playerCode={playerCode || ''}
-        winPrizes={winPrizes}
+        winPrizes={finalWinPrizes}
         activeWinPatterns={currentWinPattern ? [currentWinPattern] : []}
         currentWinPattern={currentWinPattern}
         onClaimBingo={handleClaimBingo}

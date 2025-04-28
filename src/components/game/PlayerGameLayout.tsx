@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader } from "lucide-react";
@@ -333,12 +334,20 @@ export default function PlayerGameLayout({
   };
 
   const getPrizeDisplay = () => {
-    if (!currentWinPattern || !winPrizes || !winPrizes[currentWinPattern]) {
-      return null;
+    // First try to get prize info from broadcast prizeInfo
+    if (prizeInfo) {
+      return prizeInfo.isNonCash 
+        ? prizeInfo.description 
+        : `£${prizeInfo.amount}`;
     }
     
-    const prizeInfo = winPrizes[currentWinPattern];
-    return `£${prizeInfo}`;
+    // Fallback to winPrizes prop
+    if (currentWinPattern && winPrizes && winPrizes[currentWinPattern]) {
+      const prizeValue = winPrizes[currentWinPattern];
+      return `£${prizeValue}`;
+    }
+    
+    return null;
   };
 
   if (isLoading) {
@@ -438,6 +447,11 @@ export default function PlayerGameLayout({
               {prizeDisplay && (
                 <p className="text-sm text-gray-300 mt-1">
                   Prize: <span className="font-bold text-white">{prizeDisplay}</span>
+                </p>
+              )}
+              {prizeInfo && prizeInfo.description && (
+                <p className="text-sm text-gray-300 mt-1">
+                  Description: <span className="font-bold text-white">{prizeInfo.description}</span>
                 </p>
               )}
             </div>
