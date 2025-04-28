@@ -74,8 +74,9 @@ export function gameConfigsToJson(configs: GameConfig[]): Json {
       if (config.patterns) {
         Object.entries(config.patterns).forEach(([patternId, patternConfig]) => {
           patterns[patternId] = {
-            active: !!patternConfig.active,
-            isNonCash: !!patternConfig.isNonCash,
+            // CRITICAL: Only set active to true if explicitly true in the source
+            active: patternConfig.active === true,
+            isNonCash: patternConfig.isNonCash === true,
             prizeAmount: patternConfig.prizeAmount || '10.00',
             description: patternConfig.description || ''
           };
@@ -90,6 +91,7 @@ export function gameConfigsToJson(configs: GameConfig[]): Json {
       };
     }).filter(item => item !== null);
     
+    console.log("Preparing JSON for database storage:", simplifiedConfigs);
     return JSON.parse(JSON.stringify(simplifiedConfigs));
   } catch (err) {
     console.error("Error in gameConfigsToJson:", err);
@@ -118,6 +120,8 @@ export function jsonToGameConfigs(jsonData: Json): GameConfig[] {
       return [];
     }
     
+    console.log("Parsing JSON from database:", parsed);
+    
     // Convert each item to a proper GameConfig
     const result = parsed.map((item: any) => {
       if (!item || typeof item !== 'object') {
@@ -135,7 +139,7 @@ export function jsonToGameConfigs(jsonData: Json): GameConfig[] {
       if (item.patterns && typeof item.patterns === 'object') {
         Object.entries(item.patterns).forEach(([patternId, config]: [string, any]) => {
           patterns[patternId] = {
-            // IMPORTANT: Never default to true! Only set to true if explicitly set to true in the database
+            // CRITICAL: Only set active to true if explicitly true in the database
             active: config?.active === true,
             isNonCash: config?.isNonCash === true,
             prizeAmount: config?.prizeAmount || '10.00',
@@ -152,6 +156,7 @@ export function jsonToGameConfigs(jsonData: Json): GameConfig[] {
       };
     });
     
+    console.log("Parsed game configs from database:", result);
     return result;
   } catch (err) {
     console.error('Error parsing game configs:', err);

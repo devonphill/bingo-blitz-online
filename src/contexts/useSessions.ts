@@ -3,7 +3,7 @@ import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { GameSession, GameConfig } from '@/types';
 import { convertFromLegacyConfig } from '@/utils/callerSessionHelper';
-import { Json, parseGameConfigs } from '@/types/json';
+import { jsonToGameConfigs } from '@/utils/jsonUtils';
 
 export function useSessions() {
   const [sessions, setSessions] = useState<GameSession[]>([]);
@@ -34,8 +34,10 @@ export function useSessions() {
           let processedGamesConfig: GameConfig[] = [];
           
           if (session.games_config) {
-            // Use parseGameConfigs from types/json to safely convert the JSON data
-            processedGamesConfig = parseGameConfigs(session.games_config);
+            console.log(`Raw games_config from database for session ${session.id}:`, session.games_config);
+            // Use jsonToGameConfigs from jsonUtils.ts to safely convert the JSON data
+            processedGamesConfig = jsonToGameConfigs(session.games_config);
+            console.log(`Processed games_config for session ${session.id}:`, processedGamesConfig);
           }
           
           return {
@@ -91,8 +93,12 @@ export function useSessions() {
       const dbUpdates: Record<string, any> = {};
       if ('gameType' in updates) dbUpdates.game_type = updates.gameType;
       if ('games_config' in updates) {
+        console.log("Updates to save to database:", updates.games_config);
+        // Import gameConfigsToJson from jsonUtils.ts
+        const { gameConfigsToJson } = require('@/utils/jsonUtils');
         // Convert the GameConfig[] to JSON for storage
-        dbUpdates.games_config = updates.games_config || [];
+        dbUpdates.games_config = gameConfigsToJson(updates.games_config || []);
+        console.log("Converted games_config for database:", dbUpdates.games_config);
       }
       if ('status' in updates) dbUpdates.status = updates.status;
       if ('lifecycle_state' in updates) dbUpdates.lifecycle_state = updates.lifecycle_state;

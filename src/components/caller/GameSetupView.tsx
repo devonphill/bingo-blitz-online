@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { GameType, PrizeDetails, GameConfig, WinPatternConfig, isLegacyGameConfig, convertLegacyGameConfig } from '@/types';
 import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
@@ -45,7 +46,7 @@ export function GameSetupView({
   const { toast } = useToast();
   
   useEffect(() => {
-    console.log("GameSetupView - gameConfigs:", gameConfigs);
+    console.log("GameSetupView - initialized with gameConfigs:", gameConfigs);
     console.log("GameSetupView - numberOfGames:", numberOfGames);
     
     // Initialize game configs if needed
@@ -55,7 +56,7 @@ export function GameSetupView({
       // Store the initial configuration as a JSON string for comparison
       setLastSavedConfig(JSON.stringify(gameConfigs));
     }
-  }, [gameConfigs, numberOfGames]);
+  }, []);
   
   const initializeGameConfigs = () => {
     const newConfigs = Array.from({ length: numberOfGames }, (_, index) => {
@@ -65,10 +66,11 @@ export function GameSetupView({
       }
       
       const patterns: Record<string, WinPatternConfig> = {};
-      const gameType = 'mainstage' as GameType;
+      const gameType = currentGameType || 'mainstage';
       
       WIN_PATTERNS[gameType].forEach(pattern => {
         patterns[pattern.id] = {
+          // CRITICAL: No patterns are active by default
           active: false,
           isNonCash: false,
           prizeAmount: '10.00',
@@ -85,15 +87,16 @@ export function GameSetupView({
     
     console.log("Initialized game configs:", newConfigs);
     setGameConfigs(newConfigs);
+    
     // Store the initial configuration
     setLastSavedConfig(JSON.stringify(newConfigs));
+    
     // Auto-save the initialized configurations
     saveGameConfigs(newConfigs);
   };
 
   const handleGameTypeChange = (gameIndex: number, type: GameType) => {
     const updatedConfigs = [...gameConfigs];
-    const oldGameType = updatedConfigs[gameIndex].gameType;
     
     const patterns: Record<string, WinPatternConfig> = {};
     
@@ -102,9 +105,9 @@ export function GameSetupView({
       if (existingPattern) {
         patterns[pattern.id] = existingPattern;
       } else {
-        // For new patterns, set defaults
+        // For new patterns, set defaults - NO patterns active by default
         patterns[pattern.id] = {
-          active: ['oneLine'].includes(pattern.id),
+          active: false,
           isNonCash: false,
           prizeAmount: '10.00',
           description: `${pattern.name} Prize`
@@ -124,6 +127,7 @@ export function GameSetupView({
   };
   
   const handlePatternSelect = (gameIndex: number, pattern: WinPattern) => {
+    console.log(`Toggling pattern ${pattern.id} for game ${gameIndex + 1}`);
     const updatedConfigs = [...gameConfigs];
     const patternId = pattern.id;
     
@@ -141,7 +145,9 @@ export function GameSetupView({
       };
     }
     
+    console.log(`Updated pattern ${patternId}:`, updatedConfigs[gameIndex].patterns[patternId]);
     setGameConfigs(updatedConfigs);
+    
     // Auto-save when patterns are selected/deselected
     saveGameConfigs(updatedConfigs);
   };
@@ -259,8 +265,10 @@ export function GameSetupView({
     const patterns = WIN_PATTERNS[gameType] || [];
     
     const activePatterns = Object.entries(config.patterns)
-      .filter(([_, patternConfig]) => patternConfig.active)
+      .filter(([_, patternConfig]) => patternConfig.active === true)
       .map(([patternId]) => patternId);
+      
+    console.log(`Game ${gameNumber} active patterns:`, activePatterns);
       
     const prizeDetails: Record<string, PrizeDetails> = {};
     Object.entries(config.patterns).forEach(([patternId, patternConfig]) => {
@@ -324,7 +332,7 @@ export function GameSetupView({
                 await saveGameConfigs();
                 onGoLive();
               }}
-              disabled={isGoingLive || (gameConfigs.length > 0 && !Object.values(gameConfigs[0].patterns).some(p => p.active))}
+              disabled={isGoingLive || (gameConfigs.length > 0 && !Object.values(gameConfigs[0].patterns).some(p => p.active === true))}
               variant="default"
               className="flex-1"
             >

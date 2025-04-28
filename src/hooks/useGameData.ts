@@ -30,7 +30,7 @@ export function useGameData(sessionId: string | undefined) {
         throw error;
       }
 
-      console.log("Fetched session data:", data);
+      console.log("Raw session data from database:", data);
       let configs: GameConfig[] = [];
       const numberOfGames = data.number_of_games || 1;
       const gameType = data.game_type || 'mainstage';
@@ -40,14 +40,14 @@ export function useGameData(sessionId: string | undefined) {
           (Array.isArray(data.games_config) && data.games_config.length > 0) || 
           (typeof data.games_config === 'object' && Object.keys(data.games_config).length > 0)
       )) {
-        console.log("Using existing games_config from database:", data.games_config);
+        console.log("Games config from database:", data.games_config);
         configs = jsonToGameConfigs(data.games_config);
         console.log("Parsed game configs:", configs);
       } 
       
       // If no configs or fewer configs than needed, create defaults with NO active patterns
       if (configs.length < numberOfGames) {
-        console.log("Creating default configs for missing games - NO ACTIVE PATTERNS");
+        console.log(`Creating default configs for missing games (${numberOfGames} required, ${configs.length} found)`);
         
         // Keep existing configs and add new ones as needed
         const newConfigs = Array.from({ length: numberOfGames }, (_, i) => {
@@ -63,27 +63,7 @@ export function useGameData(sessionId: string | undefined) {
         });
         
         configs = newConfigs;
-        console.log("Created game configs:", configs);
-        
-        // Save these default configs to the database
-        const jsonConfigs = gameConfigsToJson(configs);
-        console.log("Saving default configs to database:", jsonConfigs);
-        
-        const { error: saveError } = await supabase
-          .from('game_sessions')
-          .update({ games_config: jsonConfigs })
-          .eq('id', sessionId);
-          
-        if (saveError) {
-          console.error("Error saving default game configs:", saveError);
-          toast({
-            title: "Error",
-            description: "Failed to save default game configurations",
-            variant: "destructive"
-          });
-        } else {
-          console.log("Saved default game configs to database");
-        }
+        console.log("Final game configs:", configs);
       }
 
       setGameConfigs(configs);
@@ -118,7 +98,7 @@ export function useGameData(sessionId: string | undefined) {
       
       // Convert to JSON-compatible format using utility function
       const jsonConfigs = gameConfigsToJson(configsWithSessionId);
-      console.log("JSON configs to save:", jsonConfigs);
+      console.log("JSON configs to save to database:", jsonConfigs);
       
       const { error } = await supabase
         .from('game_sessions')
@@ -221,7 +201,7 @@ export function useGameData(sessionId: string | undefined) {
     if (!config) return [];
     
     return Object.entries(config.patterns || {})
-      .filter(([_, pattern]) => pattern.active)
+      .filter(([_, pattern]) => pattern.active === true) // Explicitly check for true
       .map(([id]) => id);
   }, [gameConfigs]);
 
@@ -248,10 +228,10 @@ export function useGameData(sessionId: string | undefined) {
     const patterns: Record<string, WinPatternConfig> = {};
     
     const defaultPatterns = getDefaultPatternsForType(gameType);
-    defaultPatterns.forEach(patternId => {
+    defaultPatterns.forEach((patternId, index) => {
       patterns[patternId] = {
-        // IMPORTANT: Always initialize as false unless specifically requested otherwise
-        active: false,
+        // ONLY set active for the first pattern and only if specifically requested
+        active: index === 0 && activateFirstPattern,
         isNonCash: false,
         prizeAmount: '10.00',
         description: `${patternId} Prize`
