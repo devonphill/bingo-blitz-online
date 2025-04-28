@@ -5,6 +5,7 @@ import { GameConfig, WinPatternConfig, GameType } from '@/types';
 import { normalizeGameConfig } from '@/utils/gameConfigHelper';
 import { getDefaultPatternsForType } from '@/types';
 import { Json } from '@/types/json';
+import { gameConfigsToJson } from '@/utils/jsonUtils';
 
 export function useGameData(sessionId: string | undefined) {
   const [gameConfigs, setGameConfigs] = useState<GameConfig[]>([]);
@@ -33,7 +34,7 @@ export function useGameData(sessionId: string | undefined) {
       let configs: GameConfig[] = [];
       const numberOfGames = data.number_of_games || 1;
 
-      // Check if games_config exists and is a valid array
+      // Check if games_config exists and is not empty
       if (data.games_config && Array.isArray(data.games_config) && data.games_config.length > 0) {
         console.log("Using existing games_config from database:", data.games_config);
         configs = (data.games_config as any[]).map(config => normalizeGameConfig(config));
@@ -45,9 +46,10 @@ export function useGameData(sessionId: string | undefined) {
         );
         
         // Save these default configs to the database
+        const jsonConfigs = gameConfigsToJson(configs);
         const { error: saveError } = await supabase
           .from('game_sessions')
-          .update({ games_config: configs as unknown as Json })
+          .update({ games_config: jsonConfigs })
           .eq('id', sessionId);
           
         if (saveError) {
@@ -71,15 +73,12 @@ export function useGameData(sessionId: string | undefined) {
 
     try {
       console.log("Saving game configs:", configs);
-      // Convert GameConfig[] to a JSON-compatible format
-      const jsonConfigs = configs.map(config => ({
-        ...config,
-        patterns: { ...config.patterns }
-      }));
+      // Convert to JSON-compatible format using utility function
+      const jsonConfigs = gameConfigsToJson(configs);
       
       const { error } = await supabase
         .from('game_sessions')
-        .update({ games_config: jsonConfigs as unknown as Json })
+        .update({ games_config: jsonConfigs })
         .eq('id', sessionId);
 
       if (error) {

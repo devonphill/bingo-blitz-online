@@ -121,8 +121,9 @@ export function jsonToGameConfigs(jsonData: Json): GameConfig[] {
   try {
     const parsed = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
     
-    if (!Array.isArray(parsed)) {
-      console.warn('jsonToGameConfigs: Data is not an array, returning empty array');
+    // If the data is empty or not an array, return an empty array
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      console.log('jsonToGameConfigs: Data is empty or not an array, returning empty array');
       return [];
     }
     
