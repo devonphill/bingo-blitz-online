@@ -41,9 +41,9 @@ export function useBingoSync(sessionId?: string) {
     console.log(`[useBingoSync] Setting up real-time listeners for session ${sessionId} (${instanceId.current})`);
     setConnectionState('connecting');
     
-    // Create a channel for number updates
+    // Use the exact same channel name as the one used in LiveGameView for broadcasting
     const channel = supabase
-      .channel(`numbers-${instanceId.current}`)
+      .channel('number-broadcast')
       .on('broadcast', 
         { event: 'number-called' }, 
         (payload) => {
@@ -56,7 +56,7 @@ export function useBingoSync(sessionId?: string) {
             if (calledNumbers && Array.isArray(calledNumbers)) {
               console.log(`[useBingoSync] Updating game state with ${calledNumbers.length} called numbers and current pattern: ${activeWinPattern}`);
               
-              // Create a new state object directly without using a function
+              // Create a new state object directly
               const newGameState: GameState = {
                 lastCalledNumber: lastCalledNumber !== undefined ? lastCalledNumber : gameState.lastCalledNumber,
                 calledNumbers: calledNumbers || gameState.calledNumbers,

@@ -1,5 +1,5 @@
 
-import React from "react";
+import React, { useEffect } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
 import BingoWinProgress from "./BingoWinProgress";
@@ -42,6 +42,13 @@ export default function PlayerGameContent({
 }: PlayerGameContentProps) {
   // Use our enhanced real-time sync hook with the session ID
   const { gameState, isConnected, connectionState } = useBingoSync(currentSession?.id);
+
+  // Log state for debugging
+  useEffect(() => {
+    console.log(`[PlayerGameContent] Session ID: ${currentSession?.id}, Connection: ${connectionState}`);
+    console.log(`[PlayerGameContent] gameState:`, gameState);
+    console.log(`[PlayerGameContent] Original props:`, { calledNumbers, currentNumber });
+  }, [currentSession?.id, connectionState, gameState, calledNumbers, currentNumber]);
 
   const currentWinPattern = 
     // First check real-time updates

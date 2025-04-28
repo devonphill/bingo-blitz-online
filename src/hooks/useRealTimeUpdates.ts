@@ -18,9 +18,9 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
     
     console.log(`[useRealTimeUpdates] Setting up real-time updates for session ${sessionId}, instance ${instanceId.current}`);
     
-    // Use a dedicated real-time channel for number broadcasts
+    // Use the exact same channel name as the one used in LiveGameView for broadcasting
     const numberChannel = supabase
-      .channel(`player-numbers-${instanceId.current}`)
+      .channel('number-broadcast')
       .on('broadcast', 
         { event: 'number-called' }, 
         (payload) => {

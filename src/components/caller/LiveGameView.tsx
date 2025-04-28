@@ -191,6 +191,7 @@ export function LiveGameView({
         timestamp
       };
       
+      // Important: Use 'number-broadcast' as the channel name for both send and receive
       const broadcastChannel = supabase.channel('number-broadcast');
       
       broadcastChannel.send({
