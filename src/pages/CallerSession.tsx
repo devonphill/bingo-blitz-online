@@ -330,28 +330,31 @@ export default function CallerSession() {
       setLastCalledNumber(newNumber);
 
       if (session) {
-        console.log("Updating session progress with new called number:", newNumber);
-        updateSessionProgress(session.id, {
-          called_numbers: updatedCalledNumbers
+        console.log("Broadcasting new called number:", newNumber);
+        const broadcastChannel = supabase.channel('number-broadcast');
+        broadcastChannel.send({
+          type: 'broadcast', 
+          event: 'number-called',
+          payload: {
+            sessionId: session.id,
+            lastCalledNumber: newNumber,
+            calledNumbers: updatedCalledNumbers,
+            activeWinPattern: currentWinPattern,
+            timestamp: new Date().getTime()
+          }
         }).then(() => {
-          console.log("Session progress updated successfully");
-          const broadcastChannel = supabase.channel('number-broadcast');
-          broadcastChannel.send({
-            type: 'broadcast', 
-            event: 'number-called',
-            payload: {
-              sessionId: session.id,
-              lastCalledNumber: newNumber,
-              calledNumbers: updatedCalledNumbers,
-              activeWinPattern: currentWinPattern
-            }
+          console.log("Number broadcast sent successfully");
+          
+          console.log("Updating session progress with new called number:", newNumber);
+          updateSessionProgress(session.id, {
+            called_numbers: updatedCalledNumbers
           }).then(() => {
-            console.log("Number broadcast sent successfully");
+            console.log("Session progress updated successfully");
           }).catch(error => {
-            console.error("Error broadcasting number:", error);
+            console.error("Error updating session progress:", error);
           });
         }).catch(error => {
-          console.error("Error updating session progress:", error);
+          console.error("Error broadcasting number:", error);
         });
       }
     } catch (error) {

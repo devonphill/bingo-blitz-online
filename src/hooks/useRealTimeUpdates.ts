@@ -16,7 +16,7 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
   useEffect(() => {
     if (!sessionId) return;
     
-    console.log(`[useRealTimeUpdates] Setting up real-time updates for session ${sessionId}`);
+    console.log(`[useRealTimeUpdates] Setting up real-time updates for session ${sessionId}, instance ${instanceId.current}`);
     
     const numberChannel = supabase
       .channel(`player-realtime-${instanceId.current}`)

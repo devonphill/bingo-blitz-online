@@ -21,72 +21,60 @@ export default function CallerTicketDisplay({
   const [flashingNumber, setFlashingNumber] = useState<number | null>(null);
   const [gridCells, setGridCells] = useState<(number | null)[][]>([]);
 
-  // Convert the linear numbers array to a 3x9 grid based on layoutMask if provided
+  // Convert the linear numbers array to a 3x9 grid based on layoutMask
   useEffect(() => {
-    if (ticket.layoutMask) {
+    if (!ticket.numbers || !ticket.layoutMask) {
+      console.error("Ticket missing required data:", ticket);
+      return;
+    }
+
+    try {
+      // Convert layoutMask to binary and pad to 27 bits
       const maskBinary = ticket.layoutMask.toString(2).padStart(27, "0").split("").reverse();
       const cells: (number | null)[][] = [[], [], []];
       let numIdx = 0;
       
+      // Process each bit in the layout mask
       for (let i = 0; i < 27; i++) {
         const rowIdx = Math.floor(i / 9);
         const colIdx = i % 9;
         
+        // If the bit is 1, place a number from the numbers array
         if (maskBinary[i] === "1") {
-          cells[rowIdx][colIdx] = ticket.numbers[numIdx++] ?? null;
+          if (numIdx < ticket.numbers.length) {
+            cells[rowIdx][colIdx] = ticket.numbers[numIdx++];
+          } else {
+            console.warn(`Not enough numbers for layout mask at position ${i}`);
+            cells[rowIdx][colIdx] = null;
+          }
         } else {
+          // If the bit is 0, place null (empty cell)
           cells[rowIdx][colIdx] = null;
         }
       }
       
-      // Validate each row has exactly 5 non-null numbers for 90-ball bingo
+      // Validate for 90-ball bingo (5 numbers per row)
       for (let row = 0; row < 3; row++) {
         const nonNullCount = cells[row].filter(cell => cell !== null).length;
         if (nonNullCount !== 5) {
-          console.warn(`Row ${row} has ${nonNullCount} numbers instead of expected 5. Ticket may not be formatted correctly.`);
+          console.warn(`Row ${row} has ${nonNullCount} numbers instead of expected 5. Layout mask may be incorrect.`);
         }
       }
       
       setGridCells(cells);
-    } else {
-      // Fallback to distribute numbers evenly across rows (5 per row for 90-ball)
-      const cells: (number | null)[][] = [[], [], []];
-      
-      // For 90-ball, place 5 numbers in each row
-      for (let row = 0; row < 3; row++) {
-        for (let col = 0; col < 9; col++) {
-          cells[row][col] = null;
-        }
-      }
-      
-      let idx = 0;
-      for (let row = 0; row < 3 && idx < ticket.numbers.length; row++) {
-        // For each row, place 5 numbers in appropriate columns based on value range
-        let placedInRow = 0;
-        for (let col = 0; col < 9 && placedInRow < 5 && idx < ticket.numbers.length; col++) {
-          const number = ticket.numbers[idx];
-          
-          // Place number in appropriate column based on value range for 90-ball
-          // Column 0: 1-9, Column 1: 10-19, Column 2: 20-29, etc.
-          const numCol = number <= 9 ? 0 : Math.floor((number - 1) / 10);
-          
-          if (numCol === col && cells[row][col] === null) {
-            cells[row][col] = number;
-            idx++;
-            placedInRow++;
-          }
-        }
-      }
-      
-      setGridCells(cells);
+      console.log("Grid cells processed from layout mask:", cells);
+    } catch (error) {
+      console.error("Error processing ticket layout mask:", error);
     }
   }, [ticket]);
 
-  // Create flashing effect ONLY for the most recent called number
+  // Create flashing effect for the most recent called number
   useEffect(() => {
-    if (!lastCalledNumber || !ticket.numbers.includes(lastCalledNumber)) return;
+    if (!lastCalledNumber || !ticket.numbers || !ticket.numbers.includes(lastCalledNumber)) {
+      return;
+    }
     
-    // Only flash the last called number, not all called numbers
+    // Flash the last called number
     setFlashingNumber(lastCalledNumber);
     
     // Stop flashing after 1.5 seconds
@@ -97,13 +85,23 @@ export default function CallerTicketDisplay({
     return () => clearTimeout(timer);
   }, [lastCalledNumber, ticket.numbers]);
 
+  // If grid cells aren't ready yet, show loading state
+  if (gridCells.length === 0) {
+    return (
+      <div className="flex flex-col">
+        <div className="grid grid-cols-9 gap-1 p-2 border rounded">
+          <div className="col-span-9 p-4 text-center">Loading ticket...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col">
       <div className="grid grid-cols-9 gap-1 p-2 border rounded">
         {gridCells.map((row, rowIndex) => (
-          row.map((number, colIndex) => (
+          React.Children.toArray(row.map((number, colIndex) => (
             <div
-              key={`${ticket.serial}-${rowIndex}-${colIndex}`}
               className={`
                 aspect-square flex items-center justify-center text-sm font-medium p-2 rounded
                 ${number === null 
@@ -116,12 +114,10 @@ export default function CallerTicketDisplay({
               `}
             >
               {number !== null && (
-                <span>
-                  {number}
-                </span>
+                <span>{number}</span>
               )}
             </div>
-          ))
+          )))
         ))}
       </div>
       <div className="mt-2 text-xs text-gray-600 flex justify-between">

@@ -130,6 +130,7 @@ export function LiveGameView({
     }
   }, [sessionId, actualCurrentWinPattern, activePrizes, updateProgress]);
 
+  // Modified to ensure broadcast happens before database update
   useEffect(() => {
     if (sessionId && lastCalledNumber !== null) {
       const broadcastChannel = supabase.channel('number-broadcast');
@@ -142,6 +143,7 @@ export function LiveGameView({
       
       const timestamp = new Date().getTime();
       
+      // Send broadcast first, before database update
       broadcastChannel.send({
         type: 'broadcast',
         event: 'number-called',

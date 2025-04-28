@@ -43,23 +43,46 @@ export default function PlayerTicketsPanel({
         return { ...ticket, minToGo: Infinity };
       }
       
-      // Calculate ticket progress using the same logic from BingoWinProgress
-      const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
+      // Process the layout mask correctly to count marked numbers and rows
+      const maskBinary = layoutMask.toString(2).padStart(27, "0").split("").reverse();
       const rows: (number | null)[][] = [[], [], []];
       let nIdx = 0;
 
+      // Build rows from the layout mask
       for (let i = 0; i < 27; i++) {
         const row = Math.floor(i / 9);
-        if (maskBits[i] === '1') {
-          rows[row].push(ticket.numbers[nIdx]);
-          nIdx++;
+        const col = i % 9;
+        
+        if (maskBinary[i] === '1') {
+          rows[row][col] = ticket.numbers[nIdx++];
         } else {
-          rows[row].push(null);
+          rows[row][col] = null;
         }
       }
 
-      const lineCounts = rows.map(line => line.filter(num => num !== null && calledNumbers.includes(num as number)).length);
-      const lineNeeded = rows.map(line => line.filter(num => num !== null).length);
+      // Count how many numbers are marked in each row
+      const lineCounts = rows.map(line => {
+        let marked = 0;
+        for (let i = 0; i < line.length; i++) {
+          if (line[i] !== null && calledNumbers.includes(line[i])) {
+            marked++;
+          }
+        }
+        return marked;
+      });
+
+      // Count how many numbers are needed for each row to be complete
+      const lineNeeded = rows.map(line => {
+        let total = 0;
+        for (let i = 0; i < line.length; i++) {
+          if (line[i] !== null) {
+            total++;
+          }
+        }
+        return total;
+      });
+
+      // Count completed lines
       const completedLines = lineCounts.filter((count, idx) => count === lineNeeded[idx]).length;
 
       // If there's a current win pattern, prioritize scoring based on it
@@ -77,11 +100,18 @@ export default function PlayerTicketsPanel({
         if (linesToGo === 0) {
           minNeeded = 0;
         } else {
-          minNeeded = Math.min(
-            ...rows
-              .map((line, idx) => lineNeeded[idx] - lineCounts[idx])
-              .filter(n => n > 0)
-          );
+          // Find the line that's closest to completion
+          const numbersNeeded = rows.map((line, idx) => {
+            // If this line is already complete, we don't need it
+            if (lineCounts[idx] === lineNeeded[idx]) {
+              return Infinity;
+            }
+            
+            // Return how many more numbers we need to complete this line
+            return lineNeeded[idx] - lineCounts[idx];
+          });
+          
+          minNeeded = Math.min(...numbersNeeded.filter(n => n < Infinity));
           if (minNeeded === Infinity) minNeeded = 0;
         }
         result[pattern] = minNeeded;

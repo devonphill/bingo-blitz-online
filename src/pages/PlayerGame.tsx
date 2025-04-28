@@ -1,4 +1,3 @@
-
 import React, { useEffect, useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -15,7 +14,6 @@ export default function PlayerGame() {
   const { toast } = useToast();
   const [loadingPlayerCode, setLoadingPlayerCode] = useState(true);
   
-  // Use stored player code or URL parameter
   useEffect(() => {
     console.log("PlayerGame initialized with playerCode from URL:", urlPlayerCode);
     const storedPlayerCode = localStorage.getItem('playerCode');
@@ -38,7 +36,6 @@ export default function PlayerGame() {
     }
   }, [urlPlayerCode, navigate, toast]);
 
-  // Only proceed if we have a player code from the URL or localStorage
   if (!urlPlayerCode && loadingPlayerCode) {
     return (
       <PlayerGameLoader 
@@ -75,24 +72,25 @@ export default function PlayerGame() {
     handleClaimBingo: submitBingoClaim
   } = usePlayerGame(playerCode);
 
-  // Get session progress from the database for authoritative game state
   const { progress: sessionProgress } = useSessionProgress(currentSession?.id);
   
-  // Get real-time updates using our new hook
   const realTimeUpdates = useRealTimeUpdates(currentSession?.id, playerCode);
   
-  // Create a wrapper function that matches the expected signature
+  console.log("Real-time updates:", {
+    lastCalledNumber: realTimeUpdates.lastCalledNumber,
+    calledNumbers: realTimeUpdates.calledNumbers.length, 
+    currentWinPattern: realTimeUpdates.currentWinPattern
+  });
+  
   const handleClaimBingo = useCallback(() => {
     if (!tickets || tickets.length === 0) {
       console.log("Cannot claim bingo: no tickets available");
       return Promise.resolve(false);
     }
     console.log("Claiming bingo with ticket:", tickets[0]);
-    // Call the original handler with the first ticket
     return submitBingoClaim(tickets[0]);
   }, [submitBingoClaim, tickets]);
   
-  // Log component state for debugging
   useEffect(() => {
     console.log("PlayerGame render state:", {
       isLoading,
@@ -104,17 +102,16 @@ export default function PlayerGame() {
       gameState: currentGameState?.status,
       errorMessage,
       sessionProgress,
-      realTimeLastCalled: realTimeUpdates.lastCalledNumber
+      realTimeLastCalled: realTimeUpdates.lastCalledNumber,
+      realTimeCalledNumbers: realTimeUpdates.calledNumbers.length
     });
   }, [isLoading, loadingStep, tickets, currentSession, currentGameState, errorMessage, sessionProgress, realTimeUpdates]);
   
-  // Only attempt to render the game if we have all needed data
   const isInitialLoading = isLoading && loadingStep !== 'completed';
   const hasTickets = tickets && tickets.length > 0;
   const isGameActive = currentGameState?.status === 'active';
   const hasSession = !!currentSession;
   
-  // Show loader if needed
   const shouldShowLoader = 
     (isInitialLoading && loadingStep !== 'completed') || 
     !!errorMessage || 
@@ -140,19 +137,18 @@ export default function PlayerGame() {
     );
   }
 
-  // Use realtime data if available, otherwise use data from hooks
-  const finalCalledNumbers = realTimeUpdates.calledNumbers.length > 0 ? realTimeUpdates.calledNumbers : 
-                            (sessionProgress?.called_numbers || calledItems || []);
+  const finalCalledNumbers = realTimeUpdates.calledNumbers.length > 0 
+    ? realTimeUpdates.calledNumbers 
+    : (sessionProgress?.called_numbers || calledItems || []);
   
-  const finalLastCalledNumber = realTimeUpdates.lastCalledNumber !== null ? realTimeUpdates.lastCalledNumber :
-                              (finalCalledNumbers.length > 0 ? finalCalledNumbers[finalCalledNumbers.length - 1] : lastCalledItem);
+  const finalLastCalledNumber = realTimeUpdates.lastCalledNumber !== null 
+    ? realTimeUpdates.lastCalledNumber
+    : (finalCalledNumbers.length > 0 ? finalCalledNumbers[finalCalledNumbers.length - 1] : lastCalledItem);
   
-  // Prioritize real-time updates, then sessionProgress as the source of truth for current win pattern
   const currentWinPattern = realTimeUpdates.currentWinPattern || 
                            sessionProgress?.current_win_pattern || 
                            (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
 
-  // Get game numbers from session progress or fallback to game state
   const currentGameNumber = sessionProgress?.current_game_number || 
                            currentGameState?.gameNumber || 
                            1;
@@ -160,17 +156,14 @@ export default function PlayerGame() {
                        currentSession?.numberOfGames || 
                        1;
 
-  // Prepare prize info - from real-time update, session progress, or original props
   let finalWinPrizes = winPrizes;
   if (sessionProgress?.current_win_pattern && sessionProgress?.current_prize) {
-    // Add prize from session progress to the win prizes object
     finalWinPrizes = {
       ...finalWinPrizes,
       [sessionProgress.current_win_pattern]: sessionProgress.current_prize
     };
   }
 
-  // If we have real-time prize info, prioritize it
   if (realTimeUpdates.prizeInfo && currentWinPattern) {
     finalWinPrizes = {
       ...finalWinPrizes,
