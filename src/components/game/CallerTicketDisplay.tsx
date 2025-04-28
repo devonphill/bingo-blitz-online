@@ -27,8 +27,7 @@ export default function CallerTicketDisplay({
     serial: ticket.serial,
     perm: ticket.perm,
     position: ticket.position,
-    layoutMask: ticket.layoutMask,
-    layout_mask: ticket.layout_mask,
+    layoutMask: ticket.layoutMask || ticket.layout_mask,
     numbersLength: ticket.numbers?.length || 0
   });
   
@@ -86,6 +85,28 @@ export default function CallerTicketDisplay({
 
   return (
     <div className="flex flex-col">
+      {/* Highlight ticket information at the top more prominently */}
+      <div className="mb-3 p-2 bg-gray-100 rounded-lg shadow-sm">
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <div className="bg-yellow-100 p-2 rounded flex flex-col">
+            <span className="text-xs font-medium text-yellow-800">Serial:</span>
+            <span className="font-mono font-bold text-black">{ticket.serial || 'Unknown'}</span>
+          </div>
+          <div className="bg-blue-100 p-2 rounded flex flex-col">
+            <span className="text-xs font-medium text-blue-800">Perm:</span>
+            <span className="font-mono font-bold text-black">{ticket.perm ?? 'Unknown'}</span>
+          </div>
+          <div className="bg-green-100 p-2 rounded flex flex-col">
+            <span className="text-xs font-medium text-green-800">Position:</span>
+            <span className="font-mono font-bold text-black">{ticket.position ?? 'Unknown'}</span>
+          </div>
+          <div className="bg-purple-100 p-2 rounded flex flex-col">
+            <span className="text-xs font-medium text-purple-800">Layout Mask:</span>
+            <span className="font-mono font-bold text-black">{ticket.layoutMask ?? ticket.layout_mask ?? 'Unknown'}</span>
+          </div>
+        </div>
+      </div>
+      
       <div className="grid grid-cols-9 gap-1 p-2 border rounded">
         {gridCells.map((row, rowIndex) => (
           React.Children.toArray(row.map((number, colIndex) => (
@@ -107,13 +128,6 @@ export default function CallerTicketDisplay({
             </div>
           )))
         ))}
-      </div>
-      
-      {/* Make ticket information more visible */}
-      <div className="mt-2 text-xs text-gray-700 flex justify-between border-t pt-2">
-        <div className="font-semibold">Serial: <span className="font-mono bg-gray-100 px-1 rounded text-black">{ticket.serial || 'Unknown'}</span></div>
-        {ticket.perm !== undefined && <div className="font-semibold">Perm: <span className="font-mono bg-gray-100 px-1 rounded text-black">{ticket.perm}</span></div>}
-        {ticket.position !== undefined && <div className="font-semibold">Position: <span className="font-mono bg-gray-100 px-1 rounded text-black">{ticket.position}</span></div>}
       </div>
     </div>
   );
