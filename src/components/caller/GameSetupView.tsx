@@ -51,17 +51,23 @@ export function GameSetupView({
     
     // Initialize game configs if needed
     if (!gameConfigs || gameConfigs.length !== numberOfGames) {
+      console.log("Game configs not initialized, initializing now");
       initializeGameConfigs();
     } else {
       // Store the initial configuration as a JSON string for comparison
-      setLastSavedConfig(JSON.stringify(gameConfigs));
+      const configJson = JSON.stringify(gameConfigs);
+      console.log("Initial game configs JSON:", configJson);
+      setLastSavedConfig(configJson);
     }
   }, []);
   
   const initializeGameConfigs = () => {
+    console.log("Initializing game configs with NO ACTIVE patterns by default");
+    
     const newConfigs = Array.from({ length: numberOfGames }, (_, index) => {
       const existingConfig = gameConfigs[index];
       if (existingConfig) {
+        console.log(`Using existing config for game ${index + 1}:`, existingConfig);
         return existingConfig;
       }
       
@@ -89,13 +95,16 @@ export function GameSetupView({
     setGameConfigs(newConfigs);
     
     // Store the initial configuration
-    setLastSavedConfig(JSON.stringify(newConfigs));
+    const configJson = JSON.stringify(newConfigs);
+    setLastSavedConfig(configJson);
     
     // Auto-save the initialized configurations
     saveGameConfigs(newConfigs);
   };
 
   const handleGameTypeChange = (gameIndex: number, type: GameType) => {
+    console.log(`Changing game ${gameIndex + 1} type to: ${type}`);
+    
     const updatedConfigs = [...gameConfigs];
     
     const patterns: Record<string, WinPatternConfig> = {};
@@ -107,7 +116,7 @@ export function GameSetupView({
       } else {
         // For new patterns, set defaults - NO patterns active by default
         patterns[pattern.id] = {
-          active: false,
+          active: false, 
           isNonCash: false,
           prizeAmount: '10.00',
           description: `${pattern.name} Prize`
@@ -121,7 +130,9 @@ export function GameSetupView({
       patterns
     };
     
+    console.log(`Updated game ${gameIndex + 1} config:`, updatedConfigs[gameIndex]);
     setGameConfigs(updatedConfigs);
+    
     // Auto-save when game type changes
     saveGameConfigs(updatedConfigs);
   };
@@ -155,6 +166,7 @@ export function GameSetupView({
     }
     
     console.log(`Updated pattern ${patternId}:`, updatedConfigs[gameIndex].patterns[patternId]);
+    console.log(`Full updated config:`, updatedConfigs);
     setGameConfigs(updatedConfigs);
     
     // Auto-save when patterns are selected/deselected
@@ -162,6 +174,8 @@ export function GameSetupView({
   };
   
   const handlePrizeChange = (gameIndex: number, patternId: string, prizeDetails: PrizeDetails) => {
+    console.log(`Changing prize for pattern ${patternId} in game ${gameIndex + 1}:`, prizeDetails);
+    
     const updatedConfigs = [...gameConfigs];
     
     if (!updatedConfigs[gameIndex] || !updatedConfigs[gameIndex].patterns) {
@@ -176,6 +190,7 @@ export function GameSetupView({
       description: prizeDetails.description || ''
     };
     
+    console.log(`Updated config after prize change:`, updatedConfigs);
     setGameConfigs(updatedConfigs);
     
     // Debounced save for prize changes
@@ -187,7 +202,10 @@ export function GameSetupView({
   };
   
   const saveGameConfigs = async (configsToSave = gameConfigs) => {
-    if (isSaving) return;
+    if (isSaving) {
+      console.log("Already saving, skipping this save operation");
+      return;
+    }
     
     // Check if there are any changes since last save
     const currentConfigJson = JSON.stringify(configsToSave);
@@ -200,6 +218,8 @@ export function GameSetupView({
     try {
       // Convert GameConfig[] to a JSON-compatible format for the database
       // This ensures patterns are only active if explicitly true
+      console.log("Converting configs to JSON for database save:", configsToSave);
+      
       const jsonConfigs = gameConfigsToJson(configsToSave);
       const sessionId = localStorage.getItem('currentSessionId');
       
@@ -207,7 +227,7 @@ export function GameSetupView({
         throw new Error("No session ID found");
       }
       
-      console.log("Saving game configs to database:", jsonConfigs);
+      console.log(`Saving game configs to database for session ${sessionId}:`, jsonConfigs);
       
       const { data, error } = await supabase
         .from('game_sessions')
@@ -219,11 +239,7 @@ export function GameSetupView({
         
       if (error) {
         console.error("Error saving game configs:", error);
-        toast({
-          title: "Error",
-          description: "Failed to save game configurations.",
-          variant: "destructive"
-        });
+        throw new Error(`Database error: ${error.message}`);
       } else {
         console.log("Game configs saved successfully:", data);
         // Update the last saved config
@@ -234,10 +250,11 @@ export function GameSetupView({
         });
       }
     } catch (err) {
-      console.error("Exception during save operation:", err);
+      const errorMessage = `Error during save operation: ${(err as Error).message}`;
+      console.error(errorMessage);
       toast({
         title: "Error",
-        description: "An unexpected error occurred.",
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {

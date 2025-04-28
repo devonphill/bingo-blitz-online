@@ -16,18 +16,20 @@ export function useSessions() {
     setError(null);
     
     try {
-      const { data, error } = await supabase
+      console.log("Fetching all game sessions");
+      const { data, error: fetchError } = await supabase
         .from('game_sessions')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching sessions:', error);
-        setError(error.message);
-        return;
+      if (fetchError) {
+        console.error('Error fetching sessions:', fetchError);
+        throw new Error(`Database error: ${fetchError.message}`);
       }
 
       if (data) {
+        console.log(`Retrieved ${data.length} sessions from database`);
+        
         // Convert raw data to GameSession objects
         const sessionObjects: GameSession[] = data.map(session => {
           // Process games_config to ensure it's in the correct format
@@ -36,10 +38,14 @@ export function useSessions() {
           if (session.games_config) {
             console.log(`Session ${session.id} - Raw games_config:`, session.games_config);
             
-            // Use jsonToGameConfigs to safely convert the JSON data
-            // This explicitly handles the active flag to ensure it's only true if explicitly set to true
-            processedGamesConfig = jsonToGameConfigs(session.games_config);
-            console.log(`Session ${session.id} - Processed games_config:`, processedGamesConfig);
+            try {
+              // Use jsonToGameConfigs to safely convert the JSON data
+              // This explicitly handles the active flag to ensure it's only true if explicitly set to true
+              processedGamesConfig = jsonToGameConfigs(session.games_config);
+              console.log(`Session ${session.id} - Processed games_config:`, processedGamesConfig);
+            } catch (parseError) {
+              console.error(`Error parsing games_config for session ${session.id}:`, parseError);
+            }
           }
           
           return {
@@ -58,11 +64,13 @@ export function useSessions() {
           };
         });
         
+        console.log("Final processed sessions:", sessionObjects);
         setSessions(sessionObjects);
       }
     } catch (err) {
-      console.error('Exception in fetchSessions:', err);
-      setError('An unexpected error occurred');
+      const errorMessage = `An error occurred while fetching sessions: ${(err as Error).message}`;
+      console.error(errorMessage);
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -76,6 +84,7 @@ export function useSessions() {
 
     const session = sessions.find(s => s.id === sessionId);
     if (session) {
+      console.log("Setting current session:", session);
       setCurrentSession(session);
     } else {
       console.warn(`Session with ID ${sessionId} not found.`);
@@ -91,6 +100,8 @@ export function useSessions() {
     setError(null);
     
     try {
+      console.log(`Updating session ${sessionId} with:`, updates);
+      
       // Convert the updates to database column names
       const dbUpdates: Record<string, any> = {};
       if ('gameType' in updates) dbUpdates.game_type = updates.gameType;
@@ -100,7 +111,12 @@ export function useSessions() {
         
         // Convert the GameConfig[] to JSON for storage
         // This ensures patterns are only active if explicitly true
-        dbUpdates.games_config = gameConfigsToJson(updates.games_config);
+        try {
+          dbUpdates.games_config = gameConfigsToJson(updates.games_config);
+        } catch (jsonError) {
+          console.error("Error converting games_config to JSON:", jsonError);
+          throw new Error(`Failed to convert game configs to JSON: ${(jsonError as Error).message}`);
+        }
         
         console.log("Converted games_config for database:", dbUpdates.games_config);
       }
@@ -111,15 +127,15 @@ export function useSessions() {
       if ('numberOfGames' in updates) dbUpdates.number_of_games = updates.numberOfGames;
       if ('name' in updates) dbUpdates.name = updates.name;
 
-      const { error } = await supabase
+      // Save to the database
+      const { error: updateError } = await supabase
         .from('game_sessions')
         .update(dbUpdates)
         .eq('id', sessionId);
 
-      if (error) {
-        console.error('Error updating session:', error);
-        setError(error.message);
-        return false;
+      if (updateError) {
+        console.error('Error updating session:', updateError);
+        throw new Error(`Database error: ${updateError.message}`);
       }
 
       // Update local state
@@ -136,10 +152,12 @@ export function useSessions() {
         );
       }
 
+      console.log(`Session ${sessionId} updated successfully`);
       return true;
     } catch (err) {
-      console.error('Exception in updateSession:', err);
-      setError('An unexpected error occurred while updating the session');
+      const errorMessage = `Failed to update session: ${(err as Error).message}`;
+      console.error(errorMessage);
+      setError(errorMessage);
       return false;
     } finally {
       setIsLoading(false);

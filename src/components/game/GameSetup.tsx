@@ -47,9 +47,12 @@ export function GameSetup() {
       
       // Initialize configs for all games with a new pattern structure and NO active patterns
       const newConfigs: GameConfig[] = Array.from({ length: numberOfGames }, (_, index) => {
-        // Use existing config if available, otherwise create new one
+        // Use existing config if available
         const existingConfig = existingConfigs[index];
-        if (existingConfig) return existingConfig;
+        if (existingConfig) {
+          console.log(`Using existing config for game ${index + 1}:`, existingConfig);
+          return existingConfig;
+        }
         
         const gameType = currentSession.gameType || 'mainstage' as GameType;
         
@@ -74,6 +77,7 @@ export function GameSetup() {
         };
       });
       
+      console.log("Setting new game configs:", newConfigs);
       setGameConfigs(newConfigs);
       setInitialSetupDone(false);
     } else {
@@ -110,10 +114,11 @@ export function GameSetup() {
           };
         });
         
+        console.log("Converted configs:", convertedConfigs);
         setGameConfigs(convertedConfigs);
       } else {
         // Use existing configs from the database if they match the new structure
-        console.log("Using existing configs from database");
+        console.log("Using existing configs from database:", existingConfigs);
         setGameConfigs(existingConfigs);
       }
       
@@ -131,6 +136,8 @@ export function GameSetup() {
         try {
           setIsSaving(true);
           
+          console.log("Saving initial game configs to database:", gameConfigs);
+          
           // Save directly using the updateSession function
           const success = await updateSession(currentSession.id, {
             games_config: gameConfigs
@@ -146,6 +153,8 @@ export function GameSetup() {
             // Find first active pattern or default to oneLine
             const activePatternId = Object.entries(firstGame.patterns || {})
               .find(([_, config]) => config.active)?.[0] || 'oneLine';
+            
+            console.log(`Updating session progress with pattern ${activePatternId} and game type ${firstGame.gameType}`);
             
             const { error: progressError } = await supabase
               .from('sessions_progress')
@@ -176,9 +185,10 @@ export function GameSetup() {
           setInitialSetupDone(true);
         } catch (error) {
           console.error("Exception during initial setup:", error);
+          const errorMessage = `An error occurred during setup: ${(error as Error).message}`;
           toast({
             title: "Error",
-            description: "An unexpected error occurred during setup.",
+            description: errorMessage,
             variant: "destructive"
           });
         } finally {
@@ -350,6 +360,8 @@ export function GameSetup() {
     const activePatterns = Object.entries(config.patterns || {})
       .filter(([_, patternConfig]) => patternConfig.active)
       .map(([patternId]) => patternId);
+      
+    console.log(`Active patterns for game ${config.gameNumber}:`, activePatterns);
       
     const prizes: Record<string, PrizeDetails> = {};
     Object.entries(config.patterns || {}).forEach(([patternId, patternConfig]) => {
