@@ -216,6 +216,9 @@ export default function CallerSession() {
 
     try {
       setIsGoingLive(true);
+      
+      console.log("Going live with session:", session.id, "and game configs:", gameConfigs);
+      
       const { error } = await supabase
         .from('game_sessions')
         .update({ status: 'active' })
@@ -230,6 +233,8 @@ export default function CallerSession() {
       await updateSessionProgress(session.id, {
         game_status: 'active'
       });
+      
+      console.log("Session is now live");
     } catch (err) {
       console.error('Error going live:', err);
       toast({

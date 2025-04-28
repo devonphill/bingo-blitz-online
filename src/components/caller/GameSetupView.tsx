@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { GameType, PrizeDetails, GameConfig, WinPatternConfig } from '@/types';
 import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
@@ -339,6 +338,23 @@ export function GameSetupView({
     );
   });
 
+  const handleGoLive = async () => {
+    try {
+      // First save the game configs
+      await saveGameConfigs();
+      
+      // Then go live
+      await onGoLive();
+    } catch (error) {
+      console.error("Error during go live process:", error);
+      toast({
+        title: "Error",
+        description: "Failed to start the game. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
   return (
     <div className="container mx-auto p-6 space-y-6">
       <Card>
@@ -363,10 +379,7 @@ export function GameSetupView({
             </Button>
             
             <Button 
-              onClick={async () => {
-                await saveGameConfigs();
-                onGoLive();
-              }}
+              onClick={handleGoLive}
               disabled={isGoingLive || (gameConfigs.length > 0 && !Object.values(gameConfigs[0].patterns || {}).some(p => p.active === true))}
               variant="default"
               className="flex-1"

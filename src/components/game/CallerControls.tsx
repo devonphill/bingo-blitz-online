@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
@@ -18,6 +19,7 @@ interface CallerControlsProps {
   openClaimSheet: () => void;
   gameType?: string;
   sessionStatus?: string;
+  gameConfigs?: any[];
 }
 
 export default function CallerControls({ 
@@ -31,6 +33,7 @@ export default function CallerControls({
   openClaimSheet,
   gameType,
   sessionStatus = 'pending',
+  gameConfigs = []
 }: CallerControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
@@ -69,6 +72,8 @@ export default function CallerControls({
 
     setIsGoingLive(true);
     try {
+      // Initialize sessions_progress with Game 1's active pattern and prize info
+      await initializeSessionProgress();
       await onGoLive();
     } catch (error) {
       console.error('Error going live:', error);
@@ -79,6 +84,65 @@ export default function CallerControls({
       });
     } finally {
       setIsGoingLive(false);
+    }
+  };
+
+  const initializeSessionProgress = async () => {
+    if (!sessionId || !gameConfigs || gameConfigs.length === 0) {
+      console.error("Missing session ID or game configs for initialization");
+      return;
+    }
+    
+    try {
+      // Get Game 1 configuration
+      const game1Config = gameConfigs.find(config => config.gameNumber === 1) || gameConfigs[0];
+      
+      if (!game1Config || !game1Config.patterns) {
+        console.error("Game 1 configuration or patterns not found");
+        return;
+      }
+      
+      console.log("Initializing session progress with Game 1 config:", game1Config);
+      
+      // Find the active pattern in Game 1
+      const activePatterns = Object.entries(game1Config.patterns)
+        .filter(([_, patternConfig]: [string, any]) => patternConfig.active === true);
+      
+      if (activePatterns.length === 0) {
+        console.error("No active patterns found for Game 1");
+        return;
+      }
+      
+      const [patternId, patternConfig] = activePatterns[0];
+      
+      console.log("Using active pattern:", patternId, patternConfig);
+      
+      // Update the sessions_progress with Game 1's active pattern and prize info
+      const { error } = await supabase
+        .from('sessions_progress')
+        .update({
+          current_win_pattern: patternId,
+          current_prize: patternConfig.prizeAmount || '0.00',
+          current_prize_description: patternConfig.description || '',
+          current_game_type: game1Config.gameType || gameType || 'mainstage',
+          game_status: 'active'
+        })
+        .eq('session_id', sessionId);
+      
+      if (error) {
+        console.error("Error updating sessions_progress:", error);
+        throw new Error("Failed to initialize session data");
+      }
+      
+      console.log("Successfully initialized session progress with Game 1 data");
+    } catch (error) {
+      console.error("Error in initializeSessionProgress:", error);
+      toast({
+        title: "Initialization Error",
+        description: "Failed to initialize game settings. Please try again.",
+        variant: "destructive"
+      });
+      throw error;
     }
   };
 

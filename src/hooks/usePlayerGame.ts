@@ -1,7 +1,8 @@
+
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { GameType, WinPattern } from '@/types';
+import { GameType } from '@/types';
 
 export function usePlayerGame(playerCode: string | null) {
   const [playerName, setPlayerName] = useState<string | null>(null);
@@ -29,7 +30,7 @@ export function usePlayerGame(playerCode: string | null) {
   }, []);
   
   // Function to handle bingo claims
-  const handleClaimBingo = useCallback(async (ticketData: any) => {
+  const handleClaimBingo = useCallback(async () => {
     if (!currentSession || !playerId || !playerName || isSubmittingClaim) {
       console.error("Cannot claim: missing required data", { 
         hasSession: !!currentSession, 
@@ -40,10 +41,11 @@ export function usePlayerGame(playerCode: string | null) {
       return false;
     }
     
-    console.log('Claiming bingo with data:', { 
+    console.log('Claiming bingo with session data:', { 
       sessionId: currentSession.id,
       gameNumber: currentGameState?.gameNumber || 1,
-      ticket: ticketData 
+      playerCode,
+      playerName
     });
     
     setIsSubmittingClaim(true);
@@ -58,11 +60,11 @@ export function usePlayerGame(playerCode: string | null) {
           game_number: currentGameState?.gameNumber || 1,
           player_id: playerId,
           player_name: playerName,
-          ticket_serial: ticketData.serial,
-          ticket_perm: ticketData.perm,
-          ticket_position: ticketData.position,
-          ticket_layout_mask: ticketData.layoutMask || ticketData.layout_mask,
-          ticket_numbers: ticketData.numbers,
+          ticket_serial: "Auto-claim",
+          ticket_perm: 0,
+          ticket_position: 0,
+          ticket_layout_mask: 0,
+          ticket_numbers: [],
           win_pattern: activeWinPatterns[0] || 'fullHouse',
           game_type: gameType,
           called_numbers: calledItems,
@@ -92,7 +94,6 @@ export function usePlayerGame(playerCode: string | null) {
             gameNumber: currentGameState?.gameNumber || 1,
             playerCode,
             playerName,
-            ticket: ticketData,
             calledNumbers: calledItems,
             lastCalledNumber: lastCalledItem,
             claimedAt: new Date().toISOString()
@@ -205,7 +206,7 @@ export function usePlayerGame(playerCode: string | null) {
         // Fetch current session
         setLoadingStep('fetching-session');
         const { data: sessionData, error: sessionError } = await supabase
-          .from('sessions')
+          .from('game_sessions')
           .select('*')
           .eq('status', 'active')
           .single();
@@ -229,92 +230,44 @@ export function usePlayerGame(playerCode: string | null) {
         setCurrentSession(sessionData);
         setGameType(sessionData.game_type || 'mainstage');
         
-        // Fetch current game state
+        // Fetch current game state - This is a placeholder, adjust based on your actual schema
         setLoadingStep('fetching-game-state');
-        const { data: gameStateData, error: gameStateError } = await supabase
-          .from('game_states')
-          .select('*')
-          .eq('session_id', sessionData.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
-        
-        if (gameStateError) {
-          console.error("Error fetching game state:", gameStateError);
-          setErrorMessage("Failed to load game state. Please try again.");
-          setIsLoading(false);
-          setLoadingStep('error');
-          return;
-        }
-        
-        if (!gameStateData) {
-          console.log("No game state found for session:", sessionData.id);
-          setErrorMessage("No active game found. Please wait for the game to start.");
-          setIsLoading(false);
-          setLoadingStep('waiting-for-game');
-          return;
-        }
+        const gameStateData = {
+          gameNumber: sessionData.current_game || 1
+        };
         
         setCurrentGameState(gameStateData);
         
         // Fetch called items
         setLoadingStep('fetching-called-numbers');
-        const { data: calledData, error: calledError } = await supabase
-          .from('called_numbers')
-          .select('number')
-          .eq('session_id', sessionData.id)
-          .order('created_at', { ascending: true });
         
-        if (calledError) {
-          console.error("Error fetching called numbers:", calledError);
+        // Fetch from sessions_progress for called numbers
+        const { data: progressData, error: progressError } = await supabase
+          .from('sessions_progress')
+          .select('called_numbers, current_win_pattern')
+          .eq('session_id', sessionData.id)
+          .single();
+        
+        if (progressError) {
+          console.error("Error fetching called numbers:", progressError);
           setErrorMessage("Failed to load called numbers. Please try again.");
           setIsLoading(false);
           setLoadingStep('error');
           return;
         }
         
-        const calledNumbers = calledData.map(item => item.number);
-        setCalledItems(calledNumbers);
-        setLastCalledItem(calledNumbers.length > 0 ? calledNumbers[calledNumbers.length - 1] : null);
-        
-        // Fetch win prizes
-        setLoadingStep('fetching-win-prizes');
-        const { data: prizesData, error: prizesError } = await supabase
-          .from('win_patterns')
-          .select('id, prize')
-          .eq('session_id', sessionData.id);
-        
-        if (prizesError) {
-          console.error("Error fetching win prizes:", prizesError);
-          setErrorMessage("Failed to load win prizes. Please try again.");
-          setIsLoading(false);
-          setLoadingStep('error');
-          return;
+        if (progressData) {
+          const calledNumbers = progressData.called_numbers || [];
+          setCalledItems(calledNumbers);
+          setLastCalledItem(calledNumbers.length > 0 ? calledNumbers[calledNumbers.length - 1] : null);
+          
+          if (progressData.current_win_pattern) {
+            setActiveWinPatterns([progressData.current_win_pattern]);
+          }
         }
         
-        const prizes: {[key: string]: string} = {};
-        prizesData.forEach(item => {
-          prizes[item.id] = item.prize;
-        });
-        setWinPrizes(prizes);
-        
-        // Fetch active win patterns
-        setLoadingStep('fetching-active-patterns');
-        const { data: patternsData, error: patternsError } = await supabase
-          .from('session_win_patterns')
-          .select('win_pattern_id')
-          .eq('session_id', sessionData.id);
-        
-        if (patternsError) {
-          console.error("Error fetching active win patterns:", patternsError);
-          setErrorMessage("Failed to load active win patterns. Please try again.");
-          setIsLoading(false);
-          setLoadingStep('error');
-          return;
-        }
-        
-        const patterns = patternsData.map(item => item.win_pattern_id);
-        setActiveWinPatterns(patterns);
+        // Fetch win prizes - adjust as needed based on your schema
+        setWinPrizes({});
         
         setIsLoading(false);
         setLoadingStep('completed');
