@@ -256,6 +256,7 @@ export type Database = {
           current_game_number: number
           current_game_type: string
           current_win_pattern: string | null
+          game_status: string | null
           id: string
           max_game_number: number
           session_id: string
@@ -267,6 +268,7 @@ export type Database = {
           current_game_number?: number
           current_game_type: string
           current_win_pattern?: string | null
+          game_status?: string | null
           id?: string
           max_game_number?: number
           session_id: string
@@ -278,6 +280,7 @@ export type Database = {
           current_game_number?: number
           current_game_type?: string
           current_win_pattern?: string | null
+          game_status?: string | null
           id?: string
           max_game_number?: number
           session_id?: string
