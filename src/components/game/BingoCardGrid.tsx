@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import BingoCell from "./BingoCell";
 import BingoTicketDisplay from "./BingoTicketDisplay";
@@ -28,6 +29,18 @@ export default function BingoCardGrid({
   setMarkedCells,
   oneTGNumbers = []
 }: BingoCardGridProps) {
+  // Debug log to check what ticket data we're receiving
+  console.log("BingoCardGrid rendering with tickets:", tickets?.length || 0);
+  if (tickets && tickets.length > 0) {
+    console.log("First ticket sample:", {
+      serial: tickets[0].serial || 'No serial',
+      perm: tickets[0].perm || 'No perm',
+      position: tickets[0].position || 'No position',
+      layoutMask: tickets[0].layoutMask || tickets[0].layout_mask || 'No layout mask',
+      numbers: tickets[0].numbers ? `Array[${tickets[0].numbers.length}]` : 'No numbers'
+    });
+  }
+
   // If we're using legacy props, render the legacy card grid
   if (card && markedCells && setMarkedCells) {
     return renderLegacyCard();
@@ -42,12 +55,12 @@ export default function BingoCardGrid({
       {tickets.map((ticket, index) => (
         <div key={ticket.serial || index} className="p-4 bg-white rounded-lg shadow">
           <BingoTicketDisplay
-            numbers={ticket.numbers}
-            layoutMask={ticket.layoutMask || ticket.layout_mask}
+            numbers={ticket.numbers || []}
+            layoutMask={ticket.layoutMask || ticket.layout_mask || 0}
             calledNumbers={calledNumbers}
-            serial={ticket.serial}
-            perm={ticket.perm}
-            position={ticket.position}
+            serial={ticket.serial || `Unknown-${index}`}
+            perm={ticket.perm || 0}
+            position={ticket.position || 0}
             autoMarking={autoMarking}
             currentWinPattern={effectiveWinPattern}
             showProgress={true}

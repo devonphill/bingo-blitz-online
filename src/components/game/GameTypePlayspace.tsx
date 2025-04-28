@@ -2,6 +2,7 @@
 import React from "react";
 import BingoCardDisplay from "./BingoCardDisplay";
 import { GameType } from "@/types";
+import BingoTicketDisplay from "./BingoTicketDisplay";
 
 interface GameTypePlayspaceProps {
   gameType: GameType;
@@ -26,21 +27,44 @@ export default function GameTypePlayspace({
   isClaiming,
   claimStatus
 }: GameTypePlayspaceProps) {
-  // If it's 90-ball bingo, show the regular card display
+  // Debug log to see what ticket data we're receiving
+  console.log("GameTypePlayspace tickets:", tickets);
+  
+  // If it's 90-ball bingo (mainstage), show the ticket display
   if (gameType === 'mainstage') {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {tickets.map((ticket: any) => (
-          <div key={ticket.id} className="bg-white p-4 rounded-lg shadow">
-            <p className="text-sm text-gray-500 mb-2">Ticket #{ticket.ticket_number}</p>
-            <BingoCardDisplay
-              numbers={ticket.numbers}
-              layoutMask={ticket.layout_mask}
-              calledNumbers={calledNumbers}
-              autoMarking={autoMarking}
-            />
+      <div className="grid grid-cols-1 gap-4">
+        {tickets.map((ticket: any, index: number) => {
+          console.log(`Ticket ${index}:`, { 
+            serial: ticket.serial, 
+            perm: ticket.perm, 
+            position: ticket.position,
+            layoutMask: ticket.layoutMask || ticket.layout_mask,
+            numbersLength: ticket.numbers?.length || 0
+          });
+          
+          return (
+            <div key={ticket.serial || ticket.id || index} className="bg-white p-4 rounded-lg shadow">
+              <BingoTicketDisplay
+                numbers={ticket.numbers || []}
+                layoutMask={ticket.layoutMask || ticket.layout_mask || 0}
+                calledNumbers={calledNumbers}
+                serial={ticket.serial || `Unknown-${index}`}
+                perm={ticket.perm || 0}
+                position={ticket.position || 0}
+                autoMarking={autoMarking}
+                currentWinPattern="oneLine"
+                showProgress={true}
+              />
+            </div>
+          );
+        })}
+        
+        {tickets.length === 0 && (
+          <div className="p-6 text-center text-gray-500 bg-white rounded-lg shadow">
+            No tickets have been assigned to you yet.
           </div>
-        ))}
+        )}
       </div>
     );
   }
