@@ -1,3 +1,4 @@
+
 import React from "react";
 
 export interface BingoTicket {
@@ -20,42 +21,42 @@ export interface TicketsDebugDisplayProps {
 const TicketsDebugDisplay: React.FC<TicketsDebugDisplayProps> = ({ bingoTickets }) =>
   bingoTickets.length > 0 ? (
     <div className="bg-gray-50 rounded-lg p-4 mt-6">
-      <h3 className="font-semibold mb-3">Bingo Tickets (Debug)</h3>
-      <div className="space-y-4">
+      <h3 className="font-semibold mb-3 text-lg">Bingo Tickets (Debug)</h3>
+      <div className="space-y-6">
         {bingoTickets.map((player) => (
-          <div key={player.playerId} className="border-t pt-2">
-            <div className="font-medium">
+          <div key={player.playerId} className="border-t pt-4">
+            <div className="font-medium text-lg">
               Player: {player.nickname} ({player.playerCode})
             </div>
-            <div className="text-xs mt-1">
+            <div className="text-sm mt-1 font-semibold text-blue-600">
               Tickets: {player.tickets.length}
             </div>
             
-            <div className="mt-2 space-y-2">
+            <div className="mt-4 space-y-4">
               {player.tickets.map((ticket, idx) => (
-                <div key={`${ticket.serial}-${idx}`} className="bg-white p-3 border rounded-md">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-yellow-50 p-2 rounded flex flex-col">
-                      <span className="text-xs text-gray-500">Serial:</span>
-                      <span className="font-mono font-bold">{ticket.serial || 'Unknown'}</span>
+                <div key={`${ticket.serial}-${idx}`} className="bg-white p-4 border rounded-md shadow-sm">
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div className="bg-yellow-100 p-3 rounded flex flex-col">
+                      <span className="text-xs text-gray-700 font-medium">Serial:</span>
+                      <span className="font-mono text-base font-bold">{ticket.serial || 'Unknown'}</span>
                     </div>
-                    <div className="bg-blue-50 p-2 rounded flex flex-col">
-                      <span className="text-xs text-gray-500">Perm:</span>
-                      <span className="font-mono font-bold">{ticket.perm || 'Unknown'}</span>
+                    <div className="bg-blue-100 p-3 rounded flex flex-col">
+                      <span className="text-xs text-gray-700 font-medium">Perm:</span>
+                      <span className="font-mono text-base font-bold">{ticket.perm || 'Unknown'}</span>
                     </div>
-                    <div className="bg-green-50 p-2 rounded flex flex-col">
-                      <span className="text-xs text-gray-500">Position:</span>
-                      <span className="font-mono font-bold">{ticket.position || 'Unknown'}</span>
+                    <div className="bg-green-100 p-3 rounded flex flex-col">
+                      <span className="text-xs text-gray-700 font-medium">Position:</span>
+                      <span className="font-mono text-base font-bold">{ticket.position || 'Unknown'}</span>
                     </div>
-                    <div className="bg-purple-50 p-2 rounded flex flex-col">
-                      <span className="text-xs text-gray-500">Layout Mask:</span>
-                      <span className="font-mono font-bold">{ticket.layoutMask || 'Unknown'}</span>
+                    <div className="bg-purple-100 p-3 rounded flex flex-col">
+                      <span className="text-xs text-gray-700 font-medium">Layout Mask:</span>
+                      <span className="font-mono text-base font-bold">{ticket.layoutMask || 'Unknown'}</span>
                     </div>
                   </div>
                   
-                  <details className="mt-2">
-                    <summary className="text-sm text-blue-600 cursor-pointer">
-                      View Numbers
+                  <details className="mt-3">
+                    <summary className="text-sm text-blue-600 cursor-pointer font-medium">
+                      View Numbers ({ticket.numbers?.length || 0})
                     </summary>
                     <pre className="text-xs mt-2 max-h-40 overflow-auto bg-gray-100 p-2 rounded">
                       {JSON.stringify(ticket.numbers, null, 2)}
@@ -65,12 +66,12 @@ const TicketsDebugDisplay: React.FC<TicketsDebugDisplayProps> = ({ bingoTickets 
               ))}
             </div>
             
-            <details className="mt-2">
-              <summary className="text-sm text-blue-600 cursor-pointer">
+            <details className="mt-4">
+              <summary className="text-sm text-blue-600 cursor-pointer font-medium">
                 View Raw JSON Data
               </summary>
               <pre className="text-xs mt-2 max-h-40 overflow-auto bg-gray-100 p-2 rounded">
-                {JSON.stringify(player.tickets, null, 2)}
+                {JSON.stringify(player, null, 2)}
               </pre>
             </details>
           </div>

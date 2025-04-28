@@ -22,12 +22,12 @@ export default function CallerTicketDisplay({
 }: CallerTicketDisplayProps) {
   const [flashingNumber, setFlashingNumber] = useState<number | null>(null);
   
-  // Debug log the ticket
-  console.log(`Caller ticket display:`, {
-    serial: ticket.serial,
-    perm: ticket.perm,
-    position: ticket.position,
-    layoutMask: ticket.layoutMask || ticket.layout_mask,
+  // Debug log the ticket details
+  console.log(`CallerTicketDisplay rendering with ticket:`, {
+    serial: ticket.serial || 'No serial',
+    perm: ticket.perm || 'No perm',
+    position: ticket.position || 'No position',
+    layoutMask: ticket.layoutMask || ticket.layout_mask || 'No layout mask',
     numbersLength: ticket.numbers?.length || 0
   });
   
@@ -86,23 +86,23 @@ export default function CallerTicketDisplay({
   return (
     <div className="flex flex-col">
       {/* Highlight ticket information at the top more prominently */}
-      <div className="mb-3 p-2 bg-gray-100 rounded-lg shadow-sm">
-        <div className="grid grid-cols-2 gap-2 mb-2">
-          <div className="bg-yellow-100 p-2 rounded flex flex-col">
+      <div className="mb-3 p-3 bg-gray-100 rounded-lg shadow-sm">
+        <div className="grid grid-cols-2 gap-3 mb-2">
+          <div className="bg-yellow-200 p-2 rounded flex flex-col">
             <span className="text-xs font-medium text-yellow-800">Serial:</span>
-            <span className="font-mono font-bold text-black">{ticket.serial || 'Unknown'}</span>
+            <span className="font-mono font-bold text-lg">{ticket.serial || 'Unknown'}</span>
           </div>
-          <div className="bg-blue-100 p-2 rounded flex flex-col">
+          <div className="bg-blue-200 p-2 rounded flex flex-col">
             <span className="text-xs font-medium text-blue-800">Perm:</span>
-            <span className="font-mono font-bold text-black">{ticket.perm ?? 'Unknown'}</span>
+            <span className="font-mono font-bold text-lg">{ticket.perm ?? 'Unknown'}</span>
           </div>
-          <div className="bg-green-100 p-2 rounded flex flex-col">
+          <div className="bg-green-200 p-2 rounded flex flex-col">
             <span className="text-xs font-medium text-green-800">Position:</span>
-            <span className="font-mono font-bold text-black">{ticket.position ?? 'Unknown'}</span>
+            <span className="font-mono font-bold text-lg">{ticket.position ?? 'Unknown'}</span>
           </div>
-          <div className="bg-purple-100 p-2 rounded flex flex-col">
+          <div className="bg-purple-200 p-2 rounded flex flex-col">
             <span className="text-xs font-medium text-purple-800">Layout Mask:</span>
-            <span className="font-mono font-bold text-black">{ticket.layoutMask ?? ticket.layout_mask ?? 'Unknown'}</span>
+            <span className="font-mono font-bold text-lg">{ticket.layoutMask ?? ticket.layout_mask ?? 'Unknown'}</span>
           </div>
         </div>
       </div>
