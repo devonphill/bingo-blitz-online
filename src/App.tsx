@@ -15,6 +15,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import CallerSession from './pages/CallerSession';
 import AddPlayers from './pages/AddPlayers';
 import PlayerGame from './pages/PlayerGame';
+import AddTokens from './pages/AddTokens';
 
 function App() {
   return (
@@ -35,6 +36,7 @@ function App() {
               <Route path="/player/game/:playerCode" element={<PlayerGame />} />
               <Route path="/player/game" element={<PlayerGame />} />
               <Route path="/session/:sessionId/players/add" element={<AddPlayers />} />
+              <Route path="/add-tokens" element={<AddTokens />} />
               <Route path="/404" element={<NotFound />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

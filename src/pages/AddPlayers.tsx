@@ -8,8 +8,8 @@ import { Label } from '@/components/ui/label';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Loader } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/hooks/use-auth';
-import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function AddPlayers() {
   const navigate = useNavigate();

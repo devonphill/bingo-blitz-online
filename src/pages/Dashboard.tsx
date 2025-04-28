@@ -1,5 +1,5 @@
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import CreateSessionForm from '@/components/dashboard/CreateSessionForm';
@@ -9,6 +9,7 @@ import { useSessionContext } from '@/contexts/SessionProvider';
 import { Menu } from 'lucide-react';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import DashboardSidebar from '@/components/dashboard/DashboardSidebar';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
