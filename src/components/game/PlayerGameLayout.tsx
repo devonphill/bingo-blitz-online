@@ -52,7 +52,7 @@ export default function PlayerGameLayout({
   const [localClaimStatus, setLocalClaimStatus] = useState<'pending' | 'validated' | 'rejected' | null>(null);
   const [lastWinPattern, setLastWinPattern] = useState<string | null>(null);
   const { toast } = useToast();
-  const instanceId = useRef(Date.now()); // Create a unique instance ID for this component
+  const instanceId = useRef(Date.now());
   const resetTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -313,8 +313,7 @@ export default function PlayerGameLayout({
   const isClaimInProgress = localClaimValidating || isClaiming || localClaimStatus === 'pending';
   const isClaimValidated = localClaimStatus === 'validated' || claimStatus === 'validated';
   
-  console.log(`Render state (${instanceId.current}): isClaiming=${isClaiming}, localClaimValidating=${localClaimValidating}, claimStatus=${claimStatus}, localClaimStatus=${localClaimStatus}`);
-  console.log(`Button state (${instanceId.current}): isClaimInProgress=${isClaimInProgress}, isClaimValidated=${isClaimValidated}`);
+  const currentWinPatternDisplay = currentWinPattern ? getPatternDisplayName(currentWinPattern) : 'None';
   
   return (
     <div className="min-h-screen w-full flex bg-gray-50">
@@ -362,9 +361,7 @@ export default function PlayerGameLayout({
           {currentWinPattern && (
             <div className="mt-4 p-2 bg-gray-800 rounded">
               <p className="text-sm text-gray-300">
-                Current Win Pattern: <span className="font-bold text-white">{
-                  getPatternDisplayName(currentWinPattern)
-                }</span>
+                Current Win Pattern: <span className="font-bold text-white">{currentWinPatternDisplay}</span>
               </p>
               {winPrizes && winPrizes[currentWinPattern] && (
                 <p className="text-sm text-gray-300 mt-1">

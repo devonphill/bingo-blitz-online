@@ -1,7 +1,9 @@
+
 import React from 'react';
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { GameSession } from '@/types';
+import { Badge } from "@/components/ui/badge";
 
 interface MainstageCallControlsProps {
   onCallNumber: () => void;
@@ -33,6 +35,21 @@ export function MainstageCallControls({
   const isGameActive = sessionStatus === 'active';
   const isGameCompleted = sessionStatus === 'completed';
   const hasMoreGames = currentGameNumber < numberOfGames;
+  
+  // Format pattern names for display
+  const getPatternDisplayName = (patternId: string) => {
+    const normalizedId = patternId.replace('MAINSTAGE_', '');
+    
+    switch(normalizedId) {
+      case 'oneLine': return 'One Line';
+      case 'twoLines': return 'Two Lines';
+      case 'fullHouse': return 'Full House';
+      default: return patternId;
+    }
+  };
+
+  const currentPatternDisplay = activeWinPatterns.length > 0 ? 
+    getPatternDisplayName(activeWinPatterns[0]) : 'None';
 
   return (
     <Card className="bg-white shadow-md rounded-lg">
@@ -54,9 +71,16 @@ export function MainstageCallControls({
             <span>Last Called:</span>
             <span className="font-medium">{lastCalledNumber !== null ? lastCalledNumber : 'None'}</span>
           </div>
-          <div className="flex items-center justify-between">
-            <span>Active Patterns:</span>
-            <span className="font-medium">{activeWinPatterns.join(', ') || 'None'}</span>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <span>Current Pattern:</span>
+              <Badge className="font-medium bg-green-600">{currentPatternDisplay}</Badge>
+            </div>
+            {activeWinPatterns.length > 1 && (
+              <div className="text-xs text-gray-500">
+                Next patterns: {activeWinPatterns.slice(1).map(getPatternDisplayName).join(', ')}
+              </div>
+            )}
           </div>
           <div className="flex items-center justify-between">
             <span>Pending Claims:</span>
@@ -67,7 +91,12 @@ export function MainstageCallControls({
       <CardFooter className="flex justify-between items-center p-4">
         <div className="space-x-2">
           {isGameActive && (
-            <Button variant="outline" onClick={onCallNumber} disabled={isGameCompleted}>
+            <Button 
+              variant="default" 
+              onClick={onCallNumber} 
+              disabled={isGameCompleted}
+              className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
+            >
               Call Number
             </Button>
           )}

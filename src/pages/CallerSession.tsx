@@ -310,16 +310,29 @@ export default function CallerSession() {
   };
 
   const handleGenerateNewNumber = () => {
-    if (!gameRules || calledNumbers.length >= 90) return;
+    if (!gameRules || calledNumbers.length >= 90) {
+      console.log("Cannot generate number: missing game rules or all numbers called");
+      toast({
+        title: "Cannot call number",
+        description: "All available numbers have been called or game rules are not available",
+        variant: "destructive"
+      });
+      return;
+    }
 
     try {
+      console.log("Generating new bingo number with current called numbers:", calledNumbers);
       const newNumber = gameRules.generateNewNumber(calledNumbers);
-      setCalledNumbers(prev => [...prev, newNumber]);
+      console.log("Generated new number:", newNumber);
+      
+      const updatedCalledNumbers = [...calledNumbers, newNumber];
+      setCalledNumbers(updatedCalledNumbers);
       setLastCalledNumber(newNumber);
 
       if (session) {
+        console.log("Updating session progress with new called number:", newNumber);
         updateSessionProgress(session.id, {
-          called_numbers: [...calledNumbers, newNumber]
+          called_numbers: updatedCalledNumbers
         });
       }
     } catch (error) {
@@ -355,9 +368,9 @@ export default function CallerSession() {
   };
 
   const remainingNumbers = React.useMemo(() => {
-    const allNumbers = Array.from({ length: 90 }, (_, i) => i + 1);
+    const allNumbers = Array.from({ length: gameType === 'mainstage' ? 90 : 75 }, (_, i) => i + 1);
     return allNumbers.filter(num => !calledNumbers.includes(num));
-  }, [calledNumbers]);
+  }, [calledNumbers, gameType]);
 
   if (isLoading) {
     return <div className="container mx-auto p-6 flex items-center justify-center h-screen">
@@ -397,7 +410,7 @@ export default function CallerSession() {
 
   return (
     <div className="container mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-4">Caller Session: {session.name}</h1>
+      <h1 className="text-2xl font-bold mb-4">Caller Session: {session?.name}</h1>
 
       {sessionStatus === 'pending' ? (
         <GameSetupView
@@ -419,14 +432,14 @@ export default function CallerSession() {
           winPatterns={availablePatterns}
           selectedPatterns={selectedPatterns}
           currentWinPattern={currentWinPattern}
-          onCallNumber={() => {}} // Implement these functions as needed
-          onRecall={() => {}}
+          onCallNumber={handleGenerateNewNumber}
+          onRecall={handleRecallNumber}
           lastCalledNumber={lastCalledNumber}
           calledNumbers={calledNumbers}
           pendingClaims={pendingClaims}
-          onViewClaims={() => {}}
+          onViewClaims={handleViewClaims}
           sessionStatus={sessionStatus}
-          onCloseGame={() => {}}
+          onCloseGame={handleGameEnd}
           currentGameNumber={currentGameNumber}
           numberOfGames={numberOfGames}
           gameConfigs={gameConfigs}
