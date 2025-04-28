@@ -1,4 +1,3 @@
-
 import React, { useEffect } from 'react';
 import { WinPattern } from '@/types/winPattern';
 import { WinPatternStatusDisplay } from '@/components/game/WinPatternStatusDisplay';
@@ -46,7 +45,6 @@ export function LiveGameView({
   numberOfGames = 1
 }: LiveGameViewProps) {
   const numberRange = gameType === 'mainstage' ? 90 : 75;
-  // Get the session_id safely from the gameConfigs array
   const sessionId = gameConfigs.length > 0 && gameConfigs[0].session_id ? gameConfigs[0].session_id : undefined;
   const { progress, updateProgress } = useSessionProgress(sessionId);
   
@@ -58,36 +56,28 @@ export function LiveGameView({
   console.log("LiveGameView - session progress:", progress);
   console.log("LiveGameView - sessionId:", sessionId);
   
-  // Use the first game's configurations if available
   const currentGameConfig = gameConfigs.find(config => config.gameNumber === (progress?.current_game_number || currentGameNumber));
   const activeGameType = currentGameConfig?.gameType || gameType;
   
-  // Get active patterns from new game config format
   let activePatterns: string[] = selectedPatterns;
   if (currentGameConfig && currentGameConfig.patterns) {
-    // Use new format - get active patterns from patterns property
     activePatterns = Object.entries(currentGameConfig.patterns)
       .filter(([_, config]) => config.active)
       .map(([patternId]) => patternId);
   }
   
-  // Prioritize win pattern from session progress if available
   let actualCurrentWinPattern = currentWinPattern;
   if (progress && progress.current_win_pattern) {
-    // If we have progress data, use that pattern as the active one
     console.log("Using win pattern from session progress:", progress.current_win_pattern);
     actualCurrentWinPattern = progress.current_win_pattern;
     
-    // If the pattern from progress isn't in activePatterns, add it
     if (!activePatterns.includes(actualCurrentWinPattern)) {
       activePatterns = [actualCurrentWinPattern, ...activePatterns.filter(p => p !== actualCurrentWinPattern)];
     }
   }
   
-  // Get the prizes from the new format
   let activePrizes: Record<string, PrizeDetails> = prizes;
   if (currentGameConfig && currentGameConfig.patterns) {
-    // New format
     activePrizes = Object.entries(currentGameConfig.patterns).reduce((acc, [patternId, config]) => {
       acc[patternId] = {
         amount: config.prizeAmount,
@@ -98,16 +88,11 @@ export function LiveGameView({
     }, {} as Record<string, PrizeDetails>);
   }
   
-  // Get all win patterns for the active game type
   const availablePatterns = activeGameType ? winPatterns.filter(p => p.gameType === activeGameType) : winPatterns;
 
-  // Get prize info for current win pattern
   const currentPatternPrizeInfo = actualCurrentWinPattern && activePrizes[actualCurrentWinPattern] 
     ? [activePrizes[actualCurrentWinPattern]] : [];
-  
-  console.log("Current pattern prize info:", currentPatternPrizeInfo);
 
-  // Add effect to handle game number changes
   useEffect(() => {
     if (progress && currentGameNumber) {
       console.log(`Checking game numbers - Progress: ${progress.current_game_number}, Current: ${currentGameNumber}`);
@@ -120,7 +105,6 @@ export function LiveGameView({
     }
   }, [progress, currentGameNumber]);
 
-  // Effect to update session progress with current win pattern and prize info
   useEffect(() => {
     if (sessionId && actualCurrentWinPattern && updateProgress) {
       const prizeInfo = activePrizes[actualCurrentWinPattern];
@@ -130,7 +114,7 @@ export function LiveGameView({
         
         updateProgress({
           current_win_pattern: actualCurrentWinPattern,
-          current_prize: prizeInfo.amount.toString(), // Convert to string if it's not already
+          current_prize: prizeInfo.amount.toString(),
           current_prize_description: prizeInfo.description
         }).then(success => {
           if (success) {
@@ -145,17 +129,17 @@ export function LiveGameView({
     }
   }, [sessionId, actualCurrentWinPattern, activePrizes, updateProgress]);
 
-  // Effect to broadcast number changes to players
   useEffect(() => {
     if (sessionId && lastCalledNumber !== null) {
       const broadcastChannel = supabase.channel('number-broadcast');
       
       console.log('Broadcasting called number to players:', lastCalledNumber);
       
-      // Get the current prize details for this pattern
       const prizeInfo = actualCurrentWinPattern && activePrizes[actualCurrentWinPattern] 
         ? activePrizes[actualCurrentWinPattern] 
         : null;
+      
+      const timestamp = new Date().getTime();
       
       broadcastChannel.send({
         type: 'broadcast',
@@ -166,10 +150,11 @@ export function LiveGameView({
           calledNumbers,
           activeWinPattern: actualCurrentWinPattern,
           activePatterns,
-          prizeInfo
+          prizeInfo,
+          timestamp
         }
       }).then(() => {
-        console.log('Number broadcast sent successfully');
+        console.log('Number broadcast sent successfully with timestamp:', timestamp);
       }).catch(error => {
         console.error('Error broadcasting number:', error);
       });

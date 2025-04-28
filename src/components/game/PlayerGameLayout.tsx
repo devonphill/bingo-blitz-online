@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader } from "lucide-react";
@@ -58,6 +57,7 @@ export default function PlayerGameLayout({
   const { toast } = useToast();
   const instanceId = useRef(Date.now());
   const resetTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastUpdateTimestamp = useRef<number>(0);
 
   useEffect(() => {
     console.log(`PlayerGameLayout rendered with instance ID: ${instanceId.current}, pattern: ${currentWinPattern}`);
@@ -110,10 +110,17 @@ export default function PlayerGameLayout({
           console.log("Received number broadcast:", payload);
           
           if (payload.payload && payload.payload.sessionId === currentSession.id) {
-            const { lastCalledNumber, calledNumbers, activeWinPattern, prizeInfo } = payload.payload;
+            const { lastCalledNumber, calledNumbers, activeWinPattern, prizeInfo, timestamp } = payload.payload;
+            
+            if (!timestamp || timestamp <= lastUpdateTimestamp.current) {
+              console.log(`Ignoring outdated or duplicate update with timestamp: ${timestamp}`);
+              return;
+            }
+            
+            console.log(`Processing new update with timestamp: ${timestamp}`);
+            lastUpdateTimestamp.current = timestamp;
             
             console.log(`Updating numbers: Last=${lastCalledNumber}, Total=${calledNumbers?.length}`);
-            console.log("Received prize info:", prizeInfo);
             
             if (lastCalledNumber !== null && lastCalledNumber !== undefined) {
               setLocalCurrentNumber(lastCalledNumber);
@@ -121,6 +128,7 @@ export default function PlayerGameLayout({
               toast({
                 title: "New Number Called",
                 description: `Number ${lastCalledNumber} has been called`,
+                duration: 3000,
               });
             }
             
@@ -139,12 +147,15 @@ export default function PlayerGameLayout({
               toast({
                 title: "Pattern Changed",
                 description: `New pattern: ${patternName}`,
+                duration: 5000,
               });
             }
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log("Number updates subscription status:", status);
+      });
     
     return () => {
       console.log("Unsubscribing from number updates channel");
@@ -334,14 +345,12 @@ export default function PlayerGameLayout({
   };
 
   const getPrizeDisplay = () => {
-    // First try to get prize info from broadcast prizeInfo
     if (prizeInfo) {
       return prizeInfo.isNonCash 
         ? prizeInfo.description 
         : `£${prizeInfo.amount}`;
     }
     
-    // Fallback to winPrizes prop
     if (currentWinPattern && winPrizes && winPrizes[currentWinPattern]) {
       const prizeValue = winPrizes[currentWinPattern];
       return `£${prizeValue}`;

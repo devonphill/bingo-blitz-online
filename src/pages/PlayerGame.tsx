@@ -4,22 +4,16 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { usePlayerGame } from '@/hooks/usePlayerGame';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
+import { useRealTimeUpdates } from '@/hooks/useRealTimeUpdates';
 import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 import PlayerGameLayout from '@/components/game/PlayerGameLayout';
-import { supabase } from '@/integrations/supabase/client';
 
 export default function PlayerGame() {
   const { playerCode: urlPlayerCode } = useParams<{ playerCode: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [loadingPlayerCode, setLoadingPlayerCode] = useState(true);
-  
-  // State for realtime updates
-  const [realtimeCalledNumbers, setRealtimeCalledNumbers] = useState<number[]>([]);
-  const [realtimeLastCalled, setRealtimeLastCalled] = useState<number | null>(null);
-  const [realtimePattern, setRealtimePattern] = useState<string | null>(null);
-  const [realtimePrizeInfo, setRealtimePrizeInfo] = useState<any>(null);
   
   // Use stored player code or URL parameter
   useEffect(() => {
@@ -84,59 +78,8 @@ export default function PlayerGame() {
   // Get session progress from the database for authoritative game state
   const { progress: sessionProgress } = useSessionProgress(currentSession?.id);
   
-  // Set up realtime listener for number updates
-  useEffect(() => {
-    if (!currentSession?.id) return;
-    
-    console.log("Setting up realtime number update listener");
-    
-    const numberChannel = supabase
-      .channel('player-number-updates')
-      .on('broadcast', 
-        { event: 'number-called' }, 
-        (payload) => {
-          console.log("Received number broadcast in player game:", payload);
-          
-          if (payload.payload && payload.payload.sessionId === currentSession.id) {
-            const { calledNumbers, lastCalledNumber, activeWinPattern, prizeInfo } = payload.payload;
-            
-            if (calledNumbers && Array.isArray(calledNumbers)) {
-              console.log("Updating called numbers from broadcast:", calledNumbers.length);
-              setRealtimeCalledNumbers(calledNumbers);
-
-              // Show toast for new number
-              if (lastCalledNumber !== null && lastCalledNumber !== undefined) {
-                toast({
-                  title: "New Number Called",
-                  description: `Number ${lastCalledNumber} has been called`
-                });
-              }
-            }
-            
-            if (lastCalledNumber !== null && lastCalledNumber !== undefined) {
-              console.log("Updating last called number from broadcast:", lastCalledNumber);
-              setRealtimeLastCalled(lastCalledNumber);
-            }
-            
-            if (activeWinPattern) {
-              console.log("Updating active win pattern from broadcast:", activeWinPattern);
-              setRealtimePattern(activeWinPattern);
-            }
-            
-            if (prizeInfo) {
-              console.log("Updating prize info from broadcast:", prizeInfo);
-              setRealtimePrizeInfo(prizeInfo);
-            }
-          }
-        }
-      )
-      .subscribe();
-    
-    return () => {
-      console.log("Cleaning up number update listener");
-      supabase.removeChannel(numberChannel);
-    };
-  }, [currentSession?.id, toast]);
+  // Get real-time updates using our new hook
+  const realTimeUpdates = useRealTimeUpdates(currentSession?.id, playerCode);
   
   // Create a wrapper function that matches the expected signature
   const handleClaimBingo = useCallback(() => {
@@ -160,9 +103,10 @@ export default function PlayerGame() {
       sessionStatus: currentSession?.status,
       gameState: currentGameState?.status,
       errorMessage,
-      sessionProgress
+      sessionProgress,
+      realTimeLastCalled: realTimeUpdates.lastCalledNumber
     });
-  }, [isLoading, loadingStep, tickets, currentSession, currentGameState, errorMessage, sessionProgress]);
+  }, [isLoading, loadingStep, tickets, currentSession, currentGameState, errorMessage, sessionProgress, realTimeUpdates]);
   
   // Only attempt to render the game if we have all needed data
   const isInitialLoading = isLoading && loadingStep !== 'completed';
@@ -197,14 +141,14 @@ export default function PlayerGame() {
   }
 
   // Use realtime data if available, otherwise use data from hooks
-  const finalCalledNumbers = realtimeCalledNumbers.length > 0 ? realtimeCalledNumbers : 
+  const finalCalledNumbers = realTimeUpdates.calledNumbers.length > 0 ? realTimeUpdates.calledNumbers : 
                             (sessionProgress?.called_numbers || calledItems || []);
   
-  const finalLastCalledNumber = realtimeLastCalled !== null ? realtimeLastCalled :
+  const finalLastCalledNumber = realTimeUpdates.lastCalledNumber !== null ? realTimeUpdates.lastCalledNumber :
                               (finalCalledNumbers.length > 0 ? finalCalledNumbers[finalCalledNumbers.length - 1] : lastCalledItem);
   
-  // Prioritize sessionProgress as the source of truth for current win pattern, then realtime updates
-  const currentWinPattern = realtimePattern || 
+  // Prioritize real-time updates, then sessionProgress as the source of truth for current win pattern
+  const currentWinPattern = realTimeUpdates.currentWinPattern || 
                            sessionProgress?.current_win_pattern || 
                            (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
 
@@ -216,7 +160,7 @@ export default function PlayerGame() {
                        currentSession?.numberOfGames || 
                        1;
 
-  // Prepare prize info - from realtime update, session progress, or original props
+  // Prepare prize info - from real-time update, session progress, or original props
   let finalWinPrizes = winPrizes;
   if (sessionProgress?.current_win_pattern && sessionProgress?.current_prize) {
     // Add prize from session progress to the win prizes object
@@ -226,15 +170,20 @@ export default function PlayerGame() {
     };
   }
 
-  // If we have realtime prize info, prioritize it
-  if (realtimePrizeInfo && currentWinPattern) {
+  // If we have real-time prize info, prioritize it
+  if (realTimeUpdates.prizeInfo && currentWinPattern) {
     finalWinPrizes = {
       ...finalWinPrizes,
-      [currentWinPattern]: realtimePrizeInfo.amount
+      [currentWinPattern]: realTimeUpdates.prizeInfo.amount
     };
   }
 
-  console.log("Rendering main player game interface");
+  console.log("Rendering main player game interface with:");
+  console.log("- Called numbers:", finalCalledNumbers.length);
+  console.log("- Last called number:", finalLastCalledNumber);
+  console.log("- Current win pattern:", currentWinPattern);
+  console.log("- Prize info:", finalWinPrizes);
+
   return (
     <React.Fragment>
       <PlayerGameLayout

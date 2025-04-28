@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import BingoCell from "./BingoCell";
 import BingoCard from "./BingoCard";
@@ -67,6 +66,7 @@ export default function BingoCardGrid({
 
   // Legacy render function (for backward compatibility)
   function renderLegacyCard() {
+    
     const [recentlyMarked, setRecentlyMarked] = useState<Set<string>>(new Set());
     
     // Track recently called numbers for flashing effect
@@ -100,6 +100,8 @@ export default function BingoCardGrid({
         }, 2000);
       }
     }, [calledNumbers, card, markedCells, autoMarking]);
+
+    
 
     const isCellMarked = (row: number, col: number, value: number | null) => {
       if (value === null) return false;
