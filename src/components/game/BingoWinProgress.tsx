@@ -1,8 +1,9 @@
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { getGameRulesForType } from '@/game-rules/gameRulesRegistry';
 import { checkMainstageWinPattern } from '@/utils/mainstageWinLogic';
 import { useMainstageAutoMarking } from '@/hooks/useMainstageAutoMarking';
+import { toast } from "@/hooks/use-toast";
 
 interface BingoWinProgressProps {
   tickets?: any[];
@@ -29,6 +30,7 @@ export default function BingoWinProgress({
   isClaiming,
   claimStatus
 }: BingoWinProgressProps) {
+  const [hasTriedClaim, setHasTriedClaim] = useState(false);
   // Get the game rules for this game type
   const gameRules = getGameRulesForType(gameType);
   
@@ -44,6 +46,23 @@ export default function BingoWinProgress({
     }
   }
   
+  // Reset hasTriedClaim when claim status changes
+  useEffect(() => {
+    if (claimStatus === null) {
+      setHasTriedClaim(false);
+    }
+  }, [claimStatus]);
+  
+  // Log claim-related props for debugging
+  console.log("BingoWinProgress props:", {
+    hasTickets: !!tickets && tickets.length > 0,
+    hasNumbers: !!numbers,
+    calledNumbersCount: calledNumbers.length,
+    currentWinPattern,
+    isClaiming,
+    claimStatus
+  });
+  
   // If we still don't have ticket data, just show the claim button if provided
   if (!numbers || !layoutMask) {
     return (
@@ -54,8 +73,20 @@ export default function BingoWinProgress({
         
         {handleClaimBingo && (
           <button
-            onClick={handleClaimBingo}
-            disabled={isClaiming || claimStatus === 'validated'}
+            onClick={async () => {
+              setHasTriedClaim(true);
+              try {
+                await handleClaimBingo();
+              } catch (error) {
+                console.error("Error claiming bingo:", error);
+                toast({
+                  title: "Claim Error",
+                  description: "There was a problem submitting your claim.",
+                  variant: "destructive"
+                });
+              }
+            }}
+            disabled={isClaiming || claimStatus === 'validated' || hasTriedClaim}
             className={`px-4 py-2 rounded-md font-medium ${
               claimStatus === 'validated' ? 'bg-green-500 text-white' : 
               claimStatus === 'rejected' ? 'bg-red-500 text-white' :
@@ -119,8 +150,20 @@ export default function BingoWinProgress({
       
       {handleClaimBingo && (
         <button
-          onClick={handleClaimBingo}
-          disabled={isClaiming || claimStatus === 'validated' || !canClaim}
+          onClick={async () => {
+            setHasTriedClaim(true);
+            try {
+              await handleClaimBingo();
+            } catch (error) {
+              console.error("Error claiming bingo:", error);
+              toast({
+                title: "Claim Error",
+                description: "There was a problem submitting your claim.",
+                variant: "destructive"
+              });
+            }
+          }}
+          disabled={isClaiming || claimStatus === 'validated' || hasTriedClaim || (!canClaim && !hasTriedClaim)}
           className={`px-4 py-2 rounded-md font-medium ${
             claimStatus === 'validated' ? 'bg-green-500 text-white' : 
             claimStatus === 'rejected' ? 'bg-red-500 text-white' :

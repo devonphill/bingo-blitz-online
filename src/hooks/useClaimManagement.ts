@@ -21,9 +21,29 @@ export function useClaimManagement(sessionId: string | undefined, gameNumber: nu
       numbers: number[];
     }
   ) => {
-    if (!sessionId || !gameNumber) return false;
+    if (!sessionId || !gameNumber) {
+      console.error("Missing sessionId or gameNumber in validateClaim:", { sessionId, gameNumber });
+      toast({
+        title: "Validation Error",
+        description: "Missing session or game data.",
+        variant: "destructive"
+      });
+      return false;
+    }
 
     setIsProcessingClaim(true);
+    
+    console.log("Validating claim with data:", {
+      sessionId,
+      gameNumber,
+      playerId,
+      playerName,
+      winPatternId,
+      calledNumbersCount: currentCalledNumbers.length,
+      ticketSerial: ticketData.serial,
+      ticketPerm: ticketData.perm
+    });
+    
     try {
       // Save the validation record directly to universal_game_logs
       const { error: logError } = await supabase
@@ -50,7 +70,7 @@ export function useClaimManagement(sessionId: string | undefined, gameNumber: nu
         console.error("Error logging claim validation:", logError);
         toast({
           title: "Error",
-          description: "Failed to validate claim.",
+          description: "Failed to validate claim: " + logError.message,
           variant: "destructive"
         });
         return false;
@@ -58,14 +78,16 @@ export function useClaimManagement(sessionId: string | undefined, gameNumber: nu
 
       toast({
         title: "Claim Validated",
-        description: "The claim has been successfully validated.",
+        description: "Your claim has been successfully validated.",
       });
+      
+      console.log("Claim validation successful");
       return true;
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error in validateClaim:", err);
       toast({
         title: "Error",
-        description: "An unexpected error occurred while validating the claim.",
+        description: "An unexpected error occurred: " + (err.message || "Unknown error"),
         variant: "destructive"
       });
       return false;
@@ -88,10 +110,21 @@ export function useClaimManagement(sessionId: string | undefined, gameNumber: nu
       numbers: number[];
     }
   ) => {
-    if (!sessionId || !gameNumber) return false;
+    if (!sessionId || !gameNumber) {
+      console.error("Missing sessionId or gameNumber in rejectClaim:", { sessionId, gameNumber });
+      return false;
+    }
 
     setIsProcessingClaim(true);
     try {
+      console.log("Rejecting claim with data:", {
+        sessionId,
+        gameNumber,
+        playerId,
+        playerName,
+        ticketSerial: ticketData.serial
+      });
+      
       // Log the rejected claim in universal_game_logs
       const { error: logError } = await supabase
         .from('universal_game_logs')
@@ -117,7 +150,7 @@ export function useClaimManagement(sessionId: string | undefined, gameNumber: nu
         console.error("Error logging claim rejection:", logError);
         toast({
           title: "Error",
-          description: "Failed to reject claim.",
+          description: "Failed to reject claim: " + logError.message,
           variant: "destructive"
         });
         return false;
@@ -125,14 +158,16 @@ export function useClaimManagement(sessionId: string | undefined, gameNumber: nu
 
       toast({
         title: "Claim Rejected",
-        description: "The claim has been successfully rejected.",
+        description: "The claim has been rejected.",
       });
+      
+      console.log("Claim rejection successful");
       return true;
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error in rejectClaim:", err);
       toast({
         title: "Error",
-        description: "An unexpected error occurred while rejecting the claim.",
+        description: "An unexpected error occurred: " + (err.message || "Unknown error"),
         variant: "destructive"
       });
       return false;

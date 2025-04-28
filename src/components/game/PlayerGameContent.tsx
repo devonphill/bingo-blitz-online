@@ -4,6 +4,8 @@ import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
 import BingoWinProgress from "./BingoWinProgress";
 import { useBingoSync } from "@/hooks/useBingoSync";
+import GameTypePlayspace from "./GameTypePlayspace";
+import { toast } from "@/hooks/use-toast";
 
 interface PlayerGameContentProps {
   tickets: any[];
@@ -47,8 +49,14 @@ export default function PlayerGameContent({
   useEffect(() => {
     console.log(`[PlayerGameContent] Session ID: ${currentSession?.id}, Connection: ${connectionState}`);
     console.log(`[PlayerGameContent] gameState:`, gameState);
-    console.log(`[PlayerGameContent] Original props:`, { calledNumbers, currentNumber });
-  }, [currentSession?.id, connectionState, gameState, calledNumbers, currentNumber]);
+    console.log(`[PlayerGameContent] Original props:`, { 
+      calledNumbers, 
+      currentNumber,
+      isClaiming,
+      claimStatus,
+      tickets: tickets?.length || 0 
+    });
+  }, [currentSession?.id, connectionState, gameState, calledNumbers, currentNumber, isClaiming, claimStatus, tickets]);
 
   const currentWinPattern = 
     // First check real-time updates
@@ -73,6 +81,34 @@ export default function PlayerGameContent({
     }
   }, [gameType, autoMarking, setAutoMarking]);
 
+  // Handle bingo claim with better error handling
+  const handleClaimBingoWithErrorHandling = async () => {
+    if (!onClaimBingo) {
+      console.error("No claim handler available");
+      toast({
+        title: "Claim Not Available",
+        description: "Cannot claim bingo at this time.",
+        variant: "destructive"
+      });
+      return false;
+    }
+
+    try {
+      console.log("Attempting to claim bingo...");
+      const result = await onClaimBingo();
+      console.log("Claim result:", result);
+      return result;
+    } catch (error) {
+      console.error("Error claiming bingo:", error);
+      toast({
+        title: "Claim Error",
+        description: "There was a problem submitting your claim.",
+        variant: "destructive"
+      });
+      return false;
+    }
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
       <div className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
@@ -94,20 +130,23 @@ export default function PlayerGameContent({
             calledNumbers={mergedCalledNumbers}
             activeWinPatterns={[currentWinPattern].filter(Boolean) as string[]}
             currentWinPattern={currentWinPattern}
-            handleClaimBingo={onClaimBingo}
+            handleClaimBingo={handleClaimBingoWithErrorHandling}
             isClaiming={isClaiming}
             claimStatus={claimStatus}
             gameType={gameType}
           />
         </div>
         
-        <BingoCardGrid
+        <GameTypePlayspace
+          gameType={gameType as any}
           tickets={tickets}
           calledNumbers={mergedCalledNumbers}
+          lastCalledNumber={mergedCurrentNumber}
           autoMarking={autoMarking}
-          activeWinPatterns={[currentWinPattern].filter(Boolean) as string[]}
-          currentWinPattern={currentWinPattern}
-          gameType={gameType}
+          setAutoMarking={setAutoMarking}
+          handleClaimBingo={handleClaimBingoWithErrorHandling}
+          isClaiming={isClaiming}
+          claimStatus={claimStatus}
         />
       </div>
     </div>
