@@ -4,6 +4,7 @@ import { useToast } from '@/hooks/use-toast';
 import { usePlayerGame } from '@/hooks/usePlayerGame';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
 import { useRealTimeUpdates } from '@/hooks/useRealTimeUpdates';
+import { useTickets } from '@/hooks/useTickets';
 import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 import PlayerGameLayout from '@/components/game/PlayerGameLayout';
@@ -51,7 +52,6 @@ export default function PlayerGame() {
   console.log("Using player code:", playerCode);
   
   const {
-    tickets,
     playerName,
     playerId,
     currentSession,
@@ -71,6 +71,8 @@ export default function PlayerGame() {
     isSubmittingClaim,
     handleClaimBingo: submitBingoClaim
   } = usePlayerGame(playerCode);
+
+  const { tickets } = useTickets(playerCode, currentSession?.id);
 
   const { progress: sessionProgress } = useSessionProgress(currentSession?.id);
   

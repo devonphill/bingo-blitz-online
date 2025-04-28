@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from "react";
 import BingoCell from "./BingoCell";
-import BingoCard from "./BingoCard";
+import BingoTicketDisplay from "./BingoTicketDisplay";
 
 interface BingoCardGridProps {
   tickets?: any[];
@@ -34,25 +33,24 @@ export default function BingoCardGrid({
     return renderLegacyCard();
   }
   
+  // Get the actual win pattern to use
+  const effectiveWinPattern = currentWinPattern || (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
+  
   // Render the new ticket-based grid
   return (
     <div className="space-y-6">
       {tickets.map((ticket, index) => (
         <div key={ticket.serial || index} className="p-4 bg-white rounded-lg shadow">
-          <div className="flex justify-between items-center mb-3">
-            <div className="text-sm font-medium">
-              Serial: <span className="font-mono">{ticket.serial}</span>
-            </div>
-            <div className="text-sm font-medium">
-              Perm: <span className="font-mono">{ticket.perm}</span>
-            </div>
-          </div>
-          <BingoCard
+          <BingoTicketDisplay
             numbers={ticket.numbers}
             layoutMask={ticket.layoutMask || ticket.layout_mask}
             calledNumbers={calledNumbers}
+            serial={ticket.serial}
+            perm={ticket.perm}
+            position={ticket.position}
             autoMarking={autoMarking}
-            activeWinPatterns={activeWinPatterns}
+            currentWinPattern={effectiveWinPattern}
+            showProgress={true}
           />
         </div>
       ))}

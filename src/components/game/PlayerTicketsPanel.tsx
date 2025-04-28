@@ -1,7 +1,7 @@
 
 import React, { useMemo } from "react";
-import BingoCard from "@/components/game/BingoCard";
-import BingoWinProgress from "@/components/game/BingoWinProgress";
+import BingoTicketDisplay from "@/components/game/BingoTicketDisplay";
+import { calculateTicketProgress } from "@/utils/ticketUtils";
 
 interface PlayerTicketsPanelProps {
   tickets: any[];
@@ -29,6 +29,9 @@ export default function PlayerTicketsPanel({
     );
   }
 
+  // Get the actual win pattern to use
+  const effectiveWinPattern = currentWinPattern || (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
+
   // Calculate win progress for each ticket and reorder them
   const sortedTickets = useMemo(() => {
     if (!autoMarking) return tickets;
@@ -37,100 +40,36 @@ export default function PlayerTicketsPanel({
       // Handle both layoutMask and layout_mask property naming
       const layoutMask = ticket.layoutMask || ticket.layout_mask;
       
-      // Make sure layoutMask exists before trying to use toString()
+      // Make sure layoutMask exists before processing
       if (!layoutMask) {
         console.warn("Ticket without layoutMask encountered:", ticket);
         return { ...ticket, minToGo: Infinity };
       }
       
-      // Process the layout mask correctly to count marked numbers and rows
-      const maskBinary = layoutMask.toString(2).padStart(27, "0").split("").reverse();
-      const rows: (number | null)[][] = [[], [], []];
-      let nIdx = 0;
-
-      // Build rows from the layout mask
-      for (let i = 0; i < 27; i++) {
-        const row = Math.floor(i / 9);
-        const col = i % 9;
-        
-        if (maskBinary[i] === '1') {
-          rows[row][col] = ticket.numbers[nIdx++];
-        } else {
-          rows[row][col] = null;
-        }
-      }
-
-      // Count how many numbers are marked in each row
-      const lineCounts = rows.map(line => {
-        let marked = 0;
-        for (let i = 0; i < line.length; i++) {
-          if (line[i] !== null && calledNumbers.includes(line[i])) {
-            marked++;
-          }
-        }
-        return marked;
-      });
-
-      // Count how many numbers are needed for each row to be complete
-      const lineNeeded = rows.map(line => {
-        let total = 0;
-        for (let i = 0; i < line.length; i++) {
-          if (line[i] !== null) {
-            total++;
-          }
-        }
-        return total;
-      });
-
-      // Count completed lines
-      const completedLines = lineCounts.filter((count, idx) => count === lineNeeded[idx]).length;
-
-      // If there's a current win pattern, prioritize scoring based on it
-      const patternsToCheck = currentWinPattern ? [currentWinPattern] : activeWinPatterns;
-      const result: { [pattern: string]: number } = {};
+      // Process ticket grid and get progress
+      const grid = processTicketLayout(ticket.numbers, layoutMask);
+      const progress = calculateTicketProgress(grid, calledNumbers, effectiveWinPattern || "oneLine");
       
-      patternsToCheck.forEach(pattern => {
-        let lines = 0;
-        if (pattern === "oneLine") lines = 1;
-        if (pattern === "twoLines") lines = 2;
-        if (pattern === "fullHouse") lines = 3;
-        
-        const linesToGo = Math.max(0, lines - completedLines);
-        let minNeeded = Infinity;
-        if (linesToGo === 0) {
-          minNeeded = 0;
-        } else {
-          // Find the line that's closest to completion
-          const numbersNeeded = rows.map((line, idx) => {
-            // If this line is already complete, we don't need it
-            if (lineCounts[idx] === lineNeeded[idx]) {
-              return Infinity;
-            }
-            
-            // Return how many more numbers we need to complete this line
-            return lineNeeded[idx] - lineCounts[idx];
-          });
-          
-          minNeeded = Math.min(...numbersNeeded.filter(n => n < Infinity));
-          if (minNeeded === Infinity) minNeeded = 0;
-        }
-        result[pattern] = minNeeded;
-      });
-
-      // Get the minimum number needed for the current win pattern or any active pattern
-      const minToGo = currentWinPattern && result[currentWinPattern] !== undefined
-        ? result[currentWinPattern]
-        : Math.min(...patternsToCheck.map(p => result[p] ?? 15));
-      
+      // Return ticket with additional progress info
       return {
         ...ticket,
-        minToGo
+        minToGo: progress.numbersToGo,
+        isWinner: progress.isWinner,
+        completedLines: progress.completedLines,
+        linesToGo: progress.linesToGo
       };
     });
 
-    // Sort tickets by how close they are to winning (lowest minToGo first)
-    return [...ticketsWithProgress].sort((a, b) => a.minToGo - b.minToGo);
-  }, [tickets, calledNumbers, autoMarking, activeWinPatterns, currentWinPattern]);
+    // Sort tickets by how close they are to winning (lowest minToGo first, winners at top)
+    return [...ticketsWithProgress].sort((a, b) => {
+      // Winners come first
+      if (a.isWinner && !b.isWinner) return -1;
+      if (!a.isWinner && b.isWinner) return 1;
+      
+      // Then sort by numbers to go
+      return a.minToGo - b.minToGo;
+    });
+  }, [tickets, calledNumbers, autoMarking, effectiveWinPattern]);
 
   return (
     <div className="bg-white shadow rounded-lg p-6 mb-6">
@@ -142,50 +81,32 @@ export default function PlayerTicketsPanel({
             {sortedTickets
               .filter(t => t.perm === perm)
               .sort((a, b) => autoMarking ? a.minToGo - b.minToGo : a.position - b.position)
-              .map((ticket) => (
-                <div key={ticket.serial} className="border rounded-lg p-4">
-                  <div className="flex justify-between items-center mb-3">
-                    <div className="text-sm font-medium">
-                      Serial: <span className="font-mono">{ticket.serial}</span>
-                    </div>
-                    <div className="text-sm font-medium">
-                      Perm: <span className="font-mono">{ticket.perm}</span>
-                    </div>
+              .map((ticket) => {
+                // Handle both layoutMask and layout_mask property naming
+                const layoutMask = ticket.layoutMask || ticket.layout_mask;
+                
+                return (
+                  <div key={ticket.serial} className="border rounded-lg p-4">
+                    <BingoTicketDisplay
+                      numbers={ticket.numbers}
+                      layoutMask={layoutMask}
+                      calledNumbers={calledNumbers}
+                      serial={ticket.serial}
+                      perm={ticket.perm}
+                      position={ticket.position}
+                      autoMarking={autoMarking}
+                      currentWinPattern={effectiveWinPattern}
+                      showProgress={true}
+                    />
                   </div>
-                  {(() => {
-                    // Handle both layoutMask and layout_mask property naming
-                    const layoutMask = ticket.layoutMask || ticket.layout_mask;
-                    
-                    return layoutMask ? (
-                      <>
-                        <BingoCard
-                          numbers={ticket.numbers}
-                          layoutMask={layoutMask}
-                          calledNumbers={calledNumbers}
-                          autoMarking={autoMarking}
-                          activeWinPatterns={activeWinPatterns}
-                        />
-                        <div className="text-center mt-4">
-                          <BingoWinProgress
-                            numbers={ticket.numbers}
-                            layoutMask={layoutMask}
-                            calledNumbers={calledNumbers}
-                            activeWinPatterns={activeWinPatterns}
-                            currentWinPattern={currentWinPattern}
-                          />
-                        </div>
-                      </>
-                    ) : (
-                      <div className="p-4 text-center text-gray-500">
-                        Ticket information is incomplete
-                      </div>
-                    );
-                  })()}
-                </div>
-              ))}
+                );
+              })}
           </div>
         </div>
       ))}
     </div>
   );
 }
+
+// Import utility at the top
+import { processTicketLayout } from "@/utils/ticketUtils";
