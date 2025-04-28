@@ -18,6 +18,7 @@ export default function AddPlayers() {
   const [tickets, setTickets] = useState(1);
   const [isAddingPlayer, setIsAddingPlayer] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
+  const [isInitialized, setIsInitialized] = useState(false);
   const { toast } = useToast();
   
   const { 
@@ -30,8 +31,10 @@ export default function AddPlayers() {
     isLoading
   } = useSessionContext();
   
+  // This effect only runs once when the component mounts
   useEffect(() => {
     const loadSessionData = async () => {
+      if (isInitialized) return; // Prevent multiple initializations
       setPageLoading(true);
       
       try {
@@ -54,6 +57,7 @@ export default function AddPlayers() {
         if (fetchPlayers) {
           console.log("Fetching players for session:", sessionId);
           await fetchPlayers(sessionId);
+          setIsInitialized(true);
         } else {
           console.warn("fetchPlayers function not available in context");
           toast({
@@ -75,7 +79,7 @@ export default function AddPlayers() {
     };
     
     loadSessionData();
-  }, [sessionId, setCurrentSession, fetchPlayers, navigate, toast]);
+  }, [sessionId, setCurrentSession, fetchPlayers, navigate, toast, isInitialized]);
 
   const handleAddPlayer = async () => {
     if (!sessionId) {

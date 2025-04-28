@@ -26,6 +26,7 @@ export default function BulkAddPlayersForm({ sessionId }: { sessionId: string })
     setIsAdding(true);
 
     try {
+      // Parse player data from textarea
       const players: AdminTempPlayer[] = playersData
         .split('\n')
         .filter(line => line.trim())

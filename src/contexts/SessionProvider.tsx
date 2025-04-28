@@ -55,6 +55,13 @@ export function SessionProvider({ children }: SessionProviderProps) {
 
   // Create a wrapper function for setCurrentSession that accepts a string
   const setCurrentSession = (sessionId: string | null) => {
+    // Prevent unnecessary state updates if the session is already selected
+    if (currentSession?.id === sessionId) {
+      console.log("Session is already selected, skipping update");
+      return;
+    }
+    
+    console.log("Setting current session ID:", sessionId);
     setSessionById(sessionId);
   };
 
