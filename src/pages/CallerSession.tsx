@@ -465,7 +465,7 @@ export default function CallerSession() {
           currentGameNumber={currentGameNumber}
           numberOfGames={numberOfGames}
           gameConfigs={gameConfigs}
-          sessionId={urlSessionId}
+          sessionId={session?.id}
         />
       )}
     </div>

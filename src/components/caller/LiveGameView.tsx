@@ -1,3 +1,4 @@
+
 import React, { useEffect } from 'react';
 import { WinPattern } from '@/types/winPattern';
 import { WinPatternStatusDisplay } from '@/components/game/WinPatternStatusDisplay';
@@ -47,7 +48,13 @@ export function LiveGameView({
   sessionId
 }: LiveGameViewProps) {
   const numberRange = gameType === 'mainstage' ? 90 : 75;
+  
+  // Ensure we have a valid session ID
   const effectiveSessionId = sessionId || (gameConfigs.length > 0 && gameConfigs[0].session_id ? gameConfigs[0].session_id : undefined);
+  
+  // Log the session ID for debugging
+  console.log("LiveGameView - effectiveSessionId:", effectiveSessionId);
+  
   const { progress, updateProgress } = useSessionProgress(effectiveSessionId);
   
   console.log("LiveGameView - prizes:", prizes);
@@ -108,23 +115,52 @@ export function LiveGameView({
   }, [progress, currentGameNumber]);
 
   useEffect(() => {
-    if (effectiveSessionId && actualCurrentWinPattern && updateProgress) {
+    if (!effectiveSessionId) {
+      console.error("No session ID available for updating progress!");
+      return;
+    }
+    
+    if (actualCurrentWinPattern) {
       const prizeInfo = activePrizes[actualCurrentWinPattern];
       
       if (prizeInfo) {
         console.log(`Updating session progress with pattern: ${actualCurrentWinPattern}, prize: ${prizeInfo.amount}, description: ${prizeInfo.description}`);
         
-        updateProgress({
-          current_win_pattern: actualCurrentWinPattern,
-          current_prize: prizeInfo.amount.toString(),
-          current_prize_description: prizeInfo.description
-        }).then(success => {
-          if (success) {
-            console.log("Successfully updated session progress with pattern and prize info");
-          } else {
-            console.error("Failed to update session progress with pattern and prize info");
-          }
-        });
+        // Only update if we have the updateProgress function (meaning session progress is loaded)
+        if (updateProgress) {
+          updateProgress({
+            current_win_pattern: actualCurrentWinPattern,
+            current_prize: prizeInfo.amount.toString(),
+            current_prize_description: prizeInfo.description
+          }).then(success => {
+            if (success) {
+              console.log("Successfully updated session progress with pattern and prize info");
+            } else {
+              console.error("Failed to update session progress with pattern and prize info");
+            }
+          }).catch(error => {
+            console.error("Error updating session progress:", error);
+          });
+        } else {
+          console.warn("updateProgress function not available, can't update session progress");
+          
+          // Fallback direct update if updateProgress is not available
+          supabase
+            .from('sessions_progress')
+            .update({
+              current_win_pattern: actualCurrentWinPattern,
+              current_prize: prizeInfo.amount.toString(),
+              current_prize_description: prizeInfo.description
+            })
+            .eq('session_id', effectiveSessionId)
+            .then(({ error }) => {
+              if (error) {
+                console.error("Direct fallback update failed:", error);
+              } else {
+                console.log("Direct fallback update succeeded");
+              }
+            });
+        }
       } else {
         console.log(`No prize info available for pattern ${actualCurrentWinPattern}`);
       }
@@ -132,7 +168,12 @@ export function LiveGameView({
   }, [effectiveSessionId, actualCurrentWinPattern, activePrizes, updateProgress]);
 
   useEffect(() => {
-    if (effectiveSessionId && lastCalledNumber !== null) {
+    if (!effectiveSessionId) {
+      console.error("No session ID available for broadcasting number!");
+      return;
+    }
+    
+    if (lastCalledNumber !== null) {
       const timestamp = Date.now();
       console.log('Broadcasting called number to players with timestamp:', timestamp);
       
@@ -159,13 +200,33 @@ export function LiveGameView({
       }).then(() => {
         console.log('Number broadcast sent successfully!');
         
+        // Update session progress with new called numbers
         if (updateProgress) {
           updateProgress({
             called_numbers: calledNumbers,
             current_win_pattern: actualCurrentWinPattern
           }).then((success) => {
             console.log('Database update with called numbers: ', success ? 'succeeded' : 'failed');
+          }).catch(error => {
+            console.error("Error updating called numbers in database:", error);
           });
+        } else {
+          // Fallback direct update
+          console.warn("Using direct database update as fallback");
+          supabase
+            .from('sessions_progress')
+            .update({
+              called_numbers: calledNumbers,
+              current_win_pattern: actualCurrentWinPattern
+            })
+            .eq('session_id', effectiveSessionId)
+            .then(({ error }) => {
+              if (error) {
+                console.error("Direct fallback update for called numbers failed:", error);
+              } else {
+                console.log("Direct fallback update for called numbers succeeded");
+              }
+            });
         }
       }).catch(error => {
         console.error('Error broadcasting number:', error);

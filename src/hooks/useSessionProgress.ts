@@ -8,7 +8,7 @@ export interface SessionProgress {
   session_id: string;
   current_game_number: number;
   max_game_number: number;
-  current_game_type: string;
+  current_game_type: string | null;
   current_win_pattern: string | null;
   called_numbers: number[];
   game_status: string | null;
@@ -35,6 +35,7 @@ export function useSessionProgress(sessionId: string | undefined) {
 
   useEffect(() => {
     if (!sessionId) {
+      console.log("No sessionId provided to useSessionProgress");
       setLoading(false);
       return;
     }
@@ -53,7 +54,12 @@ export function useSessionProgress(sessionId: string | undefined) {
           .single();
 
         if (error) {
-          throw new Error(`Error fetching session progress: ${error.message}`);
+          if (error.code === 'PGRST116') {
+            // No data found, this might be expected in some cases
+            console.log(`No session progress found for session ${sessionId}`);
+          } else {
+            throw new Error(`Error fetching session progress: ${error.message}`);
+          }
         }
 
         if (data) {
@@ -148,7 +154,10 @@ export function useSessionProgress(sessionId: string | undefined) {
   }, [sessionId]);
 
   const updateProgress = async (updates: SessionProgressUpdate): Promise<boolean> => {
-    if (!sessionId || !progress) return false;
+    if (!sessionId || !progress) {
+      console.error("Cannot update session progress - missing sessionId or progress data");
+      return false;
+    }
     
     try {
       console.log("Updating session progress with:", updates);

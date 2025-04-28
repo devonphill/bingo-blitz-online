@@ -112,7 +112,7 @@ export function useBingoSync(sessionId?: string) {
       if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
       supabase.removeChannel(channel);
     };
-  }, [sessionId, toast, setGameState]);
+  }, [sessionId, toast]);
 
   return {
     gameState,
