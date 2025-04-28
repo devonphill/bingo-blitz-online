@@ -258,7 +258,7 @@ export type Database = {
           created_at: string
           current_game_number: number
           current_game_type: string
-          current_prize: number | null
+          current_prize: string | null
           current_prize_description: string | null
           current_win_pattern: string | null
           game_status: string | null
@@ -272,7 +272,7 @@ export type Database = {
           created_at?: string
           current_game_number?: number
           current_game_type: string
-          current_prize?: number | null
+          current_prize?: string | null
           current_prize_description?: string | null
           current_win_pattern?: string | null
           game_status?: string | null
@@ -286,7 +286,7 @@ export type Database = {
           created_at?: string
           current_game_number?: number
           current_game_type?: string
-          current_prize?: number | null
+          current_prize?: string | null
           current_prize_description?: string | null
           current_win_pattern?: string | null
           game_status?: string | null

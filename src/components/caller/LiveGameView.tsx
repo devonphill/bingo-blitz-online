@@ -130,7 +130,7 @@ export function LiveGameView({
         
         updateProgress({
           current_win_pattern: actualCurrentWinPattern,
-          current_prize: prizeInfo.amount,
+          current_prize: prizeInfo.amount.toString(), // Convert to string if it's not already
           current_prize_description: prizeInfo.description
         }).then(success => {
           if (success) {
