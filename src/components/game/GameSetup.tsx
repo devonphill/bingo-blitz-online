@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { useSessionContext } from "@/contexts/SessionProvider";
@@ -6,7 +7,7 @@ import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
 import { useToast } from "@/hooks/use-toast";
 import { GameConfigForm } from '@/components/caller/GameConfigForm';
 import { supabase } from "@/integrations/supabase/client";
-import { toJsonSafe } from '@/utils/jsonUtils';
+import { gameConfigsToJson } from '@/utils/jsonUtils';
 
 export function GameSetup() {
   const { currentSession, updateSession } = useSessionContext();
@@ -48,7 +49,9 @@ export function GameSetup() {
       const newConfigs: GameConfig[] = Array.from({ length: numberOfGames }, (_, index) => {
         // Use existing config if available, otherwise create new one
         const existingConfig = existingConfigs[index];
-        const gameType = (existingConfig?.gameType || currentSession.gameType || 'mainstage') as GameType;
+        if (existingConfig) return existingConfig;
+        
+        const gameType = currentSession.gameType || 'mainstage' as GameType;
         
         // Set up pattern defaults according to the game type
         const patternIds = WIN_PATTERNS[gameType].map(pattern => pattern.id);
@@ -140,7 +143,8 @@ export function GameSetup() {
           // Update the session_progress with first game's first active pattern
           if (gameConfigs.length > 0) {
             const firstGame = gameConfigs[0];
-            const activePatternId = Object.entries(firstGame.patterns)
+            // Find first active pattern or default to oneLine
+            const activePatternId = Object.entries(firstGame.patterns || {})
               .find(([_, config]) => config.active)?.[0] || 'oneLine';
             
             const { error: progressError } = await supabase
@@ -194,14 +198,14 @@ export function GameSetup() {
       const patternIds = WIN_PATTERNS[newType].map(pattern => pattern.id);
       const patterns: GameConfig['patterns'] = {};
       
-      // Initialize patterns with default values or carry over existing ones
+      // Initialize patterns with default values - NONE active by default
       patternIds.forEach(patternId => {
         // If this pattern existed in previous config, use its values
-        if (config.patterns[patternId]) {
+        if (config.patterns && config.patterns[patternId]) {
           patterns[patternId] = config.patterns[patternId];
         } else {
           patterns[patternId] = {
-            active: ['oneLine', 'fullHouse'].includes(patternId), // Default active patterns
+            active: false, // NO default active patterns
             isNonCash: false,
             prizeAmount: '10.00',
             description: `${patternId} Prize`
@@ -227,7 +231,7 @@ export function GameSetup() {
           active: !patterns[patternId].active
         };
       } else {
-        // Create the pattern if it doesn't exist
+        // Create the pattern if it doesn't exist - default to active when created
         patterns[patternId] = {
           active: true,
           isNonCash: false,
@@ -273,7 +277,7 @@ export function GameSetup() {
     if (!currentSession) return;
     
     const hasNoActivePatterns = gameConfigs.some(config => {
-      return !Object.values(config.patterns).some(pattern => pattern.active);
+      return !Object.values(config.patterns || {}).some(pattern => pattern.active);
     });
     
     if (hasNoActivePatterns) {
@@ -291,6 +295,10 @@ export function GameSetup() {
       console.log("Saving game settings:");
       console.log("Game configs to save:", gameConfigs);
       
+      // Convert game configs to JSON format that ensures patterns are only active if explicitly true
+      const jsonConfigs = gameConfigsToJson(gameConfigs);
+      console.log("Converted game configs for database:", jsonConfigs);
+      
       // Save directly using the updateSession function
       const success = await updateSession(currentSession.id, {
         games_config: gameConfigs
@@ -303,7 +311,7 @@ export function GameSetup() {
       // First update the session_progress with first game's first active pattern
       if (gameConfigs.length > 0) {
         const firstGame = gameConfigs[0];
-        const activePatternId = Object.entries(firstGame.patterns)
+        const activePatternId = Object.entries(firstGame.patterns || {})
           .find(([_, config]) => config.active)?.[0] || 'oneLine';
         
         const { error: progressError } = await supabase
@@ -339,12 +347,12 @@ export function GameSetup() {
 
   // Adapt game configs to pass down the pattern information correctly
   const adaptedGameConfigsForForms = gameConfigs.map(config => {
-    const activePatterns = Object.entries(config.patterns)
+    const activePatterns = Object.entries(config.patterns || {})
       .filter(([_, patternConfig]) => patternConfig.active)
       .map(([patternId]) => patternId);
       
     const prizes: Record<string, PrizeDetails> = {};
-    Object.entries(config.patterns).forEach(([patternId, patternConfig]) => {
+    Object.entries(config.patterns || {}).forEach(([patternId, patternConfig]) => {
       prizes[patternId] = {
         amount: patternConfig.prizeAmount,
         description: patternConfig.description,

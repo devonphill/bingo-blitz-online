@@ -3,7 +3,7 @@ import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { GameSession, GameConfig } from '@/types';
 import { convertFromLegacyConfig } from '@/utils/callerSessionHelper';
-import { jsonToGameConfigs } from '@/utils/jsonUtils';
+import { jsonToGameConfigs, gameConfigsToJson } from '@/utils/jsonUtils';
 
 export function useSessions() {
   const [sessions, setSessions] = useState<GameSession[]>([]);
@@ -34,10 +34,12 @@ export function useSessions() {
           let processedGamesConfig: GameConfig[] = [];
           
           if (session.games_config) {
-            console.log(`Raw games_config from database for session ${session.id}:`, session.games_config);
-            // Use jsonToGameConfigs from jsonUtils.ts to safely convert the JSON data
+            console.log(`Session ${session.id} - Raw games_config:`, session.games_config);
+            
+            // Use jsonToGameConfigs to safely convert the JSON data
+            // This explicitly handles the active flag to ensure it's only true if explicitly set to true
             processedGamesConfig = jsonToGameConfigs(session.games_config);
-            console.log(`Processed games_config for session ${session.id}:`, processedGamesConfig);
+            console.log(`Session ${session.id} - Processed games_config:`, processedGamesConfig);
           }
           
           return {
@@ -92,14 +94,17 @@ export function useSessions() {
       // Convert the updates to database column names
       const dbUpdates: Record<string, any> = {};
       if ('gameType' in updates) dbUpdates.game_type = updates.gameType;
-      if ('games_config' in updates) {
-        console.log("Updates to save to database:", updates.games_config);
-        // Import gameConfigsToJson from jsonUtils.ts
-        const { gameConfigsToJson } = require('@/utils/jsonUtils');
+      
+      if ('games_config' in updates && updates.games_config) {
+        console.log("games_config updates to save:", updates.games_config);
+        
         // Convert the GameConfig[] to JSON for storage
-        dbUpdates.games_config = gameConfigsToJson(updates.games_config || []);
+        // This ensures patterns are only active if explicitly true
+        dbUpdates.games_config = gameConfigsToJson(updates.games_config);
+        
         console.log("Converted games_config for database:", dbUpdates.games_config);
       }
+      
       if ('status' in updates) dbUpdates.status = updates.status;
       if ('lifecycle_state' in updates) dbUpdates.lifecycle_state = updates.lifecycle_state;
       if ('current_game' in updates) dbUpdates.current_game = updates.current_game;

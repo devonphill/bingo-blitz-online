@@ -26,44 +26,33 @@ export function useGameData(sessionId: string | undefined) {
         .eq('id', sessionId)
         .single();
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       console.log("Raw session data from database:", data);
       let configs: GameConfig[] = [];
       const numberOfGames = data.number_of_games || 1;
       const gameType = data.game_type || 'mainstage';
       
-      // Check if games_config exists and is not empty
-      if (data.games_config && (
-          (Array.isArray(data.games_config) && data.games_config.length > 0) || 
-          (typeof data.games_config === 'object' && Object.keys(data.games_config).length > 0)
-      )) {
-        console.log("Games config from database:", data.games_config);
+      if (data.games_config) {
+        console.log("Raw games_config from database:", data.games_config);
         configs = jsonToGameConfigs(data.games_config);
         console.log("Parsed game configs:", configs);
       } 
       
-      // If no configs or fewer configs than needed, create defaults with NO active patterns
       if (configs.length < numberOfGames) {
         console.log(`Creating default configs for missing games (${numberOfGames} required, ${configs.length} found)`);
         
-        // Keep existing configs and add new ones as needed
         const newConfigs = Array.from({ length: numberOfGames }, (_, i) => {
           const gameNumber = i + 1;
           
-          // Use existing config if available
           if (i < configs.length && configs[i]) {
             return configs[i];
           }
           
-          // Otherwise create a default config with NO active patterns
           return createDefaultGameConfig(gameNumber, gameType as GameType, sessionId, false);
         });
         
         configs = newConfigs;
-        console.log("Final game configs:", configs);
       }
 
       setGameConfigs(configs);
@@ -90,13 +79,11 @@ export function useGameData(sessionId: string | undefined) {
     try {
       console.log("Saving game configs:", configs);
       
-      // Ensure session_id is set on all configs
       const configsWithSessionId = configs.map(config => ({
         ...config,
         session_id: sessionId
       }));
       
-      // Convert to JSON-compatible format using utility function
       const jsonConfigs = gameConfigsToJson(configsWithSessionId);
       console.log("JSON configs to save to database:", jsonConfigs);
       
@@ -117,10 +104,6 @@ export function useGameData(sessionId: string | undefined) {
       
       console.log("Game configs saved successfully");
       setGameConfigs(configsWithSessionId);
-      toast({
-        title: "Success",
-        description: "Game configurations saved successfully",
-      });
       return true;
     } catch (err) {
       console.error('Error saving game configs:', err);
@@ -167,13 +150,10 @@ export function useGameData(sessionId: string | undefined) {
     
     const currentConfig = gameConfigs[configIndex];
     
-    // Ensure patterns object exists
     const patterns = currentConfig.patterns || {};
     
-    // Ensure the pattern exists
     let patternConfig = patterns[patternId];
     if (!patternConfig) {
-      // Create a default pattern config if it doesn't exist
       patternConfig = {
         active: false,
         isNonCash: false,
@@ -182,14 +162,11 @@ export function useGameData(sessionId: string | undefined) {
       };
     }
     
-    // Apply updates
     const updatedPattern = { ...patternConfig, ...updates };
     
-    // Create new config with updated pattern
     const updatedPatterns = { ...patterns, [patternId]: updatedPattern };
     const updatedConfig = { ...currentConfig, patterns: updatedPatterns };
     
-    // Update the gameConfigs array
     const newConfigs = [...gameConfigs];
     newConfigs[configIndex] = updatedConfig;
     
@@ -201,7 +178,7 @@ export function useGameData(sessionId: string | undefined) {
     if (!config) return [];
     
     return Object.entries(config.patterns || {})
-      .filter(([_, pattern]) => pattern.active === true) // Explicitly check for true
+      .filter(([_, pattern]) => pattern.active === true)
       .map(([id]) => id);
   }, [gameConfigs]);
 
@@ -210,14 +187,6 @@ export function useGameData(sessionId: string | undefined) {
     return config?.patterns || {};
   }, [gameConfigs]);
 
-  /**
-   * Helper function to create a default game configuration
-   * @param gameNumber The game number
-   * @param gameType The game type
-   * @param sessionId Optional session ID
-   * @param activateFirstPattern Whether to activate the first pattern by default
-   * @returns A default GameConfig
-   */
   function createDefaultGameConfig(
     gameNumber: number, 
     gameType: GameType = 'mainstage', 
@@ -228,10 +197,9 @@ export function useGameData(sessionId: string | undefined) {
     const patterns: Record<string, WinPatternConfig> = {};
     
     const defaultPatterns = getDefaultPatternsForType(gameType);
-    defaultPatterns.forEach((patternId, index) => {
+    defaultPatterns.forEach((patternId) => {
       patterns[patternId] = {
-        // ONLY set active for the first pattern and only if specifically requested
-        active: index === 0 && activateFirstPattern,
+        active: false,
         isNonCash: false,
         prizeAmount: '10.00',
         description: `${patternId} Prize`

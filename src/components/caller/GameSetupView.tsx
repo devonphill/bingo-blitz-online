@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { GameType, PrizeDetails, GameConfig, WinPatternConfig, isLegacyGameConfig, convertLegacyGameConfig } from '@/types';
+import { GameType, PrizeDetails, GameConfig, WinPatternConfig } from '@/types';
 import { WinPattern, WIN_PATTERNS } from '@/types/winPattern';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ import { WinPatternSelector } from './WinPatternSelector';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { jsonToGameConfigs, gameConfigsToJson } from '@/utils/jsonUtils';
+import { gameConfigsToJson } from '@/utils/jsonUtils';
 
 interface GameSetupViewProps {
   currentGameType: GameType;
@@ -101,7 +101,7 @@ export function GameSetupView({
     const patterns: Record<string, WinPatternConfig> = {};
     
     WIN_PATTERNS[type].forEach(pattern => {
-      const existingPattern = updatedConfigs[gameIndex].patterns[pattern.id];
+      const existingPattern = updatedConfigs[gameIndex]?.patterns?.[pattern.id];
       if (existingPattern) {
         patterns[pattern.id] = existingPattern;
       } else {
@@ -131,6 +131,15 @@ export function GameSetupView({
     const updatedConfigs = [...gameConfigs];
     const patternId = pattern.id;
     
+    if (!updatedConfigs[gameIndex]) {
+      console.error(`Game config for index ${gameIndex} does not exist`);
+      return;
+    }
+    
+    if (!updatedConfigs[gameIndex].patterns) {
+      updatedConfigs[gameIndex].patterns = {};
+    }
+    
     if (updatedConfigs[gameIndex].patterns[patternId]) {
       updatedConfigs[gameIndex].patterns[patternId] = {
         ...updatedConfigs[gameIndex].patterns[patternId],
@@ -154,6 +163,11 @@ export function GameSetupView({
   
   const handlePrizeChange = (gameIndex: number, patternId: string, prizeDetails: PrizeDetails) => {
     const updatedConfigs = [...gameConfigs];
+    
+    if (!updatedConfigs[gameIndex] || !updatedConfigs[gameIndex].patterns) {
+      console.error(`Cannot update prize: game or patterns object doesn't exist for game ${gameIndex + 1}`);
+      return;
+    }
     
     updatedConfigs[gameIndex].patterns[patternId] = {
       ...updatedConfigs[gameIndex].patterns[patternId],
@@ -185,6 +199,7 @@ export function GameSetupView({
     setIsSaving(true);
     try {
       // Convert GameConfig[] to a JSON-compatible format for the database
+      // This ensures patterns are only active if explicitly true
       const jsonConfigs = gameConfigsToJson(configsToSave);
       const sessionId = localStorage.getItem('currentSessionId');
       
@@ -264,14 +279,14 @@ export function GameSetupView({
     const gameType = config.gameType;
     const patterns = WIN_PATTERNS[gameType] || [];
     
-    const activePatterns = Object.entries(config.patterns)
+    const activePatterns = Object.entries(config.patterns || {})
       .filter(([_, patternConfig]) => patternConfig.active === true)
       .map(([patternId]) => patternId);
       
     console.log(`Game ${gameNumber} active patterns:`, activePatterns);
       
     const prizeDetails: Record<string, PrizeDetails> = {};
-    Object.entries(config.patterns).forEach(([patternId, patternConfig]) => {
+    Object.entries(config.patterns || {}).forEach(([patternId, patternConfig]) => {
       prizeDetails[patternId] = {
         amount: patternConfig.prizeAmount,
         description: patternConfig.description,
@@ -332,7 +347,7 @@ export function GameSetupView({
                 await saveGameConfigs();
                 onGoLive();
               }}
-              disabled={isGoingLive || (gameConfigs.length > 0 && !Object.values(gameConfigs[0].patterns).some(p => p.active === true))}
+              disabled={isGoingLive || (gameConfigs.length > 0 && !Object.values(gameConfigs[0].patterns || {}).some(p => p.active === true))}
               variant="default"
               className="flex-1"
             >

@@ -3,18 +3,7 @@ import { Json } from '@/types/json';
 import { GameConfig } from '@/types';
 
 /**
- * Prepares data for storage in the database by converting it to a JSON-compatible format
- * @param data Any data structure to be stored in the database
- * @returns A JSON-compatible representation of the data
- */
-export function prepareForDatabase(data: any): Json {
-  return JSON.parse(JSON.stringify(data));
-}
-
-/**
- * Safely parses a JSON string or object into the specified type
- * @param jsonData The JSON string or object to parse
- * @returns The parsed data as the specified type, or null if parsing fails
+ * Safely parses a JSON string or object
  */
 export function parseJson<T>(jsonData: string | Json | null): T | null {
   if (jsonData === null || jsonData === undefined) {
@@ -33,26 +22,8 @@ export function parseJson<T>(jsonData: string | Json | null): T | null {
 }
 
 /**
- * Prepares an object to be safely stored as JSON in the database
- * @param data Any data structure to be stored in the database
- * @returns A JSON-compatible representation of the data
- */
-export function toJsonSafe<T>(data: T): Json {
-  if (!data) return null;
-  
-  try {
-    // Perform a deep copy via JSON to ensure all data is serializable
-    return JSON.parse(JSON.stringify(data));
-  } catch (err) {
-    console.error('Error converting to safe JSON:', err);
-    return null;
-  }
-}
-
-/**
- * Specifically prepares GameConfig[] for database storage, ensuring only necessary data is included
- * @param configs Array of GameConfig objects
- * @returns A JSON-compatible representation of the GameConfig array
+ * Converts GameConfig[] array to a database-safe JSON format
+ * CRITICAL: Ensures patterns are only active if explicitly set to true
  */
 export function gameConfigsToJson(configs: GameConfig[]): Json {
   if (!configs || !Array.isArray(configs) || configs.length === 0) {
@@ -61,20 +32,15 @@ export function gameConfigsToJson(configs: GameConfig[]): Json {
   }
   
   try {
-    // Create a clean version with only the required fields to avoid circular references
     const simplifiedConfigs = configs.map(config => {
-      if (!config) {
-        console.warn("gameConfigsToJson: Invalid config item in array");
-        return null;
-      }
+      if (!config) return null;
       
       const patterns: Record<string, any> = {};
       
-      // Only copy pattern properties we need in the database
       if (config.patterns) {
         Object.entries(config.patterns).forEach(([patternId, patternConfig]) => {
           patterns[patternId] = {
-            // CRITICAL: Only set active to true if explicitly true in the source
+            // Only set active to true if explicitly true in source
             active: patternConfig.active === true,
             isNonCash: patternConfig.isNonCash === true,
             prizeAmount: patternConfig.prizeAmount || '10.00',
@@ -91,7 +57,6 @@ export function gameConfigsToJson(configs: GameConfig[]): Json {
       };
     }).filter(item => item !== null);
     
-    console.log("Preparing JSON for database storage:", simplifiedConfigs);
     return JSON.parse(JSON.stringify(simplifiedConfigs));
   } catch (err) {
     console.error("Error in gameConfigsToJson:", err);
@@ -101,8 +66,7 @@ export function gameConfigsToJson(configs: GameConfig[]): Json {
 
 /**
  * Convert JSON data from database to GameConfig[] array
- * @param jsonData JSON data from database
- * @returns Parsed GameConfig array or empty array if invalid
+ * CRITICAL: Ensures patterns are only active if explicitly true in DB
  */
 export function jsonToGameConfigs(jsonData: Json): GameConfig[] {
   if (!jsonData) {
@@ -111,18 +75,13 @@ export function jsonToGameConfigs(jsonData: Json): GameConfig[] {
   }
   
   try {
-    // Parse string if needed
     const parsed = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
     
-    // If the data is empty or not an array, return an empty array
     if (!Array.isArray(parsed) || parsed.length === 0) {
       console.log('jsonToGameConfigs: Data is empty or not an array, returning empty array');
       return [];
     }
     
-    console.log("Parsing JSON from database:", parsed);
-    
-    // Convert each item to a proper GameConfig
     const result = parsed.map((item: any) => {
       if (!item || typeof item !== 'object') {
         return {
@@ -133,13 +92,12 @@ export function jsonToGameConfigs(jsonData: Json): GameConfig[] {
         };
       }
       
-      // Ensure patterns is an object
       const patterns: Record<string, any> = {};
       
       if (item.patterns && typeof item.patterns === 'object') {
         Object.entries(item.patterns).forEach(([patternId, config]: [string, any]) => {
           patterns[patternId] = {
-            // CRITICAL: Only set active to true if explicitly true in the database
+            // CRITICAL: Only set active to true if explicitly true in DB
             active: config?.active === true,
             isNonCash: config?.isNonCash === true,
             prizeAmount: config?.prizeAmount || '10.00',
@@ -156,7 +114,6 @@ export function jsonToGameConfigs(jsonData: Json): GameConfig[] {
       };
     });
     
-    console.log("Parsed game configs from database:", result);
     return result;
   } catch (err) {
     console.error('Error parsing game configs:', err);
