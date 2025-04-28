@@ -9,14 +9,15 @@ export const Footer = () => {
   useEffect(() => {
     const fetchVersion = async () => {
       try {
+        // Query directly from the version_tracker table to get the current version
         const { data, error } = await supabase
           .from('version_tracker')
           .select('version')
-          .eq('id', 1)
           .single();
           
         if (error) {
           console.error('Error fetching version:', error);
+          setVersion('1.0'); // Default fallback version
           return;
         }
         
@@ -25,6 +26,7 @@ export const Footer = () => {
         }
       } catch (err) {
         console.error('Failed to fetch version:', err);
+        setVersion('1.0'); // Default fallback version
       } finally {
         setLoading(false);
       }

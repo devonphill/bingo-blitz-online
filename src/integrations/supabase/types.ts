@@ -413,24 +413,6 @@ export type Database = {
           },
         ]
       }
-      version_tracker: {
-        Row: {
-          created_at: string
-          id: number
-          version: number | null
-        }
-        Insert: {
-          created_at?: string
-          id: number
-          version?: number | null
-        }
-        Update: {
-          created_at?: string
-          id?: number
-          version?: number | null
-        }
-        Relationships: []
-      }
     }
     Views: {
       [_ in never]: never

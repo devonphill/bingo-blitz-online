@@ -8,6 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
  */
 export async function incrementVersion(increment: number = 0.5): Promise<number | undefined> {
   try {
+    // Type assertion to handle the response type properly
     const { data, error } = await supabase
       .rpc('increment_version', { increment_value: increment });
       
@@ -16,7 +17,8 @@ export async function incrementVersion(increment: number = 0.5): Promise<number 
       return undefined;
     }
     
-    return data;
+    // Cast the response to number since we know it returns a numeric value
+    return data as number;
   } catch (err) {
     console.error('Failed to increment version:', err);
     return undefined;
