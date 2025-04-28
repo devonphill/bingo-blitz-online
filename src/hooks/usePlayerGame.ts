@@ -34,7 +34,8 @@ export function usePlayerGame(playerCode: string | null | undefined) {
   useEffect(() => {
     async function loadPlayerData() {
       if (!playerCode) {
-        setErrorMessage('Player code is missing.');
+        console.log('Player code is missing');
+        setErrorMessage('Player code is missing. Please join using your player code.');
         setIsLoading(false);
         setLoadingStep('completed');
         return;
@@ -42,8 +43,10 @@ export function usePlayerGame(playerCode: string | null | undefined) {
       
       setIsLoading(true);
       setLoadingStep('fetching-player');
+      console.log('Loading player data for player code:', playerCode);
       
       try {
+        // Query to fetch player data by player_code
         const { data: playerData, error: playerError } = await supabase
           .from('players')
           .select('*')
@@ -51,14 +54,21 @@ export function usePlayerGame(playerCode: string | null | undefined) {
           .single();
           
         if (playerError || !playerData) {
+          console.error('Error fetching player:', playerError);
           throw new Error(`Player not found: ${playerError?.message || 'Unknown error'}`);
         }
         
+        console.log('Found player data:', playerData);
         setPlayerName(playerData.nickname);
         setPlayerId(playerData.id);
         
         const sessionId = playerData.session_id;
+        if (!sessionId) {
+          console.error('No session ID in player data');
+          throw new Error('No session ID associated with player');
+        }
         
+        console.log('Fetching session data for session ID:', sessionId);
         setLoadingStep('fetching-session');
         const { data: sessionData, error: sessionError } = await supabase
           .from('game_sessions')
@@ -67,8 +77,11 @@ export function usePlayerGame(playerCode: string | null | undefined) {
           .single();
           
         if (sessionError || !sessionData) {
+          console.error('Error fetching session:', sessionError);
           throw new Error(`Session not found: ${sessionError?.message || 'Unknown error'}`);
         }
+        
+        console.log('Found session data:', sessionData);
         
         // Create GameSession object with proper typing
         const gameConfigs = parseGameConfigs(sessionData.games_config);
@@ -91,17 +104,55 @@ export function usePlayerGame(playerCode: string | null | undefined) {
         // Set game type correctly
         setGameType(sessionData.game_type as GameType);
         
+        // Now fetch session progress to get active win patterns and called numbers
+        console.log('Fetching session progress for session ID:', sessionId);
+        setLoadingStep('fetching-progress');
+        const { data: progressData, error: progressError } = await supabase
+          .from('sessions_progress')
+          .select('*')
+          .eq('session_id', sessionId)
+          .single();
+          
+        if (progressData) {
+          console.log('Found session progress:', progressData);
+          setCalledItems(progressData.called_numbers || []);
+          
+          if (progressData.called_numbers?.length > 0) {
+            setLastCalledItem(progressData.called_numbers[progressData.called_numbers.length - 1]);
+          }
+          
+          if (progressData.current_win_pattern) {
+            setActiveWinPatterns([progressData.current_win_pattern]);
+          }
+        } else if (progressError) {
+          console.warn('Error fetching session progress:', progressError);
+          // Not failing on this error as it's not critical
+        }
+        
         // For now, skip fetching current_game_state since it doesn't exist in the table
         // We'll use sessions_progress instead
         
         setLoadingStep('fetching-tickets');
+        console.log('Fetching tickets for player ID:', playerData.id);
         const { data: ticketData, error: ticketError } = await supabase
           .from('assigned_tickets')
           .select('*')
           .eq('player_id', playerData.id);
           
         if (ticketError) {
+          console.error('Error fetching tickets:', ticketError);
           throw new Error(`Tickets not found: ${ticketError?.message || 'Unknown error'}`);
+        }
+
+        if (!ticketData || ticketData.length === 0) {
+          console.warn('No tickets found for player');
+          toast({
+            title: "No tickets found",
+            description: "You don't have any tickets assigned yet. Contact the game organizer.",
+            variant: "default"
+          });
+        } else {
+          console.log(`Found ${ticketData.length} tickets for player`);
         }
         
         // Map database ticket fields to our Ticket interface
@@ -117,18 +168,21 @@ export function usePlayerGame(playerCode: string | null | undefined) {
         }));
         
         setTickets(mappedTickets);
+        console.log('Player game setup complete');
         
       } catch (err) {
-        setErrorMessage((err as Error).message);
-        console.error('Error loading player data:', err);
+        const errorMsg = (err as Error).message;
+        console.error('Error in loadPlayerData:', errorMsg, err);
+        setErrorMessage(errorMsg);
       } finally {
         setIsLoading(false);
         setLoadingStep('completed');
+        console.log('Loading player data completed. Loading state set to false.');
       }
     }
     
     loadPlayerData();
-  }, [playerCode]);
+  }, [playerCode, toast]);
 
   const handleClaimBingo = useCallback(async (ticketInfo: Ticket): Promise<boolean> => {
     if (!currentSession || !playerId) return false;

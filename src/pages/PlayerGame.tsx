@@ -7,8 +7,6 @@ import { useSessionProgress } from '@/hooks/useSessionProgress';
 import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 import PlayerGameLayout from '@/components/game/PlayerGameLayout';
-import { WIN_PATTERNS } from '@/types/winPattern';
-import { supabase } from '@/integrations/supabase/client';
 import { Ticket } from '@/types';
 
 export default function PlayerGame() {
@@ -18,21 +16,25 @@ export default function PlayerGame() {
 
   // Use stored player code or URL parameter
   useEffect(() => {
+    console.log("PlayerGame initialized with playerCode:", urlPlayerCode);
     const storedPlayerCode = localStorage.getItem('playerCode');
     
     if (urlPlayerCode) {
+      console.log("Storing player code from URL:", urlPlayerCode);
       localStorage.setItem('playerCode', urlPlayerCode);
     } else if (!storedPlayerCode) {
+      console.log("No player code found, redirecting to join page");
       toast({
         title: 'Player Code Missing',
         description: 'Please enter your player code to join the game.',
         variant: 'destructive'
       });
-      navigate('/join');
+      navigate('/player/join');
     }
   }, [urlPlayerCode, navigate, toast]);
 
   const playerCode = urlPlayerCode || localStorage.getItem('playerCode');
+  console.log("Using player code:", playerCode);
   
   const {
     tickets,
@@ -62,11 +64,27 @@ export default function PlayerGame() {
   // Create a wrapper function that matches the expected signature
   const handleClaimBingo = useCallback(() => {
     if (!tickets || tickets.length === 0) {
+      console.log("Cannot claim bingo: no tickets available");
       return Promise.resolve(false);
     }
+    console.log("Claiming bingo with ticket:", tickets[0]);
     // Call the original handler with the first ticket
     return submitBingoClaim(tickets[0]);
   }, [submitBingoClaim, tickets]);
+  
+  // Log component state for debugging
+  useEffect(() => {
+    console.log("PlayerGame render state:", {
+      isLoading,
+      loadingStep,
+      hasTickets: tickets && tickets.length > 0,
+      hasSession: !!currentSession,
+      sessionState: currentSession?.lifecycle_state,
+      sessionStatus: currentSession?.status,
+      gameState: currentGameState?.status,
+      errorMessage
+    });
+  }, [isLoading, loadingStep, tickets, currentSession, currentGameState, errorMessage]);
   
   // Only attempt to render the game if we have all needed data
   const isInitialLoading = isLoading && loadingStep !== 'completed';
@@ -83,6 +101,13 @@ export default function PlayerGame() {
     (!isGameActive && !hasTickets && loadingStep !== 'completed');
 
   if (shouldShowLoader) {
+    console.log("Showing PlayerGameLoader with:", {
+      isLoading,
+      errorMessage,
+      currentSession,
+      loadingStep
+    });
+    
     return (
       <PlayerGameLoader 
         isLoading={isLoading} 
@@ -105,6 +130,7 @@ export default function PlayerGame() {
                        currentSession?.numberOfGames || 
                        1;
 
+  console.log("Rendering main player game interface");
   return (
     <React.Fragment>
       <PlayerGameLayout

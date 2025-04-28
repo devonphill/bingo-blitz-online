@@ -1,89 +1,96 @@
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useSessionContext } from '@/contexts/SessionProvider';
 import { useToast } from '@/hooks/use-toast';
-import { useNavigate } from 'react-router-dom';
+import { Loader } from 'lucide-react';
 
 export default function PlayerJoinForm() {
   const [playerCode, setPlayerCode] = useState('');
-  const [isJoining, setIsJoining] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
   const { joinSession } = useSessionContext();
   const { toast } = useToast();
-  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsJoining(true);
-
+    
+    if (!playerCode.trim()) {
+      toast({
+        title: "Missing Information",
+        description: "Please enter your player code.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    setIsLoading(true);
+    
     try {
-      const result = await joinSession(playerCode.toUpperCase());
-      if (result.success && result.playerId) {
-        localStorage.setItem('playerCode', playerCode.toUpperCase());
-        localStorage.setItem('playerNickname', result.playerCode || '');
-        localStorage.setItem('tickets', '1'); // Default value or fetch from result if available
+      console.log("Joining game with player code:", playerCode);
+      const result = await joinSession(playerCode);
+      
+      if (result.success) {
+        console.log("Successfully joined game:", result);
+        localStorage.setItem('playerCode', playerCode);
         toast({
-          title: 'Login successful',
-          description: `Welcome, you've joined the game!`,
+          title: "Success",
+          description: "You have joined the game!",
         });
-        navigate('/player/game');
+        
+        // Navigate to the player game page with the player code in the URL
+        console.log("Navigating to game page with player code:", playerCode);
+        navigate(`/player/game/${playerCode}`);
       } else {
+        console.error("Error joining game:", result.error);
         toast({
-          title: 'Invalid code',
-          description: result.error || 'No player found with this code. Please check and try again.',
-          variant: 'destructive'
+          title: "Could Not Join Game",
+          description: result.error || "Invalid player code. Please try again.",
+          variant: "destructive"
         });
       }
-    } catch (err) {
+    } catch (error) {
+      console.error("Exception during join:", error);
       toast({
-        title: 'Error',
-        description: 'Failed to login. Please try again.',
-        variant: 'destructive'
+        title: "Error",
+        description: "Something went wrong. Please try again.",
+        variant: "destructive"
       });
     } finally {
-      setIsJoining(false);
+      setIsLoading(false);
     }
   };
 
   return (
-    <Card className="w-full max-w-md mx-auto animate-fade-in">
-      <CardHeader className="space-y-1 text-center">
-        <CardTitle className="text-3xl font-bold tracking-tight">
-          Join Bingo Game
-        </CardTitle>
-        <CardDescription>
-          Enter your unique 6-character player code to log in.
-        </CardDescription>
+    <Card className="w-[350px] mx-auto">
+      <CardHeader>
+        <CardTitle>Join Bingo Game</CardTitle>
+        <CardDescription>Enter your player code to join.</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="playerCode">Player Code</Label>
-            <Input 
-              id="playerCode" 
-              type="text" 
+            <Input
+              id="playerCode"
+              placeholder="Enter your player code"
               value={playerCode}
-              onChange={(e) => setPlayerCode(e.target.value.toUpperCase())}
-              required
-              placeholder="Enter 6-character code"
-              maxLength={6}
-              minLength={6}
-              pattern="[A-Z0-9]{6}"
-              title="6 alphanumeric characters, uppercase only"
+              onChange={(e) => setPlayerCode(e.target.value)}
+              disabled={isLoading}
             />
           </div>
-          <CardFooter>
-            <Button 
-              className="w-full bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-              type="submit"
-              disabled={isJoining}
-            >
-              {isJoining ? 'Joining...' : 'Join Game'}
-            </Button>
-          </CardFooter>
+          <Button type="submit" className="w-full" disabled={isLoading}>
+            {isLoading ? (
+              <>
+                <Loader className="mr-2 h-4 w-4 animate-spin" />
+                Joining...
+              </>
+            ) : (
+              'Join Game'
+            )}
+          </Button>
         </form>
       </CardContent>
     </Card>
