@@ -51,8 +51,8 @@ export default function PlayerGameLoader({
     );
   }
 
-  // If there's an error, show the error message
-  if (errorMessage) {
+  // If there's a critical error that prevents loading the session, show error message
+  if (errorMessage && !currentSession) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="bg-white shadow-lg rounded-lg p-6 max-w-md w-full">
@@ -123,7 +123,7 @@ export default function PlayerGameLoader({
         <div className="flex flex-wrap justify-center gap-4 mb-6">
           <div className="flex items-center text-gray-600">
             <Calendar className="h-4 w-4 mr-1" />
-            <span>{formatSessionDate(currentSession.session_date)}</span>
+            <span>{formatSessionDate(currentSession.sessionDate)}</span>
           </div>
           <div className="flex items-center text-gray-600">
             <Clock className="h-4 w-4 mr-1" />
@@ -142,6 +142,20 @@ export default function PlayerGameLoader({
                 ? "The game is waiting to be activated." 
                 : "The game is being set up..."}
         </p>
+        
+        {/* Show connection error as a warning, not a blocking error */}
+        {errorMessage && (
+          <div className="bg-amber-50 border border-amber-300 rounded-md p-4 mb-6">
+            <div className="flex">
+              <AlertCircle className="h-5 w-5 text-amber-500 mr-2 flex-shrink-0" />
+              <div>
+                <h4 className="text-sm font-medium text-amber-800">Connection Warning</h4>
+                <p className="text-sm text-amber-700 mt-1">{errorMessage}</p>
+                <p className="text-xs text-amber-600 mt-2">You'll still be able to join when the game starts.</p>
+              </div>
+            </div>
+          </div>
+        )}
         
         <div className="space-y-4">
           <div className="bg-gray-50 p-4 rounded-md">

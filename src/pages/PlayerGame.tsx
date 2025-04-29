@@ -119,9 +119,18 @@ export default function PlayerGame() {
   }, [submitBingoClaim, tickets, bingoSync]);
   
   // Determine error message with better priority handling
+  // For the waiting room, WebSocket errors should not be blockers
   const effectiveErrorMessage = playerCode 
-    ? (bingoSync.connectionError || errorMessage || '')
+    ? (isSessionActive && isGameActive && isGameLive ? (bingoSync.connectionError || errorMessage || '') : errorMessage || '')
     : "Player code is required. Please join the game again.";
+  
+  // If game is active and WebSocket isn't, try to reconnect
+  useEffect(() => {
+    if (isSessionActive && isGameActive && isGameLive && !bingoSync.isConnected && bingoSync.reconnect) {
+      console.log("Game is active but not connected to WebSocket, attempting reconnect");
+      bingoSync.reconnect();
+    }
+  }, [isSessionActive, isGameActive, isGameLive, bingoSync]);
   
   // Debug logging
   useEffect(() => {
@@ -172,29 +181,30 @@ export default function PlayerGame() {
   const hasTickets = tickets && tickets.length > 0;
   const hasSession = !!currentSession;
   
-  // Show loader if:
+  // Waiting room conditions - show loader if:
   // 1. Still loading
-  // 2. Error occurred
+  // 2. Critical error that prevents loading (but not WebSocket errors)
   // 3. No session found
   // 4. Session exists but is not active yet (waiting room)
   const shouldShowLoader = 
     isInitialLoading || 
-    !!effectiveErrorMessage || 
+    (!hasSession && !!errorMessage) || 
     !hasSession || 
     (!isGameActive || !isGameLive || !isSessionActive);
 
   if (shouldShowLoader) {
     console.log("Showing PlayerGameLoader with:", {
       isLoading,
-      errorMessage: effectiveErrorMessage,
+      errorMessage: (bingoSync.connectionState === 'error' && currentSession) ? bingoSync.connectionError : errorMessage,
       currentSession,
       loadingStep
     });
     
+    // Pass WebSocket connection error to loader, but don't make it fatal for waiting room
     return (
       <PlayerGameLoader 
         isLoading={isLoading} 
-        errorMessage={effectiveErrorMessage} 
+        errorMessage={(bingoSync.connectionState === 'error' && currentSession) ? bingoSync.connectionError : errorMessage}
         currentSession={currentSession}
         loadingStep={loadingStep}
         sessionProgress={sessionProgress}
