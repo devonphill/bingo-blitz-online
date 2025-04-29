@@ -12,13 +12,17 @@ interface CallerTicketDisplayProps {
     position?: number;
   };
   calledNumbers: number[];
-  lastCalledNumber: number | null;
+  lastCalledNumber?: number | null;
+  gameType?: string;
+  winPattern?: string;
 }
 
 export default function CallerTicketDisplay({ 
   ticket, 
   calledNumbers, 
-  lastCalledNumber 
+  lastCalledNumber,
+  gameType,
+  winPattern
 }: CallerTicketDisplayProps) {
   const [flashingNumber, setFlashingNumber] = useState<number | null>(null);
   
@@ -28,7 +32,9 @@ export default function CallerTicketDisplay({
     perm: ticket.perm || 'No perm',
     position: ticket.position || 'No position',
     layoutMask: ticket.layoutMask || ticket.layout_mask || 'No layout mask',
-    numbersLength: ticket.numbers?.length || 0
+    numbersLength: ticket.numbers?.length || 0,
+    gameType,
+    winPattern
   });
   
   // Process grid layout from mask - memoized to avoid recalculating

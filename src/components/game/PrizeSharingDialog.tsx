@@ -14,14 +14,14 @@ interface PrizeSharingDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: (isShared: boolean) => void;
-  playerCount: number;
+  winnerCount: number;
 }
 
 export default function PrizeSharingDialog({
   isOpen,
   onClose,
   onConfirm,
-  playerCount
+  winnerCount
 }: PrizeSharingDialogProps) {
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -29,7 +29,7 @@ export default function PrizeSharingDialog({
         <DialogHeader>
           <DialogTitle>Multiple Valid Claims Found</DialogTitle>
           <DialogDescription>
-            {playerCount} players have valid claims. How should the prize be awarded?
+            {winnerCount} players have valid claims. How should the prize be awarded?
           </DialogDescription>
         </DialogHeader>
         <div className="flex justify-end space-x-2">

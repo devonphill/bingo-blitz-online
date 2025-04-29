@@ -160,6 +160,7 @@ export function usePlayerGame(playerCode: string | null) {
     };
   }, [playerCode, currentSession, toast]);
   
+  // Load player data and session info
   useEffect(() => {
     if (!playerCode) {
       console.error("Player code is missing.");
@@ -280,7 +281,7 @@ export function usePlayerGame(playerCode: string | null) {
     };
     
     loadPlayerData();
-  }, [playerCode, toast]);
+  }, [playerCode]);
   
   return {
     playerName,
