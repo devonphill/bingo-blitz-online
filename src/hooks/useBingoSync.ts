@@ -54,12 +54,8 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     setConnectionState('connecting');
 
     // Construct WebSocket URL with query parameters
-    let wsUrl = new URL("/functions/v1/bingo-hub", window.location.origin);
-    
-    // When running in development using localhost, point to the deployed Supabase URL
-    if (window.location.hostname === 'localhost') {
-      wsUrl = new URL("https://weqosgnuiixccghdoccw.functions.supabase.co/bingo-hub");
-    }
+    const domain = window.location.origin;
+    const wsUrl = new URL(`${domain}/functions/v1/bingo-hub`);
     
     wsUrl.searchParams.append('type', 'player');
     wsUrl.searchParams.append('sessionId', sessionId);

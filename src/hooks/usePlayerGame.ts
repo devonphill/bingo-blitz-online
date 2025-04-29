@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -161,7 +162,11 @@ export function usePlayerGame(playerCode: string | null) {
   
   // Load player data and session info
   useEffect(() => {
-    if (!playerCode || playerCode === '') {
+    // Validate playerCode - make sure to clear error message if playerCode is valid
+    if (playerCode && playerCode.trim() !== '') {
+      // Reset error message since we have a valid code
+      setErrorMessage('');
+    } else {
       console.error("Player code is missing or empty.");
       setErrorMessage("Player code is required. Please join the game again.");
       setIsLoading(false);
@@ -295,7 +300,7 @@ export function usePlayerGame(playerCode: string | null) {
     };
     
     loadPlayerData();
-  }, [playerCode]); // Removed toast from dependency array to fix deep type instantiation
+  }, [playerCode]);
   
   return {
     playerName,

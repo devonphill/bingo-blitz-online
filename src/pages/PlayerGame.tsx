@@ -24,28 +24,31 @@ export default function PlayerGame() {
   // Handle player code initialization
   useEffect(() => {
     console.log("PlayerGame initialized with playerCode from URL:", urlPlayerCode);
-    const storedPlayerCode = localStorage.getItem('playerCode');
     
-    // Priority: URL param > localStorage > redirect to join
-    if (urlPlayerCode) {
+    if (urlPlayerCode && urlPlayerCode.trim() !== '') {
       console.log("Using player code from URL:", urlPlayerCode);
       localStorage.setItem('playerCode', urlPlayerCode);
       setPlayerCode(urlPlayerCode);
       setLoadingPlayerCode(false);
-    } else if (storedPlayerCode) {
-      console.log("Using stored player code:", storedPlayerCode);
-      setPlayerCode(storedPlayerCode);
-      // Redirect to have the code in the URL for better bookmarking/sharing
-      navigate(`/player/game/${storedPlayerCode}`, { replace: true });
-      setLoadingPlayerCode(false);
     } else {
-      console.log("No player code found, redirecting to join page");
-      toast({
-        title: 'Player Code Missing',
-        description: 'Please enter your player code to join the game.',
-        variant: 'destructive'
-      });
-      navigate('/player/join');
+      const storedPlayerCode = localStorage.getItem('playerCode');
+      
+      if (storedPlayerCode && storedPlayerCode.trim() !== '') {
+        console.log("Using stored player code:", storedPlayerCode);
+        setPlayerCode(storedPlayerCode);
+        // Redirect to have the code in the URL for better bookmarking/sharing
+        navigate(`/player/game/${storedPlayerCode}`, { replace: true });
+        setLoadingPlayerCode(false);
+      } else {
+        console.log("No player code found, redirecting to join page");
+        localStorage.removeItem('playerCode'); // Clear any invalid codes
+        toast({
+          title: 'Player Code Missing',
+          description: 'Please enter your player code to join the game.',
+          variant: 'destructive'
+        });
+        navigate('/player/join');
+      }
     }
   }, [urlPlayerCode, navigate, toast]);
 
@@ -119,9 +122,10 @@ export default function PlayerGame() {
   }, [submitBingoClaim, tickets, bingoSync]);
   
   // Determine error message with better priority handling
-  const effectiveErrorMessage = bingoSync.connectionError && !errorMessage ? 
-    `Connection error: ${bingoSync.connectionError}` : 
-    errorMessage;
+  // This is key for fixing the "Player code is required" error showing incorrectly
+  const effectiveErrorMessage = playerCode 
+    ? (bingoSync.connectionError || errorMessage || '')
+    : "Player code is required. Please join the game again.";
   
   // Debug logging
   useEffect(() => {
@@ -143,13 +147,25 @@ export default function PlayerGame() {
   }, [playerCode, isLoading, loadingStep, tickets, currentSession, currentGameState, effectiveErrorMessage, sessionProgress, bingoSync]);
 
   // Early return during initial loading
-  if (loadingPlayerCode || !playerCode) {
+  if (loadingPlayerCode) {
     return (
       <PlayerGameLoader 
         isLoading={true} 
         errorMessage={null} 
         currentSession={null}
         loadingStep="initializing"
+      />
+    );
+  }
+  
+  // Show error if player code is missing
+  if (!playerCode) {
+    return (
+      <PlayerGameLoader 
+        isLoading={false} 
+        errorMessage="Player code is required. Please join the game again." 
+        currentSession={null}
+        loadingStep="error"
       />
     );
   }
@@ -213,7 +229,7 @@ export default function PlayerGame() {
     ? bingoSync.gameState.calledNumbers 
     : (sessionProgress?.called_numbers || calledItems || []);
   
-  const finalLastCalledNumber = bingoSync.gameState.lastCalledNumber !== null 
+  const finalLastCalledNumber = bingoSync.gameState.lastCalledNumber !== null
     ? bingoSync.gameState.lastCalledNumber
     : (finalCalledNumbers.length > 0 ? finalCalledNumbers[finalCalledNumbers.length - 1] : lastCalledItem);
   
@@ -274,7 +290,7 @@ export default function PlayerGame() {
         connectionState={bingoSync.connectionState}
       >
         <GameTypePlayspace
-          gameType={gameType}
+          gameType={gameType as any}
           tickets={tickets || []}
           calledNumbers={finalCalledNumbers}
           lastCalledNumber={finalLastCalledNumber}

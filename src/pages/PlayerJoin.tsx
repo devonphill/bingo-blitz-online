@@ -12,16 +12,20 @@ export default function PlayerJoin() {
   // Check if player already has a code stored
   useEffect(() => {
     const storedPlayerCode = localStorage.getItem('playerCode');
-    if (storedPlayerCode) {
+    if (storedPlayerCode && storedPlayerCode.trim() !== '') {
       console.log("Found existing player code:", storedPlayerCode);
       setHasStoredCode(true);
       setStoredCode(storedPlayerCode);
+    } else {
+      // Clean up any invalid stored codes
+      localStorage.removeItem('playerCode');
     }
-  }, [navigate]);
+  }, []);
 
   // Function to handle continuing with stored code
   const handleContinueWithStoredCode = () => {
-    if (storedCode) {
+    if (storedCode && storedCode.trim() !== '') {
+      console.log("Navigating to game with stored code:", storedCode);
       navigate(`/player/game/${storedCode}`);
     }
   };
@@ -31,6 +35,7 @@ export default function PlayerJoin() {
     localStorage.removeItem('playerCode');
     setHasStoredCode(false);
     setStoredCode(null);
+    console.log("Cleared stored player code");
   };
 
   if (hasStoredCode && storedCode) {
