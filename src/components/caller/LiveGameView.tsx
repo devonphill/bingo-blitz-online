@@ -1,9 +1,17 @@
+
 import React, { useState } from 'react';
-import { GameType, WinPattern } from '@/types';
+import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import CallerControls from '@/components/game/CallerControls';
 import { useGameData } from '@/hooks/useGameData';
-import { ClaimVerificationSheet } from '../game/ClaimVerificationSheet';
+import ClaimVerificationSheet from '../game/ClaimVerificationSheet';
+
+interface WinPattern {
+  id: string;
+  name: string;
+  gameType: GameType;
+  available: boolean;
+}
 
 interface LiveGameViewProps {
   gameType: GameType;

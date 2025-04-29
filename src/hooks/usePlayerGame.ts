@@ -118,9 +118,6 @@ export function usePlayerGame(playerCode: string | null) {
       setClaimStatus(null);
       return false;
     }
-    
-    // We don't reset isSubmittingClaim or claimStatus here because
-    // they'll be updated by the real-time notifications from the dealer
   }, [currentSession, currentGameState, playerId, playerName, playerCode, calledItems, lastCalledItem, activeWinPatterns, gameType, toast, isSubmittingClaim]);
   
   // Add real-time listener for claim results
@@ -228,7 +225,10 @@ export function usePlayerGame(playerCode: string | null) {
         }
         
         setCurrentSession(sessionData);
-        setGameType(sessionData.game_type || 'mainstage');
+        
+        // Use setGameType with a type assertion to ensure type safety
+        const sessionGameType = sessionData.game_type || 'mainstage';
+        setGameType(sessionGameType as GameType);
         
         // Fetch current game state - This is a placeholder, adjust based on your actual schema
         setLoadingStep('fetching-game-state');

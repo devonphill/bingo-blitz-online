@@ -1,6 +1,6 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 interface GameState {
   lastCalledNumber: number | null;

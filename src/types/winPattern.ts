@@ -1,3 +1,4 @@
+import { GameType } from './index';
 
 export interface WinPattern {
   id: string;
@@ -7,7 +8,7 @@ export interface WinPattern {
 }
 
 // Export GameType from index.ts to ensure consistency
-import { GameType } from './index';
+// import { GameType } from './index';
 
 export const WIN_PATTERNS: { [key in GameType]: WinPattern[] } = {
   mainstage: [

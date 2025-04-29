@@ -90,7 +90,7 @@ export default function PlayerGame() {
       return Promise.resolve(false);
     }
     console.log("Claiming bingo with ticket:", tickets[0]);
-    return submitBingoClaim(tickets[0]);
+    return submitBingoClaim();
   }, [submitBingoClaim, tickets]);
   
   useEffect(() => {
