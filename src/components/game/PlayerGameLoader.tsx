@@ -2,7 +2,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { GameSession } from "@/types";
-import { AlertCircle, RefreshCw, Info } from "lucide-react";
+import { AlertCircle, RefreshCw, Info, Calendar, Clock } from "lucide-react";
 
 interface Props {
   isLoading: boolean;
@@ -25,6 +25,17 @@ export default function PlayerGameLoader({
     console.log("PlayerGameLoader - Session data:", currentSession);
     console.log("PlayerGameLoader - Loading step:", loadingStep);
   }, [logCacheKey, currentSession, loadingStep]);
+
+  // Format date and time for display
+  const formatSessionDate = (dateStr?: string) => {
+    if (!dateStr) return 'Not specified';
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString();
+    } catch (e) {
+      return dateStr;
+    }
+  };
 
   // If we're in a loading state, show the loading indicator
   if (isLoading) {
@@ -105,8 +116,24 @@ export default function PlayerGameLoader({
         <div className="flex items-center justify-center mb-4 text-amber-500">
           <Info size={40} />
         </div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-4 text-center">Waiting for game to start</h2>
-        <p className="text-gray-600 mb-4 text-center">
+        
+        <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">{currentSession.name}</h2>
+        
+        {/* Session details */}
+        <div className="flex flex-wrap justify-center gap-4 mb-6">
+          <div className="flex items-center text-gray-600">
+            <Calendar className="h-4 w-4 mr-1" />
+            <span>{formatSessionDate(currentSession.session_date)}</span>
+          </div>
+          <div className="flex items-center text-gray-600">
+            <Clock className="h-4 w-4 mr-1" />
+            <span>Game {currentSession.current_game} of {currentSession.numberOfGames}</span>
+          </div>
+        </div>
+        
+        <h3 className="text-lg font-semibold text-amber-600 mb-4 text-center">Waiting for game to start</h3>
+        
+        <p className="text-gray-600 mb-6 text-center">
           {!isGameLive 
             ? "The caller has not started the game yet." 
             : !isSessionActive
@@ -115,6 +142,7 @@ export default function PlayerGameLoader({
                 ? "The game is waiting to be activated." 
                 : "The game is being set up..."}
         </p>
+        
         <div className="space-y-4">
           <div className="bg-gray-50 p-4 rounded-md">
             <p className="text-sm text-gray-500 mb-2">

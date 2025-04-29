@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -254,7 +253,7 @@ export function usePlayerGame(playerCode: string | null) {
         const sessionGameType = sessionData.game_type || 'mainstage';
         setGameType(sessionGameType as GameType);
         
-        // Fetch current game state - This is a placeholder, adjust based on your actual schema
+        // Fetch current game state
         setLoadingStep('fetching-game-state');
         const gameStateData = {
           gameNumber: sessionData.current_game || 1
@@ -262,24 +261,22 @@ export function usePlayerGame(playerCode: string | null) {
         
         setCurrentGameState(gameStateData);
         
-        // Fetch called items
-        setLoadingStep('fetching-called-numbers');
+        // Fetch called items and session progress in parallel for efficiency
+        setLoadingStep('fetching-session-data');
         
-        // Fetch from sessions_progress for called numbers
+        // Fetch from sessions_progress for called numbers and win patterns
         const { data: progressData, error: progressError } = await supabase
           .from('sessions_progress')
-          .select('called_numbers, current_win_pattern')
+          .select('called_numbers, current_win_pattern, current_prize, game_status')
           .eq('session_id', sessionData.id)
           .single();
         
         if (!isMounted) return;
         
         if (progressError) {
-          console.error("Error fetching called numbers:", progressError);
-          setErrorMessage("Failed to load called numbers. Please try again.");
-          setIsLoading(false);
-          setLoadingStep('error');
-          return;
+          // Non-critical error, just log it
+          console.warn("Warning fetching progress data:", progressError);
+          // Continue execution rather than showing an error to the user
         }
         
         if (progressData) {
@@ -289,11 +286,15 @@ export function usePlayerGame(playerCode: string | null) {
           
           if (progressData.current_win_pattern) {
             setActiveWinPatterns([progressData.current_win_pattern]);
+            
+            // Set win prize if available
+            if (progressData.current_prize) {
+              setWinPrizes({
+                [progressData.current_win_pattern]: progressData.current_prize
+              });
+            }
           }
         }
-        
-        // Fetch win prizes - adjust as needed based on your schema
-        setWinPrizes({});
         
         setIsLoading(false);
         setLoadingStep('completed');
