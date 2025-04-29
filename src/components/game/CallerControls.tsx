@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Bell } from 'lucide-react';
+import { Bell, RefreshCw, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useCallerHub } from '@/hooks/useCallerHub';
@@ -187,6 +187,52 @@ export default function CallerControls({
     onEndGame();
   };
 
+  const handleReconnectClick = () => {
+    if (callerHub.reconnect) {
+      callerHub.reconnect();
+      toast({
+        title: "Reconnecting",
+        description: "Attempting to reconnect to the game server...",
+      });
+    }
+  };
+
+  // WebSocket connection warning or error
+  const renderConnectionStatus = () => {
+    if (callerHub.connectionState === 'connected') {
+      return (
+        <div className="text-xs text-green-600 flex items-center justify-center mt-2">
+          <span className="h-2 w-2 bg-green-500 rounded-full mr-2"></span>
+          Connected to game server
+        </div>
+      );
+    } else {
+      return (
+        <div className="bg-amber-50 border border-amber-200 rounded-md p-2 mt-2">
+          <div className="flex items-center">
+            <AlertCircle className="h-4 w-4 text-amber-500 mr-2" />
+            <div className="text-xs text-amber-700">
+              {callerHub.connectionState === 'connecting' 
+                ? 'Connecting to game server...' 
+                : callerHub.connectionState === 'error' 
+                  ? 'Failed to connect to game server' 
+                  : 'Disconnected from game server'}
+            </div>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="mt-2 w-full text-xs flex items-center gap-1"
+            onClick={handleReconnectClick}
+          >
+            <RefreshCw className="h-3 w-3" />
+            Reconnect
+          </Button>
+        </div>
+      );
+    }
+  };
+
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -229,7 +275,7 @@ export default function CallerControls({
         <div className="grid grid-cols-1 gap-3">
           <Button
             className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-            disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active'}
+            disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active' || !callerHub.isConnected}
             onClick={handleCallNumber}
           >
             {isCallingNumber ? 'Calling...' : 'Call Next Number'}
@@ -251,9 +297,7 @@ export default function CallerControls({
           </Button>
         </div>
         
-        <div className="text-center text-xs text-gray-500">
-          WebSocket Status: {callerHub.connectionState}
-        </div>
+        {renderConnectionStatus()}
       </CardContent>
     </Card>
   );

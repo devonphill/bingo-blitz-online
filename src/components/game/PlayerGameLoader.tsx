@@ -2,7 +2,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { GameSession } from "@/types";
-import { AlertCircle, RefreshCw, Info, Calendar, Clock } from "lucide-react";
+import { AlertCircle, RefreshCw, Info, Calendar, Clock, Wifi, WifiOff } from "lucide-react";
 
 interface Props {
   isLoading: boolean;
@@ -34,6 +34,21 @@ export default function PlayerGameLoader({
       return date.toLocaleDateString();
     } catch (e) {
       return dateStr;
+    }
+  };
+
+  // Format time in user's locale
+  const formatSessionTime = (timeStr?: string) => {
+    if (!timeStr) return '';
+    try {
+      // If we have ISO string with time
+      if (timeStr.includes('T')) {
+        const date = new Date(timeStr);
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+      return timeStr;
+    } catch (e) {
+      return '';
     }
   };
 
@@ -108,6 +123,9 @@ export default function PlayerGameLoader({
   const isSessionActive = currentSession.status === 'active';
   const gameStatus = sessionProgress?.game_status || 'pending';
   const isGameActive = gameStatus === 'active';
+  
+  // Get session time - either from specific field or created_at
+  const sessionTime = currentSession.sessionTime || formatSessionTime(currentSession.created_at);
 
   // If the game is not active yet, show waiting message
   return (
@@ -124,6 +142,7 @@ export default function PlayerGameLoader({
           <div className="flex items-center text-gray-600">
             <Calendar className="h-4 w-4 mr-1" />
             <span>{formatSessionDate(currentSession.sessionDate)}</span>
+            {sessionTime && <span className="ml-1">{sessionTime}</span>}
           </div>
           <div className="flex items-center text-gray-600">
             <Clock className="h-4 w-4 mr-1" />
@@ -147,13 +166,26 @@ export default function PlayerGameLoader({
         {errorMessage && (
           <div className="bg-amber-50 border border-amber-300 rounded-md p-4 mb-6">
             <div className="flex">
-              <AlertCircle className="h-5 w-5 text-amber-500 mr-2 flex-shrink-0" />
+              {errorMessage.includes('connection') || errorMessage.includes('WebSocket') ? (
+                <WifiOff className="h-5 w-5 text-amber-500 mr-2 flex-shrink-0" />
+              ) : (
+                <AlertCircle className="h-5 w-5 text-amber-500 mr-2 flex-shrink-0" />
+              )}
               <div>
                 <h4 className="text-sm font-medium text-amber-800">Connection Warning</h4>
                 <p className="text-sm text-amber-700 mt-1">{errorMessage}</p>
                 <p className="text-xs text-amber-600 mt-2">You'll still be able to join when the game starts.</p>
               </div>
             </div>
+            <Button 
+              variant="outline"
+              size="sm"
+              className="w-full mt-2 text-amber-700 border-amber-300 hover:bg-amber-100"
+              onClick={() => window.location.reload()}
+            >
+              <RefreshCw className="h-3 w-3 mr-1" />
+              Reconnect
+            </Button>
           </div>
         )}
         

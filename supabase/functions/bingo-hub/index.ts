@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -108,7 +109,11 @@ function broadcastToSession(sessionId: string, message: any) {
   for (const clientId of sessionClients) {
     const client = clients.get(clientId);
     if (client && client.socket.readyState === WebSocket.OPEN) {
-      client.socket.send(messageStr);
+      try {
+        client.socket.send(messageStr);
+      } catch (err) {
+        console.error(`Error sending message to client ${clientId}:`, err);
+      }
     }
   }
 }
@@ -122,7 +127,11 @@ function broadcastToPlayers(sessionId: string, message: any) {
   for (const clientId of sessionClients) {
     const client = clients.get(clientId);
     if (client && client.type === "player" && client.socket.readyState === WebSocket.OPEN) {
-      client.socket.send(messageStr);
+      try {
+        client.socket.send(messageStr);
+      } catch (err) {
+        console.error(`Error sending message to player ${clientId}:`, err);
+      }
     }
   }
 }
@@ -136,7 +145,11 @@ function notifyCaller(sessionId: string, message: any) {
   for (const clientId of sessionClients) {
     const client = clients.get(clientId);
     if (client && client.type === "caller" && client.socket.readyState === WebSocket.OPEN) {
-      client.socket.send(messageStr);
+      try {
+        client.socket.send(messageStr);
+      } catch (err) {
+        console.error(`Error sending message to caller ${clientId}:`, err);
+      }
       break; // Only notify one caller (should only be one per session)
     }
   }
@@ -175,7 +188,7 @@ async function handlePlayerMessage(client: Client, message: PlayerMessage) {
         // Get current game state from database
         try {
           const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-          const { data, error } = supabase
+          const { data, error } = await supabase
             .from('sessions_progress')
             .select('*')
             .eq('session_id', message.sessionId)
@@ -478,6 +491,8 @@ serve(async (req) => {
   
   const playerCode = url.searchParams.get('playerCode') || undefined;
   const playerName = url.searchParams.get('playerName') || undefined;
+  
+  console.log(`New WebSocket connection request: ${clientType} for session ${sessionId}`);
   
   // Create WebSocket connection
   try {
