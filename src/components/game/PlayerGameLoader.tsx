@@ -124,8 +124,10 @@ export default function PlayerGameLoader({
   const gameStatus = sessionProgress?.game_status || 'pending';
   const isGameActive = gameStatus === 'active';
   
-  // Get session time - either from specific field or created_at
-  const sessionTime = currentSession.sessionTime || formatSessionTime(currentSession.created_at);
+  // FIX: Get session time from appropriate fields - fixing type errors
+  // Instead of using currentSession.sessionTime (which doesn't exist on type)
+  // Use either a custom session time field from progress or format the session date
+  const sessionTime = sessionProgress?.session_time || formatSessionTime(currentSession.sessionDate);
 
   // If the game is not active yet, show waiting message
   return (
