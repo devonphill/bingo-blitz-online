@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from './use-toast';
 
@@ -33,7 +34,7 @@ export function useCallerHub(sessionId?: string) {
   const reconnectTimerRef = useRef<number | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
-  const maxReconnectAttempts = 5;
+  const maxReconnectAttempts = 7; // Increased from 5
   const { toast } = useToast();
 
   // Function to create WebSocket connection
@@ -52,25 +53,23 @@ export function useCallerHub(sessionId?: string) {
     console.log(`Setting up caller WebSocket connection for session: ${sessionId} (attempt ${reconnectAttemptsRef.current + 1})`);
     setConnectionState('connecting');
 
-    // Construct WebSocket URL with query parameters
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let wsUrl: URL;
-
-    // When running in development using localhost, point to the deployed Supabase URL
-    if (window.location.hostname === 'localhost') {
-      wsUrl = new URL("https://weqosgnuiixccghdoccw.functions.supabase.co/bingo-hub");
-    } else {
-      // Use relative URL when deployed
-      wsUrl = new URL("/functions/v1/bingo-hub", window.location.origin);
-    }
-    
-    wsUrl.searchParams.append('type', 'caller');
-    wsUrl.searchParams.append('sessionId', sessionId);
-    
-    // Upgrade from http to ws protocol
-    wsUrl.protocol = wsProtocol;
-    
     try {
+      // Construct WebSocket URL with query parameters
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      let wsUrl: URL;
+      
+      // When running in development using localhost, construct URL manually
+      if (window.location.hostname === 'localhost') {
+        // Point to the deployed Supabase function URL
+        wsUrl = new URL("wss://weqosgnuiixccghdoccw.functions.supabase.co/bingo-hub");
+      } else {
+        // Use relative URL when deployed
+        wsUrl = new URL(`${wsProtocol}//${window.location.host}/functions/v1/bingo-hub`);
+      }
+      
+      wsUrl.searchParams.append('type', 'caller');
+      wsUrl.searchParams.append('sessionId', sessionId);
+      
       // Create WebSocket connection
       const socket = new WebSocket(wsUrl.toString());
       socketRef.current = socket;
@@ -90,6 +89,13 @@ export function useCallerHub(sessionId?: string) {
             }));
           }
         }, 30000); // Send ping every 30 seconds
+        
+        // Also notify the user
+        toast({
+          title: "Connection Established",
+          description: "Successfully connected to the game server.",
+          duration: 3000
+        });
       };
       
       socket.onmessage = (event) => {
@@ -108,7 +114,7 @@ export function useCallerHub(sessionId?: string) {
                   ...prev.filter(p => p.playerCode !== message.data.playerCode),
                   {
                     playerCode: message.data.playerCode,
-                    playerName: message.data.playerName,
+                    playerName: message.data.playerName || message.data.playerCode,
                     joinedAt: message.data.timestamp
                   }
                 ]);
@@ -143,7 +149,7 @@ export function useCallerHub(sessionId?: string) {
                   ...prev,
                   {
                     playerCode: message.data.playerCode,
-                    playerName: message.data.playerName,
+                    playerName: message.data.playerName || message.data.playerCode,
                     claimedAt: message.data.timestamp,
                     ticketData: message.data.ticketData
                   }
@@ -161,6 +167,16 @@ export function useCallerHub(sessionId?: string) {
               // Just update connection status
               setIsConnected(true);
               setConnectionState('connected');
+              break;
+              
+            case "error":
+              console.error("Error from server:", message.data);
+              toast({
+                title: "Server Error",
+                description: message.data.message || "Unknown error occurred",
+                variant: "destructive",
+                duration: 5000
+              });
               break;
               
             default:
@@ -192,6 +208,16 @@ export function useCallerHub(sessionId?: string) {
             console.log("Attempting to reconnect WebSocket...");
             createWebSocketConnection();
           }, delay);
+          
+          // Show toast for first few reconnect attempts
+          if (reconnectAttemptsRef.current <= 2) {
+            toast({
+              title: "Connection Lost",
+              description: `Connection to game server lost. Reconnecting in ${Math.round(delay/1000)}s...`,
+              variant: "destructive",
+              duration: 5000
+            });
+          }
         } else {
           console.log("Maximum reconnection attempts reached. Giving up.");
           setConnectionState('error');

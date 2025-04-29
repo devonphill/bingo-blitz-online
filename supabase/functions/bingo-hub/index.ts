@@ -16,38 +16,16 @@ interface Client {
   lastActivity: number;
 }
 
-interface GameStateUpdate {
-  sessionId: string;
-  lastCalledNumber: number | null;
-  calledNumbers: number[];
-  currentWinPattern: string | null;
-  currentPrize: string | null;
-  currentPrizeDescription: string | null;
-  gameStatus: string | null;
-  timestamp: number;
-}
-
-interface PlayerMessage {
-  type: "join" | "claim" | "ping";
-  sessionId: string;
-  playerCode?: string;
-  playerName?: string;
-  data?: any;
-}
-
-interface CallerMessage {
-  type: "number-called" | "pattern-change" | "game-start" | "game-end" | "next-game" | "claim-result" | "ping";
-  sessionId: string;
-  data?: any;
-}
+// Improved CORS headers
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Max-Age': '86400',
+};
 
 const clients: Map<string, Client> = new Map();
 const sessions: Map<string, Set<string>> = new Map(); // sessionId -> Set of client ids
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
 
 // Clean up inactive connections every 30 seconds
 setInterval(() => {
@@ -155,8 +133,14 @@ function notifyCaller(sessionId: string, message: any) {
   }
 }
 
-async function handlePlayerMessage(client: Client, message: PlayerMessage) {
+// Handler for player messages - improved error handling
+async function handlePlayerMessage(client: Client, message: any) {
   try {
+    if (!message || !message.type) {
+      console.error("Invalid message format received from player");
+      return;
+    }
+
     switch (message.type) {
       case "join":
         // Add client to session tracking
@@ -195,7 +179,7 @@ async function handlePlayerMessage(client: Client, message: PlayerMessage) {
             .single();
           
           if (data && !error) {
-            const gameState: GameStateUpdate = {
+            const gameState = {
               sessionId: message.sessionId,
               lastCalledNumber: data.called_numbers && data.called_numbers.length > 0 ? 
                 data.called_numbers[data.called_numbers.length - 1] : null,
@@ -271,8 +255,14 @@ async function handlePlayerMessage(client: Client, message: PlayerMessage) {
   }
 }
 
-async function handleCallerMessage(client: Client, message: CallerMessage) {
+// Handler for caller messages - improved error handling
+async function handleCallerMessage(client: Client, message: any) {
   try {
+    if (!message || !message.type) {
+      console.error("Invalid message format received from caller");
+      return;
+    }
+
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     
     switch (message.type) {
@@ -334,7 +324,10 @@ async function handleCallerMessage(client: Client, message: CallerMessage) {
         try {
           await supabase
             .from('game_sessions')
-            .update({ status: 'active' })
+            .update({ 
+              status: 'active',
+              lifecycle_state: 'live'
+            })
             .eq('id', message.sessionId);
           
           await supabase
@@ -455,6 +448,17 @@ async function handleCallerMessage(client: Client, message: CallerMessage) {
     }
   } catch (error) {
     console.error(`Error handling caller message: ${error}`);
+    
+    // Send error back to client
+    if (client.socket.readyState === WebSocket.OPEN) {
+      client.socket.send(JSON.stringify({
+        type: "error",
+        data: {
+          message: "Server error processing message",
+          timestamp: Date.now()
+        }
+      }));
+    }
   }
 }
 
@@ -544,9 +548,9 @@ serve(async (req) => {
         client.lastActivity = Date.now();
         
         if (client.type === "player") {
-          await handlePlayerMessage(client, message as PlayerMessage);
+          await handlePlayerMessage(client, message);
         } else if (client.type === "caller") {
-          await handleCallerMessage(client, message as CallerMessage);
+          await handleCallerMessage(client, message);
         }
       } catch (error) {
         console.error(`Error processing message: ${error}`);
@@ -574,7 +578,16 @@ serve(async (req) => {
       removeClient(clientId);
     };
     
-    return response;
+    // Add headers to improve WebSocket stability
+    const headers = new Headers(corsHeaders);
+    headers.set('Connection', 'Upgrade');
+    headers.set('Upgrade', 'websocket');
+    
+    return new Response(response.body, {
+      status: response.status,
+      headers: headers
+    });
+    
   } catch (error) {
     console.error("Error upgrading WebSocket connection:", error);
     return new Response(`WebSocket upgrade error: ${error.message}`, { 
