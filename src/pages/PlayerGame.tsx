@@ -16,23 +16,28 @@ export default function PlayerGame() {
   const { playerCode: urlPlayerCode } = useParams<{ playerCode: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  
+  // Initialize playerCode immediately to ensure consistent hook calls
+  const [playerCode, setPlayerCode] = useState<string | null>(null);
   const [loadingPlayerCode, setLoadingPlayerCode] = useState(true);
   
-  // Initialize playerCode early to ensure consistent hook calls
-  const [playerCode, setPlayerCode] = useState<string | null>(null);
-  
+  // Handle player code initialization
   useEffect(() => {
     console.log("PlayerGame initialized with playerCode from URL:", urlPlayerCode);
     const storedPlayerCode = localStorage.getItem('playerCode');
     
+    // Priority: URL param > localStorage > redirect to join
     if (urlPlayerCode) {
-      console.log("Storing player code from URL:", urlPlayerCode);
+      console.log("Using player code from URL:", urlPlayerCode);
       localStorage.setItem('playerCode', urlPlayerCode);
       setPlayerCode(urlPlayerCode);
       setLoadingPlayerCode(false);
     } else if (storedPlayerCode) {
-      console.log("Found stored player code, redirecting:", storedPlayerCode);
+      console.log("Using stored player code:", storedPlayerCode);
+      setPlayerCode(storedPlayerCode);
+      // Redirect to have the code in the URL for better bookmarking/sharing
       navigate(`/player/game/${storedPlayerCode}`, { replace: true });
+      setLoadingPlayerCode(false);
     } else {
       console.log("No player code found, redirecting to join page");
       toast({
@@ -44,7 +49,7 @@ export default function PlayerGame() {
     }
   }, [urlPlayerCode, navigate, toast]);
 
-  // Always initialize hooks regardless of conditions to maintain hook order
+  // Always initialize hooks with proper dependencies to maintain consistent hook order
   const {
     playerName,
     playerId,
@@ -74,15 +79,15 @@ export default function PlayerGame() {
   const gameStatus = sessionProgress?.game_status || 'pending';
   const isGameActive = gameStatus === 'active';
   
-  // Always initialize hooks with conditionals for their behavior, not their existence
+  // Initialize hooks with conditionals for their behavior, not their existence
   const shouldLoadTickets = !!currentSession?.id && isSessionActive && isGameLive && isGameActive;
   const { tickets } = useTickets(playerCode, currentSession?.id);
   
-  // Always initialize WebSocket hook with fallback values
+  // Initialize WebSocket hook with proper fallbacks
   const bingoSync = useBingoSync(
-    currentSession?.id || undefined, 
-    playerCode || undefined, 
-    playerName || undefined
+    currentSession?.id || '', 
+    playerCode || '', 
+    playerName || ''
   );
   
   console.log("WebSocket game state:", {
@@ -90,7 +95,8 @@ export default function PlayerGame() {
     calledNumbers: bingoSync.gameState.calledNumbers.length, 
     currentWinPattern: bingoSync.gameState.currentWinPattern,
     connectionState: bingoSync.connectionState,
-    shouldLoadTickets
+    shouldLoadTickets,
+    playerCode
   });
   
   const handleClaimBingo = useCallback(() => {
@@ -112,8 +118,10 @@ export default function PlayerGame() {
     return submitBingoClaim();
   }, [submitBingoClaim, tickets, bingoSync]);
   
+  // Debug logging
   useEffect(() => {
     console.log("PlayerGame render state:", {
+      playerCode,
       isLoading,
       loadingStep,
       hasTickets: tickets && tickets.length > 0,
@@ -127,7 +135,7 @@ export default function PlayerGame() {
       socketLastCalledNumber: bingoSync.gameState.lastCalledNumber,
       socketCalledNumbers: bingoSync.gameState.calledNumbers.length
     });
-  }, [isLoading, loadingStep, tickets, currentSession, currentGameState, errorMessage, sessionProgress, bingoSync]);
+  }, [playerCode, isLoading, loadingStep, tickets, currentSession, currentGameState, errorMessage, sessionProgress, bingoSync]);
 
   // Early return during initial loading
   if (loadingPlayerCode || !playerCode) {

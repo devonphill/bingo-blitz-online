@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { useToast } from './use-toast';
 
@@ -31,13 +30,14 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
   const { toast } = useToast();
   
   useEffect(() => {
-    if (!sessionId) {
-      console.log("No sessionId provided to useBingoSync");
+    // Don't attempt connection if we don't have valid session ID or playerCode
+    if (!sessionId || sessionId === '' || !playerCode || playerCode === '') {
+      console.log("Missing required data for WebSocket connection:", { sessionId, playerCode });
       setConnectionState('disconnected');
       return;
     }
 
-    console.log(`Setting up WebSocket connection for session: ${sessionId}`);
+    console.log(`Setting up WebSocket connection for session: ${sessionId}, player: ${playerCode}`);
     setConnectionState('connecting');
 
     // Construct WebSocket URL with query parameters
@@ -51,223 +51,230 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     wsUrl.searchParams.append('type', 'player');
     wsUrl.searchParams.append('sessionId', sessionId);
     if (playerCode) wsUrl.searchParams.append('playerCode', playerCode);
-    if (playerName) wsUrl.searchParams.append('playerName', playerName);
+    if (playerName && playerName !== '') wsUrl.searchParams.append('playerName', playerName);
     
     // Upgrade from http to ws protocol
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     wsUrl.protocol = wsProtocol;
     
-    // Create WebSocket connection
-    const socket = new WebSocket(wsUrl.toString());
-    socketRef.current = socket;
+    console.log("Connecting to WebSocket URL:", wsUrl.toString());
     
-    socket.onopen = () => {
-      console.log("WebSocket connection established");
-      setIsConnected(true);
-      setConnectionState('connected');
+    try {
+      // Create WebSocket connection
+      const socket = new WebSocket(wsUrl.toString());
+      socketRef.current = socket;
       
-      // Send player join message
-      socket.send(JSON.stringify({
-        type: "join",
-        sessionId,
-        playerCode,
-        playerName
-      }));
-      
-      // Set up ping interval
-      pingIntervalRef.current = window.setInterval(() => {
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({
-            type: "ping",
-            sessionId
-          }));
-        }
-      }, 30000); // Send ping every 30 seconds
-    };
-    
-    socket.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
+      socket.onopen = () => {
+        console.log("WebSocket connection established");
+        setIsConnected(true);
+        setConnectionState('connected');
         
-        switch (message.type) {
-          case "connected":
-            console.log("WebSocket connection confirmed:", message.data);
-            break;
-            
-          case "game_state":
-            console.log("Received game state update:", message.data);
-            if (message.data) {
-              const data = message.data;
-              setGameState(prev => ({
-                ...prev,
-                calledNumbers: data.calledNumbers || prev.calledNumbers,
-                lastCalledNumber: data.lastCalledNumber !== undefined ? data.lastCalledNumber : prev.lastCalledNumber,
-                currentWinPattern: data.currentWinPattern || prev.currentWinPattern,
-                currentPrize: data.currentPrize || prev.currentPrize,
-                currentPrizeDescription: data.currentPrizeDescription || prev.currentPrizeDescription,
-                gameStatus: data.gameStatus || prev.gameStatus,
-                lastUpdate: data.timestamp || Date.now()
-              }));
-            }
-            break;
-            
-          case "number_called":
-            console.log("Received number called update:", message.data);
-            if (message.data) {
-              const data = message.data;
-              setGameState(prev => ({
-                ...prev,
-                calledNumbers: data.calledNumbers || prev.calledNumbers,
-                lastCalledNumber: data.lastCalledNumber !== undefined ? data.lastCalledNumber : prev.lastCalledNumber,
-                lastUpdate: data.timestamp || Date.now()
-              }));
+        // Send player join message
+        socket.send(JSON.stringify({
+          type: "join",
+          sessionId,
+          playerCode,
+          playerName
+        }));
+        
+        // Set up ping interval
+        pingIntervalRef.current = window.setInterval(() => {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+              type: "ping",
+              sessionId
+            }));
+          }
+        }, 30000); // Send ping every 30 seconds
+      };
+      
+      socket.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          
+          switch (message.type) {
+            case "connected":
+              console.log("WebSocket connection confirmed:", message.data);
+              break;
               
-              if (data.lastCalledNumber !== null && data.lastCalledNumber !== undefined) {
+            case "game_state":
+              console.log("Received game state update:", message.data);
+              if (message.data) {
+                const data = message.data;
+                setGameState(prev => ({
+                  ...prev,
+                  calledNumbers: data.calledNumbers || prev.calledNumbers,
+                  lastCalledNumber: data.lastCalledNumber !== undefined ? data.lastCalledNumber : prev.lastCalledNumber,
+                  currentWinPattern: data.currentWinPattern || prev.currentWinPattern,
+                  currentPrize: data.currentPrize || prev.currentPrize,
+                  currentPrizeDescription: data.currentPrizeDescription || prev.currentPrizeDescription,
+                  gameStatus: data.gameStatus || prev.gameStatus,
+                  lastUpdate: data.timestamp || Date.now()
+                }));
+              }
+              break;
+              
+            case "number_called":
+              console.log("Received number called update:", message.data);
+              if (message.data) {
+                const data = message.data;
+                setGameState(prev => ({
+                  ...prev,
+                  calledNumbers: data.calledNumbers || prev.calledNumbers,
+                  lastCalledNumber: data.lastCalledNumber !== undefined ? data.lastCalledNumber : prev.lastCalledNumber,
+                  lastUpdate: data.timestamp || Date.now()
+                }));
+                
+                if (data.lastCalledNumber !== null && data.lastCalledNumber !== undefined) {
+                  toast({
+                    title: "Number Called",
+                    description: `Number ${data.lastCalledNumber} has been called!`,
+                    duration: 3000
+                  });
+                }
+              }
+              break;
+              
+            case "pattern_changed":
+              console.log("Received pattern change update:", message.data);
+              if (message.data) {
+                const data = message.data;
+                setGameState(prev => ({
+                  ...prev,
+                  currentWinPattern: data.currentWinPattern || prev.currentWinPattern,
+                  currentPrize: data.currentPrize || prev.currentPrize,
+                  currentPrizeDescription: data.currentPrizeDescription || prev.currentPrizeDescription,
+                  lastUpdate: data.timestamp || Date.now()
+                }));
+                
                 toast({
-                  title: "Number Called",
-                  description: `Number ${data.lastCalledNumber} has been called!`,
+                  title: "Win Pattern Changed",
+                  description: `New pattern: ${data.currentWinPattern}`,
                   duration: 3000
                 });
               }
-            }
-            break;
-            
-          case "pattern_changed":
-            console.log("Received pattern change update:", message.data);
-            if (message.data) {
-              const data = message.data;
+              break;
+              
+            case "game_started":
+              console.log("Received game started update:", message.data);
               setGameState(prev => ({
                 ...prev,
-                currentWinPattern: data.currentWinPattern || prev.currentWinPattern,
-                currentPrize: data.currentPrize || prev.currentPrize,
-                currentPrizeDescription: data.currentPrizeDescription || prev.currentPrizeDescription,
-                lastUpdate: data.timestamp || Date.now()
+                gameStatus: 'active',
+                lastUpdate: message.data?.timestamp || Date.now()
               }));
               
               toast({
-                title: "Win Pattern Changed",
-                description: `New pattern: ${data.currentWinPattern}`,
+                title: "Game Started",
+                description: "The game is now live!",
                 duration: 3000
               });
-            }
-            break;
-            
-          case "game_started":
-            console.log("Received game started update:", message.data);
-            setGameState(prev => ({
-              ...prev,
-              gameStatus: 'active',
-              lastUpdate: message.data?.timestamp || Date.now()
-            }));
-            
-            toast({
-              title: "Game Started",
-              description: "The game is now live!",
-              duration: 3000
-            });
-            break;
-            
-          case "game_ended":
-            console.log("Received game ended update:", message.data);
-            setGameState(prev => ({
-              ...prev,
-              gameStatus: 'completed',
-              lastUpdate: message.data?.timestamp || Date.now()
-            }));
-            
-            toast({
-              title: "Game Ended",
-              description: "This game has ended.",
-              duration: 3000
-            });
-            break;
-            
-          case "next_game":
-            console.log("Received next game update:", message.data);
-            if (message.data) {
-              setGameState({
-                lastCalledNumber: null,
-                calledNumbers: [],
-                currentWinPattern: null,
-                currentPrize: null,
-                currentPrizeDescription: null,
-                gameStatus: 'active',
-                lastUpdate: message.data.timestamp || Date.now()
-              });
+              break;
+              
+            case "game_ended":
+              console.log("Received game ended update:", message.data);
+              setGameState(prev => ({
+                ...prev,
+                gameStatus: 'completed',
+                lastUpdate: message.data?.timestamp || Date.now()
+              }));
               
               toast({
-                title: "Next Game",
-                description: `Moving to Game #${message.data.gameNumber}`,
+                title: "Game Ended",
+                description: "This game has ended.",
                 duration: 3000
               });
-            }
-            break;
-            
-          case "claim_result":
-            console.log("Received claim result:", message.data);
-            if (message.data) {
-              const result = message.data.result;
-              if (result === 'valid') {
-                toast({
-                  title: "Claim Verified!",
-                  description: "Your bingo claim has been verified.",
-                  duration: 5000
+              break;
+              
+            case "next_game":
+              console.log("Received next game update:", message.data);
+              if (message.data) {
+                setGameState({
+                  lastCalledNumber: null,
+                  calledNumbers: [],
+                  currentWinPattern: null,
+                  currentPrize: null,
+                  currentPrizeDescription: null,
+                  gameStatus: 'active',
+                  lastUpdate: message.data.timestamp || Date.now()
                 });
-              } else if (result === 'rejected') {
+                
                 toast({
-                  title: "Claim Rejected",
-                  description: "Your claim was not valid.",
-                  variant: "destructive",
-                  duration: 5000
+                  title: "Next Game",
+                  description: `Moving to Game #${message.data.gameNumber}`,
+                  duration: 3000
                 });
               }
-            }
-            break;
-            
-          case "pong":
-            // Just update connection status
-            setIsConnected(true);
-            setConnectionState('connected');
-            break;
-            
-          default:
-            console.log("Received unknown message type:", message.type, message);
+              break;
+              
+            case "claim_result":
+              console.log("Received claim result:", message.data);
+              if (message.data) {
+                const result = message.data.result;
+                if (result === 'valid') {
+                  toast({
+                    title: "Claim Verified!",
+                    description: "Your bingo claim has been verified.",
+                    duration: 5000
+                  });
+                } else if (result === 'rejected') {
+                  toast({
+                    title: "Claim Rejected",
+                    description: "Your claim was not valid.",
+                    variant: "destructive",
+                    duration: 5000
+                  });
+                }
+              }
+              break;
+              
+            case "pong":
+              // Just update connection status
+              setIsConnected(true);
+              setConnectionState('connected');
+              break;
+              
+            default:
+              console.log("Received unknown message type:", message.type, message);
+          }
+        } catch (err) {
+          console.error("Error processing WebSocket message:", err);
         }
-      } catch (err) {
-        console.error("Error processing WebSocket message:", err);
-      }
-    };
-    
-    socket.onclose = (event) => {
-      console.log("WebSocket connection closed:", event.code, event.reason);
-      setIsConnected(false);
-      setConnectionState('disconnected');
+      };
       
-      // Clear ping interval
-      if (pingIntervalRef.current !== null) {
-        clearInterval(pingIntervalRef.current);
-        pingIntervalRef.current = null;
-      }
+      socket.onclose = (event) => {
+        console.log("WebSocket connection closed:", event.code, event.reason);
+        setIsConnected(false);
+        setConnectionState('disconnected');
+        
+        // Clear ping interval
+        if (pingIntervalRef.current !== null) {
+          clearInterval(pingIntervalRef.current);
+          pingIntervalRef.current = null;
+        }
+        
+        // Try to reconnect
+        reconnectTimerRef.current = window.setTimeout(() => {
+          console.log("Attempting to reconnect WebSocket...");
+          setConnectionState('connecting');
+        }, 3000);
+      };
       
-      // Try to reconnect
-      reconnectTimerRef.current = window.setTimeout(() => {
-        console.log("Attempting to reconnect WebSocket...");
-        setConnectionState('connecting');
-      }, 3000);
-    };
-    
-    socket.onerror = (error) => {
-      console.error("WebSocket error:", error);
-      setIsConnected(false);
+      socket.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        setIsConnected(false);
+        setConnectionState('error');
+        
+        toast({
+          title: "Connection Error",
+          description: "Lost connection to the game server. Trying to reconnect...",
+          variant: "destructive",
+          duration: 5000
+        });
+      };
+    } catch (error) {
+      console.error("Failed to create WebSocket connection:", error);
       setConnectionState('error');
-      
-      toast({
-        title: "Connection Error",
-        description: "Lost connection to the game server. Trying to reconnect...",
-        variant: "destructive",
-        duration: 5000
-      });
-    };
+    }
 
     // Cleanup function
     return () => {

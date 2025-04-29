@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -162,8 +161,8 @@ export function usePlayerGame(playerCode: string | null) {
   
   // Load player data and session info
   useEffect(() => {
-    if (!playerCode) {
-      console.error("Player code is missing.");
+    if (!playerCode || playerCode === '') {
+      console.error("Player code is missing or empty.");
       setErrorMessage("Player code is required. Please join the game again.");
       setIsLoading(false);
       setLoadingStep('error');
