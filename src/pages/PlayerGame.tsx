@@ -77,7 +77,10 @@ export default function PlayerGame() {
     handleClaimBingo: submitBingoClaim
   } = usePlayerGame(playerCode);
 
-  const { progress: sessionProgress } = useSessionProgress(currentSession?.id);
+  // Initialize session progress hook - but only use it if we have a valid session
+  const { progress: sessionProgress } = useSessionProgress(
+    currentSession?.id
+  );
   
   // Initialize session state
   const isSessionActive = currentSession?.status === 'active';
@@ -147,6 +150,7 @@ export default function PlayerGame() {
         errorMessage={null} 
         currentSession={null}
         loadingStep="initializing"
+        sessionProgress={null}
       />
     );
   }
@@ -159,6 +163,7 @@ export default function PlayerGame() {
         errorMessage="Player code is required. Please join the game again." 
         currentSession={null}
         loadingStep="error"
+        sessionProgress={null}
       />
     );
   }
@@ -192,6 +197,7 @@ export default function PlayerGame() {
         errorMessage={effectiveErrorMessage} 
         currentSession={currentSession}
         loadingStep={loadingStep}
+        sessionProgress={sessionProgress}
       />
     );
   }

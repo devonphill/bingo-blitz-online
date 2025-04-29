@@ -3,16 +3,22 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { GameSession } from "@/types";
 import { AlertCircle, RefreshCw, Info } from "lucide-react";
-import { useSessionProgress } from "@/hooks/useSessionProgress";
 
 interface Props {
   isLoading: boolean;
   errorMessage: string | null;
   currentSession: GameSession | null;
   loadingStep?: string;
+  sessionProgress?: any;
 }
 
-export default function PlayerGameLoader({ isLoading, errorMessage, currentSession, loadingStep = "initializing" }: Props) {
+export default function PlayerGameLoader({ 
+  isLoading, 
+  errorMessage, 
+  currentSession, 
+  loadingStep = "initializing",
+  sessionProgress 
+}: Props) {
   // Only log when there's a change to help debug flickering
   const logCacheKey = `${isLoading}-${!!errorMessage}-${!!currentSession}-${loadingStep}`;
   React.useEffect(() => {
@@ -82,18 +88,14 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
       </div>
     );
   }
-
-  // Get progress information from session progress
-  const sessionId = currentSession?.id;
-  const { progress } = useSessionProgress(sessionId);
   
-  console.log("In waiting room - Progress data:", progress);
+  console.log("In waiting room - Progress data:", sessionProgress);
   console.log("Session data:", currentSession);
   
   // Check if the game is in an active state
   const isGameLive = currentSession.lifecycle_state === 'live';
   const isSessionActive = currentSession.status === 'active';
-  const gameStatus = progress?.game_status || 'pending';
+  const gameStatus = sessionProgress?.game_status || 'pending';
   const isGameActive = gameStatus === 'active';
 
   // If the game is not active yet, show waiting message
