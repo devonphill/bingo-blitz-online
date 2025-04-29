@@ -73,18 +73,31 @@ export default function PlayerGame() {
     handleClaimBingo: submitBingoClaim
   } = usePlayerGame(playerCode);
 
-  const { tickets } = useTickets(playerCode, currentSession?.id);
-
   const { progress: sessionProgress } = useSessionProgress(currentSession?.id);
   
-  // Use our WebSocket-based sync hook
-  const bingoSync = useBingoSync(currentSession?.id, playerCode, playerName || undefined);
+  // Check if the game is active
+  const isSessionActive = currentSession?.status === 'active';
+  const isGameLive = currentSession?.lifecycle_state === 'live';
+  const gameStatus = sessionProgress?.game_status || 'pending';
+  const isGameActive = gameStatus === 'active';
+  
+  // Only load tickets if the game is active
+  const shouldLoadTickets = currentSession?.id && isSessionActive && isGameLive && isGameActive;
+  const { tickets } = useTickets(shouldLoadTickets ? playerCode : null, shouldLoadTickets ? currentSession?.id : undefined);
+  
+  // Use our WebSocket-based sync hook only when game is active
+  const bingoSync = useBingoSync(
+    shouldLoadTickets ? currentSession?.id : undefined, 
+    shouldLoadTickets ? playerCode : undefined, 
+    shouldLoadTickets ? playerName || undefined : undefined
+  );
   
   console.log("WebSocket game state:", {
     lastCalledNumber: bingoSync.gameState.lastCalledNumber,
     calledNumbers: bingoSync.gameState.calledNumbers.length, 
     currentWinPattern: bingoSync.gameState.currentWinPattern,
-    connectionState: bingoSync.connectionState
+    connectionState: bingoSync.connectionState,
+    shouldLoadTickets
   });
   
   const handleClaimBingo = useCallback(() => {
@@ -125,15 +138,18 @@ export default function PlayerGame() {
   
   const isInitialLoading = isLoading && loadingStep !== 'completed';
   const hasTickets = tickets && tickets.length > 0;
-  const isGameActive = currentGameState?.status === 'active' || bingoSync.gameState.gameStatus === 'active';
   const hasSession = !!currentSession;
   
+  // Show loader if:
+  // 1. Still loading
+  // 2. Error occurred
+  // 3. No session found
+  // 4. Session exists but is not active yet (waiting room)
   const shouldShowLoader = 
     (isInitialLoading && loadingStep !== 'completed') || 
     !!errorMessage || 
     !hasSession || 
-    (!currentGameState && loadingStep !== 'completed') ||
-    (!isGameActive && !hasTickets && loadingStep !== 'completed');
+    (!isGameActive || !isGameLive || !isSessionActive);
 
   if (shouldShowLoader) {
     console.log("Showing PlayerGameLoader with:", {
@@ -150,6 +166,27 @@ export default function PlayerGame() {
         currentSession={currentSession}
         loadingStep={loadingStep}
       />
+    );
+  }
+
+  // At this point, we know the game is active and we should have tickets
+  // If not, something's wrong
+  if (!hasTickets) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="bg-white shadow-lg rounded-lg p-6 max-w-md w-full">
+          <div className="flex items-center justify-center mb-4 text-amber-500">
+            <Info size={40} />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-4 text-center">No Tickets Available</h2>
+          <p className="text-gray-600 mb-4 text-center">
+            You don't have any tickets assigned for this game. Please contact the game organizer.
+          </p>
+          <Button onClick={() => window.location.reload()} className="w-full">
+            Refresh
+          </Button>
+        </div>
+      </div>
     );
   }
 

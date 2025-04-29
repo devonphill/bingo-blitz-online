@@ -19,7 +19,8 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
   
   const fetchTickets = useCallback(async () => {
     if (!playerCode || !sessionId) {
-      setError("Missing player code or session ID");
+      console.log("Skipping ticket fetch: missing playerCode or sessionId", { playerCode, sessionId });
+      setTickets([]);
       setIsLoading(false);
       return;
     }
@@ -114,8 +115,15 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
   
   // Initial fetch
   useEffect(() => {
-    fetchTickets();
-  }, [fetchTickets]);
+    if (playerCode && sessionId) {
+      console.log(`Fetching tickets for player ${playerCode} in session ${sessionId}`);
+      fetchTickets();
+    } else {
+      console.log("Not fetching tickets: waiting for game to be active", { playerCode, sessionId });
+      setTickets([]);
+      setIsLoading(false);
+    }
+  }, [fetchTickets, playerCode, sessionId]);
   
   return {
     tickets,
