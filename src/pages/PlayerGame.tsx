@@ -1,3 +1,4 @@
+
 import React, { useEffect, useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -147,7 +148,7 @@ export default function PlayerGame() {
   // 3. No session found
   // 4. Session exists but is not active yet (waiting room)
   const shouldShowLoader = 
-    (isInitialLoading && loadingStep !== 'completed') || 
+    isInitialLoading || 
     !!errorMessage || 
     !hasSession || 
     (!isGameActive || !isGameLive || !isSessionActive);

@@ -18,7 +18,7 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
   React.useEffect(() => {
     console.log("PlayerGameLoader - Session data:", currentSession);
     console.log("PlayerGameLoader - Loading step:", loadingStep);
-  }, [logCacheKey]);
+  }, [logCacheKey, currentSession, loadingStep]);
 
   // If we're in a loading state, show the loading indicator
   if (isLoading) {
@@ -51,7 +51,7 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
               <RefreshCw className="h-4 w-4" />
               Try Again
             </Button>
-            <Button onClick={() => window.location.href = '/join'}>
+            <Button onClick={() => window.location.href = '/player/join'}>
               Join a Different Game
             </Button>
           </div>
@@ -74,7 +74,7 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
               <RefreshCw className="h-4 w-4" />
               Refresh
             </Button>
-            <Button onClick={() => window.location.href = '/join'}>
+            <Button onClick={() => window.location.href = '/player/join'}>
               Join a Different Game
             </Button>
           </div>
@@ -87,6 +87,9 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
   const sessionId = currentSession?.id;
   const { progress } = useSessionProgress(sessionId);
   
+  console.log("In waiting room - Progress data:", progress);
+  console.log("Session data:", currentSession);
+  
   // Check if the game is in an active state
   const isGameLive = currentSession.lifecycle_state === 'live';
   const isSessionActive = currentSession.status === 'active';
@@ -94,47 +97,43 @@ export default function PlayerGameLoader({ isLoading, errorMessage, currentSessi
   const isGameActive = gameStatus === 'active';
 
   // If the game is not active yet, show waiting message
-  if (!isGameLive || !isSessionActive || !isGameActive) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="bg-white shadow-lg rounded-lg p-6 max-w-md w-full">
-          <div className="flex items-center justify-center mb-4 text-amber-500">
-            <Info size={40} />
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="bg-white shadow-lg rounded-lg p-6 max-w-md w-full">
+        <div className="flex items-center justify-center mb-4 text-amber-500">
+          <Info size={40} />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900 mb-4 text-center">Waiting for game to start</h2>
+        <p className="text-gray-600 mb-4 text-center">
+          {!isGameLive 
+            ? "The caller has not started the game yet." 
+            : !isSessionActive
+              ? "The session is live but not yet active."
+              : !isGameActive 
+                ? "The game is waiting to be activated." 
+                : "The game is being set up..."}
+        </p>
+        <div className="space-y-4">
+          <div className="bg-gray-50 p-4 rounded-md">
+            <p className="text-sm text-gray-500 mb-2">
+              <span className="font-semibold">Session:</span> {currentSession.name || 'Unknown'}
+            </p>
+            <p className="text-sm text-gray-500 mb-2">
+              <span className="font-semibold">Lifecycle state:</span> {currentSession.lifecycle_state || 'unknown'}
+            </p> 
+            <p className="text-sm text-gray-500">
+              <span className="font-semibold">Status:</span> {currentSession.status || 'unknown'}
+            </p>
+            <p className="text-sm text-gray-500 mt-2">
+              <span className="font-semibold">Game status:</span> {gameStatus || 'unknown'}
+            </p>
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-4 text-center">Waiting for game to start</h2>
-          <p className="text-gray-600 mb-4 text-center">
-            {!isGameLive 
-              ? "The caller has not started the game yet." 
-              : !isSessionActive
-                ? "The session is live but not yet active."
-                : !isGameActive 
-                  ? "The game is waiting to be activated." 
-                  : "The game is being set up..."}
-          </p>
-          <div className="space-y-4">
-            <div className="bg-gray-50 p-4 rounded-md">
-              <p className="text-sm text-gray-500 mb-2">
-                <span className="font-semibold">Session:</span> {currentSession.name || 'Unknown'}
-              </p>
-              <p className="text-sm text-gray-500 mb-2">
-                <span className="font-semibold">Lifecycle state:</span> {currentSession.lifecycle_state || 'unknown'}
-              </p> 
-              <p className="text-sm text-gray-500">
-                <span className="font-semibold">Status:</span> {currentSession.status || 'unknown'}
-              </p>
-              <p className="text-sm text-gray-500 mt-2">
-                <span className="font-semibold">Game status:</span> {gameStatus || 'unknown'}
-              </p>
-            </div>
-            <Button onClick={() => window.location.reload()} className="w-full flex items-center justify-center gap-2">
-              <RefreshCw className="h-4 w-4" />
-              Refresh
-            </Button>
-          </div>
+          <Button onClick={() => window.location.reload()} className="w-full flex items-center justify-center gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
         </div>
       </div>
-    );
-  }
-
-  return null;
+    </div>
+  );
 }
