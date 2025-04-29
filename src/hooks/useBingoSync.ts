@@ -24,6 +24,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
   
   const [isConnected, setIsConnected] = useState(false);
   const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [claimStatus, setClaimStatus] = useState<'pending' | 'validated' | 'rejected' | null>(null);
   
   const socketRef = useRef<WebSocket | null>(null);
@@ -48,6 +49,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     
     console.log(`Setting up player WebSocket connection for session: ${sessionId} (attempt ${reconnectAttemptsRef.current + 1})`);
     setConnectionState('connecting');
+    setConnectionError(null);
 
     try {
       // Construct WebSocket URL
@@ -68,6 +70,8 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
       if (playerCode) wsUrl.searchParams.append('playerCode', playerCode);
       if (playerName) wsUrl.searchParams.append('playerName', playerName);
       
+      console.log("Connecting to WebSocket URL:", wsUrl.toString());
+      
       // Create WebSocket connection
       const socket = new WebSocket(wsUrl.toString());
       socketRef.current = socket;
@@ -76,6 +80,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
         console.log("Player WebSocket connection established");
         setIsConnected(true);
         setConnectionState('connected');
+        setConnectionError(null);
         reconnectAttemptsRef.current = 0;
         
         // Send join message
@@ -285,6 +290,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
         } else {
           console.log("Maximum reconnection attempts reached. Giving up.");
           setConnectionState('error');
+          setConnectionError("Could not establish a connection to the game server after multiple attempts.");
           toast({
             title: "Connection Failed",
             description: "Could not establish a connection to the game server after multiple attempts.",
@@ -298,6 +304,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
         console.error("WebSocket error:", error);
         setIsConnected(false);
         setConnectionState('error');
+        setConnectionError("Error connecting to the game server. Will try to reconnect...");
         
         toast({
           title: "Connection Error",
@@ -309,6 +316,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     } catch (err) {
       console.error("Error creating WebSocket:", err);
       setConnectionState('error');
+      setConnectionError(`Error creating WebSocket: ${err.message}`);
       
       // Try to reconnect if we haven't exceeded max attempts
       if (reconnectAttemptsRef.current < maxReconnectAttempts) {
@@ -355,6 +363,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
   const reconnect = useCallback(() => {
     console.log("Manual reconnection attempt");
     reconnectAttemptsRef.current = 0;
+    setConnectionError(null);
     createWebSocketConnection();
   }, [createWebSocketConnection]);
 
@@ -383,6 +392,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     gameState,
     isConnected,
     connectionState,
+    connectionError,
     claimStatus,
     reconnect,
     claimBingo

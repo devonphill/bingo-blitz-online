@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from './use-toast';
 
@@ -28,6 +27,7 @@ interface BingoClaim {
 export function useCallerHub(sessionId?: string) {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [connectedPlayers, setConnectedPlayers] = useState<ConnectedPlayer[]>([]);
   const [pendingClaims, setPendingClaims] = useState<BingoClaim[]>([]);
   const socketRef = useRef<WebSocket | null>(null);
@@ -52,6 +52,7 @@ export function useCallerHub(sessionId?: string) {
 
     console.log(`Setting up caller WebSocket connection for session: ${sessionId} (attempt ${reconnectAttemptsRef.current + 1})`);
     setConnectionState('connecting');
+    setConnectionError(null);
 
     try {
       // Construct WebSocket URL with query parameters
@@ -70,6 +71,8 @@ export function useCallerHub(sessionId?: string) {
       wsUrl.searchParams.append('type', 'caller');
       wsUrl.searchParams.append('sessionId', sessionId);
       
+      console.log("Connecting to WebSocket URL:", wsUrl.toString());
+      
       // Create WebSocket connection
       const socket = new WebSocket(wsUrl.toString());
       socketRef.current = socket;
@@ -78,6 +81,7 @@ export function useCallerHub(sessionId?: string) {
         console.log("Caller WebSocket connection established");
         setIsConnected(true);
         setConnectionState('connected');
+        setConnectionError(null);
         reconnectAttemptsRef.current = 0;
         
         // Set up ping interval
@@ -221,6 +225,7 @@ export function useCallerHub(sessionId?: string) {
         } else {
           console.log("Maximum reconnection attempts reached. Giving up.");
           setConnectionState('error');
+          setConnectionError("Could not establish a connection to the game server after multiple attempts.");
           toast({
             title: "Connection Failed",
             description: "Could not establish a connection to the game server after multiple attempts.",
@@ -234,6 +239,7 @@ export function useCallerHub(sessionId?: string) {
         console.error("WebSocket error:", error);
         setIsConnected(false);
         setConnectionState('error');
+        setConnectionError("Error connecting to the game server. Will try to reconnect...");
         
         toast({
           title: "Connection Error",
@@ -245,6 +251,7 @@ export function useCallerHub(sessionId?: string) {
     } catch (err) {
       console.error("Error creating WebSocket:", err);
       setConnectionState('error');
+      setConnectionError(`Error creating WebSocket: ${err.message}`);
       
       // Try to reconnect if we haven't exceeded max attempts
       if (reconnectAttemptsRef.current < maxReconnectAttempts) {
@@ -397,6 +404,7 @@ export function useCallerHub(sessionId?: string) {
   return {
     isConnected,
     connectionState,
+    connectionError,
     connectedPlayers,
     pendingClaims,
     reconnect,
