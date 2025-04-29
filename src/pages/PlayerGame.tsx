@@ -80,7 +80,7 @@ export default function PlayerGame() {
   const isGameActive = gameStatus === 'active';
   
   // Initialize hooks with conditionals for their behavior, not their existence
-  const shouldLoadTickets = !!currentSession?.id && isSessionActive && isGameLive && isGameActive;
+  const shouldLoadTickets = !!currentSession?.id && isSessionActive && isGameLive && isGameActive && !!playerCode;
   const { tickets } = useTickets(playerCode, currentSession?.id);
   
   // Initialize WebSocket hook with proper fallbacks
@@ -118,6 +118,11 @@ export default function PlayerGame() {
     return submitBingoClaim();
   }, [submitBingoClaim, tickets, bingoSync]);
   
+  // Determine error message with better priority handling
+  const effectiveErrorMessage = bingoSync.connectionError && !errorMessage ? 
+    `Connection error: ${bingoSync.connectionError}` : 
+    errorMessage;
+  
   // Debug logging
   useEffect(() => {
     console.log("PlayerGame render state:", {
@@ -129,13 +134,13 @@ export default function PlayerGame() {
       sessionState: currentSession?.lifecycle_state,
       sessionStatus: currentSession?.status,
       gameState: currentGameState?.status,
-      errorMessage,
+      errorMessage: effectiveErrorMessage,
       sessionProgress,
       socketConnectionState: bingoSync.connectionState,
       socketLastCalledNumber: bingoSync.gameState.lastCalledNumber,
       socketCalledNumbers: bingoSync.gameState.calledNumbers.length
     });
-  }, [playerCode, isLoading, loadingStep, tickets, currentSession, currentGameState, errorMessage, sessionProgress, bingoSync]);
+  }, [playerCode, isLoading, loadingStep, tickets, currentSession, currentGameState, effectiveErrorMessage, sessionProgress, bingoSync]);
 
   // Early return during initial loading
   if (loadingPlayerCode || !playerCode) {
@@ -160,14 +165,14 @@ export default function PlayerGame() {
   // 4. Session exists but is not active yet (waiting room)
   const shouldShowLoader = 
     isInitialLoading || 
-    !!errorMessage || 
+    !!effectiveErrorMessage || 
     !hasSession || 
     (!isGameActive || !isGameLive || !isSessionActive);
 
   if (shouldShowLoader) {
     console.log("Showing PlayerGameLoader with:", {
       isLoading,
-      errorMessage,
+      errorMessage: effectiveErrorMessage,
       currentSession,
       loadingStep
     });
@@ -175,7 +180,7 @@ export default function PlayerGame() {
     return (
       <PlayerGameLoader 
         isLoading={isLoading} 
-        errorMessage={errorMessage} 
+        errorMessage={effectiveErrorMessage} 
         currentSession={currentSession}
         loadingStep={loadingStep}
       />
@@ -259,7 +264,7 @@ export default function PlayerGame() {
         activeWinPatterns={currentWinPattern ? [currentWinPattern] : []}
         currentWinPattern={currentWinPattern}
         onClaimBingo={handleClaimBingo}
-        errorMessage={errorMessage || ''}
+        errorMessage={effectiveErrorMessage || ''}
         isLoading={isLoading}
         isClaiming={isSubmittingClaim}
         claimStatus={claimStatus}

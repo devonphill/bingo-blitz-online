@@ -24,16 +24,29 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
   
   const [isConnected, setIsConnected] = useState(false);
   const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
+  const reconnectAttemptsRef = useRef<number>(0);
   const { toast } = useToast();
   
   useEffect(() => {
+    // Reset connection error on each new connection attempt
+    setConnectionError(null);
+    
     // Don't attempt connection if we don't have valid session ID or playerCode
-    if (!sessionId || sessionId === '' || !playerCode || playerCode === '') {
-      console.log("Missing required data for WebSocket connection:", { sessionId, playerCode });
+    if (!sessionId || sessionId === '') {
+      console.log("Missing sessionId for WebSocket connection");
       setConnectionState('disconnected');
+      setConnectionError("Missing game session ID");
+      return;
+    }
+
+    if (!playerCode || playerCode === '') {
+      console.log("Missing playerCode for WebSocket connection");
+      setConnectionState('disconnected');
+      setConnectionError("Missing player code");
       return;
     }
 
@@ -68,6 +81,8 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
         console.log("WebSocket connection established");
         setIsConnected(true);
         setConnectionState('connected');
+        reconnectAttemptsRef.current = 0;
+        setConnectionError(null);
         
         // Send player join message
         socket.send(JSON.stringify({
@@ -252,28 +267,45 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
           pingIntervalRef.current = null;
         }
         
+        // Try to reconnect with exponential backoff
+        const reconnectDelay = Math.min(3000 * Math.pow(1.5, reconnectAttemptsRef.current), 30000);
+        reconnectAttemptsRef.current++;
+        
+        console.log(`Reconnect attempt ${reconnectAttemptsRef.current} scheduled in ${reconnectDelay}ms`);
+        
         // Try to reconnect
         reconnectTimerRef.current = window.setTimeout(() => {
           console.log("Attempting to reconnect WebSocket...");
           setConnectionState('connecting');
-        }, 3000);
+        }, reconnectDelay);
       };
       
       socket.onerror = (error) => {
         console.error("WebSocket error:", error);
         setIsConnected(false);
         setConnectionState('error');
+        setConnectionError("Connection to game server failed");
         
-        toast({
-          title: "Connection Error",
-          description: "Lost connection to the game server. Trying to reconnect...",
-          variant: "destructive",
-          duration: 5000
-        });
+        if (reconnectAttemptsRef.current < 5) {
+          toast({
+            title: "Connection Error",
+            description: "Lost connection to the game server. Trying to reconnect...",
+            variant: "destructive",
+            duration: 5000
+          });
+        } else {
+          toast({
+            title: "Connection Failed",
+            description: "Could not connect to the game server after multiple attempts. Please refresh the page.",
+            variant: "destructive",
+            duration: 10000
+          });
+        }
       };
     } catch (error) {
       console.error("Failed to create WebSocket connection:", error);
       setConnectionState('error');
+      setConnectionError("Failed to establish connection to game server");
     }
 
     // Cleanup function
@@ -328,6 +360,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     gameState,
     isConnected,
     connectionState,
+    connectionError,
     claimBingo
   };
 }
