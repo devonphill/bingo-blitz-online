@@ -18,6 +18,9 @@ export default function PlayerGame() {
   const { toast } = useToast();
   const [loadingPlayerCode, setLoadingPlayerCode] = useState(true);
   
+  // Initialize playerCode early to ensure consistent hook calls
+  const [playerCode, setPlayerCode] = useState<string | null>(null);
+  
   useEffect(() => {
     console.log("PlayerGame initialized with playerCode from URL:", urlPlayerCode);
     const storedPlayerCode = localStorage.getItem('playerCode');
@@ -25,6 +28,7 @@ export default function PlayerGame() {
     if (urlPlayerCode) {
       console.log("Storing player code from URL:", urlPlayerCode);
       localStorage.setItem('playerCode', urlPlayerCode);
+      setPlayerCode(urlPlayerCode);
       setLoadingPlayerCode(false);
     } else if (storedPlayerCode) {
       console.log("Found stored player code, redirecting:", storedPlayerCode);
@@ -40,20 +44,7 @@ export default function PlayerGame() {
     }
   }, [urlPlayerCode, navigate, toast]);
 
-  if (!urlPlayerCode && loadingPlayerCode) {
-    return (
-      <PlayerGameLoader 
-        isLoading={true} 
-        errorMessage={null} 
-        currentSession={null}
-        loadingStep="initializing"
-      />
-    );
-  }
-  
-  const playerCode = urlPlayerCode || localStorage.getItem('playerCode');
-  console.log("Using player code:", playerCode);
-  
+  // Always initialize hooks regardless of conditions to maintain hook order
   const {
     playerName,
     playerId,
@@ -83,15 +74,15 @@ export default function PlayerGame() {
   const gameStatus = sessionProgress?.game_status || 'pending';
   const isGameActive = gameStatus === 'active';
   
-  // Only load tickets if the game is active
-  const shouldLoadTickets = currentSession?.id && isSessionActive && isGameLive && isGameActive;
-  const { tickets } = useTickets(shouldLoadTickets ? playerCode : null, shouldLoadTickets ? currentSession?.id : undefined);
+  // Always initialize hooks with conditionals for their behavior, not their existence
+  const shouldLoadTickets = !!currentSession?.id && isSessionActive && isGameLive && isGameActive;
+  const { tickets } = useTickets(playerCode, currentSession?.id);
   
-  // Use our WebSocket-based sync hook only when game is active
+  // Always initialize WebSocket hook with fallback values
   const bingoSync = useBingoSync(
-    shouldLoadTickets ? currentSession?.id : undefined, 
-    shouldLoadTickets ? playerCode : undefined, 
-    shouldLoadTickets ? playerName || undefined : undefined
+    currentSession?.id || undefined, 
+    playerCode || undefined, 
+    playerName || undefined
   );
   
   console.log("WebSocket game state:", {
@@ -137,6 +128,18 @@ export default function PlayerGame() {
       socketCalledNumbers: bingoSync.gameState.calledNumbers.length
     });
   }, [isLoading, loadingStep, tickets, currentSession, currentGameState, errorMessage, sessionProgress, bingoSync]);
+
+  // Early return during initial loading
+  if (loadingPlayerCode || !playerCode) {
+    return (
+      <PlayerGameLoader 
+        isLoading={true} 
+        errorMessage={null} 
+        currentSession={null}
+        loadingStep="initializing"
+      />
+    );
+  }
   
   const isInitialLoading = isLoading && loadingStep !== 'completed';
   const hasTickets = tickets && tickets.length > 0;
