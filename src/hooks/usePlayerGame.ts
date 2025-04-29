@@ -5,6 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 import { GameType } from '@/types';
 
 export function usePlayerGame(playerCode: string | null) {
+  // Initialize all state variables immediately
   const [playerName, setPlayerName] = useState<string | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [currentSession, setCurrentSession] = useState<any | null>(null);
@@ -162,21 +163,20 @@ export function usePlayerGame(playerCode: string | null) {
   
   // Load player data and session info
   useEffect(() => {
-    // Validate playerCode - make sure to clear error message if playerCode is valid
-    if (playerCode && playerCode.trim() !== '') {
-      // Reset error message since we have a valid code
-      setErrorMessage('');
-    } else {
-      console.error("Player code is missing or empty.");
-      setErrorMessage("Player code is required. Please join the game again.");
-      setIsLoading(false);
-      setLoadingStep('error');
-      return;
-    }
+    let isMounted = true;
     
     const loadPlayerData = async () => {
+      if (!isMounted) return;
       setIsLoading(true);
       setLoadingStep('fetching-player');
+      
+      // Do nothing if there's no playerCode - but don't set an error here
+      // Let the parent component handle the validation
+      if (!playerCode || playerCode.trim() === '') {
+        setIsLoading(false);
+        setLoadingStep('completed');
+        return;
+      }
       
       try {
         console.log("Fetching player data with code:", playerCode);
@@ -184,9 +184,11 @@ export function usePlayerGame(playerCode: string | null) {
         // Fetch player profile
         const { data: playerData, error: playerError } = await supabase
           .from('players')
-          .select('id, nickname, session_id')  // Added session_id to the query
+          .select('id, nickname, session_id')
           .eq('player_code', playerCode)
           .single();
+        
+        if (!isMounted) return;
         
         if (playerError) {
           console.error("Error fetching player:", playerError);
@@ -219,12 +221,15 @@ export function usePlayerGame(playerCode: string | null) {
         }
         
         // Fetch the specific session this player belongs to
+        if (!isMounted) return;
         setLoadingStep('fetching-session');
         const { data: sessionData, error: sessionError } = await supabase
           .from('game_sessions')
           .select('*')
-          .eq('id', playerData.session_id)  // Use player's session_id instead of filtering by status
+          .eq('id', playerData.session_id)
           .single();
+        
+        if (!isMounted) return;
         
         if (sessionError) {
           console.error("Error fetching session:", sessionError);
@@ -267,6 +272,8 @@ export function usePlayerGame(playerCode: string | null) {
           .eq('session_id', sessionData.id)
           .single();
         
+        if (!isMounted) return;
+        
         if (progressError) {
           console.error("Error fetching called numbers:", progressError);
           setErrorMessage("Failed to load called numbers. Please try again.");
@@ -292,6 +299,7 @@ export function usePlayerGame(playerCode: string | null) {
         setLoadingStep('completed');
         console.log("Player game data loading completed successfully");
       } catch (error) {
+        if (!isMounted) return;
         console.error("Unexpected error:", error);
         setErrorMessage("An unexpected error occurred. Please try again.");
         setIsLoading(false);
@@ -300,6 +308,10 @@ export function usePlayerGame(playerCode: string | null) {
     };
     
     loadPlayerData();
+    
+    return () => {
+      isMounted = false; // Prevent state updates after unmount
+    };
   }, [playerCode]);
   
   return {

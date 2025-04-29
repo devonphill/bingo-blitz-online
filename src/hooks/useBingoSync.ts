@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { useToast } from './use-toast';
 
@@ -12,6 +13,7 @@ interface GameState {
 }
 
 export function useBingoSync(sessionId?: string, playerCode?: string, playerName?: string) {
+  // Initialize all state variables immediately
   const [gameState, setGameState] = useState<GameState>({
     lastCalledNumber: null,
     calledNumbers: [],
@@ -31,7 +33,29 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
   const reconnectAttemptsRef = useRef<number>(0);
   const { toast } = useToast();
   
+  // Reset connection state on props change
   useEffect(() => {
+    // Close previous connection if it exists
+    if (socketRef.current) {
+      try {
+        socketRef.current.close();
+      } catch (err) {
+        console.error("Error closing existing WebSocket:", err);
+      }
+      socketRef.current = null;
+    }
+    
+    // Clear any existing timers
+    if (reconnectTimerRef.current !== null) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    
+    if (pingIntervalRef.current !== null) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
+    }
+    
     // Reset connection error on each new connection attempt
     setConnectionError(null);
     
@@ -39,36 +63,29 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     if (!sessionId || sessionId === '') {
       console.log("Missing sessionId for WebSocket connection");
       setConnectionState('disconnected');
-      setConnectionError("Missing game session ID");
       return;
     }
 
     if (!playerCode || playerCode === '') {
       console.log("Missing playerCode for WebSocket connection");
       setConnectionState('disconnected');
-      setConnectionError("Missing player code");
       return;
     }
 
     console.log(`Setting up WebSocket connection for session: ${sessionId}, player: ${playerCode}`);
     setConnectionState('connecting');
 
-    // Construct WebSocket URL with query parameters
-    const domain = window.location.origin;
-    const wsUrl = new URL(`${domain}/functions/v1/bingo-hub`);
-    
-    wsUrl.searchParams.append('type', 'player');
-    wsUrl.searchParams.append('sessionId', sessionId);
-    if (playerCode) wsUrl.searchParams.append('playerCode', playerCode);
-    if (playerName && playerName !== '') wsUrl.searchParams.append('playerName', playerName);
-    
-    // Upgrade from http to ws protocol
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    wsUrl.protocol = wsProtocol;
-    
-    console.log("Connecting to WebSocket URL:", wsUrl.toString());
-    
     try {
+      // Construct WebSocket URL with query parameters
+      const wsUrl = new URL(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/functions/v1/bingo-hub`);
+      
+      wsUrl.searchParams.append('type', 'player');
+      wsUrl.searchParams.append('sessionId', sessionId);
+      if (playerCode) wsUrl.searchParams.append('playerCode', playerCode);
+      if (playerName && playerName !== '') wsUrl.searchParams.append('playerName', playerName);
+      
+      console.log("Connecting to WebSocket URL:", wsUrl.toString());
+      
       // Create WebSocket connection
       const socket = new WebSocket(wsUrl.toString());
       socketRef.current = socket;
@@ -321,7 +338,11 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
       
       // Close socket
       if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-        socketRef.current.close();
+        try {
+          socketRef.current.close();
+        } catch (err) {
+          console.error("Error closing WebSocket:", err);
+        }
       }
       socketRef.current = null;
     };

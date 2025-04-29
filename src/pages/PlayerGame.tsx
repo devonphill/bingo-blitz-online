@@ -9,50 +9,53 @@ import { useTickets } from '@/hooks/useTickets';
 import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 import PlayerGameLayout from '@/components/game/PlayerGameLayout';
-import { Button } from '@/components/ui/button';
-import { Info } from 'lucide-react';
 
 export default function PlayerGame() {
   const { playerCode: urlPlayerCode } = useParams<{ playerCode: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   
-  // Initialize playerCode immediately to ensure consistent hook calls
+  // Initialize playerCode state immediately
   const [playerCode, setPlayerCode] = useState<string | null>(null);
   const [loadingPlayerCode, setLoadingPlayerCode] = useState(true);
   
-  // Handle player code initialization
+  // Handle player code initialization - only run once on mount
   useEffect(() => {
-    console.log("PlayerGame initialized with playerCode from URL:", urlPlayerCode);
-    
-    if (urlPlayerCode && urlPlayerCode.trim() !== '') {
-      console.log("Using player code from URL:", urlPlayerCode);
-      localStorage.setItem('playerCode', urlPlayerCode);
-      setPlayerCode(urlPlayerCode);
-      setLoadingPlayerCode(false);
-    } else {
-      const storedPlayerCode = localStorage.getItem('playerCode');
+    const initializePlayerCode = () => {
+      console.log("PlayerGame initialized with playerCode from URL:", urlPlayerCode);
       
-      if (storedPlayerCode && storedPlayerCode.trim() !== '') {
-        console.log("Using stored player code:", storedPlayerCode);
-        setPlayerCode(storedPlayerCode);
-        // Redirect to have the code in the URL for better bookmarking/sharing
-        navigate(`/player/game/${storedPlayerCode}`, { replace: true });
+      if (urlPlayerCode && urlPlayerCode.trim() !== '') {
+        console.log("Using player code from URL:", urlPlayerCode);
+        localStorage.setItem('playerCode', urlPlayerCode);
+        setPlayerCode(urlPlayerCode);
         setLoadingPlayerCode(false);
       } else {
-        console.log("No player code found, redirecting to join page");
-        localStorage.removeItem('playerCode'); // Clear any invalid codes
-        toast({
-          title: 'Player Code Missing',
-          description: 'Please enter your player code to join the game.',
-          variant: 'destructive'
-        });
-        navigate('/player/join');
+        const storedPlayerCode = localStorage.getItem('playerCode');
+        
+        if (storedPlayerCode && storedPlayerCode.trim() !== '') {
+          console.log("Using stored player code:", storedPlayerCode);
+          setPlayerCode(storedPlayerCode);
+          // Redirect to have the code in the URL for better bookmarking/sharing
+          navigate(`/player/game/${storedPlayerCode}`, { replace: true });
+          setLoadingPlayerCode(false);
+        } else {
+          console.log("No player code found, redirecting to join page");
+          localStorage.removeItem('playerCode'); // Clear any invalid codes
+          toast({
+            title: 'Player Code Missing',
+            description: 'Please enter your player code to join the game.',
+            variant: 'destructive'
+          });
+          navigate('/player/join');
+        }
       }
-    }
+    };
+
+    initializePlayerCode();
   }, [urlPlayerCode, navigate, toast]);
 
-  // Always initialize hooks with proper dependencies to maintain consistent hook order
+  // Always initialize hooks with the same ordering - even if some will not be used
+  // This ensures React's hook rules are followed
   const {
     playerName,
     playerId,
@@ -76,32 +79,23 @@ export default function PlayerGame() {
 
   const { progress: sessionProgress } = useSessionProgress(currentSession?.id);
   
-  // Check if the game is active
+  // Initialize session state
   const isSessionActive = currentSession?.status === 'active';
   const isGameLive = currentSession?.lifecycle_state === 'live';
   const gameStatus = sessionProgress?.game_status || 'pending';
   const isGameActive = gameStatus === 'active';
   
-  // Initialize hooks with conditionals for their behavior, not their existence
-  const shouldLoadTickets = !!currentSession?.id && isSessionActive && isGameLive && isGameActive && !!playerCode;
+  // Always initialize tickets hook with the same parameters, even if it will not be used
   const { tickets } = useTickets(playerCode, currentSession?.id);
   
-  // Initialize WebSocket hook with proper fallbacks
+  // Always initialize WebSocket hook with the same parameters
   const bingoSync = useBingoSync(
     currentSession?.id || '', 
     playerCode || '', 
     playerName || ''
   );
   
-  console.log("WebSocket game state:", {
-    lastCalledNumber: bingoSync.gameState.lastCalledNumber,
-    calledNumbers: bingoSync.gameState.calledNumbers.length, 
-    currentWinPattern: bingoSync.gameState.currentWinPattern,
-    connectionState: bingoSync.connectionState,
-    shouldLoadTickets,
-    playerCode
-  });
-  
+  // Handle bingo claims
   const handleClaimBingo = useCallback(() => {
     if (!tickets || tickets.length === 0) {
       console.log("Cannot claim bingo: no tickets available");
@@ -122,7 +116,6 @@ export default function PlayerGame() {
   }, [submitBingoClaim, tickets, bingoSync]);
   
   // Determine error message with better priority handling
-  // This is key for fixing the "Player code is required" error showing incorrectly
   const effectiveErrorMessage = playerCode 
     ? (bingoSync.connectionError || errorMessage || '')
     : "Player code is required. Please join the game again.";
@@ -146,7 +139,7 @@ export default function PlayerGame() {
     });
   }, [playerCode, isLoading, loadingStep, tickets, currentSession, currentGameState, effectiveErrorMessage, sessionProgress, bingoSync]);
 
-  // Early return during initial loading
+  // Early return during initial loading - no conditional hooks after this point
   if (loadingPlayerCode) {
     return (
       <PlayerGameLoader 
@@ -204,21 +197,25 @@ export default function PlayerGame() {
   }
 
   // At this point, we know the game is active and we should have tickets
-  // If not, something's wrong
   if (!hasTickets) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="bg-white shadow-lg rounded-lg p-6 max-w-md w-full">
           <div className="flex items-center justify-center mb-4 text-amber-500">
-            <Info size={40} />
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-4 text-center">No Tickets Available</h2>
           <p className="text-gray-600 mb-4 text-center">
             You don't have any tickets assigned for this game. Please contact the game organizer.
           </p>
-          <Button onClick={() => window.location.reload()} className="w-full">
+          <button 
+            onClick={() => window.location.reload()} 
+            className="w-full rounded-md bg-blue-500 hover:bg-blue-600 text-white px-4 py-2"
+          >
             Refresh
-          </Button>
+          </button>
         </div>
       </div>
     );
