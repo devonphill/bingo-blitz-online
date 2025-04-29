@@ -31,7 +31,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
   const reconnectTimerRef = useRef<number | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
-  const maxReconnectAttempts = 7; // Increased from 5
+  const maxReconnectAttempts = 10; // Increased from 7
   const { toast } = useToast();
 
   // Function to create WebSocket connection
@@ -54,26 +54,27 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     try {
       // Construct WebSocket URL
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      let wsUrl: URL;
+      let wsUrl: string;
       
-      // When running in development using localhost, construct URL manually 
-      if (window.location.hostname === 'localhost') {
-        // Point to the deployed Supabase function URL
-        wsUrl = new URL("wss://weqosgnuiixccghdoccw.functions.supabase.co/bingo-hub");
+      // Construct URL - always use the full URL with domain
+      const domain = window.location.hostname;
+      
+      // When running in development using localhost, use the Supabase project URL directly
+      if (domain === 'localhost') {
+        wsUrl = `wss://weqosgnuiixccghdoccw.functions.supabase.co/bingo-hub?type=player&sessionId=${sessionId}`;
+        if (playerCode) wsUrl += `&playerCode=${playerCode}`;
+        if (playerName) wsUrl += `&playerName=${encodeURIComponent(playerName)}`;
       } else {
-        // Use relative URL when deployed
-        wsUrl = new URL(`${wsProtocol}//${window.location.host}/functions/v1/bingo-hub`);
+        // When deployed, use the relative URL with the current domain
+        wsUrl = `${wsProtocol}//${domain}/functions/v1/bingo-hub?type=player&sessionId=${sessionId}`;
+        if (playerCode) wsUrl += `&playerCode=${playerCode}`;
+        if (playerName) wsUrl += `&playerName=${encodeURIComponent(playerName)}`;
       }
       
-      wsUrl.searchParams.append('type', 'player');
-      wsUrl.searchParams.append('sessionId', sessionId);
-      if (playerCode) wsUrl.searchParams.append('playerCode', playerCode);
-      if (playerName) wsUrl.searchParams.append('playerName', playerName);
-      
-      console.log("Connecting to WebSocket URL:", wsUrl.toString());
+      console.log("Connecting to WebSocket URL:", wsUrl);
       
       // Create WebSocket connection
-      const socket = new WebSocket(wsUrl.toString());
+      const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
       
       socket.onopen = () => {

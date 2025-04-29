@@ -124,17 +124,21 @@ export function LiveGameView({
               {/* WebSocket connection status */}
               <div className="bg-gray-100 p-4 rounded-md">
                 <div className="text-sm text-gray-500 mb-1">Connection Status</div>
-                <div className={`text-lg font-bold ${callerHub.connectionState === 'connected' ? 'text-green-600' : 'text-amber-600'}`}>
-                  {callerHub.connectionState === 'connected' ? 'Connected' : callerHub.connectionState}
+                <div className={`text-lg font-bold ${callerHub.connectionState === 'connected' ? 'text-green-600' : 
+                                callerHub.connectionState === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
+                  {callerHub.connectionState === 'connected' ? 'Connected' : 
+                   callerHub.connectionState === 'connecting' ? 'Connecting...' :
+                   callerHub.connectionState === 'error' ? 'Connection Error' : 'Disconnected'}
                 </div>
                 <div className="mt-2 text-sm text-gray-500">
-                  {callerHub.connectionState === 'connected'
+                  {callerHub.connectionError || 
+                    (callerHub.connectionState === 'connected'
                     ? 'WebSocket connection is established and working correctly.'
                     : callerHub.connectionState === 'connecting'
                     ? 'Establishing WebSocket connection...'
                     : callerHub.connectionState === 'error'
                     ? 'Error with WebSocket connection. Some features may not work.'
-                    : 'WebSocket disconnected. Reconnecting...'}
+                    : 'WebSocket disconnected. Reconnecting...')}
                 </div>
               </div>
             </div>

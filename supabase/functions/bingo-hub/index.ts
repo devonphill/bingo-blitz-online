@@ -16,12 +16,13 @@ interface Client {
   lastActivity: number;
 }
 
-// Improved CORS headers
+// Enhanced CORS headers
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Max-Age': '86400',
+  'Sec-WebSocket-Protocol': 'binary', // Add support for binary protocol
 };
 
 const clients: Map<string, Client> = new Map();
@@ -133,7 +134,7 @@ function notifyCaller(sessionId: string, message: any) {
   }
 }
 
-// Handler for player messages - improved error handling
+// Handler for player messages
 async function handlePlayerMessage(client: Client, message: any) {
   try {
     if (!message || !message.type) {
@@ -255,7 +256,7 @@ async function handlePlayerMessage(client: Client, message: any) {
   }
 }
 
-// Handler for caller messages - improved error handling
+// Handler for caller messages
 async function handleCallerMessage(client: Client, message: any) {
   try {
     if (!message || !message.type) {
@@ -463,13 +464,17 @@ async function handleCallerMessage(client: Client, message: any) {
 }
 
 serve(async (req) => {
+  console.log("Received request to bingo-hub");
+  
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
+    console.log("Handling OPTIONS preflight request");
     return new Response(null, { headers: corsHeaders });
   }
 
   const upgradeHeader = req.headers.get('upgrade') || '';
   if (upgradeHeader.toLowerCase() !== 'websocket') {
+    console.log("Non-WebSocket request rejected");
     return new Response('Expected WebSocket connection', { 
       status: 400,
       headers: corsHeaders
@@ -477,8 +482,11 @@ serve(async (req) => {
   }
   
   const url = new URL(req.url);
+  console.log(`Received WebSocket connection request URL: ${req.url}`);
+  
   const clientType = url.searchParams.get('type');
   if (clientType !== 'caller' && clientType !== 'player') {
+    console.log(`Invalid client type: ${clientType}`);
     return new Response('Client type must be caller or player', { 
       status: 400,
       headers: corsHeaders
@@ -487,6 +495,7 @@ serve(async (req) => {
   
   const sessionId = url.searchParams.get('sessionId');
   if (!sessionId) {
+    console.log("Missing sessionId parameter");
     return new Response('Session ID is required', { 
       status: 400,
       headers: corsHeaders
@@ -496,12 +505,14 @@ serve(async (req) => {
   const playerCode = url.searchParams.get('playerCode') || undefined;
   const playerName = url.searchParams.get('playerName') || undefined;
   
-  console.log(`New WebSocket connection request: ${clientType} for session ${sessionId}`);
+  console.log(`New WebSocket connection request: ${clientType} for session ${sessionId}, playerCode: ${playerCode}`);
   
   // Create WebSocket connection
   try {
     const { socket, response } = Deno.upgradeWebSocket(req);
     const clientId = crypto.randomUUID();
+    
+    console.log(`WebSocket upgrade successful for clientId: ${clientId}`);
     
     // Set up client object
     const client: Client = {
@@ -578,7 +589,7 @@ serve(async (req) => {
       removeClient(clientId);
     };
     
-    // Add headers to improve WebSocket stability
+    // Add improved headers to response
     const headers = new Headers(corsHeaders);
     headers.set('Connection', 'Upgrade');
     headers.set('Upgrade', 'websocket');
