@@ -179,9 +179,9 @@ export function usePlayerGame(playerCode: string | null) {
         
         // Fetch player profile
         const { data: playerData, error: playerError } = await supabase
-          .from('players') // Changed from 'profiles' to 'players'
-          .select('id, nickname') // Changed to match players table columns
-          .eq('player_code', playerCode) // Changed from 'access_code' to 'player_code'
+          .from('players')
+          .select('id, nickname, session_id')  // Added session_id to the query
+          .eq('player_code', playerCode)
           .single();
         
         if (playerError) {
@@ -205,12 +205,21 @@ export function usePlayerGame(playerCode: string | null) {
         setPlayerId(playerData.id);
         console.log("Player found:", playerData);
         
-        // Fetch current session
+        // Get the specific session associated with this player
+        if (!playerData.session_id) {
+          console.error("Player has no assigned session.");
+          setErrorMessage("You are not assigned to any game session. Please contact the game organizer.");
+          setIsLoading(false);
+          setLoadingStep('error');
+          return;
+        }
+        
+        // Fetch the specific session this player belongs to
         setLoadingStep('fetching-session');
         const { data: sessionData, error: sessionError } = await supabase
           .from('game_sessions')
           .select('*')
-          .eq('status', 'active')
+          .eq('id', playerData.session_id)  // Use player's session_id instead of filtering by status
           .single();
         
         if (sessionError) {
@@ -222,14 +231,14 @@ export function usePlayerGame(playerCode: string | null) {
         }
         
         if (!sessionData) {
-          console.log("No active session found.");
-          setErrorMessage("No active game session found. Please wait for the game to start.");
+          console.log("Session not found for this player.");
+          setErrorMessage("The game session you were assigned to no longer exists. Please contact the game organizer.");
           setIsLoading(false);
-          setLoadingStep('waiting-for-session');
+          setLoadingStep('error');
           return;
         }
         
-        console.log("Active session found:", sessionData);
+        console.log("Player session found:", sessionData);
         setCurrentSession(sessionData);
         
         // Use setGameType with a type assertion to ensure type safety

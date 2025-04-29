@@ -132,6 +132,7 @@ export function usePlayers(
     success: boolean;
     playerCode?: string;
     playerId?: string;
+    sessionId?: string; // Add sessionId to the return type
     error?: string;
   }> => {
     try {
@@ -151,7 +152,8 @@ export function usePlayers(
       return {
         success: true,
         playerCode: data.player_code,
-        playerId: data.id
+        playerId: data.id,
+        sessionId: data.session_id  // Return the session ID to the caller
       };
     } catch (err: any) {
       console.error('Error joining session:', err);
