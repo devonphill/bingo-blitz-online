@@ -175,11 +175,13 @@ export function usePlayerGame(playerCode: string | null) {
       setLoadingStep('fetching-player');
       
       try {
+        console.log("Fetching player data with code:", playerCode);
+        
         // Fetch player profile
         const { data: playerData, error: playerError } = await supabase
-          .from('profiles')
-          .select('id, full_name')
-          .eq('access_code', playerCode)
+          .from('players') // Changed from 'profiles' to 'players'
+          .select('id, nickname') // Changed to match players table columns
+          .eq('player_code', playerCode) // Changed from 'access_code' to 'player_code'
           .single();
         
         if (playerError) {
@@ -198,8 +200,10 @@ export function usePlayerGame(playerCode: string | null) {
           return;
         }
         
-        setPlayerName(playerData.full_name);
+        // Use nickname instead of full_name
+        setPlayerName(playerData.nickname);
         setPlayerId(playerData.id);
+        console.log("Player found:", playerData);
         
         // Fetch current session
         setLoadingStep('fetching-session');
@@ -225,6 +229,7 @@ export function usePlayerGame(playerCode: string | null) {
           return;
         }
         
+        console.log("Active session found:", sessionData);
         setCurrentSession(sessionData);
         
         // Use setGameType with a type assertion to ensure type safety
@@ -272,6 +277,7 @@ export function usePlayerGame(playerCode: string | null) {
         
         setIsLoading(false);
         setLoadingStep('completed');
+        console.log("Player game data loading completed successfully");
       } catch (error) {
         console.error("Unexpected error:", error);
         setErrorMessage("An unexpected error occurred. Please try again.");
@@ -281,7 +287,7 @@ export function usePlayerGame(playerCode: string | null) {
     };
     
     loadPlayerData();
-  }, [playerCode]);
+  }, [playerCode]); // Removed toast from dependency array to fix deep type instantiation
   
   return {
     playerName,
