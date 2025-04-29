@@ -17,3 +17,6 @@ enabled = true
 
 [functions.setup-tables]
 verify_jwt = true
+
+[functions.bingo-hub]
+verify_jwt = false

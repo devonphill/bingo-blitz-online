@@ -1,10 +1,11 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import CallerControls from '@/components/game/CallerControls';
 import { useGameData } from '@/hooks/useGameData';
 import ClaimVerificationSheet from '../game/ClaimVerificationSheet';
+import { useCallerHub } from '@/hooks/useCallerHub';
 
 interface WinPattern {
   id: string;
@@ -53,10 +54,20 @@ export function LiveGameView({
   const [isClaimSheetOpen, setIsClaimSheetOpen] = useState(false);
   const { getCurrentGamePatterns } = useGameData(sessionId);
   
+  // Use caller WebSocket hub to receive claims
+  const callerHub = useCallerHub(sessionId);
+  
   const remainingNumbers = React.useMemo(() => {
     const allNumbers = Array.from({ length: gameType === 'mainstage' ? 90 : 75 }, (_, i) => i + 1);
     return allNumbers.filter(num => !calledNumbers.includes(num));
   }, [calledNumbers, gameType]);
+  
+  // Update claim sheet when new claims arrive
+  useEffect(() => {
+    if (callerHub.pendingClaims.length > 0) {
+      setIsClaimSheetOpen(true);
+    }
+  }, [callerHub.pendingClaims]);
   
   const openClaimSheet = () => {
     setIsClaimSheetOpen(true);
@@ -97,12 +108,38 @@ export function LiveGameView({
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Add more game stats or controls as needed */}
+              {/* Connected players from WebSocket */}
+              <div className="bg-gray-100 p-4 rounded-md">
+                <div className="text-sm text-gray-500 mb-1">Connected Players</div>
+                <div className="text-lg font-bold">{callerHub.connectedPlayers.length}</div>
+                <div className="mt-2 max-h-40 overflow-y-auto">
+                  {callerHub.connectedPlayers.map((player, idx) => (
+                    <div key={player.playerCode || idx} className="text-sm py-1 border-b border-gray-200 last:border-0">
+                      {player.playerName || player.playerCode}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* WebSocket connection status */}
+              <div className="bg-gray-100 p-4 rounded-md">
+                <div className="text-sm text-gray-500 mb-1">Connection Status</div>
+                <div className={`text-lg font-bold ${callerHub.connectionState === 'connected' ? 'text-green-600' : 'text-amber-600'}`}>
+                  {callerHub.connectionState === 'connected' ? 'Connected' : callerHub.connectionState}
+                </div>
+                <div className="mt-2 text-sm text-gray-500">
+                  {callerHub.connectionState === 'connected'
+                    ? 'WebSocket connection is established and working correctly.'
+                    : callerHub.connectionState === 'connecting'
+                    ? 'Establishing WebSocket connection...'
+                    : callerHub.connectionState === 'error'
+                    ? 'Error with WebSocket connection. Some features may not work.'
+                    : 'WebSocket disconnected. Reconnecting...'}
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
-        
-        {/* Add more content as needed */}
       </div>
       
       <div className="space-y-6">
@@ -113,14 +150,12 @@ export function LiveGameView({
           remainingNumbers={remainingNumbers}
           sessionId={sessionId || ''}
           winPatterns={selectedPatterns}
-          claimCount={pendingClaims}
+          claimCount={callerHub.pendingClaims.length}
           openClaimSheet={openClaimSheet}
           gameType={gameType}
           sessionStatus={sessionStatus}
           gameConfigs={gameConfigs}
         />
-        
-        {/* Add more controls or information as needed */}
       </div>
       
       <ClaimVerificationSheet
@@ -130,6 +165,9 @@ export function LiveGameView({
         gameNumber={currentGameNumber}
         currentCalledNumbers={calledNumbers}
         gameType={gameType}
+        playerName={callerHub.pendingClaims[0]?.playerName}
+        currentNumber={lastCalledNumber}
+        currentWinPattern={currentWinPattern}
       />
     </div>
   );

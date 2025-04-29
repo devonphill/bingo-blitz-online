@@ -2,10 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { supabase } from '@/integrations/supabase/client';
 import { Bell } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import { useCallerHub } from '@/hooks/useCallerHub';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -39,6 +39,22 @@ export default function CallerControls({
   const [isGoingLive, setIsGoingLive] = useState(false);
   const { toast } = useToast();
 
+  // Connect to the WebSocket hub as a caller
+  const callerHub = useCallerHub(sessionId);
+
+  // Display the number of connected players
+  const connectedPlayersCount = callerHub.connectedPlayers.length;
+  
+  // Use pending claims from the WebSocket hub
+  const pendingClaimsCount = callerHub.pendingClaims.length;
+
+  useEffect(() => {
+    // Update claim count when we receive new claims
+    if (pendingClaimsCount > 0 && pendingClaimsCount !== claimCount) {
+      openClaimSheet();
+    }
+  }, [pendingClaimsCount, claimCount, openClaimSheet]);
+
   const handleCallNumber = () => {
     if (remainingNumbers.length === 0) {
       toast({
@@ -55,7 +71,15 @@ export default function CallerControls({
       const randomIndex = Math.floor(Math.random() * remainingNumbers.length);
       const number = remainingNumbers[randomIndex];
       
+      // Call the regular onCallNumber function for backwards compatibility
       onCallNumber(number);
+      
+      // Also broadcast via WebSocket for connected players
+      if (callerHub.isConnected) {
+        const allCalledNumbers = [...remainingNumbers.filter(n => n !== number)];
+        callerHub.callNumber(number, allCalledNumbers);
+      }
+      
       setIsCallingNumber(false);
     }, 1000);
   };
@@ -74,6 +98,13 @@ export default function CallerControls({
     try {
       // Initialize sessions_progress with Game 1's active pattern and prize info
       await initializeSessionProgress();
+      
+      // Go live via WebSocket first
+      if (callerHub.isConnected) {
+        callerHub.startGame();
+      }
+      
+      // Then also use the regular method (updates database directly)
       await onGoLive();
     } catch (error) {
       console.error('Error going live:', error);
@@ -106,7 +137,12 @@ export default function CallerControls({
       
       // Find the active pattern in Game 1
       const activePatterns = Object.entries(game1Config.patterns)
-        .filter(([_, patternConfig]: [string, any]) => patternConfig.active === true);
+        .filter(([_, patternConfig]) => {
+          if (typeof patternConfig === 'object' && patternConfig !== null) {
+            return (patternConfig as any).active === true;
+          }
+          return false;
+        });
       
       if (activePatterns.length === 0) {
         console.error("No active patterns found for Game 1");
@@ -114,27 +150,18 @@ export default function CallerControls({
       }
       
       const [patternId, patternConfig] = activePatterns[0];
+      const config = patternConfig as any;
       
-      console.log("Using active pattern:", patternId, patternConfig);
+      console.log("Using active pattern:", patternId, config);
       
-      // Update the sessions_progress with Game 1's active pattern and prize info
-      const { error } = await supabase
-        .from('sessions_progress')
-        .update({
-          current_win_pattern: patternId,
-          current_prize: patternConfig.prizeAmount || '0.00',
-          current_prize_description: patternConfig.description || '',
-          current_game_type: game1Config.gameType || gameType || 'mainstage',
-          game_status: 'active'
-        })
-        .eq('session_id', sessionId);
-      
-      if (error) {
-        console.error("Error updating sessions_progress:", error);
-        throw new Error("Failed to initialize session data");
+      // Also notify players via WebSocket
+      if (callerHub.isConnected) {
+        callerHub.changePattern(
+          patternId, 
+          config.prizeAmount || '0.00', 
+          config.description || ''
+        );
       }
-      
-      console.log("Successfully initialized session progress with Game 1 data");
     } catch (error) {
       console.error("Error in initializeSessionProgress:", error);
       toast({
@@ -150,6 +177,16 @@ export default function CallerControls({
     openClaimSheet();
   };
 
+  const handleEndGameClick = () => {
+    // Use WebSocket to notify players
+    if (callerHub.isConnected) {
+      callerHub.endGame();
+    }
+    
+    // Also call the regular method
+    onEndGame();
+  };
+
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -160,29 +197,27 @@ export default function CallerControls({
               {sessionStatus === 'active' ? 'Live' : 'Pending'}
             </Badge>
           </div>
-          {claimCount > 0 && (
-            <Button 
-              size="sm" 
-              variant="outline" 
-              className="relative"
-              onClick={handleBellClick}
-            >
-              <Bell className="h-4 w-4 text-amber-500" />
-              <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center bg-amber-500">
-                {claimCount}
+          <div className="flex items-center space-x-2">
+            {connectedPlayersCount > 0 && (
+              <Badge variant="secondary" className="mr-2">
+                {connectedPlayersCount} player{connectedPlayersCount !== 1 ? 's' : ''} connected
               </Badge>
-            </Button>
-          )}
-          {claimCount === 0 && (
+            )}
+            
             <Button 
               size="sm" 
               variant="outline" 
               className="relative"
               onClick={handleBellClick}
             >
-              <Bell className="h-4 w-4 text-gray-500" />
+              <Bell className={`h-4 w-4 ${pendingClaimsCount > 0 ? 'text-amber-500' : 'text-gray-500'}`} />
+              {pendingClaimsCount > 0 && (
+                <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center bg-amber-500">
+                  {pendingClaimsCount}
+                </Badge>
+              )}
             </Button>
-          )}
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -202,18 +237,22 @@ export default function CallerControls({
           
           <Button 
             variant="destructive"
-            onClick={onEndGame}
+            onClick={handleEndGameClick}
           >
             End Game
           </Button>
           
           <Button
             className="bg-green-600 hover:bg-green-700 text-white"
-            disabled={isGoingLive || winPatterns.length === 0 || sessionStatus === 'active'}
+            disabled={isGoingLive || winPatterns.length === 0 || sessionStatus === 'active' || !callerHub.isConnected}
             onClick={handleGoLiveClick}
           >
             {isGoingLive ? 'Going Live...' : 'Go Live'}
           </Button>
+        </div>
+        
+        <div className="text-center text-xs text-gray-500">
+          WebSocket Status: {callerHub.connectionState}
         </div>
       </CardContent>
     </Card>

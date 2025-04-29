@@ -1,9 +1,10 @@
+
 import React, { useEffect, useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { usePlayerGame } from '@/hooks/usePlayerGame';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
-import { useRealTimeUpdates } from '@/hooks/useRealTimeUpdates';
+import { useBingoSync } from '@/hooks/useBingoSync';
 import { useTickets } from '@/hooks/useTickets';
 import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import PlayerGameLoader from '@/components/game/PlayerGameLoader';
@@ -76,12 +77,14 @@ export default function PlayerGame() {
 
   const { progress: sessionProgress } = useSessionProgress(currentSession?.id);
   
-  const realTimeUpdates = useRealTimeUpdates(currentSession?.id, playerCode);
+  // Use our WebSocket-based sync hook
+  const bingoSync = useBingoSync(currentSession?.id, playerCode, playerName || undefined);
   
-  console.log("Real-time updates:", {
-    lastCalledNumber: realTimeUpdates.lastCalledNumber,
-    calledNumbers: realTimeUpdates.calledNumbers.length, 
-    currentWinPattern: realTimeUpdates.currentWinPattern
+  console.log("WebSocket game state:", {
+    lastCalledNumber: bingoSync.gameState.lastCalledNumber,
+    calledNumbers: bingoSync.gameState.calledNumbers.length, 
+    currentWinPattern: bingoSync.gameState.currentWinPattern,
+    connectionState: bingoSync.connectionState
   });
   
   const handleClaimBingo = useCallback(() => {
@@ -90,8 +93,18 @@ export default function PlayerGame() {
       return Promise.resolve(false);
     }
     console.log("Claiming bingo with ticket:", tickets[0]);
+    
+    // Try to claim bingo through WebSocket first
+    if (bingoSync.isConnected) {
+      const claimed = bingoSync.claimBingo(tickets[0]);
+      if (claimed) {
+        return Promise.resolve(true);
+      }
+    }
+    
+    // Fall back to regular claim method if WebSocket claim fails
     return submitBingoClaim();
-  }, [submitBingoClaim, tickets]);
+  }, [submitBingoClaim, tickets, bingoSync]);
   
   useEffect(() => {
     console.log("PlayerGame render state:", {
@@ -104,14 +117,15 @@ export default function PlayerGame() {
       gameState: currentGameState?.status,
       errorMessage,
       sessionProgress,
-      realTimeLastCalled: realTimeUpdates.lastCalledNumber,
-      realTimeCalledNumbers: realTimeUpdates.calledNumbers.length
+      socketConnectionState: bingoSync.connectionState,
+      socketLastCalledNumber: bingoSync.gameState.lastCalledNumber,
+      socketCalledNumbers: bingoSync.gameState.calledNumbers.length
     });
-  }, [isLoading, loadingStep, tickets, currentSession, currentGameState, errorMessage, sessionProgress, realTimeUpdates]);
+  }, [isLoading, loadingStep, tickets, currentSession, currentGameState, errorMessage, sessionProgress, bingoSync]);
   
   const isInitialLoading = isLoading && loadingStep !== 'completed';
   const hasTickets = tickets && tickets.length > 0;
-  const isGameActive = currentGameState?.status === 'active';
+  const isGameActive = currentGameState?.status === 'active' || bingoSync.gameState.gameStatus === 'active';
   const hasSession = !!currentSession;
   
   const shouldShowLoader = 
@@ -139,15 +153,16 @@ export default function PlayerGame() {
     );
   }
 
-  const finalCalledNumbers = realTimeUpdates.calledNumbers.length > 0 
-    ? realTimeUpdates.calledNumbers 
+  // Use WebSocket data first, then fall back to database data
+  const finalCalledNumbers = bingoSync.gameState.calledNumbers.length > 0 
+    ? bingoSync.gameState.calledNumbers 
     : (sessionProgress?.called_numbers || calledItems || []);
   
-  const finalLastCalledNumber = realTimeUpdates.lastCalledNumber !== null 
-    ? realTimeUpdates.lastCalledNumber
+  const finalLastCalledNumber = bingoSync.gameState.lastCalledNumber !== null 
+    ? bingoSync.gameState.lastCalledNumber
     : (finalCalledNumbers.length > 0 ? finalCalledNumbers[finalCalledNumbers.length - 1] : lastCalledItem);
   
-  const currentWinPattern = realTimeUpdates.currentWinPattern || 
+  const currentWinPattern = bingoSync.gameState.currentWinPattern || 
                            sessionProgress?.current_win_pattern || 
                            (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
 
@@ -166,10 +181,10 @@ export default function PlayerGame() {
     };
   }
 
-  if (realTimeUpdates.prizeInfo && currentWinPattern) {
+  if (bingoSync.gameState.currentPrize && bingoSync.gameState.currentWinPattern) {
     finalWinPrizes = {
       ...finalWinPrizes,
-      [currentWinPattern]: realTimeUpdates.prizeInfo.amount
+      [bingoSync.gameState.currentWinPattern]: bingoSync.gameState.currentPrize
     };
   }
 
@@ -178,6 +193,7 @@ export default function PlayerGame() {
   console.log("- Last called number:", finalLastCalledNumber);
   console.log("- Current win pattern:", currentWinPattern);
   console.log("- Prize info:", finalWinPrizes);
+  console.log("- WebSocket connection state:", bingoSync.connectionState);
 
   return (
     <React.Fragment>
@@ -200,6 +216,7 @@ export default function PlayerGame() {
         gameType={gameType}
         currentGameNumber={currentGameNumber}
         numberOfGames={numberOfGames}
+        connectionState={bingoSync.connectionState}
       >
         <GameTypePlayspace
           gameType={gameType}
