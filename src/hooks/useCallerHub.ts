@@ -35,7 +35,7 @@ export function useCallerHub(sessionId?: string) {
   const reconnectTimerRef = useRef<number | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
-  const maxReconnectAttempts = 30; // Increased from 20
+  const maxReconnectAttempts = 50; // Increased from 30
   const { toast } = useToast();
   const connectionTimeoutRef = useRef<number | null>(null);
 
@@ -83,7 +83,7 @@ export function useCallerHub(sessionId?: string) {
           
           // Try to reconnect
           if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-            const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 10000); // Reduced max delay to 10 seconds
+            const delay = Math.min(1000 * Math.pow(1.3, Math.min(reconnectAttemptsRef.current, 10)), 8000); // Reduced max delay to 8 seconds
             console.log(`Will try to reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1})`);
             reconnectTimerRef.current = window.setTimeout(() => {
               reconnectAttemptsRef.current++;
@@ -94,7 +94,7 @@ export function useCallerHub(sessionId?: string) {
             setConnectionError("Maximum reconnection attempts reached. Please reload the page.");
           }
         }
-      }, 15000); // 15 second timeout
+      }, 12000); // 12 second timeout
       
       socket.onopen = () => {
         console.log("Caller WebSocket connection established");
@@ -235,7 +235,7 @@ export function useCallerHub(sessionId?: string) {
         // Try to reconnect if we haven't exceeded max attempts and it wasn't a normal closure
         if (event.code !== 1000 && event.code !== 1001 && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
-          const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 10000); // Reduced max delay to 10 seconds
+          const delay = Math.min(1000 * Math.pow(1.3, Math.min(reconnectAttemptsRef.current, 10)), 8000); // Reduced max delay
           console.log(`Attempting to reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
           
           reconnectTimerRef.current = window.setTimeout(() => {
@@ -271,12 +271,15 @@ export function useCallerHub(sessionId?: string) {
         setConnectionState('error');
         setConnectionError("Error connecting to the game server. Will try to reconnect...");
         
-        toast({
-          title: "Connection Error",
-          description: "Error connecting to the game server. Will try to reconnect...",
-          variant: "destructive",
-          duration: 5000
-        });
+        // Don't show too many toast messages
+        if (reconnectAttemptsRef.current < 3) {
+          toast({
+            title: "Connection Error",
+            description: "Error connecting to the game server. Will try to reconnect...",
+            variant: "destructive",
+            duration: 5000
+          });
+        }
       };
     } catch (err) {
       console.error("Error creating WebSocket:", err);
@@ -286,7 +289,7 @@ export function useCallerHub(sessionId?: string) {
       // Try to reconnect if we haven't exceeded max attempts
       if (reconnectAttemptsRef.current < maxReconnectAttempts) {
         reconnectAttemptsRef.current++;
-        const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 10000);
+        const delay = Math.min(1000 * Math.pow(1.3, Math.min(reconnectAttemptsRef.current, 10)), 8000);
         reconnectTimerRef.current = window.setTimeout(() => {
           createWebSocketConnection();
         }, delay);
@@ -299,8 +302,10 @@ export function useCallerHub(sessionId?: string) {
 
   // Set up connection when sessionId changes
   useEffect(() => {
-    reconnectAttemptsRef.current = 0;
-    createWebSocketConnection();
+    if (sessionId) {
+      reconnectAttemptsRef.current = 0;
+      createWebSocketConnection();
+    }
 
     // Cleanup function
     return () => {

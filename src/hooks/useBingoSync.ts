@@ -28,7 +28,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
   const reconnectTimerRef = useRef<number | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
-  const maxReconnectAttempts = 30;
+  const maxReconnectAttempts = 50; // Increased for better retry logic
   const connectionTimeoutRef = useRef<number | null>(null);
   const { toast } = useToast();
 
@@ -56,7 +56,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     setConnectionError(null);
 
     try {
-      // Always use direct connection to Supabase Edge Function for more reliable connection
+      // Always use direct connection to Supabase Edge Function
       const projectRef = "weqosgnuiixccghdoccw";
       let wsUrl = `wss://${projectRef}.supabase.co/functions/v1/bingo-hub?type=player&sessionId=${sessionId}`;
       
@@ -84,7 +84,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
           
           // Try to reconnect
           if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-            const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 10000);
+            const delay = Math.min(1000 * Math.pow(1.3, Math.min(reconnectAttemptsRef.current, 10)), 8000); // Capped exponential backoff
             console.log(`Will try to reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1})`);
             reconnectTimerRef.current = window.setTimeout(() => {
               reconnectAttemptsRef.current++;
@@ -95,7 +95,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
             setConnectionError("Maximum reconnection attempts reached. Please reload the page.");
           }
         }
-      }, 15000); // 15 second timeout
+      }, 12000); // 12 second timeout (reduced from 15s)
       
       socket.onopen = () => {
         console.log("Player WebSocket connection established");
@@ -311,7 +311,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
         // Try to reconnect if it wasn't a normal closure and we haven't exceeded max attempts
         if (event.code !== 1000 && event.code !== 1001 && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
-          const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 10000);
+          const delay = Math.min(1000 * Math.pow(1.3, Math.min(reconnectAttemptsRef.current, 10)), 8000);
           console.log(`Attempting to reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
           
           reconnectTimerRef.current = window.setTimeout(() => {
@@ -339,7 +339,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
       // Try to reconnect if we haven't exceeded max attempts
       if (reconnectAttemptsRef.current < maxReconnectAttempts) {
         reconnectAttemptsRef.current++;
-        const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 10000);
+        const delay = Math.min(1000 * Math.pow(1.3, Math.min(reconnectAttemptsRef.current, 10)), 8000);
         reconnectTimerRef.current = window.setTimeout(() => {
           createWebSocketConnection();
         }, delay);

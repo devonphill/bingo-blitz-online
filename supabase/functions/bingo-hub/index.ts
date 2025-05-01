@@ -32,20 +32,24 @@ console.log("Bingo Hub function initialized");
 
 // Clean up inactive connections every 30 seconds
 setInterval(() => {
-  const now = Date.now();
-  const timeoutThreshold = 180000; // 3 minutes timeout (increased from 2 minutes)
-  
-  console.log(`Checking for inactive clients. Total clients: ${clients.size}`);
-  
-  for (const [id, client] of clients.entries()) {
-    if (now - client.lastActivity > timeoutThreshold) {
-      console.log(`Removing inactive client: ${id}, type: ${client.type}, session: ${client.sessionId}`);
-      try {
-        removeClient(id);
-      } catch (err) {
-        console.error(`Error removing inactive client ${id}:`, err);
+  try {
+    const now = Date.now();
+    const timeoutThreshold = 300000; // 5 minutes timeout (increased from 3 minutes)
+    
+    console.log(`Checking for inactive clients. Total clients: ${clients.size}`);
+    
+    for (const [id, client] of clients.entries()) {
+      if (now - client.lastActivity > timeoutThreshold) {
+        console.log(`Removing inactive client: ${id}, type: ${client.type}, session: ${client.sessionId}`);
+        try {
+          removeClient(id);
+        } catch (err) {
+          console.error(`Error removing inactive client ${id}:`, err);
+        }
       }
     }
+  } catch (err) {
+    console.error("Error in cleanup interval:", err);
   }
 }, 30000);
 
@@ -109,18 +113,28 @@ function broadcastToSession(sessionId: string, message: any) {
   console.log(`Broadcasting to session ${sessionId} (${sessionClients.size} clients): ${message.type}`);
   
   let sentCount = 0;
+  let errorCount = 0;
+  
   for (const clientId of sessionClients) {
     const client = clients.get(clientId);
-    if (client && client.socket.readyState === WebSocket.OPEN) {
+    if (!client) {
+      console.log(`Client ${clientId} not found in clients map`);
+      continue;
+    }
+    
+    if (client.socket.readyState === WebSocket.OPEN) {
       try {
         client.socket.send(messageStr);
         sentCount++;
       } catch (err) {
         console.error(`Error sending message to client ${clientId}:`, err);
+        errorCount++;
       }
+    } else {
+      console.log(`Client ${clientId} socket not open (state: ${client.socket.readyState})`);
     }
   }
-  console.log(`Message sent to ${sentCount} clients out of ${sessionClients.size}`);
+  console.log(`Message sent to ${sentCount} clients, errors: ${errorCount}, total clients: ${sessionClients.size}`);
 }
 
 function broadcastToPlayers(sessionId: string, message: any) {
@@ -413,152 +427,161 @@ serve(async (req) => {
     });
   }
 
-  const upgradeHeader = req.headers.get('upgrade') || '';
-  if (upgradeHeader.toLowerCase() !== 'websocket') {
-    console.log("Non-WebSocket request rejected");
-    return new Response('Expected WebSocket connection', { 
-      status: 400,
-      headers: corsHeaders
-    });
-  }
-  
-  const url = new URL(req.url);
-  console.log(`Received WebSocket connection request URL: ${req.url}`);
-  
-  const clientType = url.searchParams.get('type');
-  if (clientType !== 'caller' && clientType !== 'player') {
-    console.log(`Invalid client type: ${clientType}`);
-    return new Response('Client type must be caller or player', { 
-      status: 400,
-      headers: corsHeaders
-    });
-  }
-  
-  const sessionId = url.searchParams.get('sessionId');
-  if (!sessionId) {
-    console.log("Missing sessionId parameter");
-    return new Response('Session ID is required', { 
-      status: 400,
-      headers: corsHeaders
-    });
-  }
-  
-  const playerCode = url.searchParams.get('playerCode') || undefined;
-  const playerName = url.searchParams.get('playerName') || undefined;
-  
-  console.log(`New WebSocket connection request: ${clientType} for session ${sessionId}, playerCode: ${playerCode}`);
-  
-  // Create WebSocket connection
   try {
-    const { socket, response } = Deno.upgradeWebSocket(req);
-    const clientId = crypto.randomUUID();
+    const upgradeHeader = req.headers.get('upgrade') || '';
+    if (upgradeHeader.toLowerCase() !== 'websocket') {
+      console.log("Non-WebSocket request rejected");
+      return new Response('Expected WebSocket connection', { 
+        status: 400,
+        headers: corsHeaders
+      });
+    }
     
-    console.log(`WebSocket upgrade successful for clientId: ${clientId}`);
+    const url = new URL(req.url);
+    console.log(`Received WebSocket connection request URL: ${req.url}`);
     
-    // Set up client object
-    const client: Client = {
-      id: clientId,
-      socket,
-      type: clientType as "caller" | "player",
-      sessionId,
-      playerCode,
-      playerName,
-      lastActivity: Date.now()
-    };
+    const clientType = url.searchParams.get('type');
+    if (clientType !== 'caller' && clientType !== 'player') {
+      console.log(`Invalid client type: ${clientType}`);
+      return new Response('Client type must be caller or player', { 
+        status: 400,
+        headers: corsHeaders
+      });
+    }
     
-    // Store the client
-    clients.set(clientId, client);
+    const sessionId = url.searchParams.get('sessionId');
+    if (!sessionId) {
+      console.log("Missing sessionId parameter");
+      return new Response('Session ID is required', { 
+        status: 400,
+        headers: corsHeaders
+      });
+    }
     
-    // Set up socket event listeners
-    socket.onopen = () => {
-      console.log(`Client ${clientId} connected as ${clientType} to session ${sessionId}`);
+    const playerCode = url.searchParams.get('playerCode') || undefined;
+    const playerName = url.searchParams.get('playerName') || undefined;
+    
+    console.log(`New WebSocket connection request: ${clientType} for session ${sessionId}, playerCode: ${playerCode}`);
+    
+    // Create WebSocket connection
+    try {
+      const { socket, response } = Deno.upgradeWebSocket(req);
+      const clientId = crypto.randomUUID();
       
-      // Add to session tracking
-      let sessionClients = sessions.get(sessionId);
-      if (!sessionClients) {
-        sessionClients = new Set();
-        sessions.set(sessionId, sessionClients);
-      }
-      sessionClients.add(clientId);
-      console.log(`Added client ${clientId} to session ${sessionId}. Total clients in session: ${sessionClients.size}`);
+      console.log(`WebSocket upgrade successful for clientId: ${clientId}`);
       
-      // Send welcome message
-      try {
-        socket.send(JSON.stringify({
-          type: 'connected',
-          data: {
-            clientId,
-            clientType,
-            sessionId,
-            playerCode,
-            timestamp: Date.now()
-          }
-        }));
-        console.log(`Sent welcome message to client ${clientId}`);
-      } catch (err) {
-        console.error(`Error sending welcome message to client ${clientId}:`, err);
-      }
-    };
-    
-    socket.onmessage = async (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        client.lastActivity = Date.now();
+      // Set up client object
+      const client: Client = {
+        id: clientId,
+        socket,
+        type: clientType as "caller" | "player",
+        sessionId,
+        playerCode,
+        playerName,
+        lastActivity: Date.now()
+      };
+      
+      // Store the client
+      clients.set(clientId, client);
+      
+      // Set up socket event listeners
+      socket.onopen = () => {
+        console.log(`Client ${clientId} connected as ${clientType} to session ${sessionId}`);
         
-        if (client.type === "player") {
-          await handlePlayerMessage(client, message);
-        } else if (client.type === "caller") {
-          await handleCallerMessage(client, message);
+        // Add to session tracking
+        let sessionClients = sessions.get(sessionId);
+        if (!sessionClients) {
+          sessionClients = new Set();
+          sessions.set(sessionId, sessionClients);
         }
-      } catch (error) {
-        console.error(`Error processing message from client ${clientId}: ${error}`);
+        sessionClients.add(clientId);
+        console.log(`Added client ${clientId} to session ${sessionId}. Total clients in session: ${sessionClients.size}`);
         
-        // Send error back to client
-        if (socket.readyState === WebSocket.OPEN) {
-          try {
-            socket.send(JSON.stringify({
-              type: "error",
-              data: {
-                message: "Server error processing message",
-                timestamp: Date.now()
-              }
-            }));
-          } catch (err) {
-            console.error(`Error sending error message to client ${clientId}:`, err);
+        // Send welcome message
+        try {
+          socket.send(JSON.stringify({
+            type: 'connected',
+            data: {
+              clientId,
+              clientType,
+              sessionId,
+              playerCode,
+              timestamp: Date.now()
+            }
+          }));
+          console.log(`Sent welcome message to client ${clientId}`);
+        } catch (err) {
+          console.error(`Error sending welcome message to client ${clientId}:`, err);
+        }
+      };
+      
+      socket.onmessage = async (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          client.lastActivity = Date.now();
+          
+          if (client.type === "player") {
+            await handlePlayerMessage(client, message);
+          } else if (client.type === "caller") {
+            await handleCallerMessage(client, message);
+          }
+        } catch (error) {
+          console.error(`Error processing message from client ${clientId}: ${error}`);
+          
+          // Send error back to client
+          if (socket.readyState === WebSocket.OPEN) {
+            try {
+              socket.send(JSON.stringify({
+                type: "error",
+                data: {
+                  message: "Server error processing message",
+                  timestamp: Date.now()
+                }
+              }));
+            } catch (err) {
+              console.error(`Error sending error message to client ${clientId}:`, err);
+            }
           }
         }
-      }
-    };
-    
-    socket.onclose = (event) => {
-      console.log(`Client ${clientId} disconnected with code ${event.code}: ${event.reason}`);
-      removeClient(clientId);
-    };
-    
-    socket.onerror = (error) => {
-      console.error(`WebSocket error for client ${clientId}:`, error);
-      try {
+      };
+      
+      socket.onclose = (event) => {
+        console.log(`Client ${clientId} disconnected with code ${event.code}: ${event.reason}`);
         removeClient(clientId);
-      } catch (err) {
-        console.error(`Error removing client ${clientId} after socket error:`, err);
-      }
-    };
-    
-    // Add improved headers to response
-    const headers = new Headers(corsHeaders);
-    headers.set('Connection', 'Upgrade');
-    headers.set('Upgrade', 'websocket');
-    
-    return new Response(response.body, {
-      status: response.status,
-      headers: headers
-    });
-    
+      };
+      
+      socket.onerror = (error) => {
+        console.error(`WebSocket error for client ${clientId}:`, error);
+        try {
+          removeClient(clientId);
+        } catch (err) {
+          console.error(`Error removing client ${clientId} after socket error:`, err);
+        }
+      };
+      
+      // Add improved headers to response
+      const headers = new Headers(corsHeaders);
+      headers.set('Connection', 'Upgrade');
+      headers.set('Upgrade', 'websocket');
+      
+      return new Response(response.body, {
+        status: response.status,
+        headers: headers
+      });
+      
+    } catch (error) {
+      console.error("Error upgrading WebSocket connection:", error);
+      return new Response(`WebSocket upgrade error: ${error.message}`, { 
+        status: 500,
+        headers: corsHeaders
+      });
+    }
   } catch (error) {
-    console.error("Error upgrading WebSocket connection:", error);
-    return new Response(`WebSocket upgrade error: ${error.message}`, { 
+    console.error("Unhandled error in main serve function:", error);
+    return new Response(`Server error: ${error.message}`, { 
       status: 500,
       headers: corsHeaders
     });
   }
 });
+
