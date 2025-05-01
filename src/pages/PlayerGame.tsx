@@ -1,3 +1,4 @@
+
 import React, { useEffect, useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -88,6 +89,13 @@ export default function PlayerGame() {
     currentSession?.id
   );
   
+  // Always initialize bingoSync hook with the same parameters - IMPORTANT: declare before using it
+  const bingoSync = useBingoSync(
+    currentSession?.id || '', 
+    playerCode || '', 
+    playerName || ''
+  );
+  
   // Initialize session state
   const isSessionActive = currentSession?.status === 'active';
   const isGameLive = currentSession?.lifecycle_state === 'live';
@@ -106,13 +114,6 @@ export default function PlayerGame() {
   
   // Always initialize tickets hook with the same parameters, even if it will not be used
   const { tickets } = useTickets(playerCode, currentSession?.id);
-  
-  // Always initialize WebSocket hook with the same parameters
-  const bingoSync = useBingoSync(
-    currentSession?.id || '', 
-    playerCode || '', 
-    playerName || ''
-  );
   
   // Handle bingo claims
   const handleClaimBingo = useCallback(() => {
