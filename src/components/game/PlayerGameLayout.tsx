@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import GameHeader from "./GameHeader";
 import BingoWinProgress from "./BingoWinProgress";
 import { useToast } from "@/hooks/use-toast";
@@ -67,13 +67,8 @@ export default function PlayerGameLayout({
   const [showClaimError, setShowClaimError] = useState<boolean>(false);
   const { toast } = useToast();
   
-  // Simplified connection handling - directly use the connection state without complex debouncing
+  // Use direct connection state without complex state management
   const isConnected = connectionState === 'connected';
-  
-  // Log the connection state for debugging
-  useEffect(() => {
-    logWithTimestamp(`PlayerGameLayout: connectionState=${connectionState}, isConnected=${isConnected}`);
-  }, [connectionState, isConnected]);
   
   // Handle claim status changes
   useEffect(() => {
@@ -88,10 +83,12 @@ export default function PlayerGameLayout({
   
   // Handle connection state changes with simplified notification approach
   useEffect(() => {
+    logWithTimestamp(`PlayerGameLayout: connectionState changed to ${connectionState}`);
+    
     if (connectionState === 'error') {
       toast({
         title: "Connection Error",
-        description: "Lost connection to the game server. Trying to reconnect...",
+        description: "Lost connection to the game server. Use the reconnect button to try again.",
         variant: "destructive",
         duration: 5000
       });
@@ -284,7 +281,7 @@ export default function PlayerGameLayout({
           <p className="text-sm text-amber-700 pl-7">
             {connectionState === 'connecting' ? 
               "Game updates will resume when connected." :
-              "Some features may be unavailable. Game updates will not be received."}
+              "Connection issue detected. Game updates will not be received until reconnected."}
           </p>
           
           {connectionState !== 'connecting' && (

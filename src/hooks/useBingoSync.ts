@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from './use-toast';
-import { logWithTimestamp } from '@/utils/logUtils';
+import { logWithTimestamp, ConnectionManager } from '@/utils/logUtils';
 
 export function useBingoSync(sessionId: string | undefined, playerCode: string = '', playerName: string = '') {
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
@@ -17,25 +17,45 @@ export function useBingoSync(sessionId: string | undefined, playerCode: string =
   
   const channelRef = useRef<any>(null);
   const { toast } = useToast();
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectCountRef = useRef<number>(0);
-  const MAX_RECONNECT_ATTEMPTS = 5;
+  const instanceId = useRef<string>(Date.now().toString());
   const callerPresenceRef = useRef<boolean>(false);
+  const connectionManager = useRef<ConnectionManager>(new ConnectionManager(5));
+  
+  // Clear any active subscriptions on unmount
+  useEffect(() => {
+    return () => {
+      logWithTimestamp('Cleaning up bingo sync connections');
+      if (channelRef.current) {
+        try {
+          supabase.removeChannel(channelRef.current);
+          channelRef.current = null;
+        } catch (err) {
+          console.error("Error cleaning up channel:", err);
+        }
+      }
+      connectionManager.current.reset();
+    };
+  }, []);
 
-  // Set up real-time listener for game updates
+  // Set up real-time listener for game updates when sessionId changes
   useEffect(() => {
     if (!sessionId) {
       setConnectionState('disconnected');
       return;
     }
     
-    // Clear any existing reconnect timer
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
+    // Don't attempt to connect if already connecting or in cooldown
+    if (connectionManager.current.isConnecting || connectionManager.current.isInCooldown) {
+      logWithTimestamp(`Skipping connection attempt - ${connectionManager.current.isConnecting ? 'already connecting' : 'in cooldown'}`);
+      return;
     }
     
-    logWithTimestamp(`Setting up bingo sync for session: ${sessionId}`);
+    // Start the connection
+    if (!connectionManager.current.startConnection()) {
+      return;
+    }
+    
+    logWithTimestamp(`Setting up bingo sync for session: ${sessionId} (instance: ${instanceId.current})`);
     setConnectionState('connecting');
     
     const setupChannel = () => {
@@ -57,7 +77,7 @@ export function useBingoSync(sessionId: string | undefined, playerCode: string =
           logWithTimestamp(`Received game update: ${JSON.stringify(payload.payload)}`);
           
           // Reset reconnect count on successful data receiving
-          reconnectCountRef.current = 0;
+          connectionManager.current.reset();
           
           if (payload.payload) {
             const { lastCalledNumber, calledNumbers, currentWinPattern, currentPrize, gameStatus } = payload.payload;
@@ -100,7 +120,7 @@ export function useBingoSync(sessionId: string | undefined, playerCode: string =
           setConnectionState('connected');
           setIsConnected(true);
           setConnectionError(null);
-          reconnectCountRef.current = 0;
+          connectionManager.current.endConnection(true);
           
           toast({
             title: "Caller Connected",
@@ -124,10 +144,18 @@ export function useBingoSync(sessionId: string | undefined, playerCode: string =
             setConnectionState('connected');
             setIsConnected(true);
             setConnectionError(null);
+            connectionManager.current.endConnection(true);
           } else if (!callerPresent && callerPresenceRef.current) {
             callerPresenceRef.current = false;
             setConnectionState('disconnected');
             setIsConnected(false);
+            
+            toast({
+              title: "Caller Disconnected",
+              description: "The caller has disconnected. Waiting for reconnection...",
+              duration: 5000,
+              variant: "destructive"
+            });
           }
         })
         .on('presence', { event: 'join' }, ({ key }) => {
@@ -137,6 +165,7 @@ export function useBingoSync(sessionId: string | undefined, playerCode: string =
             setConnectionState('connected');
             setIsConnected(true);
             setConnectionError(null);
+            connectionManager.current.endConnection(true);
             
             toast({
               title: "Caller Connected",
@@ -171,7 +200,7 @@ export function useBingoSync(sessionId: string | undefined, playerCode: string =
         });
       }
       
-      // Subscribe to the channel with better error handling
+      // Subscribe to the channel
       channel.subscribe(status => {
         logWithTimestamp(`Bingo sync subscription status: ${status}`);
         
@@ -182,6 +211,7 @@ export function useBingoSync(sessionId: string | undefined, playerCode: string =
           if (callerPresenceRef.current) {
             setConnectionState('connected');
             setIsConnected(true);
+            connectionManager.current.endConnection(true);
           } else {
             // We're connected to Realtime, but no caller is present yet
             setConnectionState('connecting');
@@ -209,18 +239,21 @@ export function useBingoSync(sessionId: string | undefined, playerCode: string =
           setConnectionState('error');
           setIsConnected(false);
           setConnectionError('Error connecting to game server');
-          scheduleReconnect();
+          connectionManager.current.endConnection(false);
+          connectionManager.current.scheduleReconnect(setupChannel);
         } else if (status === 'TIMED_OUT') {
           logWithTimestamp('Connection timed out in bingo sync');
           setConnectionState('error');
           setIsConnected(false);
           setConnectionError('Connection timed out');
-          scheduleReconnect();
+          connectionManager.current.endConnection(false);
+          connectionManager.current.scheduleReconnect(setupChannel);
         } else if (status === 'CLOSED') {
           logWithTimestamp('Channel closed in bingo sync');
           setConnectionState('disconnected');
           setIsConnected(false);
-          scheduleReconnect();
+          connectionManager.current.endConnection(false);
+          connectionManager.current.scheduleReconnect(setupChannel);
         }
       });
       
@@ -233,52 +266,10 @@ export function useBingoSync(sessionId: string | undefined, playerCode: string =
       channelRef.current = channel;
     };
     
-    const scheduleReconnect = () => {
-      // Don't reconnect if we've already tried too many times
-      if (reconnectCountRef.current >= MAX_RECONNECT_ATTEMPTS) {
-        logWithTimestamp(`Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`);
-        setConnectionState('error');
-        setConnectionError('Failed to connect after multiple attempts. Please reload the page.');
-        return;
-      }
-      
-      reconnectCountRef.current++;
-      const delay = Math.min(1000 * Math.pow(2, reconnectCountRef.current), 30000);
-      
-      logWithTimestamp(`Scheduling reconnect attempt ${reconnectCountRef.current}/${MAX_RECONNECT_ATTEMPTS} in ${delay}ms`);
-      
-      if (reconnectTimerRef.current) {
-        clearTimeout(reconnectTimerRef.current);
-      }
-      
-      reconnectTimerRef.current = setTimeout(() => {
-        logWithTimestamp('Attempting reconnection...');
-        setConnectionState('connecting');
-        setupChannel();
-      }, delay);
-    };
-    
     // Initialize connection
     setupChannel();
     
-    // Clean up
-    return () => {
-      logWithTimestamp('Cleaning up bingo sync');
-      
-      if (reconnectTimerRef.current) {
-        clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = null;
-      }
-      
-      if (channelRef.current) {
-        try {
-          supabase.removeChannel(channelRef.current);
-        } catch (err) {
-          console.error("Error removing channel during cleanup:", err);
-        }
-        channelRef.current = null;
-      }
-    };
+    // No cleanup here - will be handled by the component unmount effect
   }, [sessionId, playerCode, playerName, toast]);
   
   // Method to claim bingo with improved handling
@@ -322,9 +313,9 @@ export function useBingoSync(sessionId: string | undefined, playerCode: string =
       });
       return false;
     }
-  }, [sessionId, channelRef, isConnected, playerCode, playerName, toast]);
+  }, [sessionId, isConnected, playerCode, playerName, toast]);
   
-  // Method to manually reconnect with improved error handling
+  // Method to manually reconnect
   const reconnect = useCallback(() => {
     if (!sessionId) {
       logWithTimestamp('Cannot reconnect: No session ID');
@@ -333,8 +324,8 @@ export function useBingoSync(sessionId: string | undefined, playerCode: string =
     
     logWithTimestamp('Manual reconnect requested');
     
-    // Reset reconnect count to give more chances
-    reconnectCountRef.current = 0;
+    // Reset reconnect manager to force a new connection
+    connectionManager.current.forceReconnect();
     
     // Clean up existing channel if any
     if (channelRef.current) {
@@ -351,7 +342,7 @@ export function useBingoSync(sessionId: string | undefined, playerCode: string =
     setConnectionState('connecting');
     setConnectionError(null);
     
-    // Set up new channel with a short delay
+    // Set up new channel with a short delay to ensure clean reconnection
     setTimeout(() => {
       if (!sessionId) return;
       
@@ -359,7 +350,7 @@ export function useBingoSync(sessionId: string | undefined, playerCode: string =
       const channel = supabase
         .channel(`game-updates-${sessionId}`)
         .on('broadcast', { event: 'game-update' }, (payload) => {
-          // ... same handlers as before ...
+          // Process game updates
           if (payload.payload) {
             const { lastCalledNumber, calledNumbers, currentWinPattern, currentPrize, gameStatus } = payload.payload;
             
@@ -385,23 +376,14 @@ export function useBingoSync(sessionId: string | undefined, playerCode: string =
           }
         })
         .on('broadcast', { event: 'caller-online' }, () => {
-          logWithTimestamp('Received caller-online broadcast during manual reconnect');
           callerPresenceRef.current = true;
           setConnectionState('connected');
           setIsConnected(true);
           setConnectionError(null);
-          
-          toast({
-            title: "Reconnected",
-            description: "Successfully reconnected to game server",
-            duration: 3000
-          });
         })
         .on('presence', { event: 'sync' }, () => {
           const state = channel.presenceState();
           const callerPresent = Object.keys(state).some(key => key.startsWith('caller-'));
-          
-          logWithTimestamp(`Presence sync during manual reconnect. Caller present: ${callerPresent}`);
           
           if (callerPresent) {
             callerPresenceRef.current = true;
@@ -412,7 +394,6 @@ export function useBingoSync(sessionId: string | undefined, playerCode: string =
         })
         .on('presence', { event: 'join' }, ({ key }) => {
           if (key.startsWith('caller-')) {
-            logWithTimestamp(`Caller joined during manual reconnect: ${key}`);
             callerPresenceRef.current = true;
             setConnectionState('connected');
             setIsConnected(true);
@@ -423,28 +404,6 @@ export function useBingoSync(sessionId: string | undefined, playerCode: string =
           logWithTimestamp(`Manual reconnect subscription status: ${status}`);
           
           if (status === 'SUBSCRIBED') {
-            const state = channel.presenceState();
-            const callerPresent = Object.keys(state).some(key => key.startsWith('caller-'));
-            
-            if (callerPresent) {
-              callerPresenceRef.current = true;
-              setConnectionState('connected');
-              setIsConnected(true);
-            } else {
-              setConnectionState('connecting');
-              setIsConnected(false);
-            }
-            
-            setConnectionError(null);
-            
-            toast({
-              title: "Subscription Successful",
-              description: callerPresent 
-                ? "Successfully reconnected to the game server" 
-                : "Connected to server, waiting for caller to join",
-              duration: 3000
-            });
-            
             // Send player presence if we have player code
             if (playerCode) {
               channel.track({
@@ -453,37 +412,13 @@ export function useBingoSync(sessionId: string | undefined, playerCode: string =
                 online: true,
                 timestamp: Date.now()
               });
-              
-              // Announce player has rejoined
-              channel.send({
-                type: 'broadcast',
-                event: 'player-join',
-                payload: {
-                  playerCode,
-                  playerName: playerName || playerCode,
-                  timestamp: Date.now()
-                }
-              }).catch(err => {
-                console.error("Error sending player join during reconnect:", err);
-              });
             }
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            setConnectionState('error');
-            setIsConnected(false);
-            setConnectionError('Error reconnecting to game server');
-            
-            toast({
-              title: "Reconnect Failed",
-              description: "Could not reconnect to game server. Try refreshing the page.",
-              variant: "destructive",
-              duration: 5000
-            });
-          }
+          } 
         });
       
       channelRef.current = channel;
     }, 100);
-  }, [sessionId, playerCode, playerName, toast]);
+  }, [sessionId, playerCode, playerName]);
 
   // Current game state
   const gameState = {

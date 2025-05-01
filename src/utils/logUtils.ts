@@ -1,3 +1,4 @@
+
 /**
  * Helper function for consistent timestamped logging
  */
@@ -85,8 +86,8 @@ export const logConnectionCleanup = (component: string, reason: string) => {
 };
 
 /**
- * Helper function for tracking connection events and preventing loops
- * MODIFIED: Add sticky status to prevent rapid state changes
+ * FIXED: Loop prevention with connection tracking
+ * Tracks connection attempts and prevents reconnection loops
  */
 export const preventConnectionLoop = (connectionStateRef: { current: any }): boolean => {
   if (!connectionStateRef.current) {
@@ -94,29 +95,30 @@ export const preventConnectionLoop = (connectionStateRef: { current: any }): boo
       attempts: 0,
       lastAttempt: Date.now(),
       inProgress: true,
-      stickyUntil: 0
+      cooldownUntil: 0
     };
     return false; // Not in a loop, proceed with connection
   }
   
   const now = Date.now();
   
-  // If we have a sticky connection state, honor it
-  if (connectionStateRef.current.stickyUntil > now) {
-    return connectionStateRef.current.inLoop || false;
+  // If we're in cooldown, prevent further connections
+  if (connectionStateRef.current.cooldownUntil > now) {
+    logWithTimestamp(`Connection in cooldown until ${new Date(connectionStateRef.current.cooldownUntil).toISOString()}`);
+    return true;
   }
   
   const timeSince = now - connectionStateRef.current.lastAttempt;
   
-  // If multiple attempts in less than 3 seconds, might be in a loop
-  if (connectionStateRef.current.attempts > 2 && timeSince < 3000) {
+  // If multiple attempts in less than 2 seconds, might be in a loop
+  if (connectionStateRef.current.attempts > 3 && timeSince < 2000) {
     connectionStateRef.current.attempts++;
     connectionStateRef.current.inLoop = true;
     
-    // Set the sticky state for 10 seconds to prevent further connection attempts
-    connectionStateRef.current.stickyUntil = now + 10000;
+    // Set a cooldown of 15 seconds
+    connectionStateRef.current.cooldownUntil = now + 15000;
     
-    logWithTimestamp(`Detected potential connection loop after ${connectionStateRef.current.attempts} attempts in ${timeSince}ms - enforcing cooldown for 10 seconds`);
+    logWithTimestamp(`⚠️ Detected potential connection loop after ${connectionStateRef.current.attempts} attempts in ${timeSince}ms - enforcing 15s cooldown`);
     return true; // Likely in a loop, prevent further connection attempts
   }
   
@@ -130,148 +132,154 @@ export const preventConnectionLoop = (connectionStateRef: { current: any }): boo
 };
 
 /**
- * Create a structured delay function that properly suppresses connection attempts
- * when multiple useEffect hooks may be triggering them
+ * NEW: Simple connection status tracker that prevents rapid state flapping
  */
-export const createDelayedConnectionAttempt = (
-  callback: () => void, 
-  delayMs: number = 5000,
-  isMountedRef: React.MutableRefObject<boolean>,
-  connectionRef: React.MutableRefObject<{
-    pendingTimeout: ReturnType<typeof setTimeout> | null,
-    isSuspended: boolean
-  }>
-) => {
-  // Clear any existing timeouts
-  if (connectionRef.current.pendingTimeout) {
-    clearTimeout(connectionRef.current.pendingTimeout);
-    connectionRef.current.pendingTimeout = null;
-  }
-  
-  // If connection is suspended, don't schedule anything
-  if (connectionRef.current.isSuspended) {
-    logWithTimestamp(`Connection attempts are suspended. Ignoring request.`);
-    return;
-  }
-  
-  // Set a new timeout
-  logWithTimestamp(`Scheduling connection attempt in ${delayMs}ms`);
-  connectionRef.current.pendingTimeout = setTimeout(() => {
-    if (isMountedRef.current && !connectionRef.current.isSuspended) {
-      callback();
-    }
-    connectionRef.current.pendingTimeout = null;
-  }, delayMs);
-};
-
-/**
- * Suspend connection attempts for a period of time
- */
-export const suspendConnectionAttempts = (
-  connectionRef: React.MutableRefObject<{
-    pendingTimeout: ReturnType<typeof setTimeout> | null,
-    isSuspended: boolean
-  }>,
-  durationMs: number = 10000
-) => {
-  // Clear any pending timeouts
-  if (connectionRef.current.pendingTimeout) {
-    clearTimeout(connectionRef.current.pendingTimeout);
-    connectionRef.current.pendingTimeout = null;
-  }
-  
-  // Set the suspended flag
-  connectionRef.current.isSuspended = true;
-  logWithTimestamp(`Connection attempts suspended for ${durationMs}ms`);
-  
-  // Set timeout to clear the suspension
-  setTimeout(() => {
-    connectionRef.current.isSuspended = false;
-    logWithTimestamp(`Connection suspension lifted`);
-  }, durationMs);
-};
-
-/**
- * NEW: Prevents connection status flapping by maintaining stable connection state
- * until a threshold of stable status is reached
- */
-export const getStableConnectionState = (
-  currentState: 'disconnected' | 'connecting' | 'connected' | 'error',
-  stableStateRef: React.MutableRefObject<{
+export const useStableConnectionState = () => {
+  const stableStateRef = React.useRef<{
     state: 'disconnected' | 'connecting' | 'connected' | 'error',
     since: number,
     changeCount: number
-  }>,
-  stabilityThresholdMs: number = 5000
-): 'disconnected' | 'connecting' | 'connected' | 'error' => {
-  const now = Date.now();
-  
-  // Initialize ref if needed
-  if (!stableStateRef.current) {
-    stableStateRef.current = {
-      state: currentState,
-      since: now,
-      changeCount: 0
-    };
-    return currentState;
-  }
-  
-  // If state hasn't changed, update duration and return stable state
-  if (stableStateRef.current.state === currentState) {
-    return currentState;
-  }
-  
-  // State has changed - increment counter
-  stableStateRef.current.changeCount++;
-  
-  // If we're seeing rapid state changes, stick with the previous stable state
-  // until we've had a consistent new state for the threshold period
-  // IMPORTANT: Special case - if the new state is 'connected', we allow it through immediately
-  // This is to ensure that "connected" state is shown to users promptly when connection works
-  if (currentState === 'connected') {
-    stableStateRef.current = {
-      state: currentState,
-      since: now,
-      changeCount: 0
-    };
-    return currentState;
-  }
-  
-  // For other states, apply stabilization
-  if (stableStateRef.current.changeCount > 3 && 
-      now - stableStateRef.current.since < stabilityThresholdMs) {
-    logWithTimestamp(`Suppressing connection state flapping: actual=${currentState}, reported=${stableStateRef.current.state}`);
-    return stableStateRef.current.state;
-  }
-  
-  // Update to new stable state
-  stableStateRef.current = {
-    state: currentState,
-    since: now,
+  }>({
+    state: 'disconnected',
+    since: Date.now(),
     changeCount: 0
+  });
+  
+  const getStableState = (
+    currentState: 'disconnected' | 'connecting' | 'connected' | 'error', 
+    stabilityThresholdMs: number = 5000
+  ): 'disconnected' | 'connecting' | 'connected' | 'error' => {
+    const now = Date.now();
+    
+    // If state hasn't changed, return stable state
+    if (stableStateRef.current.state === currentState) {
+      return currentState;
+    }
+    
+    // State has changed - increment counter
+    stableStateRef.current.changeCount++;
+    
+    // If we're seeing rapid state changes, stick with the previous stable state
+    // until we've had a consistent new state for the threshold period
+    // IMPORTANT: Special case - if new state is 'connected', we allow it immediately
+    if (currentState === 'connected') {
+      stableStateRef.current = {
+        state: currentState,
+        since: now,
+        changeCount: 0
+      };
+      return currentState;
+    }
+    
+    // For other states, apply stabilization
+    if (stableStateRef.current.changeCount > 3 && 
+        now - stableStateRef.current.since < stabilityThresholdMs) {
+      logWithTimestamp(`Suppressing connection state flapping: actual=${currentState}, reported=${stableStateRef.current.state}`);
+      return stableStateRef.current.state;
+    }
+    
+    // Update to new stable state
+    stableStateRef.current = {
+      state: currentState,
+      since: now,
+      changeCount: 0
+    };
+    
+    return currentState;
   };
   
-  return currentState;
+  return { getStableState };
 };
 
-/**
- * NEW: Determine actual connection status based on both connection state and isConnected flag
- * This is a helper to ensure UI displays accurate connection status
- */
-export const getEffectiveConnectionState = (
-  connectionState: 'disconnected' | 'connecting' | 'connected' | 'error',
-  isConnected: boolean
-): 'disconnected' | 'connecting' | 'connected' | 'error' => {
-  // If connection state says 'connected' but isConnected is false, override to 'error'
-  if (connectionState === 'connected' && !isConnected) {
-    return 'error';
+// Additional helper to manage connection attempts with cooldown
+export class ConnectionManager {
+  private _isConnecting: boolean = false;
+  private _cooldownUntil: number = 0;
+  private _reconnectTimer: NodeJS.Timeout | null = null;
+  private _lastConnectionAttempt: number = 0;
+  private _connectionAttempts: number = 0;
+  private _maxReconnectAttempts: number = 5;
+  
+  constructor(maxReconnectAttempts: number = 5) {
+    this._maxReconnectAttempts = maxReconnectAttempts;
   }
   
-  // If isConnected is true but state isn't 'connected', override to 'connected'
-  if (isConnected && connectionState !== 'connected') {
-    return 'connected';
+  public get isConnecting(): boolean {
+    return this._isConnecting;
   }
   
-  // Otherwise use the provided state
-  return connectionState;
-};
+  public get isInCooldown(): boolean {
+    return Date.now() < this._cooldownUntil;
+  }
+  
+  public get remainingCooldown(): number {
+    const remaining = this._cooldownUntil - Date.now();
+    return remaining > 0 ? remaining : 0;
+  }
+  
+  public get connectionAttempts(): number {
+    return this._connectionAttempts;
+  }
+  
+  public startConnection(): boolean {
+    if (this.isConnecting || this.isInCooldown) {
+      return false;
+    }
+    
+    this._isConnecting = true;
+    this._lastConnectionAttempt = Date.now();
+    this._connectionAttempts++;
+    
+    return true;
+  }
+  
+  public endConnection(success: boolean): void {
+    this._isConnecting = false;
+    
+    if (success) {
+      // Reset connection attempts on success
+      this._connectionAttempts = 0;
+    }
+    else if (this._connectionAttempts >= this._maxReconnectAttempts) {
+      // Set cooldown if max attempts reached
+      this._cooldownUntil = Date.now() + 20000; // 20 second cooldown
+      logWithTimestamp(`Max reconnect attempts (${this._maxReconnectAttempts}) reached. Cooldown for 20 seconds.`);
+      this._connectionAttempts = 0;
+    }
+  }
+  
+  public scheduleReconnect(callback: () => void): void {
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+    }
+    
+    if (this._connectionAttempts >= this._maxReconnectAttempts) {
+      this.endConnection(false);
+      return;
+    }
+    
+    const delay = Math.min(1000 * Math.pow(2, this._connectionAttempts), 10000);
+    logWithTimestamp(`Scheduling reconnect in ${delay}ms (attempt ${this._connectionAttempts}/${this._maxReconnectAttempts})`);
+    
+    this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = null;
+      if (!this.isInCooldown) {
+        callback();
+      }
+    }, delay);
+  }
+  
+  public reset(): void {
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+    this._connectionAttempts = 0;
+    this._isConnecting = false;
+    this._cooldownUntil = 0;
+  }
+  
+  public forceReconnect(): void {
+    this.reset();
+  }
+}
