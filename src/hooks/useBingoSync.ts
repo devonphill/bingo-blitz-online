@@ -1,5 +1,8 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from './use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import { useRealTimeUpdates } from './useRealTimeUpdates';
 
 interface GameState {
   lastCalledNumber: number | null;
@@ -30,15 +33,19 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     gameStatus: null
   });
   
+  // Use Supabase realtime updates as fallback
+  const realtimeUpdates = useRealTimeUpdates(sessionId, playerCode);
+  
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
-  const maxReconnectAttempts = 10; // Reduced for faster fallback to alternative methods
+  const maxReconnectAttempts = 3; // Reduce attempts to fail faster to fallback
   const connectionTimeoutRef = useRef<number | null>(null);
   const { toast } = useToast();
+  const instanceId = useRef(Date.now()); // Unique instance identifier
 
-  // Function to create WebSocket connection
+  // Function to create WebSocket connection with direct URL
   const createWebSocketConnection = useCallback(() => {
     if (!sessionId) {
       logWithTimestamp("No sessionId provided to useBingoSync");
@@ -65,49 +72,37 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     setConnectionError(null);
 
     try {
-      // Use direct connection to Supabase Edge Function with simplified URL
-      const projectRef = "weqosgnuiixccghdoccw";
-      let wsUrl = `wss://${projectRef}.supabase.co/functions/v1/bingo-hub?type=player&sessionId=${sessionId}`;
-      
-      // Add player details if available
-      if (playerCode) {
-        wsUrl += `&playerCode=${encodeURIComponent(playerCode)}`;
-      }
-      if (playerName) {
-        wsUrl += `&playerName=${encodeURIComponent(playerName)}`;
-      }
+      // Use direct connection to Supabase Edge Function
+      const wsUrl = `wss://weqosgnuiixccghdoccw.supabase.co/functions/v1/bingo-hub?type=player&sessionId=${sessionId}${playerCode ? `&playerCode=${encodeURIComponent(playerCode)}` : ''}${playerName ? `&playerName=${encodeURIComponent(playerName)}` : ''}&instanceId=${instanceId.current}`;
       
       logWithTimestamp(`Connecting to WebSocket URL: ${wsUrl}`);
       
-      // Create WebSocket connection with a clean slate
+      // Create WebSocket connection
       const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
       
-      // Set a shorter connection timeout
+      // Set a short connection timeout (5 seconds)
       connectionTimeoutRef.current = window.setTimeout(() => {
         if (socket.readyState !== WebSocket.OPEN) {
-          logWithTimestamp("WebSocket connection timeout");
+          logWithTimestamp("WebSocket connection timeout - switching to fallback");
           if (socket.readyState !== WebSocket.CLOSED && socket.readyState !== WebSocket.CLOSING) {
             socket.close(4000, "Connection timeout");
           }
           setConnectionState('error');
-          setConnectionError("Connection timeout. Please try again.");
+          setConnectionError("Switching to realtime updates...");
           
-          // Try to reconnect with increasing backoff
+          // Only try to reconnect if under max attempts
           if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-            const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 5000);
-            logWithTimestamp(`Will try to reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1})`);
+            reconnectAttemptsRef.current++;
             reconnectTimerRef.current = window.setTimeout(() => {
-              reconnectAttemptsRef.current++;
               createWebSocketConnection();
-            }, delay);
+            }, 2000);
           } else {
-            logWithTimestamp("Maximum reconnection attempts reached");
-            setConnectionError("Maximum reconnection attempts reached. Falling back to polling.");
-            // Here we would typically fall back to a REST API or polling strategy
+            logWithTimestamp("Maximum reconnection attempts reached, using realtime fallback");
+            setConnectionError("Using realtime updates fallback mechanism");
           }
         }
-      }, 8000); // Shorter timeout
+      }, 5000);
       
       socket.onopen = () => {
         logWithTimestamp("Player WebSocket connection established");
@@ -120,7 +115,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
         setConnectionError(null);
         reconnectAttemptsRef.current = 0;
         
-        // Set up ping interval
+        // Set up ping interval - shorter interval (10s)
         if (pingIntervalRef.current !== null) {
           clearInterval(pingIntervalRef.current);
         }
@@ -137,7 +132,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
               console.error("Error sending ping:", err);
             }
           }
-        }, 15000); // Shorter ping interval
+        }, 10000);
         
         // Send join message
         try {
@@ -145,7 +140,8 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
             type: "join",
             sessionId,
             playerCode,
-            playerName
+            playerName,
+            instanceId: instanceId.current
           }));
           logWithTimestamp(`Sent join message for player ${playerCode}`);
         } catch (err) {
@@ -156,7 +152,6 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
       socket.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          logWithTimestamp(`Received message from server: ${message.type}`);
           
           // Handle different message types
           switch (message.type) {
@@ -292,7 +287,6 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
               
             case "pong":
               // Just update connection status
-              logWithTimestamp("Received pong from server");
               setIsConnected(true);
               break;
               
@@ -307,7 +301,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
               break;
               
             default:
-              logWithTimestamp(`Received unknown message type: ${message.type}, ${JSON.stringify(message)}`);
+              logWithTimestamp(`Unknown message type: ${message.type}`);
           }
         } catch (err) {
           console.error("Error processing WebSocket message:", err);
@@ -329,21 +323,19 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
           pingIntervalRef.current = null;
         }
         
-        // Try to reconnect if it wasn't a normal closure and we haven't exceeded max attempts
+        // Try to reconnect if not a clean closure and under max attempts
         if (event.code !== 1000 && event.code !== 1001 && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
-          const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 5000);
-          logWithTimestamp(`Attempting to reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
+          const delay = 2000;
+          logWithTimestamp(`Will attempt to reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current})`);
           
           reconnectTimerRef.current = window.setTimeout(() => {
-            logWithTimestamp("Attempting to reconnect WebSocket...");
             createWebSocketConnection();
           }, delay);
         } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-          logWithTimestamp("Maximum reconnection attempts reached. Falling back to polling.");
+          logWithTimestamp("Maximum reconnection attempts reached, using realtime fallback");
           setConnectionState('error');
-          setConnectionError(`Could not establish a connection to the game server after multiple attempts. Falling back to polling.`);
-          // Here we would implement a fallback mechanism
+          setConnectionError(`Using realtime updates as fallback mechanism`);
         }
       };
       
@@ -352,25 +344,24 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
         logWithTimestamp(`WebSocket error occurred: ${JSON.stringify(error)}`);
         setIsConnected(false);
         setConnectionState('error');
-        setConnectionError("Error connecting to the game server. Will try to reconnect...");
+        setConnectionError("Error connecting to game server, falling back to realtime updates");
       };
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error creating WebSocket:", err);
       logWithTimestamp(`Error creating WebSocket: ${err.message}`);
       setConnectionState('error');
-      setConnectionError(`Error creating WebSocket: ${err.message}`);
+      setConnectionError(`Error: ${err.message}`);
       
       // Try to reconnect if we haven't exceeded max attempts
       if (reconnectAttemptsRef.current < maxReconnectAttempts) {
         reconnectAttemptsRef.current++;
-        const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 5000);
+        const delay = 2000;
         reconnectTimerRef.current = window.setTimeout(() => {
           createWebSocketConnection();
         }, delay);
       } else {
-        logWithTimestamp("Maximum reconnection attempts reached. Falling back to polling.");
-        setConnectionError("Maximum reconnection attempts reached. Falling back to polling.");
-        // Here we would implement a fallback mechanism
+        logWithTimestamp("Maximum reconnection attempts reached, using realtime fallback");
+        setConnectionError("Using realtime updates as fallback mechanism");
       }
     }
   }, [sessionId, playerCode, playerName, toast]);
@@ -412,6 +403,29 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     };
   }, [sessionId, playerCode, playerName, createWebSocketConnection]);
 
+  // Merge data from WebSocket and realtime updates
+  useEffect(() => {
+    if (!isConnected && connectionState === 'error') {
+      // Update game state with realtime data when WebSocket is not working
+      if (realtimeUpdates.calledNumbers.length > 0) {
+        setGameState(prev => ({
+          ...prev,
+          calledNumbers: realtimeUpdates.calledNumbers,
+          lastCalledNumber: realtimeUpdates.lastCalledNumber
+        }));
+      }
+      
+      if (realtimeUpdates.currentWinPattern) {
+        setGameState(prev => ({
+          ...prev,
+          currentWinPattern: realtimeUpdates.currentWinPattern,
+          currentPrize: realtimeUpdates.prizeInfo?.currentPrize || prev.currentPrize,
+          currentPrizeDescription: realtimeUpdates.prizeInfo?.currentPrizeDescription || prev.currentPrizeDescription
+        }));
+      }
+    }
+  }, [isConnected, connectionState, realtimeUpdates]);
+
   // Function to manually reconnect
   const reconnect = useCallback(() => {
     logWithTimestamp("Manual reconnection attempt");
@@ -419,8 +433,9 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     createWebSocketConnection();
   }, [createWebSocketConnection]);
 
-  // Function to claim bingo
+  // Function to claim bingo - with fallback
   const claimBingo = useCallback((ticketData?: any) => {
+    // First try WebSocket if connected
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && sessionId) {
       try {
         socketRef.current.send(JSON.stringify({
@@ -428,12 +443,12 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
           sessionId,
           data: {
             ticketData,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            instanceId: instanceId.current
           }
         }));
-        logWithTimestamp("Sent bingo claim");
+        logWithTimestamp("Sent bingo claim via WebSocket");
         
-        // Show toast for claim sent
         toast({
           title: "Bingo Claimed",
           description: "Your claim has been submitted",
@@ -442,18 +457,73 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
         
         return true;
       } catch (err) {
-        console.error("Error claiming bingo:", err);
-        return false;
+        console.error("Error claiming bingo via WebSocket:", err);
+        // Continue to fallback mechanism
       }
     }
-    return false;
-  }, [sessionId, toast]);
+    
+    // Fallback: Use Supabase realtime broadcast
+    try {
+      const channel = supabase.channel('bingo-claims');
+      channel
+        .send({
+          type: 'broadcast',
+          event: 'bingo-claim',
+          payload: {
+            sessionId,
+            playerCode,
+            playerName,
+            ticketData,
+            timestamp: Date.now(),
+            instanceId: instanceId.current
+          }
+        })
+        .then(() => {
+          logWithTimestamp("Sent bingo claim via realtime broadcast");
+          
+          toast({
+            title: "Bingo Claimed",
+            description: "Your claim has been submitted via backup channel",
+            duration: 3000
+          });
+          
+          // Clean up channel after use
+          supabase.removeChannel(channel);
+        })
+        .catch(err => {
+          console.error("Error claiming bingo via realtime broadcast:", err);
+          toast({
+            title: "Claim Error",
+            description: "Failed to submit your claim",
+            variant: "destructive",
+            duration: 3000
+          });
+        });
+        
+      return true;
+    } catch (err) {
+      console.error("Error setting up realtime claim:", err);
+      return false;
+    }
+  }, [sessionId, playerCode, playerName, toast]);
+
+  // Use combined state that merges WebSocket and realtime data
+  const effectiveGameState = isConnected 
+    ? gameState 
+    : {
+        ...gameState,
+        lastCalledNumber: realtimeUpdates.lastCalledNumber ?? gameState.lastCalledNumber,
+        calledNumbers: realtimeUpdates.calledNumbers.length > 0 
+          ? realtimeUpdates.calledNumbers 
+          : gameState.calledNumbers,
+        currentWinPattern: realtimeUpdates.currentWinPattern || gameState.currentWinPattern
+      };
 
   return {
-    isConnected,
-    connectionState,
+    isConnected: isConnected || realtimeUpdates.connectionStatus === 'connected',
+    connectionState: isConnected ? connectionState : realtimeUpdates.connectionStatus,
     connectionError,
-    gameState,
+    gameState: effectiveGameState,
     reconnect,
     claimBingo
   };

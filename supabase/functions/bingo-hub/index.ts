@@ -1,5 +1,6 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 
 // Enhanced CORS headers with more allowed origins and protocols
 const corsHeaders = {
@@ -8,7 +9,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Max-Age': '86400',
   'Access-Control-Allow-Credentials': 'true',
-  'Sec-WebSocket-Protocol': 'binary, json', // Support multiple protocols
   'Content-Type': 'application/json',
 };
 
@@ -19,8 +19,16 @@ interface Client {
   sessionId: string;
   playerCode?: string;
   playerName?: string;
+  instanceId?: string;
   lastActivity: number;
 }
+
+// Initialize Supabase client for realtime fallback
+const supabaseClient = createClient(
+  Deno.env.get("SUPABASE_URL") || "https://weqosgnuiixccghdoccw.supabase.co",
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "",
+  { auth: { persistSession: false } }
+);
 
 // Store connected clients
 const clients: Map<string, Client> = new Map();
@@ -36,6 +44,51 @@ const logWithTimestamp = (message: string) => {
 
 // Initial startup log
 logWithTimestamp("Bingo Hub function initialized with increased resources");
+
+// Set up realtime broadcast channel for fallback
+const setupRealtimeFallback = () => {
+  try {
+    const channel = supabaseClient.channel('number-broadcast');
+    
+    // Listen for bingo claims
+    channel
+      .on('broadcast', { event: 'bingo-claim' }, (payload) => {
+        logWithTimestamp(`Received bingo claim via realtime fallback: ${JSON.stringify(payload.payload)}`);
+        const { sessionId, playerCode, playerName, ticketData, timestamp, instanceId } = payload.payload;
+        
+        // Find caller clients for this session
+        const sessionClients = sessions.get(sessionId);
+        if (sessionClients) {
+          // Notify callers about the claim
+          for (const clientId of sessionClients) {
+            const client = clients.get(clientId);
+            if (client && client.type === "caller" && client.socket.readyState === WebSocket.OPEN) {
+              client.socket.send(JSON.stringify({
+                type: "bingo_claimed",
+                data: {
+                  playerCode,
+                  playerName,
+                  ticketData,
+                  timestamp,
+                  instanceId
+                }
+              }));
+              logWithTimestamp(`Notified caller ${clientId} about claim from ${playerCode}`);
+            }
+          }
+        }
+      })
+      .subscribe();
+      
+    logWithTimestamp("Realtime fallback system initialized");
+    
+  } catch (error) {
+    console.error("Error setting up realtime fallback:", error);
+  }
+};
+
+// Set up the fallback system
+setupRealtimeFallback();
 
 // Clean up inactive connections every 30 seconds
 setInterval(() => {
@@ -141,6 +194,25 @@ function broadcastToSession(sessionId: string, message: any) {
       logWithTimestamp(`Client ${clientId} socket not open (state: ${client.socket.readyState})`);
     }
   }
+  
+  // Also broadcast via Supabase realtime as fallback
+  try {
+    const channel = supabaseClient.channel('number-broadcast');
+    channel.send({
+      type: 'broadcast',
+      event: 'number-called',
+      payload: {
+        ...message.data,
+        sessionId,
+        timestamp: Date.now()
+      }
+    });
+    
+    logWithTimestamp(`Also sent message via realtime broadcast: ${message.type}`);
+  } catch (err) {
+    console.error("Error broadcasting via realtime:", err);
+  }
+  
   logWithTimestamp(`Message sent to ${sentCount} clients, errors: ${errorCount}, total clients: ${sessionClients.size}`);
 }
 
@@ -165,6 +237,30 @@ function broadcastToPlayers(sessionId: string, message: any) {
       }
     }
   }
+  
+  // Also broadcast via Supabase realtime as fallback
+  try {
+    const channel = supabaseClient.channel('number-broadcast');
+    channel.send({
+      type: 'broadcast',
+      event: 'number-called',
+      payload: {
+        ...message.data,
+        activeWinPattern: message.data?.currentWinPattern,
+        prizeInfo: {
+          currentPrize: message.data?.currentPrize,
+          currentPrizeDescription: message.data?.currentPrizeDescription
+        },
+        sessionId,
+        timestamp: Date.now()
+      }
+    });
+    
+    logWithTimestamp(`Also sent message to players via realtime broadcast: ${message.type}`);
+  } catch (err) {
+    console.error("Error broadcasting to players via realtime:", err);
+  }
+  
   logWithTimestamp(`Player broadcast sent to ${sentCount} players`);
 }
 
@@ -216,6 +312,7 @@ async function handlePlayerMessage(client: Client, message: any) {
         client.sessionId = message.sessionId;
         if (message.playerCode) client.playerCode = message.playerCode;
         if (message.playerName) client.playerName = message.playerName;
+        if (message.instanceId) client.instanceId = message.instanceId;
         
         // Log successful join
         logWithTimestamp(`Player ${client.playerCode} (${client.playerName}) joined session ${client.sessionId}`);
@@ -388,6 +485,24 @@ async function handleCallerMessage(client: Client, message: any) {
                 break;
               }
             }
+            
+            // Also broadcast via Supabase realtime as fallback
+            try {
+              const channel = supabaseClient.channel(`player-claims-${message.data?.instanceId || 'unknown'}`);
+              channel.send({
+                type: 'broadcast',
+                event: 'claim-result',
+                payload: {
+                  playerId: playerCode,
+                  result: message.data?.result,
+                  timestamp: Date.now()
+                }
+              });
+              
+              logWithTimestamp(`Also sent claim result via realtime broadcast for player ${playerCode}`);
+            } catch (err) {
+              console.error(`Error broadcasting claim result via realtime:`, err);
+            }
           }
         }
         break;
@@ -467,6 +582,7 @@ serve(async (req) => {
     
     const playerCode = url.searchParams.get('playerCode') || undefined;
     const playerName = url.searchParams.get('playerName') || undefined;
+    const instanceId = url.searchParams.get('instanceId') || undefined;
     
     logWithTimestamp(`New WebSocket connection request: ${clientType} for session ${sessionId}, playerCode: ${playerCode}`);
     
@@ -485,6 +601,7 @@ serve(async (req) => {
         sessionId,
         playerCode,
         playerName,
+        instanceId,
         lastActivity: Date.now()
       };
       

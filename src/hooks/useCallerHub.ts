@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from './use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 // Helper function for consistent timestamped logging
 const logWithTimestamp = (message: string) => {
@@ -12,16 +13,6 @@ interface ConnectedPlayer {
   playerCode: string;
   playerName: string | null;
   joinedAt: number;
-}
-
-interface GameState {
-  lastCalledNumber: number | null;
-  calledNumbers: number[];
-  currentWinPattern: string | null;
-  currentPrize: string | null;
-  currentPrizeDescription: string | null;
-  gameStatus: string | null;
-  lastUpdate: number;
 }
 
 interface BingoClaim {
@@ -41,11 +32,53 @@ export function useCallerHub(sessionId?: string) {
   const reconnectTimerRef = useRef<number | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
-  const maxReconnectAttempts = 10; // Reduced for faster fallback
+  const maxReconnectAttempts = 3; // Reduced for faster fallback
   const { toast } = useToast();
   const connectionTimeoutRef = useRef<number | null>(null);
+  const instanceId = useRef(Date.now()); // Unique instance identifier
 
-  // Function to create WebSocket connection with simplified approach
+  // Listen for realtime claims as fallback
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    logWithTimestamp(`Setting up realtime claims listener for session: ${sessionId}`);
+    
+    const channel = supabase.channel('bingo-claims');
+    
+    channel.on(
+      'broadcast', 
+      { event: 'bingo-claim' },
+      (payload) => {
+        if (payload.payload && payload.payload.sessionId === sessionId) {
+          const { playerCode, playerName, ticketData, timestamp } = payload.payload;
+          
+          logWithTimestamp(`Received bingo claim via realtime: ${playerCode}`);
+          
+          setPendingClaims(prev => [
+            ...prev,
+            {
+              playerCode,
+              playerName: playerName || playerCode,
+              claimedAt: timestamp,
+              ticketData
+            }
+          ]);
+          
+          toast({
+            title: "Bingo Claimed!",
+            description: `${playerName || playerCode} has claimed a bingo (via realtime)`,
+            duration: 5000
+          });
+        }
+      }
+    ).subscribe();
+    
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [sessionId, toast]);
+
+  // Function to create WebSocket connection with direct URL
   const createWebSocketConnection = useCallback(() => {
     if (!sessionId) {
       logWithTimestamp("No sessionId provided to useCallerHub");
@@ -72,41 +105,37 @@ export function useCallerHub(sessionId?: string) {
     setConnectionError(null);
 
     try {
-      // Always use direct connection to Supabase Edge Function with simplified URL
-      const projectRef = "weqosgnuiixccghdoccw";
-      const wsUrl = `wss://${projectRef}.supabase.co/functions/v1/bingo-hub?type=caller&sessionId=${sessionId}`;
+      // Direct connection to Supabase Edge Function
+      const wsUrl = `wss://weqosgnuiixccghdoccw.supabase.co/functions/v1/bingo-hub?type=caller&sessionId=${sessionId}&instanceId=${instanceId.current}`;
       
       logWithTimestamp(`Connecting to WebSocket URL: ${wsUrl}`);
       
-      // Create WebSocket connection with a clean slate
+      // Create WebSocket connection
       const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
       
-      // Set a shorter connection timeout
+      // Set a short connection timeout (5 seconds)
       connectionTimeoutRef.current = window.setTimeout(() => {
         if (socket.readyState !== WebSocket.OPEN) {
-          logWithTimestamp("WebSocket connection timeout");
+          logWithTimestamp("WebSocket connection timeout - switching to fallback");
           if (socket.readyState !== WebSocket.CLOSED && socket.readyState !== WebSocket.CLOSING) {
             socket.close(4000, "Connection timeout");
           }
           setConnectionState('error');
-          setConnectionError("Connection timeout. Please try again.");
+          setConnectionError("Switching to realtime updates...");
           
-          // Try to reconnect with simple backoff
+          // Only try to reconnect if under max attempts
           if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-            const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 5000);
-            logWithTimestamp(`Will try to reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1})`);
+            reconnectAttemptsRef.current++;
             reconnectTimerRef.current = window.setTimeout(() => {
-              reconnectAttemptsRef.current++;
               createWebSocketConnection();
-            }, delay);
+            }, 2000);
           } else {
-            logWithTimestamp("Maximum reconnection attempts reached");
-            setConnectionError("Maximum reconnection attempts reached. Falling back to fallback mechanism.");
-            // Here you would implement a fallback mechanism
+            logWithTimestamp("Maximum reconnection attempts reached, using realtime fallback");
+            setConnectionError("Using realtime updates fallback mechanism");
           }
         }
-      }, 8000); // Shorter timeout
+      }, 5000);
       
       socket.onopen = () => {
         logWithTimestamp("Caller WebSocket connection established");
@@ -119,7 +148,7 @@ export function useCallerHub(sessionId?: string) {
         setConnectionError(null);
         reconnectAttemptsRef.current = 0;
         
-        // Set up ping interval
+        // Set up ping interval - shorter interval (10s)
         if (pingIntervalRef.current !== null) {
           clearInterval(pingIntervalRef.current);
         }
@@ -136,7 +165,7 @@ export function useCallerHub(sessionId?: string) {
               console.error("Error sending ping:", err);
             }
           }
-        }, 15000); // Shorter ping interval
+        }, 10000);
         
         // Also notify the user
         toast({
@@ -149,7 +178,6 @@ export function useCallerHub(sessionId?: string) {
       socket.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          logWithTimestamp(`Received message from server: ${message.type}`);
           
           // Process different message types
           switch (message.type) {
@@ -215,9 +243,7 @@ export function useCallerHub(sessionId?: string) {
               
             case "pong":
               // Just update connection status
-              logWithTimestamp("Received pong from server");
               setIsConnected(true);
-              setConnectionState('connected');
               break;
               
             case "error":
@@ -257,35 +283,16 @@ export function useCallerHub(sessionId?: string) {
         // Try to reconnect with a simpler strategy if it wasn't a normal closure
         if (event.code !== 1000 && event.code !== 1001 && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
-          const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 5000);
+          const delay = 2000;
           logWithTimestamp(`Attempting to reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
           
           reconnectTimerRef.current = window.setTimeout(() => {
-            logWithTimestamp("Attempting to reconnect WebSocket...");
             createWebSocketConnection();
           }, delay);
-          
-          // Show toast for first few reconnect attempts
-          if (reconnectAttemptsRef.current <= 3) {
-            toast({
-              title: "Connection Lost",
-              description: `Connection to game server lost. Reconnecting in ${Math.round(delay/1000)}s...`,
-              variant: "destructive",
-              duration: 5000
-            });
-          }
         } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-          logWithTimestamp("Maximum reconnection attempts reached. Falling back to alternative mechanism.");
+          logWithTimestamp("Maximum reconnection attempts reached, using realtime fallback");
           setConnectionState('error');
-          setConnectionError(`Could not establish a connection to the game server after multiple attempts. Error code: ${event.code}.`);
-          toast({
-            title: "Connection Failed",
-            description: "Could not establish a connection to the game server. Trying alternative connection method...",
-            variant: "destructive",
-            duration: 5000
-          });
-          
-          // Here you would implement a fallback mechanism
+          setConnectionError("Using realtime updates as fallback mechanism");
         }
       };
       
@@ -294,35 +301,24 @@ export function useCallerHub(sessionId?: string) {
         logWithTimestamp(`WebSocket error occurred: ${JSON.stringify(error)}`);
         setIsConnected(false);
         setConnectionState('error');
-        setConnectionError("Error connecting to the game server. Will try to reconnect...");
-        
-        // Don't show too many toast messages
-        if (reconnectAttemptsRef.current < 3) {
-          toast({
-            title: "Connection Error",
-            description: "Error connecting to the game server. Will try to reconnect...",
-            variant: "destructive",
-            duration: 5000
-          });
-        }
+        setConnectionError("Error connecting to the game server. Using realtime fallback.");
       };
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error creating WebSocket:", err);
       logWithTimestamp(`Error creating WebSocket: ${err.message}`);
       setConnectionState('error');
-      setConnectionError(`Error creating WebSocket: ${err.message}`);
+      setConnectionError(`Error: ${err.message}`);
       
       // Try to reconnect if we haven't exceeded max attempts
       if (reconnectAttemptsRef.current < maxReconnectAttempts) {
         reconnectAttemptsRef.current++;
-        const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 5000);
+        const delay = 2000;
         reconnectTimerRef.current = window.setTimeout(() => {
           createWebSocketConnection();
         }, delay);
       } else {
-        logWithTimestamp("Maximum reconnection attempts reached. Falling back to alternative mechanism.");
-        setConnectionError("Maximum reconnection attempts reached. Trying alternative connection method...");
-        // Here you would implement a fallback mechanism
+        logWithTimestamp("Maximum reconnection attempts reached, using realtime fallback");
+        setConnectionError("Using realtime updates as fallback mechanism");
       }
     }
   }, [sessionId, toast]);
@@ -371,8 +367,9 @@ export function useCallerHub(sessionId?: string) {
     createWebSocketConnection();
   }, [createWebSocketConnection]);
 
-  // Function to call a new number
+  // Function to call a new number - with realtime fallback
   const callNumber = useCallback((number: number, allCalledNumbers: number[]) => {
+    // First try via WebSocket
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && sessionId) {
       try {
         socketRef.current.send(JSON.stringify({
@@ -384,18 +381,45 @@ export function useCallerHub(sessionId?: string) {
             timestamp: Date.now()
           }
         }));
-        logWithTimestamp(`Called number: ${number}, total called numbers: ${allCalledNumbers.length}`);
+        logWithTimestamp(`Called number via WebSocket: ${number}`);
         return true;
       } catch (err) {
-        console.error("Error calling number:", err);
-        return false;
+        console.error("Error calling number via WebSocket:", err);
+        // Continue to fallback
       }
     }
-    return false;
+    
+    // Fallback: Use Supabase realtime broadcast
+    try {
+      const channel = supabase.channel('number-broadcast');
+      channel
+        .send({
+          type: 'broadcast',
+          event: 'number-called',
+          payload: {
+            sessionId,
+            lastCalledNumber: number,
+            calledNumbers: allCalledNumbers,
+            timestamp: Date.now()
+          }
+        })
+        .then(() => {
+          logWithTimestamp(`Called number via realtime broadcast: ${number}`);
+        })
+        .catch(err => {
+          console.error("Error calling number via realtime:", err);
+        });
+      
+      return true;
+    } catch (err) {
+      console.error("Error with realtime fallback:", err);
+      return false;
+    }
   }, [sessionId]);
   
-  // Function to change the active win pattern
+  // Function to change the active win pattern - with realtime fallback
   const changePattern = useCallback((pattern: string, prize?: string, prizeDescription?: string) => {
+    // First try via WebSocket
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && sessionId) {
       try {
         socketRef.current.send(JSON.stringify({
@@ -408,59 +432,116 @@ export function useCallerHub(sessionId?: string) {
             timestamp: Date.now()
           }
         }));
-        logWithTimestamp(`Changed pattern to: ${pattern}, prize: ${prize}`);
+        logWithTimestamp(`Changed pattern via WebSocket: ${pattern}`);
         return true;
       } catch (err) {
-        console.error("Error changing pattern:", err);
-        return false;
+        console.error("Error changing pattern via WebSocket:", err);
+        // Continue to fallback
       }
     }
-    return false;
+    
+    // Fallback: Use Supabase realtime broadcast
+    try {
+      const channel = supabase.channel('number-broadcast');
+      channel
+        .send({
+          type: 'broadcast',
+          event: 'number-called',
+          payload: {
+            sessionId,
+            activeWinPattern: pattern,
+            prizeInfo: {
+              currentPrize: prize,
+              currentPrizeDescription: prizeDescription
+            },
+            timestamp: Date.now()
+          }
+        })
+        .then(() => {
+          logWithTimestamp(`Changed pattern via realtime broadcast: ${pattern}`);
+        })
+        .catch(err => {
+          console.error("Error changing pattern via realtime:", err);
+        });
+      
+      return true;
+    } catch (err) {
+      console.error("Error with realtime fallback:", err);
+      return false;
+    }
   }, [sessionId]);
   
-  // Function to start the game
+  // Other game control functions with realtime fallback
   const startGame = useCallback(() => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && sessionId) {
       try {
         socketRef.current.send(JSON.stringify({
           type: "game-start",
           sessionId,
-          data: {
-            timestamp: Date.now()
-          }
+          data: { timestamp: Date.now() }
         }));
-        logWithTimestamp(`Started game for session: ${sessionId}`);
+        logWithTimestamp(`Started game via WebSocket`);
         return true;
       } catch (err) {
-        console.error("Error starting game:", err);
-        return false;
+        console.error("Error starting game via WebSocket:", err);
       }
     }
-    return false;
+    
+    // Try fallback
+    try {
+      const channel = supabase.channel('number-broadcast');
+      channel
+        .send({
+          type: 'broadcast',
+          event: 'number-called',
+          payload: {
+            sessionId,
+            gameStatus: 'active',
+            timestamp: Date.now()
+          }
+        });
+      return true;
+    } catch (err) {
+      console.error("Error with realtime fallback:", err);
+      return false;
+    }
   }, [sessionId]);
   
-  // Function to end the game
   const endGame = useCallback(() => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && sessionId) {
       try {
         socketRef.current.send(JSON.stringify({
           type: "game-end",
           sessionId,
-          data: {
-            timestamp: Date.now()
-          }
+          data: { timestamp: Date.now() }
         }));
-        logWithTimestamp(`Ended game for session: ${sessionId}`);
+        logWithTimestamp(`Ended game via WebSocket`);
         return true;
       } catch (err) {
-        console.error("Error ending game:", err);
-        return false;
+        console.error("Error ending game via WebSocket:", err);
       }
     }
-    return false;
+    
+    // Try fallback
+    try {
+      const channel = supabase.channel('number-broadcast');
+      channel
+        .send({
+          type: 'broadcast',
+          event: 'number-called',
+          payload: {
+            sessionId,
+            gameStatus: 'completed',
+            timestamp: Date.now()
+          }
+        });
+      return true;
+    } catch (err) {
+      console.error("Error with realtime fallback:", err);
+      return false;
+    }
   }, [sessionId]);
   
-  // Function to advance to next game
   const nextGame = useCallback((gameNumber: number) => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && sessionId) {
       try {
@@ -472,18 +553,37 @@ export function useCallerHub(sessionId?: string) {
             timestamp: Date.now()
           }
         }));
-        logWithTimestamp(`Advanced to next game: ${gameNumber}`);
+        logWithTimestamp(`Advanced to next game via WebSocket: ${gameNumber}`);
         return true;
       } catch (err) {
-        console.error("Error advancing to next game:", err);
-        return false;
+        console.error("Error advancing to next game via WebSocket:", err);
       }
     }
-    return false;
+    
+    // Try fallback
+    try {
+      const channel = supabase.channel('number-broadcast');
+      channel
+        .send({
+          type: 'broadcast',
+          event: 'number-called',
+          payload: {
+            sessionId,
+            gameNumber,
+            calledNumbers: [],
+            lastCalledNumber: null,
+            timestamp: Date.now()
+          }
+        });
+      return true;
+    } catch (err) {
+      console.error("Error with realtime fallback:", err);
+      return false;
+    }
   }, [sessionId]);
   
-  // Function to respond to a claim
-  const respondToClaim = useCallback((playerCode: string, result: 'valid' | 'rejected') => {
+  // Function to respond to a claim - with realtime fallback
+  const respondToClaim = useCallback((playerCode: string, result: 'valid' | 'rejected', instanceId?: string) => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && sessionId) {
       try {
         socketRef.current.send(JSON.stringify({
@@ -492,21 +592,51 @@ export function useCallerHub(sessionId?: string) {
           data: {
             playerCode,
             result,
+            instanceId,
             timestamp: Date.now()
           }
         }));
         
         // Remove this claim from the pending claims
         setPendingClaims(prev => prev.filter(claim => claim.playerCode !== playerCode));
-        logWithTimestamp(`Responded to claim from ${playerCode} with result: ${result}`);
+        logWithTimestamp(`Responded to claim via WebSocket: ${playerCode} - ${result}`);
         
         return true;
       } catch (err) {
-        console.error("Error responding to claim:", err);
-        return false;
+        console.error("Error responding to claim via WebSocket:", err);
       }
     }
-    return false;
+    
+    // Try fallback via realtime broadcast
+    try {
+      // Use player-specific channel if we have instanceId
+      const channelName = instanceId ? `player-claims-${instanceId}` : 'player-claims';
+      const channel = supabase.channel(channelName);
+      
+      channel
+        .send({
+          type: 'broadcast',
+          event: 'claim-result',
+          payload: {
+            playerId: playerCode,
+            result,
+            timestamp: Date.now()
+          }
+        })
+        .then(() => {
+          // Remove this claim from the pending claims
+          setPendingClaims(prev => prev.filter(claim => claim.playerCode !== playerCode));
+          logWithTimestamp(`Responded to claim via realtime broadcast: ${playerCode} - ${result}`);
+        })
+        .catch(err => {
+          console.error("Error sending claim result via realtime:", err);
+        });
+      
+      return true;
+    } catch (err) {
+      console.error("Error with realtime fallback:", err);
+      return false;
+    }
   }, [sessionId]);
   
   return {
