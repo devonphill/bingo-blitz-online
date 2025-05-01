@@ -244,7 +244,8 @@ export default function CallerControls({
 
   // WebSocket connection warning or error
   const renderConnectionStatus = () => {
-    if (callerHub.connectionState === 'connected') {
+    // Fix: Only show the actual connection status based on isConnected flag
+    if (callerHub.isConnected) {
       return (
         <div className="text-xs text-green-600 flex items-center justify-center mt-2">
           <span className="h-2 w-2 bg-green-500 rounded-full mr-2"></span>

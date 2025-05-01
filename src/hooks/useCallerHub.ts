@@ -13,7 +13,8 @@ import {
   preventConnectionLoop,
   createDelayedConnectionAttempt,
   suspendConnectionAttempts,
-  getStableConnectionState
+  getStableConnectionState,
+  getEffectiveConnectionState
 } from '@/utils/logUtils';
 
 interface ConnectedPlayer {
@@ -552,7 +553,7 @@ export function useCallerHub(sessionId?: string) {
       return false;
     }
   }, [sessionId, connectionState, isConnected, reconnect]);
-
+  
   // Function to call a new number
   const callNumber = useCallback((number: number, allCalledNumbers: number[]) => {
     return broadcastGameUpdate({
@@ -636,6 +637,16 @@ export function useCallerHub(sessionId?: string) {
       return false;
     }
   }, [sessionId]);
+  
+  // Update the effective isConnected state for consistency with connectionState
+  useEffect(() => {
+    // Use the effective connection state to ensure UI consistency
+    const effectiveState = getEffectiveConnectionState(connectionState, isConnected);
+    
+    if (effectiveState !== connectionState) {
+      setConnectionState(effectiveState);
+    }
+  }, [connectionState, isConnected]);
   
   return {
     isConnected,

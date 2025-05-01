@@ -6,7 +6,8 @@ import {
   preventConnectionLoop,
   createDelayedConnectionAttempt,
   suspendConnectionAttempts,
-  getStableConnectionState
+  getStableConnectionState,
+  getEffectiveConnectionState
 } from '@/utils/logUtils';
 
 export function useRealTimeUpdates(sessionId: string | undefined, playerCode: string | undefined) {
@@ -352,6 +353,18 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
     };
   }, [sessionId, playerCode, toast]);
 
+  // Update the actual isConnected state for consistency with connectionState
+  useEffect(() => {
+    // Use the effective connection state to ensure UI consistency
+    if (isMounted.current) {
+      const effectiveState = getEffectiveConnectionState(connectionState, isConnected);
+      
+      if (effectiveState !== connectionState) {
+        setConnectionStatus(effectiveState);
+      }
+    }
+  }, [connectionStatus, isConnected]);
+  
   return {
     lastCalledNumber,
     calledNumbers,

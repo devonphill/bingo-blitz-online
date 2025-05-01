@@ -66,6 +66,18 @@ export default function PlayerGameLayout({
   const [showClaimError, setShowClaimError] = useState<boolean>(false);
   const { toast } = useToast();
   
+  // To track actual connection status with debounce
+  const [isActuallyConnected, setIsActuallyConnected] = useState<boolean>(connectionState === 'connected');
+  
+  // Debounce connection state to avoid flashing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsActuallyConnected(connectionState === 'connected');
+    }, 2000); // 2 second debounce to ensure connection is stable
+    
+    return () => clearTimeout(timer);
+  }, [connectionState]);
+  
   // Handle claim status changes
   useEffect(() => {
     if (claimStatus === 'validated') {
@@ -86,14 +98,15 @@ export default function PlayerGameLayout({
         variant: "destructive",
         duration: 5000
       });
-    } else if (connectionState === 'connected') {
+    } else if (connectionState === 'connected' && !isActuallyConnected) {
+      // Only show connected toast when transitioning from disconnected to connected
       toast({
         title: "Connected",
         description: "Successfully connected to the game server.",
         duration: 3000
       });
     }
-  }, [connectionState, toast]);
+  }, [connectionState, isActuallyConnected, toast]);
 
   const handleSettingsChange = (autoMark: boolean) => {
     setAutoMarking(autoMark);
@@ -109,7 +122,7 @@ export default function PlayerGameLayout({
           activeWinPattern={currentWinPattern || undefined}
           autoMarking={autoMarking}
           setAutoMarking={setAutoMarking}
-          isConnected={connectionState === 'connected'}
+          isConnected={isActuallyConnected}
           connectionState={connectionState}
         />
       </div>
@@ -141,12 +154,12 @@ export default function PlayerGameLayout({
           </div>
           <div className="flex items-center">
             <span className={`h-2 w-2 rounded-full mr-1 ${
-              connectionState === 'connected' ? 'bg-green-500' : 
+              isActuallyConnected ? 'bg-green-500' : 
               connectionState === 'connecting' ? 'bg-amber-500' : 
               'bg-red-500'
             }`}></span>
             <span>{
-              connectionState === 'connected' ? 'Connected' : 
+              isActuallyConnected ? 'Connected' : 
               connectionState === 'connecting' ? 'Connecting...' : 
               connectionState === 'error' ? 'Connection Error' :
               'Disconnected'
@@ -195,12 +208,12 @@ export default function PlayerGameLayout({
               </Label>
               <div className="flex items-center">
                 <span className={`h-3 w-3 rounded-full mr-2 ${
-                  connectionState === 'connected' ? 'bg-green-500' : 
+                  isActuallyConnected ? 'bg-green-500' : 
                   connectionState === 'connecting' ? 'bg-amber-500' : 
                   'bg-red-500'
                 }`}></span>
                 <span className="text-sm">
-                  {connectionState === 'connected' ? 'Connected' : 
+                  {isActuallyConnected ? 'Connected' : 
                    connectionState === 'connecting' ? 'Connecting...' : 
                    connectionState === 'error' ? 'Connection Error' :
                    'Disconnected'}
@@ -255,8 +268,8 @@ export default function PlayerGameLayout({
         </DialogContent>
       </Dialog>
       
-      {/* Connection Warning */}
-      {connectionState !== 'connected' && (
+      {/* Connection Warning - Only show when not actually connected */}
+      {!isActuallyConnected && (
         <div className="fixed bottom-20 left-4 right-4 bg-amber-50 border border-amber-200 p-3 rounded-lg shadow-md text-sm flex items-center">
           <AlertCircle className="h-5 w-5 text-amber-500 mr-2 flex-shrink-0" />
           <div className="flex-grow">

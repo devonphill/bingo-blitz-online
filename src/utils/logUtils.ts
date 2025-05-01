@@ -1,4 +1,3 @@
-
 /**
  * Helper function for consistent timestamped logging
  */
@@ -227,6 +226,18 @@ export const getStableConnectionState = (
   
   // If we're seeing rapid state changes, stick with the previous stable state
   // until we've had a consistent new state for the threshold period
+  // IMPORTANT: Special case - if the new state is 'connected', we allow it through immediately
+  // This is to ensure that "connected" state is shown to users promptly when connection works
+  if (currentState === 'connected') {
+    stableStateRef.current = {
+      state: currentState,
+      since: now,
+      changeCount: 0
+    };
+    return currentState;
+  }
+  
+  // For other states, apply stabilization
   if (stableStateRef.current.changeCount > 3 && 
       now - stableStateRef.current.since < stabilityThresholdMs) {
     logWithTimestamp(`Suppressing connection state flapping: actual=${currentState}, reported=${stableStateRef.current.state}`);
@@ -241,4 +252,26 @@ export const getStableConnectionState = (
   };
   
   return currentState;
+};
+
+/**
+ * NEW: Determine actual connection status based on both connection state and isConnected flag
+ * This is a helper to ensure UI displays accurate connection status
+ */
+export const getEffectiveConnectionState = (
+  connectionState: 'disconnected' | 'connecting' | 'connected' | 'error',
+  isConnected: boolean
+): 'disconnected' | 'connecting' | 'connected' | 'error' => {
+  // If connection state says 'connected' but isConnected is false, override to 'error'
+  if (connectionState === 'connected' && !isConnected) {
+    return 'error';
+  }
+  
+  // If isConnected is true but state isn't 'connected', override to 'connected'
+  if (isConnected && connectionState !== 'connected') {
+    return 'connected';
+  }
+  
+  // Otherwise use the provided state
+  return connectionState;
 };
