@@ -28,7 +28,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
   const reconnectTimerRef = useRef<number | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
-  const maxReconnectAttempts = 50; // Increased for better retry logic
+  const maxReconnectAttempts = 50;
   const connectionTimeoutRef = useRef<number | null>(null);
   const { toast } = useToast();
 
@@ -56,7 +56,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     setConnectionError(null);
 
     try {
-      // Always use direct connection to Supabase Edge Function
+      // Use direct connection to Supabase Edge Function
       const projectRef = "weqosgnuiixccghdoccw";
       let wsUrl = `wss://${projectRef}.supabase.co/functions/v1/bingo-hub?type=player&sessionId=${sessionId}`;
       
@@ -84,7 +84,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
           
           // Try to reconnect
           if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-            const delay = Math.min(1000 * Math.pow(1.3, Math.min(reconnectAttemptsRef.current, 10)), 8000); // Capped exponential backoff
+            const delay = Math.min(1000 * Math.pow(1.3, Math.min(reconnectAttemptsRef.current, 10)), 8000);
             console.log(`Will try to reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1})`);
             reconnectTimerRef.current = window.setTimeout(() => {
               reconnectAttemptsRef.current++;
@@ -95,7 +95,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
             setConnectionError("Maximum reconnection attempts reached. Please reload the page.");
           }
         }
-      }, 12000); // 12 second timeout (reduced from 15s)
+      }, 12000); 
       
       socket.onopen = () => {
         console.log("Player WebSocket connection established");
@@ -118,7 +118,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
               console.error("Error sending ping:", err);
             }
           }
-        }, 20000); // Send ping every 20 seconds
+        }, 20000); 
         
         // Send join message
         try {

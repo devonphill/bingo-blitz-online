@@ -28,13 +28,13 @@ const clients: Map<string, Client> = new Map();
 const sessions: Map<string, Set<string>> = new Map(); // sessionId -> Set of client ids
 
 // Debug logging to help troubleshoot
-console.log("Bingo Hub function initialized");
+console.log("Bingo Hub function initialized with increased resources");
 
 // Clean up inactive connections every 30 seconds
 setInterval(() => {
   try {
     const now = Date.now();
-    const timeoutThreshold = 300000; // 5 minutes timeout (increased from 3 minutes)
+    const timeoutThreshold = 300000; // 5 minutes timeout
     
     console.log(`Checking for inactive clients. Total clients: ${clients.size}`);
     
@@ -584,4 +584,3 @@ serve(async (req) => {
     });
   }
 });
-
