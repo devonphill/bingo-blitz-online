@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from './use-toast';
 
@@ -34,8 +35,9 @@ export function useCallerHub(sessionId?: string) {
   const reconnectTimerRef = useRef<number | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
-  const maxReconnectAttempts = 20; // Increased from 10
+  const maxReconnectAttempts = 30; // Increased from 20
   const { toast } = useToast();
+  const connectionTimeoutRef = useRef<number | null>(null);
 
   // Function to create WebSocket connection
   const createWebSocketConnection = useCallback(() => {
@@ -47,7 +49,13 @@ export function useCallerHub(sessionId?: string) {
 
     // Clear any existing connection
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.close();
+      socketRef.current.close(1000, "Normal closure, reconnecting");
+    }
+
+    // Clear any existing connection timeout
+    if (connectionTimeoutRef.current !== null) {
+      clearTimeout(connectionTimeoutRef.current);
+      connectionTimeoutRef.current = null;
     }
 
     console.log(`Setting up caller WebSocket connection for session: ${sessionId} (attempt ${reconnectAttemptsRef.current + 1})`);
@@ -55,52 +63,43 @@ export function useCallerHub(sessionId?: string) {
     setConnectionError(null);
 
     try {
-      // Construct WebSocket URL with query parameters
-      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      let wsUrl: string;
-      
-      // When using Supabase Edge Functions directly from any domain
-      // The Edge Function URL is always the same format
-      const currentHost = window.location.host;
+      // Always use direct connection to Supabase Edge Function
       const projectRef = "weqosgnuiixccghdoccw";
-      
-      // Check if running in Supabase development environment or on localhost
-      if (currentHost === 'localhost' || currentHost === 'localhost:3000' || currentHost === 'localhost:5173') {
-        // Local development - use direct Supabase URL
-        wsUrl = `wss://${projectRef}.functions.supabase.co/bingo-hub?type=caller&sessionId=${sessionId}`;
-      } else {
-        // Production environment - use relative URL
-        wsUrl = `${wsProtocol}//${currentHost}/functions/v1/bingo-hub?type=caller&sessionId=${sessionId}`;
-      }
+      const wsUrl = `wss://${projectRef}.supabase.co/functions/v1/bingo-hub?type=caller&sessionId=${sessionId}`;
       
       console.log("Connecting to WebSocket URL:", wsUrl);
       
-      // Create WebSocket connection with longer timeout
+      // Create WebSocket connection
       const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
       
       // Set a connection timeout
-      const connectionTimeout = window.setTimeout(() => {
+      connectionTimeoutRef.current = window.setTimeout(() => {
         if (socket.readyState !== WebSocket.OPEN) {
           console.log("WebSocket connection timeout");
-          socket.close();
+          socket.close(4000, "Connection timeout");
           setConnectionState('error');
           setConnectionError("Connection timeout. Please try again.");
           
           // Try to reconnect
           if (reconnectAttemptsRef.current < maxReconnectAttempts) {
             const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 10000); // Reduced max delay to 10 seconds
+            console.log(`Will try to reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1})`);
             reconnectTimerRef.current = window.setTimeout(() => {
               reconnectAttemptsRef.current++;
               createWebSocketConnection();
             }, delay);
+          } else {
+            console.log("Maximum reconnection attempts reached");
+            setConnectionError("Maximum reconnection attempts reached. Please reload the page.");
           }
         }
-      }, 10000); // 10 second timeout
+      }, 15000); // 15 second timeout
       
       socket.onopen = () => {
         console.log("Caller WebSocket connection established");
-        clearTimeout(connectionTimeout);
+        clearTimeout(connectionTimeoutRef.current!);
+        connectionTimeoutRef.current = null;
         setIsConnected(true);
         setConnectionState('connected');
         setConnectionError(null);
@@ -109,12 +108,16 @@ export function useCallerHub(sessionId?: string) {
         // Set up ping interval
         pingIntervalRef.current = window.setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({
-              type: "ping",
-              sessionId
-            }));
+            try {
+              socket.send(JSON.stringify({
+                type: "ping",
+                sessionId
+              }));
+            } catch (err) {
+              console.error("Error sending ping:", err);
+            }
           }
-        }, 30000); // Send ping every 30 seconds
+        }, 20000); // Send ping every 20 seconds
         
         // Also notify the user
         toast({
@@ -127,6 +130,7 @@ export function useCallerHub(sessionId?: string) {
       socket.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
+          console.log("Received message from server:", message.type);
           
           switch (message.type) {
             case "connected":
@@ -215,7 +219,10 @@ export function useCallerHub(sessionId?: string) {
       
       socket.onclose = (event) => {
         console.log("Caller WebSocket connection closed:", event.code, event.reason);
-        clearTimeout(connectionTimeout);
+        if (connectionTimeoutRef.current !== null) {
+          clearTimeout(connectionTimeoutRef.current);
+          connectionTimeoutRef.current = null;
+        }
         setIsConnected(false);
         setConnectionState('disconnected');
         
@@ -225,8 +232,8 @@ export function useCallerHub(sessionId?: string) {
           pingIntervalRef.current = null;
         }
         
-        // Try to reconnect if we haven't exceeded max attempts
-        if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+        // Try to reconnect if we haven't exceeded max attempts and it wasn't a normal closure
+        if (event.code !== 1000 && event.code !== 1001 && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
           const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 10000); // Reduced max delay to 10 seconds
           console.log(`Attempting to reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
@@ -237,7 +244,7 @@ export function useCallerHub(sessionId?: string) {
           }, delay);
           
           // Show toast for first few reconnect attempts
-          if (reconnectAttemptsRef.current <= 2) {
+          if (reconnectAttemptsRef.current <= 3) {
             toast({
               title: "Connection Lost",
               description: `Connection to game server lost. Reconnecting in ${Math.round(delay/1000)}s...`,
@@ -245,7 +252,7 @@ export function useCallerHub(sessionId?: string) {
               duration: 5000
             });
           }
-        } else {
+        } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
           console.log("Maximum reconnection attempts reached. Giving up.");
           setConnectionState('error');
           setConnectionError(`Could not establish a connection to the game server after multiple attempts. Error code: ${event.code}.`);
@@ -283,6 +290,9 @@ export function useCallerHub(sessionId?: string) {
         reconnectTimerRef.current = window.setTimeout(() => {
           createWebSocketConnection();
         }, delay);
+      } else {
+        console.log("Maximum reconnection attempts reached. Giving up.");
+        setConnectionError("Maximum reconnection attempts reached. Please reload the page.");
       }
     }
   }, [sessionId, toast]);
@@ -307,9 +317,14 @@ export function useCallerHub(sessionId?: string) {
         reconnectTimerRef.current = null;
       }
       
+      if (connectionTimeoutRef.current !== null) {
+        clearTimeout(connectionTimeoutRef.current);
+        connectionTimeoutRef.current = null;
+      }
+      
       // Close socket
       if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-        socketRef.current.close();
+        socketRef.current.close(1000, "Component unmounted");
       }
       socketRef.current = null;
     };
@@ -317,7 +332,7 @@ export function useCallerHub(sessionId?: string) {
 
   // Manual reconnect function
   const reconnect = useCallback(() => {
-    console.log("Manual reconnection attempt");
+    console.log("Manual reconnection attempt initiated");
     reconnectAttemptsRef.current = 0;
     createWebSocketConnection();
   }, [createWebSocketConnection]);
@@ -325,16 +340,21 @@ export function useCallerHub(sessionId?: string) {
   // Function to call a new number
   const callNumber = useCallback((number: number, allCalledNumbers: number[]) => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && sessionId) {
-      socketRef.current.send(JSON.stringify({
-        type: "number-called",
-        sessionId,
-        data: {
-          lastCalledNumber: number,
-          calledNumbers: allCalledNumbers,
-          timestamp: Date.now()
-        }
-      }));
-      return true;
+      try {
+        socketRef.current.send(JSON.stringify({
+          type: "number-called",
+          sessionId,
+          data: {
+            lastCalledNumber: number,
+            calledNumbers: allCalledNumbers,
+            timestamp: Date.now()
+          }
+        }));
+        return true;
+      } catch (err) {
+        console.error("Error calling number:", err);
+        return false;
+      }
     }
     return false;
   }, [sessionId]);
@@ -342,17 +362,22 @@ export function useCallerHub(sessionId?: string) {
   // Function to change the active win pattern
   const changePattern = useCallback((pattern: string, prize?: string, prizeDescription?: string) => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && sessionId) {
-      socketRef.current.send(JSON.stringify({
-        type: "pattern-change",
-        sessionId,
-        data: {
-          pattern,
-          prize,
-          prizeDescription,
-          timestamp: Date.now()
-        }
-      }));
-      return true;
+      try {
+        socketRef.current.send(JSON.stringify({
+          type: "pattern-change",
+          sessionId,
+          data: {
+            pattern,
+            prize,
+            prizeDescription,
+            timestamp: Date.now()
+          }
+        }));
+        return true;
+      } catch (err) {
+        console.error("Error changing pattern:", err);
+        return false;
+      }
     }
     return false;
   }, [sessionId]);
@@ -360,14 +385,19 @@ export function useCallerHub(sessionId?: string) {
   // Function to start the game
   const startGame = useCallback(() => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && sessionId) {
-      socketRef.current.send(JSON.stringify({
-        type: "game-start",
-        sessionId,
-        data: {
-          timestamp: Date.now()
-        }
-      }));
-      return true;
+      try {
+        socketRef.current.send(JSON.stringify({
+          type: "game-start",
+          sessionId,
+          data: {
+            timestamp: Date.now()
+          }
+        }));
+        return true;
+      } catch (err) {
+        console.error("Error starting game:", err);
+        return false;
+      }
     }
     return false;
   }, [sessionId]);
@@ -375,14 +405,19 @@ export function useCallerHub(sessionId?: string) {
   // Function to end the game
   const endGame = useCallback(() => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && sessionId) {
-      socketRef.current.send(JSON.stringify({
-        type: "game-end",
-        sessionId,
-        data: {
-          timestamp: Date.now()
-        }
-      }));
-      return true;
+      try {
+        socketRef.current.send(JSON.stringify({
+          type: "game-end",
+          sessionId,
+          data: {
+            timestamp: Date.now()
+          }
+        }));
+        return true;
+      } catch (err) {
+        console.error("Error ending game:", err);
+        return false;
+      }
     }
     return false;
   }, [sessionId]);
@@ -390,15 +425,20 @@ export function useCallerHub(sessionId?: string) {
   // Function to advance to next game
   const nextGame = useCallback((gameNumber: number) => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && sessionId) {
-      socketRef.current.send(JSON.stringify({
-        type: "next-game",
-        sessionId,
-        data: {
-          gameNumber,
-          timestamp: Date.now()
-        }
-      }));
-      return true;
+      try {
+        socketRef.current.send(JSON.stringify({
+          type: "next-game",
+          sessionId,
+          data: {
+            gameNumber,
+            timestamp: Date.now()
+          }
+        }));
+        return true;
+      } catch (err) {
+        console.error("Error advancing to next game:", err);
+        return false;
+      }
     }
     return false;
   }, [sessionId]);
@@ -406,20 +446,25 @@ export function useCallerHub(sessionId?: string) {
   // Function to respond to a claim
   const respondToClaim = useCallback((playerCode: string, result: 'valid' | 'rejected') => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && sessionId) {
-      socketRef.current.send(JSON.stringify({
-        type: "claim-result",
-        sessionId,
-        data: {
-          playerCode,
-          result,
-          timestamp: Date.now()
-        }
-      }));
-      
-      // Remove this claim from the pending claims
-      setPendingClaims(prev => prev.filter(claim => claim.playerCode !== playerCode));
-      
-      return true;
+      try {
+        socketRef.current.send(JSON.stringify({
+          type: "claim-result",
+          sessionId,
+          data: {
+            playerCode,
+            result,
+            timestamp: Date.now()
+          }
+        }));
+        
+        // Remove this claim from the pending claims
+        setPendingClaims(prev => prev.filter(claim => claim.playerCode !== playerCode));
+        
+        return true;
+      } catch (err) {
+        console.error("Error responding to claim:", err);
+        return false;
+      }
     }
     return false;
   }, [sessionId]);

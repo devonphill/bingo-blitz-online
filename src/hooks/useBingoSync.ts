@@ -12,7 +12,9 @@ interface GameState {
 }
 
 export function useBingoSync(sessionId?: string, playerCode?: string, playerName?: string) {
-  // GameState with default values
+  const [isConnected, setIsConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [gameState, setGameState] = useState<GameState>({
     lastCalledNumber: null,
     calledNumbers: [],
@@ -22,55 +24,48 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     gameStatus: null
   });
   
-  const [isConnected, setIsConnected] = useState(false);
-  const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
-  const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [claimStatus, setClaimStatus] = useState<'pending' | 'validated' | 'rejected' | null>(null);
-  
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
-  const maxReconnectAttempts = 20; // Increased from 10
+  const maxReconnectAttempts = 30;
+  const connectionTimeoutRef = useRef<number | null>(null);
   const { toast } = useToast();
 
   // Function to create WebSocket connection
   const createWebSocketConnection = useCallback(() => {
-    // Only proceed if we have session ID
     if (!sessionId) {
-      console.log("Cannot connect without sessionId");
+      console.log("No sessionId provided to useBingoSync");
+      setConnectionState('disconnected');
       return;
     }
-    
+
     // Clear any existing connection
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.close();
+      socketRef.current.close(1000, "Normal closure, reconnecting");
     }
     
-    console.log(`Setting up player WebSocket connection for session: ${sessionId} (attempt ${reconnectAttemptsRef.current + 1})`);
+    // Clear any existing connection timeout
+    if (connectionTimeoutRef.current !== null) {
+      clearTimeout(connectionTimeoutRef.current);
+      connectionTimeoutRef.current = null;
+    }
+
+    console.log(`Setting up player WebSocket connection for session: ${sessionId}, player: ${playerCode || 'anonymous'} (attempt ${reconnectAttemptsRef.current + 1})`);
     setConnectionState('connecting');
     setConnectionError(null);
 
     try {
-      // Construct WebSocket URL
-      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      let wsUrl: string;
-      
-      // Get the current host and construct the URL
-      const currentHost = window.location.host;
+      // Always use direct connection to Supabase Edge Function for more reliable connection
       const projectRef = "weqosgnuiixccghdoccw";
+      let wsUrl = `wss://${projectRef}.supabase.co/functions/v1/bingo-hub?type=player&sessionId=${sessionId}`;
       
-      // Check if running in development environment or on localhost
-      if (currentHost === 'localhost' || currentHost === 'localhost:3000' || currentHost === 'localhost:5173') {
-        // Local development - use direct Supabase URL
-        wsUrl = `wss://${projectRef}.functions.supabase.co/bingo-hub?type=player&sessionId=${sessionId}`;
-        if (playerCode) wsUrl += `&playerCode=${playerCode}`;
-        if (playerName) wsUrl += `&playerName=${encodeURIComponent(playerName || '')}`;
-      } else {
-        // Production environment - use relative URL
-        wsUrl = `${wsProtocol}//${currentHost}/functions/v1/bingo-hub?type=player&sessionId=${sessionId}`;
-        if (playerCode) wsUrl += `&playerCode=${playerCode}`;
-        if (playerName) wsUrl += `&playerName=${encodeURIComponent(playerName || '')}`;
+      // Add player details if available
+      if (playerCode) {
+        wsUrl += `&playerCode=${encodeURIComponent(playerCode)}`;
+      }
+      if (playerName) {
+        wsUrl += `&playerName=${encodeURIComponent(playerName)}`;
       }
       
       console.log("Connecting to WebSocket URL:", wsUrl);
@@ -80,64 +75,77 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
       socketRef.current = socket;
       
       // Set a connection timeout
-      const connectionTimeout = window.setTimeout(() => {
+      connectionTimeoutRef.current = window.setTimeout(() => {
         if (socket.readyState !== WebSocket.OPEN) {
           console.log("WebSocket connection timeout");
-          socket.close();
+          socket.close(4000, "Connection timeout");
           setConnectionState('error');
           setConnectionError("Connection timeout. Please try again.");
           
           // Try to reconnect
           if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-            const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 10000); // Reduced max delay
+            const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 10000);
+            console.log(`Will try to reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1})`);
             reconnectTimerRef.current = window.setTimeout(() => {
               reconnectAttemptsRef.current++;
               createWebSocketConnection();
             }, delay);
+          } else {
+            console.log("Maximum reconnection attempts reached");
+            setConnectionError("Maximum reconnection attempts reached. Please reload the page.");
           }
         }
-      }, 10000); // 10 second timeout
+      }, 15000); // 15 second timeout
       
       socket.onopen = () => {
         console.log("Player WebSocket connection established");
-        clearTimeout(connectionTimeout);
+        clearTimeout(connectionTimeoutRef.current!);
+        connectionTimeoutRef.current = null;
         setIsConnected(true);
         setConnectionState('connected');
         setConnectionError(null);
         reconnectAttemptsRef.current = 0;
         
-        // Send join message
-        socket.send(JSON.stringify({
-          type: "join",
-          sessionId,
-          playerCode,
-          playerName
-        }));
-        
         // Set up ping interval
         pingIntervalRef.current = window.setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({
-              type: "ping",
-              sessionId
-            }));
+            try {
+              socket.send(JSON.stringify({
+                type: "ping",
+                sessionId
+              }));
+            } catch (err) {
+              console.error("Error sending ping:", err);
+            }
           }
-        }, 30000); // Send ping every 30 seconds
+        }, 20000); // Send ping every 20 seconds
         
-        toast({
-          title: "Connected",
-          description: "Connected to game server successfully.",
-          duration: 3000
-        });
+        // Send join message
+        try {
+          socket.send(JSON.stringify({
+            type: "join",
+            sessionId,
+            playerCode,
+            playerName
+          }));
+          console.log(`Sent join message for player ${playerCode}`);
+        } catch (err) {
+          console.error("Error sending join message:", err);
+        }
       };
       
       socket.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
+          console.log("Received message from server:", message.type);
           
           switch (message.type) {
             case "connected":
               console.log("Player WebSocket connection confirmed:", message.data);
+              break;
+              
+            case "join_acknowledged":
+              console.log("Join acknowledged:", message.data);
               break;
               
             case "game_state":
@@ -164,11 +172,13 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
                 }));
                 
                 // Show toast for new number
-                toast({
-                  title: "Number Called",
-                  description: `Number ${message.data.lastCalledNumber} has been called`,
-                  duration: 3000
-                });
+                if (message.data.lastCalledNumber !== null) {
+                  toast({
+                    title: "Number Called",
+                    description: `Number ${message.data.lastCalledNumber} has been called`,
+                    duration: 3000
+                  });
+                }
               }
               break;
               
@@ -185,7 +195,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
                 // Show toast for pattern change
                 toast({
                   title: "Win Pattern Changed",
-                  description: `New winning pattern: ${message.data.currentWinPattern}`,
+                  description: `New win pattern: ${message.data.currentWinPattern}`,
                   duration: 3000
                 });
               }
@@ -198,9 +208,10 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
                 gameStatus: 'active'
               }));
               
+              // Show toast for game start
               toast({
                 title: "Game Started",
-                description: "The game has started!",
+                description: "The game has started",
                 duration: 3000
               });
               break;
@@ -212,9 +223,10 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
                 gameStatus: 'completed'
               }));
               
+              // Show toast for game end
               toast({
                 title: "Game Ended",
-                description: "The current game has ended.",
+                description: "The current game has ended",
                 duration: 3000
               });
               break;
@@ -231,9 +243,10 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
                   gameStatus: 'active'
                 });
                 
+                // Show toast for next game
                 toast({
-                  title: "New Game Started",
-                  description: `Game ${message.data.gameNumber} has started`,
+                  title: "Next Game",
+                  description: `Game ${message.data.gameNumber} is starting`,
                   duration: 3000
                 });
               }
@@ -241,15 +254,17 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
               
             case "claim_result":
               console.log("Claim result:", message.data);
-              if (message.data) {
-                setClaimStatus(message.data.result === 'valid' ? 'validated' : 'rejected');
-                
+              if (message.data?.result === 'valid') {
                 toast({
-                  title: message.data.result === 'valid' ? "Bingo Verified!" : "Claim Rejected",
-                  description: message.data.result === 'valid' 
-                    ? "Your bingo claim has been verified!" 
-                    : "Your bingo claim was not valid. Please check your numbers.",
-                  variant: message.data.result === 'valid' ? "default" : "destructive",
+                  title: "Bingo Verified!",
+                  description: "Your bingo has been verified",
+                  duration: 5000
+                });
+              } else if (message.data?.result === 'rejected') {
+                toast({
+                  title: "Bingo Rejected",
+                  description: "Your bingo claim was not valid",
+                  variant: "destructive",
                   duration: 5000
                 });
               }
@@ -258,7 +273,6 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
             case "pong":
               // Just update connection status
               setIsConnected(true);
-              setConnectionState('connected');
               break;
               
             case "error":
@@ -281,7 +295,10 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
       
       socket.onclose = (event) => {
         console.log("Player WebSocket connection closed:", event.code, event.reason);
-        clearTimeout(connectionTimeout);
+        if (connectionTimeoutRef.current !== null) {
+          clearTimeout(connectionTimeoutRef.current);
+          connectionTimeoutRef.current = null;
+        }
         setIsConnected(false);
         setConnectionState('disconnected');
         
@@ -291,36 +308,20 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
           pingIntervalRef.current = null;
         }
         
-        // Try to reconnect if we haven't exceeded max attempts
-        if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+        // Try to reconnect if it wasn't a normal closure and we haven't exceeded max attempts
+        if (event.code !== 1000 && event.code !== 1001 && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
-          const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 10000); // Reduced max delay
+          const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 10000);
           console.log(`Attempting to reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
           
           reconnectTimerRef.current = window.setTimeout(() => {
             console.log("Attempting to reconnect WebSocket...");
             createWebSocketConnection();
           }, delay);
-          
-          // Show toast for first couple reconnect attempts
-          if (reconnectAttemptsRef.current <= 2) {
-            toast({
-              title: "Connection Lost",
-              description: `Connection to game server lost. Reconnecting in ${Math.round(delay/1000)}s...`,
-              variant: "destructive",
-              duration: 5000
-            });
-          }
-        } else {
+        } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
           console.log("Maximum reconnection attempts reached. Giving up.");
           setConnectionState('error');
-          setConnectionError(`Could not establish a connection to the game server after multiple attempts. Error code: ${event.code}.`);
-          toast({
-            title: "Connection Failed",
-            description: "Could not establish a connection to the game server after multiple attempts.",
-            variant: "destructive",
-            duration: 5000
-          });
+          setConnectionError(`Could not establish a connection to the game server after multiple attempts.`);
         }
       };
       
@@ -328,14 +329,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
         console.error("WebSocket error:", error);
         setIsConnected(false);
         setConnectionState('error');
-        setConnectionError("Error connecting to the game server. Will try to reconnect...");
-        
-        toast({
-          title: "Connection Error",
-          description: "Error connecting to the game server. Will try to reconnect...",
-          variant: "destructive",
-          duration: 5000
-        });
+        setConnectionError("Error connecting to the game server.");
       };
     } catch (err) {
       console.error("Error creating WebSocket:", err);
@@ -353,7 +347,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     }
   }, [sessionId, playerCode, playerName, toast]);
 
-  // Set up connection when sessionId changes
+  // Set up connection when sessionId/playerCode changes
   useEffect(() => {
     if (sessionId) {
       reconnectAttemptsRef.current = 0;
@@ -375,49 +369,61 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
         reconnectTimerRef.current = null;
       }
       
+      if (connectionTimeoutRef.current !== null) {
+        clearTimeout(connectionTimeoutRef.current);
+        connectionTimeoutRef.current = null;
+      }
+      
       // Close socket
       if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-        socketRef.current.close();
+        socketRef.current.close(1000, "Component unmounted");
       }
       socketRef.current = null;
     };
-  }, [sessionId, createWebSocketConnection]);
+  }, [sessionId, playerCode, playerName, createWebSocketConnection]);
 
   // Function to manually reconnect
   const reconnect = useCallback(() => {
     console.log("Manual reconnection attempt");
     reconnectAttemptsRef.current = 0;
-    setConnectionError(null);
     createWebSocketConnection();
   }, [createWebSocketConnection]);
 
-  // Function to send a bingo claim
+  // Function to claim bingo
   const claimBingo = useCallback((ticketData?: any) => {
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && sessionId && playerCode) {
-      socketRef.current.send(JSON.stringify({
-        type: "claim",
-        sessionId,
-        playerCode,
-        data: {
-          ticketData,
-          timestamp: Date.now()
-        }
-      }));
-      
-      // Set claim status to pending
-      setClaimStatus('pending');
-      
-      return true;
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN && sessionId) {
+      try {
+        socketRef.current.send(JSON.stringify({
+          type: "claim",
+          sessionId,
+          data: {
+            ticketData,
+            timestamp: Date.now()
+          }
+        }));
+        console.log("Sent bingo claim");
+        
+        // Show toast for claim sent
+        toast({
+          title: "Bingo Claimed",
+          description: "Your claim has been submitted",
+          duration: 3000
+        });
+        
+        return true;
+      } catch (err) {
+        console.error("Error claiming bingo:", err);
+        return false;
+      }
     }
     return false;
-  }, [sessionId, playerCode]);
+  }, [sessionId, toast]);
 
   return {
-    gameState,
     isConnected,
     connectionState,
     connectionError,
-    claimStatus,
+    gameState,
     reconnect,
     claimBingo
   };

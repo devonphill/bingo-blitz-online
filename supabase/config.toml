@@ -4,6 +4,8 @@ project_id = "weqosgnuiixccghdoccw"
 [functions.bingo-hub]
 verify_jwt = false
 import_map = "./import_map.json"
+memory_size = 256
+max_duration = 30 # Increasing the max duration to 30 seconds
 
 [functions.setup-tables]
 verify_jwt = false
