@@ -509,10 +509,18 @@ export class ConnectionManager {
  */
 export const cleanupAllConnections = () => {
   logWithTimestamp("Global connection cleanup: Resetting all connection states");
+  
+  // Completely reset the global connection tracker
   for (const sessionId in globalConnectionTracker) {
     delete globalConnectionTracker[sessionId];
   }
+  
+  // Log the cleanup action
+  logWithTimestamp("All connection states have been reset");
+  
+  // Return true to indicate success (useful for chaining)
+  return true;
 };
 
-// Global cleanup on module load
+// Ensure cleanup runs when the module loads
 cleanupAllConnections();
