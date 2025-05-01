@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -16,12 +15,13 @@ interface Client {
   lastActivity: number;
 }
 
-// Enhanced CORS headers
+// Enhanced CORS headers with more allowed origins
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Max-Age': '86400',
+  'Access-Control-Allow-Credentials': 'true',
   'Sec-WebSocket-Protocol': 'binary', // Add support for binary protocol
 };
 
@@ -31,7 +31,7 @@ const sessions: Map<string, Set<string>> = new Map(); // sessionId -> Set of cli
 // Clean up inactive connections every 30 seconds
 setInterval(() => {
   const now = Date.now();
-  const timeoutThreshold = 60000; // 1 minute timeout
+  const timeoutThreshold = 120000; // 2 minutes timeout (increased from 1 minute)
   
   for (const [id, client] of clients.entries()) {
     if (now - client.lastActivity > timeoutThreshold) {
@@ -464,12 +464,15 @@ async function handleCallerMessage(client: Client, message: any) {
 }
 
 serve(async (req) => {
-  console.log("Received request to bingo-hub");
+  console.log("Received request to bingo-hub endpoint");
   
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     console.log("Handling OPTIONS preflight request");
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { 
+      status: 204,
+      headers: corsHeaders 
+    });
   }
 
   const upgradeHeader = req.headers.get('upgrade') || '';

@@ -31,7 +31,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
   const reconnectTimerRef = useRef<number | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
-  const maxReconnectAttempts = 10; // Increased from 7
+  const maxReconnectAttempts = 20; // Increased from 10
   const { toast } = useToast();
 
   // Function to create WebSocket connection
@@ -56,19 +56,21 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       let wsUrl: string;
       
-      // Construct URL - always use the full URL with domain
-      const domain = window.location.hostname;
+      // Get the current host and construct the URL
+      const currentHost = window.location.host;
+      const projectRef = "weqosgnuiixccghdoccw";
       
-      // When running in development using localhost, use the Supabase project URL directly
-      if (domain === 'localhost') {
-        wsUrl = `wss://weqosgnuiixccghdoccw.functions.supabase.co/bingo-hub?type=player&sessionId=${sessionId}`;
+      // Check if running in development environment or on localhost
+      if (currentHost === 'localhost' || currentHost === 'localhost:3000' || currentHost === 'localhost:5173') {
+        // Local development - use direct Supabase URL
+        wsUrl = `wss://${projectRef}.functions.supabase.co/bingo-hub?type=player&sessionId=${sessionId}`;
         if (playerCode) wsUrl += `&playerCode=${playerCode}`;
-        if (playerName) wsUrl += `&playerName=${encodeURIComponent(playerName)}`;
+        if (playerName) wsUrl += `&playerName=${encodeURIComponent(playerName || '')}`;
       } else {
-        // When deployed, use the relative URL with the current domain
-        wsUrl = `${wsProtocol}//${domain}/functions/v1/bingo-hub?type=player&sessionId=${sessionId}`;
+        // Production environment - use relative URL
+        wsUrl = `${wsProtocol}//${currentHost}/functions/v1/bingo-hub?type=player&sessionId=${sessionId}`;
         if (playerCode) wsUrl += `&playerCode=${playerCode}`;
-        if (playerName) wsUrl += `&playerName=${encodeURIComponent(playerName)}`;
+        if (playerName) wsUrl += `&playerName=${encodeURIComponent(playerName || '')}`;
       }
       
       console.log("Connecting to WebSocket URL:", wsUrl);
@@ -77,8 +79,28 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
       const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
       
+      // Set a connection timeout
+      const connectionTimeout = window.setTimeout(() => {
+        if (socket.readyState !== WebSocket.OPEN) {
+          console.log("WebSocket connection timeout");
+          socket.close();
+          setConnectionState('error');
+          setConnectionError("Connection timeout. Please try again.");
+          
+          // Try to reconnect
+          if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+            const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 10000); // Reduced max delay
+            reconnectTimerRef.current = window.setTimeout(() => {
+              reconnectAttemptsRef.current++;
+              createWebSocketConnection();
+            }, delay);
+          }
+        }
+      }, 10000); // 10 second timeout
+      
       socket.onopen = () => {
         console.log("Player WebSocket connection established");
+        clearTimeout(connectionTimeout);
         setIsConnected(true);
         setConnectionState('connected');
         setConnectionError(null);
@@ -259,6 +281,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
       
       socket.onclose = (event) => {
         console.log("Player WebSocket connection closed:", event.code, event.reason);
+        clearTimeout(connectionTimeout);
         setIsConnected(false);
         setConnectionState('disconnected');
         
@@ -271,7 +294,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
         // Try to reconnect if we haven't exceeded max attempts
         if (reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
-          const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000); // Exponential backoff with 30s max
+          const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 10000); // Reduced max delay
           console.log(`Attempting to reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
           
           reconnectTimerRef.current = window.setTimeout(() => {
@@ -291,7 +314,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
         } else {
           console.log("Maximum reconnection attempts reached. Giving up.");
           setConnectionState('error');
-          setConnectionError("Could not establish a connection to the game server after multiple attempts.");
+          setConnectionError(`Could not establish a connection to the game server after multiple attempts. Error code: ${event.code}.`);
           toast({
             title: "Connection Failed",
             description: "Could not establish a connection to the game server after multiple attempts.",
@@ -322,7 +345,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
       // Try to reconnect if we haven't exceeded max attempts
       if (reconnectAttemptsRef.current < maxReconnectAttempts) {
         reconnectAttemptsRef.current++;
-        const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
+        const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 10000);
         reconnectTimerRef.current = window.setTimeout(() => {
           createWebSocketConnection();
         }, delay);
