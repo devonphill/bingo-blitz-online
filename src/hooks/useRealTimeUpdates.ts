@@ -74,7 +74,8 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
               }
               
               if (currentPrize || currentPrizeDescription) {
-                logWithTimestamp(`New prize info:`, { currentPrize, currentPrizeDescription });
+                // Fix: Remove the second parameter to logWithTimestamp
+                logWithTimestamp(`New prize info: ${JSON.stringify({ currentPrize, currentPrizeDescription })}`);
                 setPrizeInfo({
                   currentPrize,
                   currentPrizeDescription
