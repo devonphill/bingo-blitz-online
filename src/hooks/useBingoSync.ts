@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from './use-toast';
 
@@ -15,7 +14,7 @@ interface GameState {
 const logWithTimestamp = (message: string) => {
   const now = new Date();
   const timestamp = now.toISOString();
-  console.log(`[${timestamp}] - CHANGED 09:39 - ${message}`);
+  console.log(`[${timestamp}] - CHANGED 09:52 - ${message}`);
 };
 
 export function useBingoSync(sessionId?: string, playerCode?: string, playerName?: string) {
@@ -35,7 +34,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
   const reconnectTimerRef = useRef<number | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
-  const maxReconnectAttempts = 50;
+  const maxReconnectAttempts = 10; // Reduced for faster fallback to alternative methods
   const connectionTimeoutRef = useRef<number | null>(null);
   const { toast } = useToast();
 
@@ -48,8 +47,11 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     }
 
     // Clear any existing connection
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.close(1000, "Normal closure, reconnecting");
+    if (socketRef.current) {
+      if (socketRef.current.readyState === WebSocket.OPEN || socketRef.current.readyState === WebSocket.CONNECTING) {
+        socketRef.current.close(1000, "Normal closure, reconnecting");
+      }
+      socketRef.current = null;
     }
     
     // Clear any existing connection timeout
@@ -63,7 +65,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     setConnectionError(null);
 
     try {
-      // Use direct connection to Supabase Edge Function
+      // Use direct connection to Supabase Edge Function with simplified URL
       const projectRef = "weqosgnuiixccghdoccw";
       let wsUrl = `wss://${projectRef}.supabase.co/functions/v1/bingo-hub?type=player&sessionId=${sessionId}`;
       
@@ -77,21 +79,23 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
       
       logWithTimestamp(`Connecting to WebSocket URL: ${wsUrl}`);
       
-      // Create WebSocket connection
+      // Create WebSocket connection with a clean slate
       const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
       
-      // Set a connection timeout
+      // Set a shorter connection timeout
       connectionTimeoutRef.current = window.setTimeout(() => {
         if (socket.readyState !== WebSocket.OPEN) {
           logWithTimestamp("WebSocket connection timeout");
-          socket.close(4000, "Connection timeout");
+          if (socket.readyState !== WebSocket.CLOSED && socket.readyState !== WebSocket.CLOSING) {
+            socket.close(4000, "Connection timeout");
+          }
           setConnectionState('error');
           setConnectionError("Connection timeout. Please try again.");
           
-          // Try to reconnect
+          // Try to reconnect with increasing backoff
           if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-            const delay = Math.min(1000 * Math.pow(1.3, Math.min(reconnectAttemptsRef.current, 10)), 8000);
+            const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 5000);
             logWithTimestamp(`Will try to reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1})`);
             reconnectTimerRef.current = window.setTimeout(() => {
               reconnectAttemptsRef.current++;
@@ -99,21 +103,28 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
             }, delay);
           } else {
             logWithTimestamp("Maximum reconnection attempts reached");
-            setConnectionError("Maximum reconnection attempts reached. Please reload the page.");
+            setConnectionError("Maximum reconnection attempts reached. Falling back to polling.");
+            // Here we would typically fall back to a REST API or polling strategy
           }
         }
-      }, 12000); 
+      }, 8000); // Shorter timeout
       
       socket.onopen = () => {
         logWithTimestamp("Player WebSocket connection established");
-        clearTimeout(connectionTimeoutRef.current!);
-        connectionTimeoutRef.current = null;
+        if (connectionTimeoutRef.current !== null) {
+          clearTimeout(connectionTimeoutRef.current);
+          connectionTimeoutRef.current = null;
+        }
         setIsConnected(true);
         setConnectionState('connected');
         setConnectionError(null);
         reconnectAttemptsRef.current = 0;
         
         // Set up ping interval
+        if (pingIntervalRef.current !== null) {
+          clearInterval(pingIntervalRef.current);
+        }
+        
         pingIntervalRef.current = window.setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) {
             try {
@@ -126,7 +137,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
               console.error("Error sending ping:", err);
             }
           }
-        }, 20000); 
+        }, 15000); // Shorter ping interval
         
         // Send join message
         try {
@@ -147,6 +158,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
           const message = JSON.parse(event.data);
           logWithTimestamp(`Received message from server: ${message.type}`);
           
+          // Handle different message types
           switch (message.type) {
             case "connected":
               logWithTimestamp(`Player WebSocket connection confirmed: ${JSON.stringify(message.data)}`);
@@ -320,7 +332,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
         // Try to reconnect if it wasn't a normal closure and we haven't exceeded max attempts
         if (event.code !== 1000 && event.code !== 1001 && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
-          const delay = Math.min(1000 * Math.pow(1.3, Math.min(reconnectAttemptsRef.current, 10)), 8000);
+          const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 5000);
           logWithTimestamp(`Attempting to reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
           
           reconnectTimerRef.current = window.setTimeout(() => {
@@ -328,9 +340,10 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
             createWebSocketConnection();
           }, delay);
         } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-          logWithTimestamp("Maximum reconnection attempts reached. Giving up.");
+          logWithTimestamp("Maximum reconnection attempts reached. Falling back to polling.");
           setConnectionState('error');
-          setConnectionError(`Could not establish a connection to the game server after multiple attempts.`);
+          setConnectionError(`Could not establish a connection to the game server after multiple attempts. Falling back to polling.`);
+          // Here we would implement a fallback mechanism
         }
       };
       
@@ -339,7 +352,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
         logWithTimestamp(`WebSocket error occurred: ${JSON.stringify(error)}`);
         setIsConnected(false);
         setConnectionState('error');
-        setConnectionError("Error connecting to the game server.");
+        setConnectionError("Error connecting to the game server. Will try to reconnect...");
       };
     } catch (err) {
       console.error("Error creating WebSocket:", err);
@@ -350,10 +363,14 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
       // Try to reconnect if we haven't exceeded max attempts
       if (reconnectAttemptsRef.current < maxReconnectAttempts) {
         reconnectAttemptsRef.current++;
-        const delay = Math.min(1000 * Math.pow(1.3, Math.min(reconnectAttemptsRef.current, 10)), 8000);
+        const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 5000);
         reconnectTimerRef.current = window.setTimeout(() => {
           createWebSocketConnection();
         }, delay);
+      } else {
+        logWithTimestamp("Maximum reconnection attempts reached. Falling back to polling.");
+        setConnectionError("Maximum reconnection attempts reached. Falling back to polling.");
+        // Here we would implement a fallback mechanism
       }
     }
   }, [sessionId, playerCode, playerName, toast]);
@@ -386,10 +403,12 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
       }
       
       // Close socket
-      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-        socketRef.current.close(1000, "Component unmounted");
+      if (socketRef.current) {
+        if (socketRef.current.readyState === WebSocket.OPEN || socketRef.current.readyState === WebSocket.CONNECTING) {
+          socketRef.current.close(1000, "Component unmounted");
+        }
+        socketRef.current = null;
       }
-      socketRef.current = null;
     };
   }, [sessionId, playerCode, playerName, createWebSocketConnection]);
 

@@ -31,7 +31,7 @@ const sessions: Map<string, Set<string>> = new Map(); // sessionId -> Set of cli
 const logWithTimestamp = (message: string) => {
   const now = new Date();
   const timestamp = now.toISOString();
-  console.log(`[${timestamp}] - CHANGED 09:39 - ${message}`);
+  console.log(`[${timestamp}] - CHANGED 09:52 - ${message}`);
 };
 
 // Initial startup log
@@ -574,7 +574,7 @@ serve(async (req) => {
       
       return new Response(response.body, {
         status: response.status,
-        headers: headers
+        headers
       });
       
     } catch (error) {

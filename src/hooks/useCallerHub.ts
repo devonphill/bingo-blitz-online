@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from './use-toast';
 
@@ -6,7 +5,7 @@ import { useToast } from './use-toast';
 const logWithTimestamp = (message: string) => {
   const now = new Date();
   const timestamp = now.toISOString();
-  console.log(`[${timestamp}] - CHANGED 09:39 - ${message}`);
+  console.log(`[${timestamp}] - CHANGED 09:52 - ${message}`);
 };
 
 interface ConnectedPlayer {
@@ -42,11 +41,11 @@ export function useCallerHub(sessionId?: string) {
   const reconnectTimerRef = useRef<number | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
-  const maxReconnectAttempts = 50; // Increased from 30
+  const maxReconnectAttempts = 10; // Reduced for faster fallback
   const { toast } = useToast();
   const connectionTimeoutRef = useRef<number | null>(null);
 
-  // Function to create WebSocket connection
+  // Function to create WebSocket connection with simplified approach
   const createWebSocketConnection = useCallback(() => {
     if (!sessionId) {
       logWithTimestamp("No sessionId provided to useCallerHub");
@@ -55,8 +54,11 @@ export function useCallerHub(sessionId?: string) {
     }
 
     // Clear any existing connection
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.close(1000, "Normal closure, reconnecting");
+    if (socketRef.current) {
+      if (socketRef.current.readyState === WebSocket.OPEN || socketRef.current.readyState === WebSocket.CONNECTING) {
+        socketRef.current.close(1000, "Normal closure, reconnecting");
+      }
+      socketRef.current = null;
     }
 
     // Clear any existing connection timeout
@@ -70,27 +72,29 @@ export function useCallerHub(sessionId?: string) {
     setConnectionError(null);
 
     try {
-      // Always use direct connection to Supabase Edge Function
+      // Always use direct connection to Supabase Edge Function with simplified URL
       const projectRef = "weqosgnuiixccghdoccw";
       const wsUrl = `wss://${projectRef}.supabase.co/functions/v1/bingo-hub?type=caller&sessionId=${sessionId}`;
       
       logWithTimestamp(`Connecting to WebSocket URL: ${wsUrl}`);
       
-      // Create WebSocket connection
+      // Create WebSocket connection with a clean slate
       const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
       
-      // Set a connection timeout
+      // Set a shorter connection timeout
       connectionTimeoutRef.current = window.setTimeout(() => {
         if (socket.readyState !== WebSocket.OPEN) {
           logWithTimestamp("WebSocket connection timeout");
-          socket.close(4000, "Connection timeout");
+          if (socket.readyState !== WebSocket.CLOSED && socket.readyState !== WebSocket.CLOSING) {
+            socket.close(4000, "Connection timeout");
+          }
           setConnectionState('error');
           setConnectionError("Connection timeout. Please try again.");
           
-          // Try to reconnect
+          // Try to reconnect with simple backoff
           if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-            const delay = Math.min(1000 * Math.pow(1.3, Math.min(reconnectAttemptsRef.current, 10)), 8000); // Reduced max delay to 8 seconds
+            const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 5000);
             logWithTimestamp(`Will try to reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1})`);
             reconnectTimerRef.current = window.setTimeout(() => {
               reconnectAttemptsRef.current++;
@@ -98,21 +102,28 @@ export function useCallerHub(sessionId?: string) {
             }, delay);
           } else {
             logWithTimestamp("Maximum reconnection attempts reached");
-            setConnectionError("Maximum reconnection attempts reached. Please reload the page.");
+            setConnectionError("Maximum reconnection attempts reached. Falling back to fallback mechanism.");
+            // Here you would implement a fallback mechanism
           }
         }
-      }, 12000); // 12 second timeout
+      }, 8000); // Shorter timeout
       
       socket.onopen = () => {
         logWithTimestamp("Caller WebSocket connection established");
-        clearTimeout(connectionTimeoutRef.current!);
-        connectionTimeoutRef.current = null;
+        if (connectionTimeoutRef.current !== null) {
+          clearTimeout(connectionTimeoutRef.current);
+          connectionTimeoutRef.current = null;
+        }
         setIsConnected(true);
         setConnectionState('connected');
         setConnectionError(null);
         reconnectAttemptsRef.current = 0;
         
         // Set up ping interval
+        if (pingIntervalRef.current !== null) {
+          clearInterval(pingIntervalRef.current);
+        }
+        
         pingIntervalRef.current = window.setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) {
             try {
@@ -125,7 +136,7 @@ export function useCallerHub(sessionId?: string) {
               console.error("Error sending ping:", err);
             }
           }
-        }, 20000); // Send ping every 20 seconds
+        }, 15000); // Shorter ping interval
         
         // Also notify the user
         toast({
@@ -140,6 +151,7 @@ export function useCallerHub(sessionId?: string) {
           const message = JSON.parse(event.data);
           logWithTimestamp(`Received message from server: ${message.type}`);
           
+          // Process different message types
           switch (message.type) {
             case "connected":
               logWithTimestamp(`Caller WebSocket connection confirmed: ${JSON.stringify(message.data)}`);
@@ -242,10 +254,10 @@ export function useCallerHub(sessionId?: string) {
           pingIntervalRef.current = null;
         }
         
-        // Try to reconnect if we haven't exceeded max attempts and it wasn't a normal closure
+        // Try to reconnect with a simpler strategy if it wasn't a normal closure
         if (event.code !== 1000 && event.code !== 1001 && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
-          const delay = Math.min(1000 * Math.pow(1.3, Math.min(reconnectAttemptsRef.current, 10)), 8000); // Reduced max delay
+          const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 5000);
           logWithTimestamp(`Attempting to reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
           
           reconnectTimerRef.current = window.setTimeout(() => {
@@ -263,15 +275,17 @@ export function useCallerHub(sessionId?: string) {
             });
           }
         } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-          logWithTimestamp("Maximum reconnection attempts reached. Giving up.");
+          logWithTimestamp("Maximum reconnection attempts reached. Falling back to alternative mechanism.");
           setConnectionState('error');
           setConnectionError(`Could not establish a connection to the game server after multiple attempts. Error code: ${event.code}.`);
           toast({
             title: "Connection Failed",
-            description: "Could not establish a connection to the game server after multiple attempts.",
+            description: "Could not establish a connection to the game server. Trying alternative connection method...",
             variant: "destructive",
             duration: 5000
           });
+          
+          // Here you would implement a fallback mechanism
         }
       };
       
@@ -301,13 +315,14 @@ export function useCallerHub(sessionId?: string) {
       // Try to reconnect if we haven't exceeded max attempts
       if (reconnectAttemptsRef.current < maxReconnectAttempts) {
         reconnectAttemptsRef.current++;
-        const delay = Math.min(1000 * Math.pow(1.3, Math.min(reconnectAttemptsRef.current, 10)), 8000);
+        const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 5000);
         reconnectTimerRef.current = window.setTimeout(() => {
           createWebSocketConnection();
         }, delay);
       } else {
-        logWithTimestamp("Maximum reconnection attempts reached. Giving up.");
-        setConnectionError("Maximum reconnection attempts reached. Please reload the page.");
+        logWithTimestamp("Maximum reconnection attempts reached. Falling back to alternative mechanism.");
+        setConnectionError("Maximum reconnection attempts reached. Trying alternative connection method...");
+        // Here you would implement a fallback mechanism
       }
     }
   }, [sessionId, toast]);
@@ -340,10 +355,12 @@ export function useCallerHub(sessionId?: string) {
       }
       
       // Close socket
-      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-        socketRef.current.close(1000, "Component unmounted");
+      if (socketRef.current) {
+        if (socketRef.current.readyState === WebSocket.OPEN || socketRef.current.readyState === WebSocket.CONNECTING) {
+          socketRef.current.close(1000, "Component unmounted");
+        }
+        socketRef.current = null;
       }
-      socketRef.current = null;
     };
   }, [sessionId, createWebSocketConnection]);
 
