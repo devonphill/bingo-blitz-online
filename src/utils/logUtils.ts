@@ -2,6 +2,8 @@
 /**
  * Helper function for consistent timestamped logging
  */
+import React from 'react';
+
 export const logWithTimestamp = (message: string) => {
   const now = new Date();
   const timestamp = now.toISOString();
@@ -189,6 +191,129 @@ export const useStableConnectionState = () => {
   };
   
   return { getStableState };
+};
+
+// Adding the missing functions that are being imported
+/**
+ * Helper function to create a delayed connection attempt
+ */
+export const createDelayedConnectionAttempt = (
+  callback: () => void, 
+  delay: number, 
+  isMounted: { current: boolean },
+  connectionManager: { current: { pendingTimeout: ReturnType<typeof setTimeout> | null } }
+) => {
+  // Clear any existing timeout
+  if (connectionManager.current.pendingTimeout) {
+    clearTimeout(connectionManager.current.pendingTimeout);
+    connectionManager.current.pendingTimeout = null;
+  }
+  
+  // Set new timeout
+  connectionManager.current.pendingTimeout = setTimeout(() => {
+    connectionManager.current.pendingTimeout = null;
+    if (isMounted.current) {
+      callback();
+    }
+  }, delay);
+};
+
+/**
+ * Helper function to suspend connection attempts
+ */
+export const suspendConnectionAttempts = (
+  connectionManager: { current: { pendingTimeout: ReturnType<typeof setTimeout> | null, isSuspended: boolean } },
+  suspendTimeMs: number
+) => {
+  // Clear any pending timeouts
+  if (connectionManager.current.pendingTimeout) {
+    clearTimeout(connectionManager.current.pendingTimeout);
+    connectionManager.current.pendingTimeout = null;
+  }
+  
+  // Set suspension
+  connectionManager.current.isSuspended = true;
+  
+  // Create timeout to clear suspension
+  setTimeout(() => {
+    connectionManager.current.isSuspended = false;
+  }, suspendTimeMs);
+  
+  logWithTimestamp(`Connection attempts suspended for ${suspendTimeMs}ms`);
+};
+
+/**
+ * Helper function to get a stable connection state
+ */
+export const getStableConnectionState = (
+  currentState: 'disconnected' | 'connecting' | 'connected' | 'error',
+  stableStateRef: { current: any }
+): 'disconnected' | 'connecting' | 'connected' | 'error' => {
+  const now = Date.now();
+  
+  // Initialize if needed
+  if (!stableStateRef.current) {
+    stableStateRef.current = {
+      state: currentState,
+      since: now,
+      changeCount: 0
+    };
+    return currentState;
+  }
+  
+  // If state hasn't changed, return stable state
+  if (stableStateRef.current.state === currentState) {
+    return currentState;
+  }
+  
+  // State has changed - increment counter
+  stableStateRef.current.changeCount = (stableStateRef.current.changeCount || 0) + 1;
+  
+  // If new state is 'connected', allow it immediately
+  if (currentState === 'connected') {
+    stableStateRef.current = {
+      state: currentState,
+      since: now,
+      changeCount: 0
+    };
+    return currentState;
+  }
+  
+  // For other states, apply stabilization
+  if (stableStateRef.current.changeCount > 3 && 
+      now - stableStateRef.current.since < 5000) {
+    logWithTimestamp(`Suppressing connection state flapping: actual=${currentState}, reported=${stableStateRef.current.state}`);
+    return stableStateRef.current.state;
+  }
+  
+  // Update to new stable state
+  stableStateRef.current = {
+    state: currentState,
+    since: now,
+    changeCount: 0
+  };
+  
+  return currentState;
+};
+
+/**
+ * Helper function to get the effective connection state
+ */
+export const getEffectiveConnectionState = (
+  connectionState: 'disconnected' | 'connecting' | 'connected' | 'error',
+  isConnected: boolean
+): 'disconnected' | 'connecting' | 'connected' | 'error' => {
+  // If we're marked as connected but the state doesn't reflect this, update the state
+  if (isConnected && connectionState !== 'connected') {
+    return 'connected';
+  }
+  
+  // If we're marked as disconnected but the state is connected, update to reflect reality
+  if (!isConnected && connectionState === 'connected') {
+    return 'disconnected';
+  }
+  
+  return connectionState;
 };
 
 // Additional helper to manage connection attempts with cooldown
