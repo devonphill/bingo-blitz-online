@@ -2,13 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from './use-toast';
-
-// Helper function for consistent timestamped logging
-const logWithTimestamp = (message: string) => {
-  const now = new Date();
-  const timestamp = now.toISOString();
-  console.log(`[${timestamp}] - CHANGED 18:19 - ${message}`);
-};
+import { logWithTimestamp } from '@/utils/logUtils';
 
 export function useRealTimeUpdates(sessionId: string | undefined, playerCode: string | undefined) {
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
@@ -22,6 +16,8 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
   const instanceId = useRef(Date.now());
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 5;
+  const channelRef = useRef<any>(null);
+  const inProgressConnection = useRef<boolean>(false);
 
   // Set up real-time listener for game updates
   useEffect(() => {
@@ -29,9 +25,16 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
     
     logWithTimestamp(`Setting up real-time updates for session ${sessionId}, instance ${instanceId.current}`);
     setConnectionStatus('connecting');
+    inProgressConnection.current = true;
     
     // Function to set up channel subscription
     const setupChannel = () => {
+      // Remove any existing channel
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+      
       const channel = supabase
         .channel(`game-updates-${sessionId}`)
         .on('broadcast', 
@@ -90,8 +93,20 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
             }
           }
         )
+        .on('broadcast', { event: 'caller-online' }, () => {
+          logWithTimestamp('Caller is online');
+          setConnectionStatus('connected');
+          reconnectAttemptsRef.current = 0;
+          
+          toast({
+            title: "Caller Connected",
+            description: "The caller is now online",
+            duration: 3000
+          });
+        })
         .subscribe((status) => {
-          logWithTimestamp(`Subscription status: ${status}`);
+          logWithTimestamp(`Game updates subscription status: ${status}`);
+          inProgressConnection.current = false;
           
           if (status === 'SUBSCRIBED') {
             setConnectionStatus('connected');
@@ -99,15 +114,19 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
             setConnectionStatus('error');
             handleReconnect();
+          } else if (status === 'CLOSED') {
+            setConnectionStatus('disconnected');
+            handleReconnect();
           }
         });
       
+      channelRef.current = channel;
       return channel;
     };
     
     const handleReconnect = () => {
-      if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-        logWithTimestamp(`Max reconnection attempts (${maxReconnectAttempts}) reached. Giving up.`);
+      if (reconnectAttemptsRef.current >= maxReconnectAttempts || inProgressConnection.current) {
+        logWithTimestamp(`Max reconnection attempts (${maxReconnectAttempts}) reached or connection in progress. Giving up.`);
         setConnectionStatus('error');
         return;
       }
@@ -117,25 +136,24 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
       logWithTimestamp(`Attempting to reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
       
       setTimeout(() => {
-        logWithTimestamp("Attempting to reconnect...");
-        setConnectionStatus('connecting');
-        const newChannel = setupChannel();
-        
-        return () => {
-          supabase.removeChannel(newChannel);
-        };
+        if (!inProgressConnection.current) {
+          logWithTimestamp("Attempting to reconnect...");
+          setConnectionStatus('connecting');
+          inProgressConnection.current = true;
+          setupChannel();
+        }
       }, delay);
     };
     
     // Initial setup
-    const channel = setupChannel();
+    setupChannel();
     
     // Check initial session status from sessions_progress
     const checkInitialStatus = async () => {
       try {
         const { data, error } = await supabase
           .from('sessions_progress')
-          .select('game_status')
+          .select('game_status, called_numbers, current_win_pattern')
           .eq('session_id', sessionId)
           .single();
           
@@ -144,9 +162,27 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
           return;
         }
         
-        if (data && data.game_status) {
-          logWithTimestamp(`Initial game status from database: ${data.game_status}`);
-          setGameStatus(data.game_status);
+        if (data) {
+          logWithTimestamp(`Initial game data from database: ${JSON.stringify(data)}`);
+          
+          if (data.game_status) {
+            logWithTimestamp(`Initial game status from database: ${data.game_status}`);
+            setGameStatus(data.game_status);
+          }
+          
+          if (data.called_numbers && Array.isArray(data.called_numbers)) {
+            logWithTimestamp(`Initial called numbers from database: ${data.called_numbers.length} numbers`);
+            setCalledNumbers(data.called_numbers);
+            
+            if (data.called_numbers.length > 0) {
+              setLastCalledNumber(data.called_numbers[data.called_numbers.length - 1]);
+            }
+          }
+          
+          if (data.current_win_pattern) {
+            logWithTimestamp(`Initial win pattern from database: ${data.current_win_pattern}`);
+            setCurrentWinPattern(data.current_win_pattern);
+          }
         }
       } catch (err) {
         logWithTimestamp(`Exception checking initial status: ${err}`);
@@ -156,8 +192,12 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
     checkInitialStatus();
     
     return () => {
-      logWithTimestamp(`Cleaning up subscription`);
-      supabase.removeChannel(channel);
+      logWithTimestamp(`Cleaning up real-time subscription`);
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+      inProgressConnection.current = false;
     };
   }, [sessionId, toast]);
 

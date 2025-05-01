@@ -56,3 +56,32 @@ export const safeLogObject = (obj: any): string => {
     return `[Error serializing object: ${e}]`;
   }
 };
+
+/**
+ * Helper to determine if a new connection attempt should be made
+ * Prevents connection loops by checking for recent reconnect attempts
+ */
+export const shouldAttemptReconnect = (lastAttemptTime: number | null, connectionState: string): boolean => {
+  // If we've never attempted to connect or the state is explicitly disconnected, allow connection
+  if (lastAttemptTime === null || connectionState === 'disconnected') {
+    return true;
+  }
+  
+  // Don't reconnect if we're already connecting or connected
+  if (connectionState === 'connecting' || connectionState === 'connected') {
+    return false;
+  }
+  
+  // Only allow reconnection if more than 2 seconds have passed since last attempt
+  const now = Date.now();
+  const timeSinceLastAttempt = now - lastAttemptTime;
+  return timeSinceLastAttempt > 2000; // 2 seconds delay between reconnect attempts
+};
+
+/**
+ * Helper function to log connection cleanup actions
+ */
+export const logConnectionCleanup = (component: string, reason: string) => {
+  logWithTimestamp(`${component}: Cleaning up connection (${reason})`);
+};
+
