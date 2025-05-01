@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import GameHeader from "./GameHeader";
 import BingoWinProgress from "./BingoWinProgress";
@@ -14,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { AlertCircle, CheckCircle2, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
 import { logWithTimestamp } from "@/utils/logUtils";
 
 interface PlayerGameLayoutProps {
