@@ -1,10 +1,12 @@
 
 import React from 'react';
 import { Button } from "@/components/ui/button";
-import { Loader } from 'lucide-react';
+import { Loader, RefreshCw, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PrizeDetails } from '@/types';
 import { useCallerHub } from '@/hooks/useCallerHub';
+import { useToast } from '@/hooks/use-toast';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 interface MainstageCallControlsProps {
   onCallNumber: () => void;
@@ -35,6 +37,8 @@ export function MainstageCallControls({
   currentSession,
   prizesInfo = []
 }: MainstageCallControlsProps) {
+  const { toast } = useToast();
+  
   // Display the current win pattern in a more human-readable format
   const formatWinPattern = (patternId: string): string => {
     switch(patternId.replace('MAINSTAGE_', '')) {
@@ -66,6 +70,11 @@ export function MainstageCallControls({
   const callerHub = useCallerHub(currentSession?.id);
   const isConnected = callerHub.isConnected;
 
+  // Debug logging for connection status
+  React.useEffect(() => {
+    logWithTimestamp(`MainstageCallControls: connection state: ${callerHub.connectionState}, isConnected: ${isConnected}`);
+  }, [callerHub.connectionState, isConnected]);
+
   const nextPatterns = getNextPatterns();
   const currentPattern = activeWinPatterns.length > 0 ? formatWinPattern(activeWinPatterns[0]) : 'None';
   const nextPatternsText = nextPatterns.length > 0 ? nextPatterns.join(', ') : 'None';
@@ -74,6 +83,16 @@ export function MainstageCallControls({
   const currentPrize = prizesInfo && prizesInfo.length > 0 ? prizesInfo[0] : null;
   const prizeDisplay = currentPrize ? 
     (currentPrize.isNonCash ? currentPrize.description : `£${currentPrize.amount}`) : 'Not set';
+
+  const handleReconnectClick = () => {
+    if (callerHub.reconnect) {
+      callerHub.reconnect();
+      toast({
+        title: "Reconnecting",
+        description: "Attempting to reconnect to the game server...",
+      });
+    }
+  };
   
   return (
     <Card className="shadow">
@@ -164,6 +183,31 @@ export function MainstageCallControls({
             )}
           </div>
         </div>
+
+        {/* Add reconnect button if not connected */}
+        {!isConnected && (
+          <div className="mt-2 bg-amber-50 border border-amber-200 rounded-md p-2">
+            <div className="flex items-center">
+              <AlertCircle className="h-4 w-4 text-amber-500 mr-2" />
+              <div className="text-xs text-amber-700">
+                {callerHub.connectionState === 'connecting' 
+                  ? 'Connecting to game server...' 
+                  : callerHub.connectionState === 'error' 
+                    ? 'Failed to connect to game server' 
+                    : 'Disconnected from game server'}
+              </div>
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="mt-2 w-full text-xs flex items-center gap-1"
+              onClick={handleReconnectClick}
+            >
+              <RefreshCw className="h-3 w-3" />
+              Reconnect
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

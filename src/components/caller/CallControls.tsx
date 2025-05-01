@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,12 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useCallerHub } from '@/hooks/useCallerHub';
-
-const logWithTimestamp = (message: string) => {
-  const now = new Date();
-  const timestamp = now.toISOString();
-  console.log(`[${timestamp}] - CHANGED 18:19 - ${message}`);
-};
+import { logWithTimestamp } from '@/utils/logUtils';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -256,8 +250,8 @@ export default function CallerControls({
               disabled={isGoLiveDisabled}
               onClick={handleGoLiveClick}
             >
-              {isGoingLive ? 'Going Live...' : 'Go Live'}
-              {callerHub.connectionState !== 'connected' && !isGoingLive && " (Connect First)"}
+              {isGoingLive ? 'Going Live...' : 
+               callerHub.connectionState !== 'connected' ? 'Connect First' : 'Go Live'}
             </Button>
           </div>
           

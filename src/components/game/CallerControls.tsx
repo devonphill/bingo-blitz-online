@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,13 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useCallerHub } from '@/hooks/useCallerHub';
 import { supabase } from '@/integrations/supabase/client';
-
-// Helper function for consistent timestamped logging
-const logWithTimestamp = (message: string) => {
-  const now = new Date();
-  const timestamp = now.toISOString();
-  console.log(`[${timestamp}] - CHANGED 18:19 - ${message}`);
-};
+import { logWithTimestamp } from '@/utils/logUtils';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -241,6 +234,19 @@ export default function CallerControls({
     }
   };
 
+  // We need to ensure the Go Live button is enabled when the connection is established
+  // and any required conditions are met
+  const isGoLiveDisabled = isGoingLive || 
+                          winPatterns.length === 0 || 
+                          sessionStatus === 'active' || 
+                          !callerHub.isConnected;
+
+  // Add some debug information for connection state
+  useEffect(() => {
+    logWithTimestamp(`CallerControls: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}`);
+    logWithTimestamp(`CallerControls: Go Live button disabled: ${isGoLiveDisabled}, winPatterns: ${winPatterns.length}, sessionStatus: ${sessionStatus}`);
+  }, [callerHub.connectionState, callerHub.isConnected, isGoLiveDisabled, winPatterns.length, sessionStatus]);
+
   // WebSocket connection warning or error
   const renderConnectionStatus = () => {
     if (callerHub.connectionState === 'connected') {
@@ -276,19 +282,6 @@ export default function CallerControls({
       );
     }
   };
-
-  // We need to ensure the Go Live button is enabled when the connection is established
-  // and any required conditions are met
-  const isGoLiveDisabled = isGoingLive || 
-                          winPatterns.length === 0 || 
-                          sessionStatus === 'active' || 
-                          !callerHub.isConnected;
-
-  // Add some debug information
-  useEffect(() => {
-    logWithTimestamp(`CallerControls connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}`);
-    logWithTimestamp(`Go Live button disabled: ${isGoLiveDisabled}, winPatterns: ${winPatterns.length}, sessionStatus: ${sessionStatus}`);
-  }, [callerHub.connectionState, callerHub.isConnected, isGoLiveDisabled, winPatterns.length, sessionStatus]);
 
   return (
     <Card>
@@ -350,8 +343,8 @@ export default function CallerControls({
             disabled={isGoLiveDisabled}
             onClick={handleGoLiveClick}
           >
-            {isGoingLive ? 'Going Live...' : 'Go Live'}
-            {callerHub.connectionState !== 'connected' && !isGoingLive && " (Connect First)"}
+            {isGoingLive ? 'Going Live...' : 
+              callerHub.connectionState !== 'connected' ? 'Connect First' : 'Go Live'}
           </Button>
         </div>
         

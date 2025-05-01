@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -73,6 +72,11 @@ export function LiveGameView({
       setIsClaimSheetOpen(true);
     }
   }, [callerHub.pendingClaims]);
+
+  // Debug logging for connection status
+  useEffect(() => {
+    logWithTimestamp(`LiveGameView: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}`);
+  }, [callerHub.connectionState, callerHub.isConnected]);
   
   const openClaimSheet = () => {
     setIsClaimSheetOpen(true);
@@ -91,11 +95,6 @@ export function LiveGameView({
       });
     }
   };
-  
-  // Add debug logging
-  useEffect(() => {
-    logWithTimestamp(`LiveGameView connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}`);
-  }, [callerHub.connectionState, callerHub.isConnected]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

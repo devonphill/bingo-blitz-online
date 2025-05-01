@@ -1,14 +1,7 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from './use-toast';
 import { supabase } from '@/integrations/supabase/client';
-
-// Helper function for consistent timestamped logging
-const logWithTimestamp = (message: string) => {
-  const now = new Date();
-  const timestamp = now.toISOString();
-  console.log(`[${timestamp}] - CHANGED 18:19 - ${message}`);
-};
+import { logWithTimestamp } from '@/utils/logUtils';
 
 interface ConnectedPlayer {
   playerCode: string;
@@ -32,6 +25,8 @@ export function useCallerHub(sessionId?: string) {
   const { toast } = useToast();
   const channelRefs = useRef<{ [key: string]: any }>({});
   const connectionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttempt = useRef<number>(0);
+  const maxReconnectAttempts = 5;
 
   // Set up the caller as the central hub using Supabase Realtime
   useEffect(() => {
@@ -118,6 +113,7 @@ export function useCallerHub(sessionId?: string) {
             setIsConnected(true);
             setConnectionState('connected');
             setConnectionError(null);
+            reconnectAttempt.current = 0;
             
             toast({
               title: "Connection Established",
@@ -130,8 +126,22 @@ export function useCallerHub(sessionId?: string) {
               connectionTimeout.current = null;
             }
             
+            setIsConnected(false);
             setConnectionState('error');
             setConnectionError("Error connecting to realtime server");
+            
+            // Attempt reconnect after error
+            if (reconnectAttempt.current < maxReconnectAttempts) {
+              const delay = Math.min(1000 * Math.pow(2, reconnectAttempt.current), 30000);
+              logWithTimestamp(`Will attempt to reconnect in ${delay/1000}s (attempt ${reconnectAttempt.current + 1}/${maxReconnectAttempts})`);
+              
+              setTimeout(() => {
+                reconnect();
+              }, delay);
+            }
+          } else if (status === 'CLOSED') {
+            setIsConnected(false);
+            setConnectionState('disconnected');
           }
         });
       
@@ -203,6 +213,7 @@ export function useCallerHub(sessionId?: string) {
       }
       
       console.error("Error setting up realtime channels:", err);
+      setIsConnected(false);
       setConnectionState('error');
       setConnectionError(`Error: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -211,6 +222,7 @@ export function useCallerHub(sessionId?: string) {
   // Function to manually reconnect
   const reconnect = useCallback(() => {
     logWithTimestamp("Manual reconnection attempt");
+    reconnectAttempt.current += 1;
     
     // Clean up existing channels
     Object.values(channelRefs.current).forEach((channel) => {
@@ -221,6 +233,13 @@ export function useCallerHub(sessionId?: string) {
     
     // Reset connection state to trigger reconnection in useEffect
     setConnectionState('disconnected');
+    setIsConnected(false);
+    
+    // Force re-running the useEffect by updating the dependency
+    // This is a bit of a hack but ensures the useEffect runs again
+    setTimeout(() => {
+      setConnectionState('connecting');
+    }, 100);
   }, []);
 
   // Function to broadcast game updates to all connected players
@@ -340,11 +359,80 @@ export function useCallerHub(sessionId?: string) {
     connectedPlayers,
     pendingClaims,
     reconnect,
-    callNumber,
-    changePattern,
-    startGame,
-    endGame,
-    nextGame,
-    respondToClaim
+    callNumber: useCallback((number: number, allCalledNumbers: number[]) => {
+      return broadcastGameUpdate({
+        lastCalledNumber: number,
+        calledNumbers: allCalledNumbers
+      });
+    }, [broadcastGameUpdate]),
+    
+    changePattern: useCallback((pattern: string, prize?: string, prizeDescription?: string) => {
+      return broadcastGameUpdate({
+        currentWinPattern: pattern,
+        currentPrize: prize,
+        currentPrizeDescription: prizeDescription
+      });
+    }, [broadcastGameUpdate]),
+    
+    startGame: useCallback(() => {
+      return broadcastGameUpdate({
+        gameStatus: 'active'
+      });
+    }, [broadcastGameUpdate]),
+    
+    endGame: useCallback(() => {
+      return broadcastGameUpdate({
+        gameStatus: 'completed'
+      });
+    }, [broadcastGameUpdate]),
+    
+    nextGame: useCallback((gameNumber: number) => {
+      return broadcastGameUpdate({
+        gameNumber,
+        calledNumbers: [],
+        lastCalledNumber: null
+      });
+    }, [broadcastGameUpdate]),
+    
+    respondToClaim: useCallback((playerCode: string, result: 'valid' | 'rejected', instanceId?: string) => {
+      if (!sessionId) {
+        return false;
+      }
+      
+      try {
+        // Use player-specific channel if we have instanceId
+        const channelName = instanceId ? `player-claims-${instanceId}` : 'player-claims';
+        const channel = supabase.channel(channelName);
+        
+        logWithTimestamp(`Sending claim result to ${playerCode}: ${result}`);
+        
+        channel
+          .send({
+            type: 'broadcast',
+            event: 'claim-result',
+            payload: {
+              playerId: playerCode,
+              result,
+              timestamp: Date.now()
+            }
+          })
+          .then(() => {
+            // Remove this claim from the pending claims
+            setPendingClaims(prev => prev.filter(claim => claim.playerCode !== playerCode));
+            logWithTimestamp(`Sent claim result via realtime: ${playerCode} - ${result}`);
+            
+            // Clean up temporary channel
+            supabase.removeChannel(channel);
+          })
+          .catch(err => {
+            console.error("Error sending claim result:", err);
+          });
+        
+        return true;
+      } catch (err) {
+        console.error("Error with claim response:", err);
+        return false;
+      }
+    }, [sessionId])
   };
 }
