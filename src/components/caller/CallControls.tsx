@@ -123,7 +123,7 @@ export default function CallerControls({
   const isLastGame = currentGameNumber >= numberOfGames;
   
   // CRITICAL: Remove ALL conditions that would disable the Go Live button
-  // This will make it always clickable regardless of win patterns or connection status
+  // We are setting this to false to ensure it's always enabled
   const isGoLiveDisabled = false;
 
   // Connection status indicator                        

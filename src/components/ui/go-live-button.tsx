@@ -24,9 +24,7 @@ const GoLiveButton = React.forwardRef<HTMLButtonElement, GoLiveButtonProps>(
       }
     }
     
-    // IMPORTANT: Make button always clickable unless explicitly disabled by props
-    // Remove any internal logic that might disable the button
-    
+    // CRITICAL: Button is NEVER disabled by internal logic - only by the disabled prop
     return (
       <Button
         variant="default"
@@ -36,7 +34,7 @@ const GoLiveButton = React.forwardRef<HTMLButtonElement, GoLiveButtonProps>(
           className
         )}
         onClick={handleGoLive}
-        disabled={disabled}
+        disabled={disabled === true ? true : false} // Force explicit boolean evaluation
         ref={ref}
         {...props}
       >

@@ -114,15 +114,6 @@ export default function CallerControls({
 
   // Handle the go live button click
   const handleGoLiveClick = async () => {
-    if (winPatterns.length === 0) {
-      toast({
-        title: "Error",
-        description: "At least one win pattern must be selected before going live",
-        variant: "destructive"
-      });
-      return;
-    }
-
     setIsGoingLive(true);
     try {
       // Initialize sessions_progress with Game 1's active pattern and prize info
@@ -251,14 +242,8 @@ export default function CallerControls({
     }
   };
 
-  // We need to ensure the Go Live button is enabled when the connection is established
-  // and any required conditions are met
-  const isGoLiveDisabled = isGoingLive || 
-                          winPatterns.length === 0 || 
-                          sessionStatus === 'active' || 
-                          displayConnectionState !== 'connected';
+  const isGoLiveDisabled = false;
 
-  // WebSocket connection warning or error
   const renderConnectionStatus = () => {
     if (displayConnectionState === 'connected') {
       return (
