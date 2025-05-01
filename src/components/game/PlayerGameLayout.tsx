@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import GameHeader from "./GameHeader";
 import BingoWinProgress from "./BingoWinProgress";
