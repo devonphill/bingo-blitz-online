@@ -3,7 +3,7 @@ import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useSessionLifecycle } from "@/hooks/useSessionLifecycle"
-import { Broadcast } from "lucide-react"
+import { Radio } from "lucide-react"
 
 interface GoLiveButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   sessionId: string
@@ -37,7 +37,7 @@ const GoLiveButton = React.forwardRef<HTMLButtonElement, GoLiveButtonProps>(
         ref={ref}
         {...props}
       >
-        <Broadcast className="h-4 w-4 animate-pulse" />
+        <Radio className="h-4 w-4 animate-pulse" />
         {children || (isUpdating ? "Going Live..." : "Go Live")}
       </Button>
     )
