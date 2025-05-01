@@ -12,7 +12,7 @@ interface GoLiveButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement
 }
 
 const GoLiveButton = React.forwardRef<HTMLButtonElement, GoLiveButtonProps>(
-  ({ className, sessionId, onSuccess, onError, children, ...props }, ref) => {
+  ({ className, sessionId, onSuccess, onError, children, disabled, ...props }, ref) => {
     const { goLive, isUpdating } = useSessionLifecycle(sessionId)
     
     const handleGoLive = async () => {
@@ -24,16 +24,19 @@ const GoLiveButton = React.forwardRef<HTMLButtonElement, GoLiveButtonProps>(
       }
     }
     
+    // Combine both disabled states - either from props or internal updating state
+    const isDisabled = disabled || isUpdating
+    
     return (
       <Button
         variant="default"
         className={cn(
           "bg-red-600 hover:bg-red-700 text-white font-medium flex items-center gap-2 transition-all duration-300",
-          isUpdating && "opacity-80 cursor-not-allowed",
+          isDisabled && "opacity-80 cursor-not-allowed",
           className
         )}
         onClick={handleGoLive}
-        disabled={isUpdating}
+        disabled={isDisabled}
         ref={ref}
         {...props}
       >

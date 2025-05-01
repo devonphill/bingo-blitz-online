@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,7 +17,6 @@ interface CallerControlsProps {
   remainingNumbers: number[];
   sessionId: string;
   winPatterns: string[];
-  onCheckClaims?: () => void;
   claimCount?: number;
   openClaimSheet: () => void;
   gameType?: string;
@@ -133,11 +131,11 @@ export default function CallerControls({
 
   const isLastGame = currentGameNumber >= numberOfGames;
   
-  // Ensure the Go Live button is enabled when connection is established
+  // Fix the condition for Go Live button
+  // Only disable if going live, no win patterns, already active, or no connection
   const isGoLiveDisabled = isGoingLive || 
                           winPatterns.length === 0 || 
-                          sessionStatus === 'active' || 
-                          !callerHub.isConnected;
+                          sessionStatus === 'active';
 
   // Connection status indicator                        
   const renderConnectionStatus = () => {
