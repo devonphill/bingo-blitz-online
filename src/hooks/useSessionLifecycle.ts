@@ -56,8 +56,18 @@ export function useSessionLifecycle(sessionId: string | undefined) {
     }
   };
 
+  const goLive = async (): Promise<boolean> => {
+    return await setSessionLifecycle('live');
+  };
+
+  const endSession = async (): Promise<boolean> => {
+    return await setSessionLifecycle('ended');
+  };
+
   return {
     isUpdating,
-    setSessionLifecycle
+    setSessionLifecycle,
+    goLive,
+    endSession
   };
 }

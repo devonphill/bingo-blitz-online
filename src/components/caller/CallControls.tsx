@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useCallerHub } from '@/hooks/useCallerHub';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { GoLiveButton } from '@/components/ui/go-live-button';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -245,14 +247,16 @@ export default function CallerControls({
               End Game
             </Button>
             
-            <Button
-              className="bg-green-600 hover:bg-green-700 text-white"
+            <GoLiveButton
+              sessionId={sessionId}
               disabled={isGoLiveDisabled}
-              onClick={handleGoLiveClick}
+              className="w-full"
+              onSuccess={() => {
+                handleGoLiveClick();
+              }}
             >
-              {isGoingLive ? 'Going Live...' : 
-               callerHub.connectionState !== 'connected' ? 'Connect First' : 'Go Live'}
-            </Button>
+              {callerHub.connectionState !== 'connected' ? 'Connect First' : 'Go Live'}
+            </GoLiveButton>
           </div>
           
           {renderConnectionStatus()}
