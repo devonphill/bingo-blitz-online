@@ -3,6 +3,13 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from './use-toast';
 
+// Helper function for consistent timestamped logging
+const logWithTimestamp = (message: string) => {
+  const now = new Date();
+  const timestamp = now.toISOString();
+  console.log(`[${timestamp}] - CHANGED 10:20 - ${message}`);
+};
+
 export function useRealTimeUpdates(sessionId: string | undefined, playerCode: string | undefined) {
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
@@ -15,29 +22,28 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 5;
 
-  // Set up real-time listener for number updates
+  // Set up real-time listener for game updates
   useEffect(() => {
     if (!sessionId) return;
     
-    console.log(`[useRealTimeUpdates] Setting up real-time updates for session ${sessionId}, instance ${instanceId.current}`);
+    logWithTimestamp(`Setting up real-time updates for session ${sessionId}, instance ${instanceId.current}`);
     setConnectionStatus('connecting');
     
     // Function to set up channel subscription
     const setupChannel = () => {
-      // Use the exact same channel name as the one used in LiveGameView for broadcasting
-      const numberChannel = supabase
-        .channel('number-broadcast')
+      const channel = supabase
+        .channel(`game-updates-${sessionId}`)
         .on('broadcast', 
-          { event: 'number-called' }, 
+          { event: 'game-update' }, 
           (payload) => {
-            console.log("[useRealTimeUpdates] Received number broadcast:", payload);
+            logWithTimestamp(`Received game update: ${JSON.stringify(payload.payload)}`);
             
-            if (payload.payload && payload.payload.sessionId === sessionId) {
-              const { calledNumbers: newNumbers, lastCalledNumber, activeWinPattern, prizeInfo, timestamp } = payload.payload;
+            if (payload.payload) {
+              const { lastCalledNumber, calledNumbers, currentWinPattern, currentPrize, currentPrizeDescription, gameStatus, timestamp } = payload.payload;
               
               // Check if this update is newer than our last processed update
               if (timestamp && timestamp <= lastUpdateTimestamp.current) {
-                console.log(`[useRealTimeUpdates] Ignoring outdated update with timestamp: ${timestamp}`);
+                logWithTimestamp(`Ignoring outdated update with timestamp: ${timestamp}`);
                 return;
               }
               
@@ -45,13 +51,13 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
                 lastUpdateTimestamp.current = timestamp;
               }
               
-              if (newNumbers && Array.isArray(newNumbers)) {
-                console.log(`[useRealTimeUpdates] Updating called numbers: ${newNumbers.length} total`);
-                setCalledNumbers(newNumbers);
+              if (calledNumbers && Array.isArray(calledNumbers)) {
+                logWithTimestamp(`Updating called numbers: ${calledNumbers.length} total`);
+                setCalledNumbers(calledNumbers);
               }
               
               if (lastCalledNumber !== null && lastCalledNumber !== undefined) {
-                console.log(`[useRealTimeUpdates] New number called: ${lastCalledNumber}`);
+                logWithTimestamp(`New number called: ${lastCalledNumber}`);
                 setLastCalledNumber(lastCalledNumber);
                 
                 // Show toast for new number
@@ -62,46 +68,49 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
                 });
               }
               
-              if (activeWinPattern) {
-                console.log(`[useRealTimeUpdates] New win pattern: ${activeWinPattern}`);
-                setCurrentWinPattern(activeWinPattern);
+              if (currentWinPattern) {
+                logWithTimestamp(`New win pattern: ${currentWinPattern}`);
+                setCurrentWinPattern(currentWinPattern);
               }
               
-              if (prizeInfo) {
-                console.log(`[useRealTimeUpdates] New prize info:`, prizeInfo);
-                setPrizeInfo(prizeInfo);
+              if (currentPrize || currentPrizeDescription) {
+                logWithTimestamp(`New prize info:`, { currentPrize, currentPrizeDescription });
+                setPrizeInfo({
+                  currentPrize,
+                  currentPrizeDescription
+                });
               }
             }
           }
         )
         .subscribe((status) => {
-          console.log(`[useRealTimeUpdates] Subscription status: ${status}`);
+          logWithTimestamp(`Subscription status: ${status}`);
           
           if (status === 'SUBSCRIBED') {
             setConnectionStatus('connected');
             reconnectAttemptsRef.current = 0;
-          } else if (status === 'CHANNEL_ERROR') {
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
             setConnectionStatus('error');
             handleReconnect();
           }
         });
       
-      return numberChannel;
+      return channel;
     };
     
     const handleReconnect = () => {
       if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-        console.log(`[useRealTimeUpdates] Max reconnection attempts (${maxReconnectAttempts}) reached. Giving up.`);
+        logWithTimestamp(`Max reconnection attempts (${maxReconnectAttempts}) reached. Giving up.`);
         setConnectionStatus('error');
         return;
       }
       
       reconnectAttemptsRef.current++;
       const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000); // Exponential backoff with 30s max
-      console.log(`[useRealTimeUpdates] Attempting to reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
+      logWithTimestamp(`Attempting to reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
       
       setTimeout(() => {
-        console.log("[useRealTimeUpdates] Attempting to reconnect...");
+        logWithTimestamp("Attempting to reconnect...");
         setConnectionStatus('connecting');
         const newChannel = setupChannel();
         
@@ -112,11 +121,11 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
     };
     
     // Initial setup
-    const numberChannel = setupChannel();
+    const channel = setupChannel();
     
     return () => {
-      console.log(`[useRealTimeUpdates] Cleaning up subscription`);
-      supabase.removeChannel(numberChannel);
+      logWithTimestamp(`Cleaning up subscription`);
+      supabase.removeChannel(channel);
     };
   }, [sessionId, toast]);
 
@@ -149,7 +158,7 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
           }
         })
       .subscribe((status) => {
-        console.log(`[useRealTimeUpdates] Claims channel status: ${status}`);
+        logWithTimestamp(`Claims channel status: ${status}`);
       });
       
     return () => {
