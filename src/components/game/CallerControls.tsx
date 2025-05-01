@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -49,17 +48,40 @@ export default function CallerControls({
   
   // Use pending claims from the WebSocket hub
   const pendingClaimsCount = callerHub.pendingClaims.length;
+  
+  // Simplified connection state management
+  const [displayConnectionState, setDisplayConnectionState] = useState('disconnected');
 
+  // Update claims when we receive new ones
   useEffect(() => {
-    // Update claim count when we receive new claims
     if (pendingClaimsCount > 0 && pendingClaimsCount !== claimCount) {
       openClaimSheet();
     }
   }, [pendingClaimsCount, claimCount, openClaimSheet]);
 
+  // More reliable connection state management with debounce
   useEffect(() => {
-    logWithTimestamp(`CallerControls: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}`);
+    // For connected state, update immediately for better UX
+    if (callerHub.isConnected && callerHub.connectionState === 'connected') {
+      setDisplayConnectionState('connected');
+      return;
+    }
+    
+    // For disconnection or errors, use a short delay to prevent flashing
+    const timer = setTimeout(() => {
+      // Only update if still not connected after delay
+      if (!callerHub.isConnected) {
+        setDisplayConnectionState(callerHub.connectionState);
+      }
+    }, 2000); // 2 second debounce
+    
+    return () => clearTimeout(timer);
   }, [callerHub.connectionState, callerHub.isConnected]);
+
+  // Debug logging
+  useEffect(() => {
+    logWithTimestamp(`CallerControls: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}, displayState: ${displayConnectionState}`);
+  }, [callerHub.connectionState, callerHub.isConnected, displayConnectionState]);
 
   const handleCallNumber = () => {
     if (remainingNumbers.length === 0) {
@@ -234,18 +256,11 @@ export default function CallerControls({
   const isGoLiveDisabled = isGoingLive || 
                           winPatterns.length === 0 || 
                           sessionStatus === 'active' || 
-                          !callerHub.isConnected;
-
-  // Add some debug information for connection state
-  useEffect(() => {
-    logWithTimestamp(`CallerControls: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}`);
-    logWithTimestamp(`CallerControls: Go Live button disabled: ${isGoLiveDisabled}, winPatterns: ${winPatterns.length}, sessionStatus: ${sessionStatus}`);
-  }, [callerHub.connectionState, callerHub.isConnected, isGoLiveDisabled, winPatterns.length, sessionStatus]);
+                          displayConnectionState !== 'connected';
 
   // WebSocket connection warning or error
   const renderConnectionStatus = () => {
-    // Fix: Only show the actual connection status based on isConnected flag
-    if (callerHub.isConnected) {
+    if (displayConnectionState === 'connected') {
       return (
         <div className="text-xs text-green-600 flex items-center justify-center mt-2">
           <span className="h-2 w-2 bg-green-500 rounded-full mr-2"></span>
@@ -258,9 +273,9 @@ export default function CallerControls({
           <div className="flex items-center">
             <AlertCircle className="h-4 w-4 text-amber-500 mr-2" />
             <div className="text-xs text-amber-700">
-              {callerHub.connectionState === 'connecting' 
+              {displayConnectionState === 'connecting' 
                 ? 'Connecting to game server...' 
-                : callerHub.connectionState === 'error' 
+                : displayConnectionState === 'error' 
                   ? 'Failed to connect to game server' 
                   : 'Disconnected from game server'}
             </div>
@@ -321,7 +336,7 @@ export default function CallerControls({
         <div className="grid grid-cols-1 gap-3">
           <Button
             className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-            disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active' || !callerHub.isConnected}
+            disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active' || displayConnectionState !== 'connected'}
             onClick={handleCallNumber}
           >
             {isCallingNumber ? 'Calling...' : 'Call Next Number'}
@@ -340,7 +355,7 @@ export default function CallerControls({
             onClick={handleGoLiveClick}
           >
             {isGoingLive ? 'Going Live...' : 
-              callerHub.connectionState !== 'connected' ? 'Connect First' : 'Go Live'}
+              displayConnectionState !== 'connected' ? 'Connect First' : 'Go Live'}
           </Button>
         </div>
         
