@@ -24,19 +24,19 @@ const GoLiveButton = React.forwardRef<HTMLButtonElement, GoLiveButtonProps>(
       }
     }
     
-    // Only disable based on internal updating state, not external disabled prop
-    // This ensures the button can be clicked unless actively updating
+    // IMPORTANT: Make button always clickable unless explicitly disabled by props
+    // Remove any internal logic that might disable the button
     
     return (
       <Button
         variant="default"
         className={cn(
           "bg-red-600 hover:bg-red-700 text-white font-medium flex items-center gap-2 transition-all duration-300",
-          isUpdating && "opacity-80 cursor-not-allowed",
+          (isUpdating) && "opacity-80",
           className
         )}
         onClick={handleGoLive}
-        disabled={isUpdating || disabled === true}
+        disabled={disabled}
         ref={ref}
         {...props}
       >

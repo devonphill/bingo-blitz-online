@@ -31,14 +31,9 @@ export function useCallerHub(sessionId?: string) {
   const MAX_RECONNECT_ATTEMPTS = 5;
   const instanceId = useRef<string>(Date.now().toString());
   const isUnmounting = useRef(false);
-  
-  // CRITICAL FIX: We need a separate flag to track if a connection is in progress
-  // This prevents multiple connection attempts happening simultaneously
   const connectionInProgress = useRef(false);
-  
-  // Track if this component is the active instance
   const isActiveInstance = useRef(true);
-
+  
   useEffect(() => {
     // Reset unmounting flag on mount
     isUnmounting.current = false;
@@ -49,7 +44,10 @@ export function useCallerHub(sessionId?: string) {
     
     // Only proceed with connection if we have a sessionId and are the active instance
     if (sessionId && isActiveInstance.current && !connectionInProgress.current) {
-      connectToHub(sessionId);
+      // Add small delay to allow React to render and avoid race conditions
+      setTimeout(() => {
+        connectToHub(sessionId);
+      }, 100);
     }
     
     return () => {
@@ -90,7 +88,22 @@ export function useCallerHub(sessionId?: string) {
       const wsUrl = `${BINGO_HUB_URL}?type=caller&sessionId=${sessionId}&instanceId=${instanceId.current}`;
       socket.current = new WebSocket(wsUrl);
       
+      // IMPORTANT: Add proper WebSocket event handlers with timeouts
+      // Add connection timeout
+      const connectionTimeout = setTimeout(() => {
+        if (connectionState !== 'connected' && socket.current) {
+          logWithTimestamp(`WebSocket connection timed out for session ${sessionId}`);
+          socket.current.close(1000, "Connection timeout");
+          socket.current = null;
+          connectionInProgress.current = false;
+          setConnectionState('error');
+          setIsConnected(false);
+          scheduleReconnect(sessionId);
+        }
+      }, 10000); // 10 second timeout
+      
       socket.current.onopen = () => {
+        clearTimeout(connectionTimeout);
         if (isUnmounting.current) return;
         
         logWithTimestamp(`Caller WebSocket connected for session ${sessionId}`);
@@ -179,6 +192,7 @@ export function useCallerHub(sessionId?: string) {
       };
       
       socket.current.onerror = (error) => {
+        clearTimeout(connectionTimeout);
         if (isUnmounting.current) return;
         
         console.error('WebSocket error:', error);
@@ -206,6 +220,7 @@ export function useCallerHub(sessionId?: string) {
       };
       
       socket.current.onclose = (event) => {
+        clearTimeout(connectionTimeout);
         if (isUnmounting.current) return;
         
         logWithTimestamp(`Caller WebSocket closed for session ${sessionId}: ${event.code} - ${event.reason}`);
@@ -426,6 +441,9 @@ export function useCallerHub(sessionId?: string) {
     
     // CRITICAL FIX: Clean up all connections first to break any loops
     cleanupAllConnections();
+    
+    // Reset all connection states
+    connectionInProgress.current = false;
     
     // Connect after a short delay
     setTimeout(() => {

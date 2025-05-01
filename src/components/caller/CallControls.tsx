@@ -75,15 +75,6 @@ export default function CallerControls({
   };
 
   const handleGoLiveClick = async () => {
-    if (winPatterns.length === 0) {
-      toast({
-        title: "Error",
-        description: "At least one win pattern must be selected before going live",
-        variant: "destructive"
-      });
-      return;
-    }
-
     setIsGoingLive(true);
     try {
       if (callerHub.isConnected) {
@@ -131,10 +122,9 @@ export default function CallerControls({
 
   const isLastGame = currentGameNumber >= numberOfGames;
   
-  // IMPORTANT: Remove all conditions that would disable the Go Live button
-  // Only disable if no win patterns are selected or the session is already active
-  const isGoLiveDisabled = winPatterns.length === 0 || 
-                          sessionStatus === 'active';
+  // CRITICAL: Remove ALL conditions that would disable the Go Live button
+  // This will make it always clickable regardless of win patterns or connection status
+  const isGoLiveDisabled = false;
 
   // Connection status indicator                        
   const renderConnectionStatus = () => {
@@ -246,7 +236,7 @@ export default function CallerControls({
             
             <GoLiveButton
               sessionId={sessionId}
-              disabled={isGoLiveDisabled}
+              disabled={false} /* CRITICAL: Make sure button is never disabled */
               className="w-full"
               onSuccess={() => {
                 handleGoLiveClick();
