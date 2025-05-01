@@ -17,7 +17,8 @@ import {
   getStableConnectionState,
   getEffectiveConnectionState,
   registerSuccessfulConnection,
-  unregisterConnectionInstance
+  unregisterConnectionInstance,
+  cleanupAllConnections
 } from '@/utils/logUtils';
 
 interface ConnectedPlayer {
@@ -140,8 +141,8 @@ export function useCallerHub(sessionId?: string) {
       logWithTimestamp(`Preventing connection loop for session ${sessionId}, instance ${instanceId.current}`);
       
       if (isMounted.current) {
-        // Suspend connection attempts for 10 seconds
-        suspendConnectionAttempts(connectionManager, 10000);
+        // CRITICAL FIX: Much longer suspension period - 30 seconds
+        suspendConnectionAttempts(connectionManager, 30000);
         
         // Reset after suspension period
         setTimeout(() => {
@@ -151,7 +152,7 @@ export function useCallerHub(sessionId?: string) {
             inProgressConnection.current = false;
             setConnectionState('disconnected'); // Force a reconnect by changing state
           }
-        }, 10000);
+        }, 30000); // Match the suspension period
       }
       return;
     }

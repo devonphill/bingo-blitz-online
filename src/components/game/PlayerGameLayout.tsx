@@ -16,7 +16,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { AlertCircle, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
-import { logWithTimestamp } from "@/utils/logUtils";
+import { logWithTimestamp, cleanupAllConnections } from "@/utils/logUtils";
 
 interface PlayerGameLayoutProps {
   tickets: any[];
@@ -66,6 +66,12 @@ export default function PlayerGameLayout({
   const [showBingoClaimed, setShowBingoClaimed] = useState<boolean>(false);
   const [showClaimError, setShowClaimError] = useState<boolean>(false);
   const { toast } = useToast();
+  
+  // Reset all global connection state on mount - CRITICAL FIX
+  useEffect(() => {
+    // Clean up all connections to break any connection loops
+    cleanupAllConnections();
+  }, []);
   
   // Simplified connection state management with debounce for UI stability
   const [displayConnectionState, setDisplayConnectionState] = useState(connectionState);
@@ -135,6 +141,14 @@ export default function PlayerGameLayout({
   const handleSettingsChange = (autoMark: boolean) => {
     setAutoMarking(autoMark);
     localStorage.setItem('autoMarking', autoMark ? 'true' : 'false');
+  };
+
+  // Handle page refresh for reconnection
+  const handleReconnect = () => {
+    // Clean up all connections first
+    cleanupAllConnections();
+    // Simply refresh the page - most reliable way to reconnect
+    window.location.reload();
   };
 
   // Determine if we should show the connection warning
@@ -300,7 +314,7 @@ export default function PlayerGameLayout({
       
       {/* Enhanced Connection Warning with Reconnect Button */}
       {showConnectionWarning && (
-        <div className="fixed bottom-20 left-4 right-4 bg-amber-50 border border-amber-300 p-4 rounded-lg shadow-lg flex flex-col gap-3">
+        <div className="fixed bottom-20 left-4 right-4 bg-amber-50 border border-amber-300 p-4 rounded-lg shadow-lg flex flex-col gap-3 z-50">
           <div className="flex items-center">
             <AlertCircle className="h-5 w-5 text-amber-500 mr-2 flex-shrink-0" />
             <div className="flex-grow font-medium">
@@ -323,7 +337,7 @@ export default function PlayerGameLayout({
               size="sm"
               variant="outline"
               className="ml-7 bg-white border-amber-300 hover:bg-amber-100 text-amber-700 flex items-center gap-2"
-              onClick={() => window.location.reload()}
+              onClick={handleReconnect}
             >
               <RefreshCw className="h-4 w-4" />
               Reconnect

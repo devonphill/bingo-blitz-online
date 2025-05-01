@@ -1,3 +1,4 @@
+
 /**
  * Helper function for consistent timestamped logging
  */
@@ -104,7 +105,7 @@ const globalConnectionTracker: {
 export const preventConnectionLoop = (
   sessionId: string,
   instanceId: string,
-  connectionStateRef: { current: any }
+  connectionStateRef: React.MutableRefObject<any>
 ): boolean => {
   const now = Date.now();
   
@@ -148,15 +149,17 @@ export const preventConnectionLoop = (
     return true; // Prevent connection
   }
   
-  // Count instances trying to connect within a small window (100ms)
-  const timeSince = now - globalConnectionTracker[sessionId].lastAttempt;
+  // Count active instances - CRITICAL FIX: make sure we correctly count active instances
+  const instanceCount = globalConnectionTracker[sessionId].activeInstances.size;
   
   // If we have multiple instances or rapid reconnects, we're likely in a loop
-  if ((globalConnectionTracker[sessionId].activeInstances.size > 1 && timeSince < 1000) ||
-      (globalConnectionTracker[sessionId].attempts > 3 && timeSince < 2000)) {
+  if ((instanceCount > 1) ||
+      (globalConnectionTracker[sessionId].attempts > 3 && (now - globalConnectionTracker[sessionId].lastAttempt) < 5000)) {
     
     globalConnectionTracker[sessionId].attempts++;
-    globalConnectionTracker[sessionId].cooldownUntil = now + 15000; // 15 second global cooldown
+    // CRITICAL FIX: Extended cooldown to 30 seconds when multiple instances are detected
+    const cooldownDuration = instanceCount > 2 ? 30000 : 15000; // 30s cooldown for 3+ instances, 15s for 2 instances
+    globalConnectionTracker[sessionId].cooldownUntil = now + cooldownDuration;
     
     // Update local state
     connectionStateRef.current = {
@@ -167,7 +170,7 @@ export const preventConnectionLoop = (
       inLoop: true
     };
     
-    logWithTimestamp(`⚠️ Detected connection loop for session ${sessionId} with ${globalConnectionTracker[sessionId].activeInstances.size} active instances - enforcing 15s cooldown`);
+    logWithTimestamp(`⚠️ Detected connection loop for session ${sessionId} with ${instanceCount} active instances - enforcing ${cooldownDuration/1000}s cooldown`);
     return true; // Prevent connection
   }
   
@@ -222,7 +225,7 @@ export const unregisterConnectionInstance = (
 };
 
 /**
- * NEW: Simple connection status tracker that prevents rapid state flapping
+ * Simple connection status tracker that prevents rapid state flapping
  */
 export const useStableConnectionState = () => {
   const stableStateRef = React.useRef<{
@@ -235,7 +238,7 @@ export const useStableConnectionState = () => {
     changeCount: 0
   });
   
-  const getStableState = (
+  const getStableState = React.useCallback((
     currentState: 'disconnected' | 'connecting' | 'connected' | 'error', 
     stabilityThresholdMs: number = 5000
   ): 'disconnected' | 'connecting' | 'connected' | 'error' => {
@@ -249,9 +252,7 @@ export const useStableConnectionState = () => {
     // State has changed - increment counter
     stableStateRef.current.changeCount++;
     
-    // If we're seeing rapid state changes, stick with the previous stable state
-    // until we've had a consistent new state for the threshold period
-    // IMPORTANT: Special case - if new state is 'connected', we allow it immediately
+    // Special case - if new state is 'connected', we allow it immediately
     if (currentState === 'connected') {
       stableStateRef.current = {
         state: currentState,
@@ -276,7 +277,7 @@ export const useStableConnectionState = () => {
     };
     
     return currentState;
-  };
+  }, []);
   
   return { getStableState };
 };
@@ -287,8 +288,11 @@ export const useStableConnectionState = () => {
 export const createDelayedConnectionAttempt = (
   callback: () => void, 
   delay: number, 
-  isMounted: { current: boolean },
-  connectionManager: { current: { pendingTimeout: ReturnType<typeof setTimeout> | null } }
+  isMounted: React.MutableRefObject<boolean>,
+  connectionManager: React.MutableRefObject<{ 
+    pendingTimeout: ReturnType<typeof setTimeout> | null,
+    isSuspended: boolean
+  }>
 ) => {
   // Clear any existing timeout
   if (connectionManager.current.pendingTimeout) {
@@ -309,7 +313,10 @@ export const createDelayedConnectionAttempt = (
  * Helper function to suspend connection attempts
  */
 export const suspendConnectionAttempts = (
-  connectionManager: { current: { pendingTimeout: ReturnType<typeof setTimeout> | null, isSuspended: boolean } },
+  connectionManager: React.MutableRefObject<{ 
+    pendingTimeout: ReturnType<typeof setTimeout> | null, 
+    isSuspended: boolean 
+  }>,
   suspendTimeMs: number
 ) => {
   // Clear any pending timeouts
@@ -323,7 +330,9 @@ export const suspendConnectionAttempts = (
   
   // Create timeout to clear suspension
   setTimeout(() => {
-    connectionManager.current.isSuspended = false;
+    if (connectionManager && connectionManager.current) {
+      connectionManager.current.isSuspended = false;
+    }
   }, suspendTimeMs);
   
   logWithTimestamp(`Connection attempts suspended for ${suspendTimeMs}ms`);
@@ -334,7 +343,7 @@ export const suspendConnectionAttempts = (
  */
 export const getStableConnectionState = (
   currentState: 'disconnected' | 'connecting' | 'connected' | 'error',
-  stableStateRef: { current: any }
+  stableStateRef: React.MutableRefObject<any>
 ): 'disconnected' | 'connecting' | 'connected' | 'error' => {
   const now = Date.now();
   
@@ -495,3 +504,16 @@ export class ConnectionManager {
     this.reset();
   }
 }
+
+/**
+ * CRITICAL FIX: Force clean up ALL connection instances on page load/route change
+ */
+export const cleanupAllConnections = () => {
+  logWithTimestamp("Global connection cleanup: Resetting all connection states");
+  for (const sessionId in globalConnectionTracker) {
+    delete globalConnectionTracker[sessionId];
+  }
+};
+
+// Global cleanup on module load
+cleanupAllConnections();

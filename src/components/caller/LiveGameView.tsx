@@ -9,7 +9,7 @@ import { useCallerHub } from '@/hooks/useCallerHub';
 import { Button } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { logWithTimestamp } from '@/utils/logUtils';
+import { logWithTimestamp, cleanupAllConnections } from '@/utils/logUtils';
 
 interface WinPattern {
   id: string;
@@ -59,6 +59,12 @@ export function LiveGameView({
   const { getCurrentGamePatterns } = useGameData(sessionId);
   const { toast } = useToast();
   
+  // Reset all global connection state on mount - CRITICAL FIX
+  useEffect(() => {
+    // Clean up all connections to break any connection loops
+    cleanupAllConnections();
+  }, []);
+  
   // Use caller WebSocket hub to receive claims
   const callerHub = useCallerHub(sessionId);
   
@@ -86,7 +92,7 @@ export function LiveGameView({
   
   // Debug logging for connection status
   useEffect(() => {
-    logWithTimestamp(`LiveGameView: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}, displayState: ${displayConnectionState}`);
+    logWithTimestamp(`LiveGameView: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}, isActuallyConnected: ${callerHub.isConnected}, displayState: ${displayConnectionState}`);
   }, [callerHub.connectionState, callerHub.isConnected, displayConnectionState]);
 
   const remainingNumbers = React.useMemo(() => {
@@ -111,6 +117,9 @@ export function LiveGameView({
   
   const handleReconnect = () => {
     if (callerHub.reconnect) {
+      // CRITICAL FIX: Clean up all connections first to break any loops
+      cleanupAllConnections();
+      
       callerHub.reconnect();
       toast({
         title: "Reconnecting",

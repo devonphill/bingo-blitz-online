@@ -10,7 +10,8 @@ import {
   getStableConnectionState,
   getEffectiveConnectionState,
   registerSuccessfulConnection,
-  unregisterConnectionInstance
+  unregisterConnectionInstance,
+  cleanupAllConnections
 } from '@/utils/logUtils';
 
 export function useRealTimeUpdates(sessionId: string | undefined, playerCode: string | undefined) {
@@ -33,6 +34,12 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
   const isMounted = useRef<boolean>(true);
   const stableConnectionState = useRef<any>(null);
   
+  // Reset all global connection state on mount - CRITICAL FIX
+  useEffect(() => {
+    // Clean up all connections to break any connection loops
+    cleanupAllConnections();
+  }, []);
+  
   // Connection management refs
   const connectionManager = useRef<{
     pendingTimeout: ReturnType<typeof setTimeout> | null,
@@ -54,10 +61,10 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
     if (preventConnectionLoop(sessionId, instanceId.current, connectionLoopState)) {
       logWithTimestamp(`Preventing realtime connection loop for session ${sessionId}`);
       
-      // Suspend connection attempts for 10 seconds
-      suspendConnectionAttempts(connectionManager, 10000);
+      // Suspend connection attempts for 30 seconds - CRITICAL FIX
+      suspendConnectionAttempts(connectionManager, 30000);
       
-      // Wait 10 seconds before trying again
+      // Wait 30 seconds before trying again
       setTimeout(() => {
         if (isMounted.current) {
           connectionLoopState.current = null; // Reset loop detector
@@ -66,7 +73,7 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
           const stableState = getStableConnectionState('disconnected', stableConnectionState);
           setConnectionStatus(stableState); // Force a reconnect by changing state
         }
-      }, 10000);
+      }, 30000);
       return;
     }
     

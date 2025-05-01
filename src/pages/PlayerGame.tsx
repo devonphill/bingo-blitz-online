@@ -1,3 +1,4 @@
+
 import React, { useEffect, useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -8,18 +9,18 @@ import { useTickets } from '@/hooks/useTickets';
 import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 import PlayerGameLayout from '@/components/game/PlayerGameLayout';
-
-// Helper function for consistent timestamped logging
-const logWithTimestamp = (message: string) => {
-  const now = new Date();
-  const timestamp = now.toISOString();
-  console.log(`[${timestamp}] - CHANGED 18:19 - ${message}`);
-};
+import { cleanupAllConnections, logWithTimestamp } from '@/utils/logUtils';
 
 export default function PlayerGame() {
   const { playerCode: urlPlayerCode } = useParams<{ playerCode: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  
+  // Reset all global connection state on mount - CRITICAL FIX
+  useEffect(() => {
+    // Clean up all connections to break any connection loops
+    cleanupAllConnections();
+  }, []);
   
   // Initialize playerCode state immediately
   const [playerCode, setPlayerCode] = useState<string | null>(null);
