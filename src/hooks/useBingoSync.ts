@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from './use-toast';
-import { logWithTimestamp, ConnectionManager } from '@/utils/logUtils';
+import { logWithTimestamp, ConnectionManagerClass } from '@/utils/logUtils';
 
 export function useBingoSync(sessionId: string | undefined, playerCode: string = '', playerName: string = '') {
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
@@ -19,7 +19,7 @@ export function useBingoSync(sessionId: string | undefined, playerCode: string =
   const { toast } = useToast();
   const instanceId = useRef<string>(Date.now().toString());
   const callerPresenceRef = useRef<boolean>(false);
-  const connectionManager = useRef<ConnectionManager>(new ConnectionManager(5));
+  const connectionManager = useRef<ConnectionManagerClass>(new ConnectionManagerClass(5));
   
   // Clear any active subscriptions on unmount
   useEffect(() => {
