@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from './use-toast';
@@ -16,6 +17,7 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
   const [currentWinPattern, setCurrentWinPattern] = useState<string | null>(null);
   const [prizeInfo, setPrizeInfo] = useState<any>(null);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+  const [isConnected, setIsConnected] = useState(false);
   const [gameStatus, setGameStatus] = useState<string>('pending');
   const lastUpdateTimestamp = useRef<number>(0);
   const { toast } = useToast();
@@ -154,6 +156,7 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
           if (isMounted.current) {
             const stableState = getStableConnectionState('connected', stableConnectionState);
             setConnectionStatus(stableState);
+            setIsConnected(true);
             reconnectAttemptsRef.current = 0;
             
             toast({
@@ -171,6 +174,7 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
             if (isMounted.current) {
               const stableState = getStableConnectionState('connected', stableConnectionState);
               setConnectionStatus(stableState);
+              setIsConnected(true);
               reconnectAttemptsRef.current = 0;
               connectionLoopState.current = null; // Reset loop detector on success
             }
@@ -179,6 +183,7 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
             if (isMounted.current) {
               const stableState = getStableConnectionState('error', stableConnectionState);
               setConnectionStatus(stableState);
+              setIsConnected(false);
             }
             if (!connectionManager.current.isSuspended) {
               handleReconnect();
@@ -188,6 +193,7 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
             if (isMounted.current) {
               const stableState = getStableConnectionState('disconnected', stableConnectionState);
               setConnectionStatus(stableState);
+              setIsConnected(false);
             }
             
             // Only attempt to reconnect if not deliberately closing
@@ -210,6 +216,7 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
         if (isMounted.current) {
           const stableState = getStableConnectionState('error', stableConnectionState);
           setConnectionStatus(stableState);
+          setIsConnected(false);
         }
         return;
       }
@@ -230,6 +237,7 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
           logWithTimestamp("Attempting to reconnect...");
           const stableState = getStableConnectionState('connecting', stableConnectionState);
           setConnectionStatus(stableState);
+          setIsConnected(false);
           inProgressConnection.current = true;
           setupChannel();
         }
@@ -353,13 +361,13 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
     };
   }, [sessionId, playerCode, toast]);
 
-  // Update the actual isConnected state for consistency with connectionState
+  // Update the actual connection state for consistency
   useEffect(() => {
     // Use the effective connection state to ensure UI consistency
     if (isMounted.current) {
-      const effectiveState = getEffectiveConnectionState(connectionState, isConnected);
+      const effectiveState = getEffectiveConnectionState(connectionStatus, isConnected);
       
-      if (effectiveState !== connectionState) {
+      if (effectiveState !== connectionStatus) {
         setConnectionStatus(effectiveState);
       }
     }
@@ -371,6 +379,7 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
     currentWinPattern,
     prizeInfo,
     connectionStatus,
+    isConnected,
     gameStatus
   };
 }
