@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,6 +5,14 @@ import { Bell, RefreshCw, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useCallerHub } from '@/hooks/useCallerHub';
+import { supabase } from '@/integrations/supabase/client';
+
+// Helper function for consistent timestamped logging
+const logWithTimestamp = (message: string) => {
+  const now = new Date();
+  const timestamp = now.toISOString();
+  console.log(`[${timestamp}] - CHANGED 10:20 - ${message}`);
+};
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -84,6 +91,7 @@ export default function CallerControls({
     }, 1000);
   };
 
+  // Handle the go live button click
   const handleGoLiveClick = async () => {
     if (winPatterns.length === 0) {
       toast({

@@ -9,6 +9,13 @@ import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 import PlayerGameLayout from '@/components/game/PlayerGameLayout';
 
+// Helper function for consistent timestamped logging
+const logWithTimestamp = (message: string) => {
+  const now = new Date();
+  const timestamp = now.toISOString();
+  console.log(`[${timestamp}] - CHANGED 10:20 - ${message}`);
+};
+
 export default function PlayerGame() {
   const { playerCode: urlPlayerCode } = useParams<{ playerCode: string }>();
   const navigate = useNavigate();
