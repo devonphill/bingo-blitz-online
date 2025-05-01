@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 
@@ -536,6 +537,7 @@ async function handleCallerMessage(client: Client, message: any) {
   }
 }
 
+// Main handler for HTTP requests
 serve(async (req) => {
   logWithTimestamp(`Received request to bingo-hub endpoint: ${req.url}`);
   
@@ -564,147 +566,106 @@ serve(async (req) => {
     const clientType = url.searchParams.get('type');
     if (clientType !== 'caller' && clientType !== 'player') {
       logWithTimestamp(`Invalid client type: ${clientType}`);
-      return new Response('Client type must be caller or player', { 
+      return new Response('Invalid client type. Must be "caller" or "player"', { 
         status: 400,
         headers: corsHeaders
       });
     }
     
+    // Extract parameters
     const sessionId = url.searchParams.get('sessionId');
     if (!sessionId) {
-      logWithTimestamp("Missing sessionId parameter");
-      return new Response('Session ID is required', { 
+      logWithTimestamp('Missing sessionId parameter');
+      return new Response('Missing sessionId parameter', { 
         status: 400,
         headers: corsHeaders
       });
     }
     
-    const playerCode = url.searchParams.get('playerCode') || undefined;
-    const playerName = url.searchParams.get('playerName') || undefined;
-    const instanceId = url.searchParams.get('instanceId') || undefined;
+    const playerCode = url.searchParams.get('playerCode');
+    const playerName = url.searchParams.get('playerName');
+    const instanceId = url.searchParams.get('instanceId');
     
-    logWithTimestamp(`New WebSocket connection request: ${clientType} for session ${sessionId}, playerCode: ${playerCode}`);
+    logWithTimestamp(`New WebSocket connection request: ${clientType} for session ${sessionId}, playerCode: ${playerCode || 'undefined'}`);
     
     // Create WebSocket connection
-    try {
-      const { socket, response } = Deno.upgradeWebSocket(req);
-      const clientId = crypto.randomUUID();
+    const { socket, response } = Deno.upgradeWebSocket(req);
+    const clientId = crypto.randomUUID();
+    
+    // Store client info
+    const client: Client = {
+      id: clientId,
+      socket,
+      type: clientType as 'caller' | 'player',
+      sessionId,
+      playerCode,
+      playerName,
+      instanceId,
+      lastActivity: Date.now()
+    };
+    
+    clients.set(clientId, client);
+    logWithTimestamp(`WebSocket upgrade successful for clientId: ${clientId}`);
+    
+    // Set up event handlers
+    socket.onopen = () => {
+      logWithTimestamp(`WebSocket connection established for client ${clientId}`);
       
-      logWithTimestamp(`WebSocket upgrade successful for clientId: ${clientId}`);
+      // Add to session tracking
+      let sessionClients = sessions.get(sessionId);
+      if (!sessionClients) {
+        sessionClients = new Set();
+        sessions.set(sessionId, sessionClients);
+      }
+      sessionClients.add(clientId);
       
-      // Set up client object
-      const client: Client = {
-        id: clientId,
-        socket,
-        type: clientType as "caller" | "player",
-        sessionId,
-        playerCode,
-        playerName,
-        instanceId,
-        lastActivity: Date.now()
-      };
-      
-      // Store the client
-      clients.set(clientId, client);
-      
-      // Set up socket event listeners
-      socket.onopen = () => {
-        logWithTimestamp(`Client ${clientId} connected as ${clientType} to session ${sessionId}`);
-        
-        // Add to session tracking
-        let sessionClients = sessions.get(sessionId);
-        if (!sessionClients) {
-          sessionClients = new Set();
-          sessions.set(sessionId, sessionClients);
-        }
-        sessionClients.add(clientId);
-        logWithTimestamp(`Added client ${clientId} to session ${sessionId}. Total clients in session: ${sessionClients.size}`);
-        
-        // Send welcome message
-        try {
-          socket.send(JSON.stringify({
-            type: 'connected',
-            data: {
-              clientId,
-              clientType,
-              sessionId,
-              playerCode,
-              timestamp: Date.now()
-            }
-          }));
-          logWithTimestamp(`Sent welcome message to client ${clientId}`);
-        } catch (err) {
-          console.error(`Error sending welcome message to client ${clientId}:`, err);
-        }
-      };
-      
-      socket.onmessage = async (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          client.lastActivity = Date.now();
-          
-          if (client.type === "player") {
-            await handlePlayerMessage(client, message);
-          } else if (client.type === "caller") {
-            await handleCallerMessage(client, message);
+      // If this is a player, notify caller about join
+      if (clientType === 'player' && playerCode) {
+        notifyCaller(sessionId, {
+          type: "player_joined",
+          data: {
+            playerCode,
+            playerName,
+            timestamp: Date.now()
           }
-        } catch (error) {
-          console.error(`Error processing message from client ${clientId}: ${error}`);
-          
-          // Send error back to client
-          if (socket.readyState === WebSocket.OPEN) {
-            try {
-              socket.send(JSON.stringify({
-                type: "error",
-                data: {
-                  message: "Server error processing message",
-                  timestamp: Date.now()
-                }
-              }));
-            } catch (err) {
-              console.error(`Error sending error message to client ${clientId}:`, err);
-            }
-          }
+        });
+      }
+    };
+    
+    socket.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        
+        // Add sessionId to message if not present
+        if (!message.sessionId) {
+          message.sessionId = sessionId;
         }
-      };
-      
-      socket.onclose = (event) => {
-        logWithTimestamp(`Client ${clientId} disconnected with code ${event.code}: ${event.reason}`);
-        removeClient(clientId);
-      };
-      
-      socket.onerror = (error) => {
-        console.error(`WebSocket error for client ${clientId}:`, error);
-        logWithTimestamp(`WebSocket error occurred for client ${clientId}`);
-        try {
-          removeClient(clientId);
-        } catch (err) {
-          console.error(`Error removing client ${clientId} after socket error:`, err);
+        
+        // Route message to appropriate handler
+        if (clientType === 'caller') {
+          handleCallerMessage(client, message);
+        } else {
+          handlePlayerMessage(client, message);
         }
-      };
-      
-      // Add improved headers to response
-      const headers = new Headers(corsHeaders);
-      headers.set('Connection', 'Upgrade');
-      headers.set('Upgrade', 'websocket');
-      
-      return new Response(response.body, {
-        status: response.status,
-        headers
-      });
-      
-    } catch (error) {
-      console.error("Error upgrading WebSocket connection:", error);
-      logWithTimestamp(`Error upgrading WebSocket connection: ${error.message}`);
-      return new Response(`WebSocket upgrade error: ${error.message}`, { 
-        status: 500,
-        headers: corsHeaders
-      });
-    }
+      } catch (err) {
+        console.error(`Error processing message from client ${clientId}:`, err);
+      }
+    };
+    
+    socket.onclose = (event) => {
+      logWithTimestamp(`WebSocket connection closed for client ${clientId}: ${event.code} - ${event.reason || 'No reason provided'}`);
+      removeClient(clientId);
+    };
+    
+    socket.onerror = (event) => {
+      logWithTimestamp(`WebSocket error for client ${clientId}`);
+      console.error(`WebSocket error for client ${clientId}:`, event);
+    };
+    
+    return response;
   } catch (error) {
-    console.error("Unhandled error in main serve function:", error);
-    logWithTimestamp(`Unhandled error in main serve function: ${error.message}`);
-    return new Response(`Server error: ${error.message}`, { 
+    console.error("Error handling WebSocket connection:", error);
+    return new Response(`Internal Server Error: ${error.message}`, { 
       status: 500,
       headers: corsHeaders
     });
