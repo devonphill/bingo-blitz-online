@@ -1,4 +1,3 @@
-
 import React, { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { GameSession } from "@/types";
@@ -8,7 +7,7 @@ import { AlertCircle, RefreshCw, Info, Calendar, Clock, Wifi, WifiOff } from "lu
 const logWithTimestamp = (message: string) => {
   const now = new Date();
   const timestamp = now.toISOString();
-  console.log(`[${timestamp}] - CHANGED 10:20 - ${message}`);
+  console.log(`[${timestamp}] - CHANGED 18:19 - ${message}`);
 };
 
 interface Props {
@@ -26,25 +25,23 @@ export default function PlayerGameLoader({
   loadingStep = "initializing",
   sessionProgress 
 }: Props) {
-  // Create a stable reference for the log cache key
-  const loggingData = {
-    isLoading,
-    hasError: !!errorMessage,
-    hasSession: !!currentSession,
-    loadingStep,
-    gameStatus: sessionProgress?.game_status
-  };
-
+  // Create stable references for dependencies to prevent React error #310
+  const stableSession = React.useMemo(() => currentSession, [currentSession?.id]);
+  const stableProgress = React.useMemo(() => sessionProgress, [
+    sessionProgress?.game_status,
+    sessionProgress?.current_game_number
+  ]);
+  
   // Only log when there's a change to help debug flickering
   useEffect(() => {
-    if (currentSession) {
-      logWithTimestamp("PlayerGameLoader - Session data: " + JSON.stringify(currentSession));
+    if (stableSession) {
+      logWithTimestamp("PlayerGameLoader - Session data: " + JSON.stringify(stableSession));
     }
     logWithTimestamp("PlayerGameLoader - Loading step: " + loadingStep);
-    if (sessionProgress) {
-      logWithTimestamp("PlayerGameLoader - Session progress: " + JSON.stringify(sessionProgress));
+    if (stableProgress) {
+      logWithTimestamp("PlayerGameLoader - Session progress: " + JSON.stringify(stableProgress));
     }
-  }, [currentSession, loadingStep, sessionProgress]);
+  }, [stableSession, loadingStep, stableProgress]);
 
   // Format date and time for display
   const formatSessionDate = (dateStr?: string) => {
@@ -144,7 +141,7 @@ export default function PlayerGameLoader({
   const gameStatus = sessionProgress?.game_status || 'pending';
   const isGameActive = gameStatus === 'active';
   
-  // Log game state info without using useEffect
+  // Log game state info without using useEffect to avoid dependency issues
   logWithTimestamp(`Loader state check - Session active: ${isSessionActive}, Game live: ${isGameLive}, Game status: ${gameStatus}, Game active: ${isGameActive}`);
   
   // FIX: Get session time from appropriate fields - fixing type errors

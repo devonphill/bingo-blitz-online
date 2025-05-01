@@ -17,7 +17,7 @@ interface GameState {
 const logWithTimestamp = (message: string) => {
   const now = new Date();
   const timestamp = now.toISOString();
-  console.log(`[${timestamp}] - CHANGED 10:20 - ${message}`);
+  console.log(`[${timestamp}] - CHANGED 18:19 - ${message}`);
 };
 
 export function useBingoSync(sessionId?: string, playerCode?: string, playerName?: string) {

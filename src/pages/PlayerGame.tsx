@@ -1,4 +1,3 @@
-
 import React, { useEffect, useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -14,7 +13,7 @@ import PlayerGameLayout from '@/components/game/PlayerGameLayout';
 const logWithTimestamp = (message: string) => {
   const now = new Date();
   const timestamp = now.toISOString();
-  console.log(`[${timestamp}] - CHANGED 10:20 - ${message}`);
+  console.log(`[${timestamp}] - CHANGED 18:19 - ${message}`);
 };
 
 export default function PlayerGame() {
@@ -104,13 +103,21 @@ export default function PlayerGame() {
   const gameStatus = bingoSync.gameState.gameStatus || sessionProgress?.game_status || 'pending';
   const isGameActive = gameStatus === 'active';
   
-  // Debug logging of game status with a stable dependency array
+  // Debug logging of game status with memoized stable values
+  const statusInfo = React.useMemo(() => ({
+    gameStatus,
+    isSessionActive,
+    isGameLive,
+    isGameActive
+  }), [gameStatus, isSessionActive, isGameLive, isGameActive]);
+
+  // Debug logging with stable dependencies
   useEffect(() => {
-    if (gameStatus) {
-      logWithTimestamp(`Current game status from all sources: ${gameStatus}`);
-      logWithTimestamp(`Session active: ${isSessionActive}, Game live: ${isGameLive}, Game active: ${isGameActive}`);
+    if (statusInfo.gameStatus) {
+      logWithTimestamp(`Current game status from all sources: ${statusInfo.gameStatus}`);
+      logWithTimestamp(`Session active: ${statusInfo.isSessionActive}, Game live: ${statusInfo.isGameLive}, Game active: ${statusInfo.isGameActive}`);
     }
-  }, [gameStatus, isSessionActive, isGameLive, isGameActive]);
+  }, [statusInfo]);
   
   // Always initialize tickets hook with the same parameters, even if it will not be used
   const { tickets } = useTickets(playerCode, currentSession?.id);

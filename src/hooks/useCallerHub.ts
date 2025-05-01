@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from './use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -6,7 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 const logWithTimestamp = (message: string) => {
   const now = new Date();
   const timestamp = now.toISOString();
-  console.log(`[${timestamp}] - CHANGED 10:20 - ${message}`);
+  console.log(`[${timestamp}] - CHANGED 18:19 - ${message}`);
 };
 
 interface ConnectedPlayer {
