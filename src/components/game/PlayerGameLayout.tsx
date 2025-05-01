@@ -67,10 +67,16 @@ export default function PlayerGameLayout({
   const [showClaimError, setShowClaimError] = useState<boolean>(false);
   const { toast } = useToast();
   
-  // Reset all global connection state on mount - CRITICAL FIX
+  // CRITICAL FIX: Reset all global connection state on mount
+  // This ensures we don't have multiple competing connections
   useEffect(() => {
-    // Clean up all connections to break any connection loops
+    logWithTimestamp("PlayerGameLayout mounted - cleaning up all connections");
     cleanupAllConnections();
+    
+    return () => {
+      logWithTimestamp("PlayerGameLayout unmounting - cleaning up connections");
+      cleanupAllConnections();
+    };
   }, []);
   
   // Simplified connection state management with debounce for UI stability

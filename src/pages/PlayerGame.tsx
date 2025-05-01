@@ -1,4 +1,3 @@
-
 import React, { useEffect, useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -16,10 +15,16 @@ export default function PlayerGame() {
   const navigate = useNavigate();
   const { toast } = useToast();
   
-  // Reset all global connection state on mount - CRITICAL FIX
+  // CRITICAL FIX: Reset all global connection state on mount
+  // This prevents multiple competing connections
   useEffect(() => {
-    // Clean up all connections to break any connection loops
+    logWithTimestamp("PlayerGame mounted - cleaning up all connections");
     cleanupAllConnections();
+    
+    return () => {
+      logWithTimestamp("PlayerGame unmounting - cleaning up connections");
+      cleanupAllConnections();
+    };
   }, []);
   
   // Initialize playerCode state immediately

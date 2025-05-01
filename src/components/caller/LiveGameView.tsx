@@ -59,13 +59,22 @@ export function LiveGameView({
   const { getCurrentGamePatterns } = useGameData(sessionId);
   const { toast } = useToast();
   
-  // Reset all global connection state on mount - CRITICAL FIX
+  // CRITICAL FIX: Reset all global connection state on mount
+  // This is essential to break any connection loops between components
   useEffect(() => {
-    // Clean up all connections to break any connection loops
+    // Make sure we're not instantiating multiple connection instances
+    logWithTimestamp("LiveGameView mounted - cleaning up all connections");
     cleanupAllConnections();
+    
+    // Clean up on unmount too
+    return () => {
+      logWithTimestamp("LiveGameView unmounting - cleaning up all connections");
+      cleanupAllConnections();
+    };
   }, []);
   
   // Use caller WebSocket hub to receive claims
+  // We're adding it AFTER cleanup to ensure clean state
   const callerHub = useCallerHub(sessionId);
   
   // Simplified connection state management

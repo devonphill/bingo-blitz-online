@@ -1,4 +1,3 @@
-
 /**
  * Helper function for consistent timestamped logging
  */
@@ -152,13 +151,13 @@ export const preventConnectionLoop = (
   // Count active instances - CRITICAL FIX: make sure we correctly count active instances
   const instanceCount = globalConnectionTracker[sessionId].activeInstances.size;
   
-  // If we have multiple instances or rapid reconnects, we're likely in a loop
-  if ((instanceCount > 1) ||
-      (globalConnectionTracker[sessionId].attempts > 3 && (now - globalConnectionTracker[sessionId].lastAttempt) < 5000)) {
+  // CRITICAL FIX: If we have ANY multiple instances, we're likely in a loop
+  // Previous threshold was too lenient allowing loops to persist
+  if (instanceCount > 1) {
     
     globalConnectionTracker[sessionId].attempts++;
     // CRITICAL FIX: Extended cooldown to 30 seconds when multiple instances are detected
-    const cooldownDuration = instanceCount > 2 ? 30000 : 15000; // 30s cooldown for 3+ instances, 15s for 2 instances
+    const cooldownDuration = instanceCount > 2 ? 30000 : 30000; // 30s cooldown regardless of instance count
     globalConnectionTracker[sessionId].cooldownUntil = now + cooldownDuration;
     
     // Update local state
