@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from './use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -13,7 +12,8 @@ import {
   logConnectionCleanup,
   preventConnectionLoop,
   createDelayedConnectionAttempt,
-  suspendConnectionAttempts
+  suspendConnectionAttempts,
+  getStableConnectionState
 } from '@/utils/logUtils';
 
 interface ConnectedPlayer {
@@ -48,6 +48,7 @@ export function useCallerHub(sessionId?: string) {
   const connectionLoopState = useRef<any>(null);
   const isMounted = useRef<boolean>(true);
   const isCleaningUp = useRef<boolean>(false);
+  const stableConnectionState = useRef<any>(null);
   
   // New connection management refs
   const connectionManager = useRef<{
@@ -70,7 +71,7 @@ export function useCallerHub(sessionId?: string) {
       return;
     }
     
-    logWithTimestamp(`CHANGED 18:19 - Setting up caller hub for session: ${sessionId} using Realtime channels`);
+    logWithTimestamp(`Setting up caller hub for session: ${sessionId} using Realtime channels`);
     
     // On mount
     isMounted.current = true;
@@ -262,7 +263,7 @@ export function useCallerHub(sessionId?: string) {
               }
             }
           })
-          .subscribe((status) => {
+          .subscribe(async (status) => {
             // Log the connection state for debugging
             logConnectionState('Game updates channel', status, isChannelConnected(status));
             
@@ -273,51 +274,54 @@ export function useCallerHub(sessionId?: string) {
                 connectionTimeout.current = null;
               }
               
-              // Track caller presence to let players know the game is hosted
-              gameChannel.track({
-                role: 'caller',
-                online: true,
-                session: sessionId,
-                timestamp: Date.now()
-              });
-              
-              // Update connection state
-              if (isMounted.current) {
-                setIsConnected(true);
-                setConnectionState('connected');
-                setConnectionError(null);
-                reconnectAttempt.current = 0;
-              }
-              
-              // Log successful connection
-              logConnectionSuccess('useCallerHub', sessionId);
-              
-              // Show success toast
-              if (isMounted.current) {
-                toast({
-                  title: "Connection Established",
-                  description: "Successfully connected to the game server.",
-                  duration: 3000
-                });
-              }
-              
-              // Send a ping to all clients to announce the caller is online
-              gameChannel.send({
-                type: 'broadcast',
-                event: 'caller-online',
-                payload: {
-                  sessionId,
+              try {
+                // Track caller presence to let players know the game is hosted
+                await gameChannel.track({
+                  role: 'caller',
+                  online: true,
+                  session: sessionId,
                   timestamp: Date.now()
+                });
+                
+                // Update connection state
+                if (isMounted.current) {
+                  const stableState = getStableConnectionState('connected', stableConnectionState);
+                  setIsConnected(true);
+                  setConnectionState(stableState);
+                  setConnectionError(null);
+                  reconnectAttempt.current = 0;
                 }
-              }).catch(err => {
-                console.error("Error broadcasting caller online:", err);
-              });
-              
-              // Reset connection state
-              connectionLoopState.current = null;
-              
-              // Mark connection as no longer in progress
-              inProgressConnection.current = false;
+                
+                // Log successful connection
+                logConnectionSuccess('useCallerHub', sessionId);
+                
+                // Show success toast
+                if (isMounted.current) {
+                  toast({
+                    title: "Connection Established",
+                    description: "Successfully connected to the game server.",
+                    duration: 3000
+                  });
+                }
+                
+                // Send a ping to all clients to announce the caller is online
+                await gameChannel.send({
+                  type: 'broadcast',
+                  event: 'caller-online',
+                  payload: {
+                    sessionId,
+                    timestamp: Date.now()
+                  }
+                });
+                
+                // Reset connection state
+                connectionLoopState.current = null;
+              } catch (err) {
+                console.error("Error during post-connection setup:", err);
+              } finally {
+                // Mark connection as no longer in progress
+                inProgressConnection.current = false;
+              }
             } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
               // Handle connection errors
               if (connectionTimeout.current) {
@@ -326,8 +330,9 @@ export function useCallerHub(sessionId?: string) {
               }
               
               if (isMounted.current) {
+                const stableState = getStableConnectionState('error', stableConnectionState);
                 setIsConnected(false);
-                setConnectionState('error');
+                setConnectionState(stableState);
                 setConnectionError("Error connecting to game server");
               }
               
@@ -343,8 +348,9 @@ export function useCallerHub(sessionId?: string) {
             } else if (status === 'CLOSED') {
               // Handle disconnection
               if (isMounted.current && !isCleaningUp.current) {
+                const stableState = getStableConnectionState('disconnected', stableConnectionState);
                 setIsConnected(false);
-                setConnectionState('disconnected');
+                setConnectionState(stableState);
               }
               
               logWithTimestamp(`Channel closed for ${channelName}`);
@@ -423,8 +429,9 @@ export function useCallerHub(sessionId?: string) {
         console.error("Error setting up realtime channels:", err);
         
         if (isMounted.current) {
+          const stableState = getStableConnectionState('error', stableConnectionState);
           setIsConnected(false);
-          setConnectionState('error');
+          setConnectionState(stableState);
           setConnectionError(`Error: ${err instanceof Error ? err.message : String(err)}`);
         }
         
@@ -445,7 +452,8 @@ export function useCallerHub(sessionId?: string) {
       if (!isMounted.current || isCleaningUp.current || reconnectAttempt.current >= maxReconnectAttempts || connectionManager.current.isSuspended) {
         logWithTimestamp(`Max reconnection attempts (${maxReconnectAttempts}) reached for session ${sessionId} or connection suspended. Giving up.`);
         if (isMounted.current) {
-          setConnectionState('error');
+          const stableState = getStableConnectionState('error', stableConnectionState);
+          setConnectionState(stableState);
         }
         return;
       }
@@ -463,7 +471,8 @@ export function useCallerHub(sessionId?: string) {
       createDelayedConnectionAttempt(() => {
         if (isMounted.current && !inProgressConnection.current && !isCleaningUp.current) {
           logWithTimestamp(`Attempting reconnection #${reconnectAttempt.current} for session ${sessionId}...`);
-          setConnectionState('connecting');
+          const stableState = getStableConnectionState('connecting', stableConnectionState);
+          setConnectionState(stableState);
           setupConnection();
         }
       }, delay, isMounted, connectionManager);

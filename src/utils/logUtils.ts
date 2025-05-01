@@ -87,25 +87,37 @@ export const logConnectionCleanup = (component: string, reason: string) => {
 
 /**
  * Helper function for tracking connection events and preventing loops
+ * MODIFIED: Add sticky status to prevent rapid state changes
  */
 export const preventConnectionLoop = (connectionStateRef: { current: any }): boolean => {
   if (!connectionStateRef.current) {
     connectionStateRef.current = {
       attempts: 0,
       lastAttempt: Date.now(),
-      inProgress: true
+      inProgress: true,
+      stickyUntil: 0
     };
     return false; // Not in a loop, proceed with connection
   }
   
   const now = Date.now();
+  
+  // If we have a sticky connection state, honor it
+  if (connectionStateRef.current.stickyUntil > now) {
+    return connectionStateRef.current.inLoop || false;
+  }
+  
   const timeSince = now - connectionStateRef.current.lastAttempt;
   
   // If multiple attempts in less than 3 seconds, might be in a loop
   if (connectionStateRef.current.attempts > 2 && timeSince < 3000) {
     connectionStateRef.current.attempts++;
     connectionStateRef.current.inLoop = true;
-    logWithTimestamp(`Detected potential connection loop after ${connectionStateRef.current.attempts} attempts in ${timeSince}ms`);
+    
+    // Set the sticky state for 10 seconds to prevent further connection attempts
+    connectionStateRef.current.stickyUntil = now + 10000;
+    
+    logWithTimestamp(`Detected potential connection loop after ${connectionStateRef.current.attempts} attempts in ${timeSince}ms - enforcing cooldown for 10 seconds`);
     return true; // Likely in a loop, prevent further connection attempts
   }
   
@@ -178,4 +190,55 @@ export const suspendConnectionAttempts = (
     connectionRef.current.isSuspended = false;
     logWithTimestamp(`Connection suspension lifted`);
   }, durationMs);
+};
+
+/**
+ * NEW: Prevents connection status flapping by maintaining stable connection state
+ * until a threshold of stable status is reached
+ */
+export const getStableConnectionState = (
+  currentState: 'disconnected' | 'connecting' | 'connected' | 'error',
+  stableStateRef: React.MutableRefObject<{
+    state: 'disconnected' | 'connecting' | 'connected' | 'error',
+    since: number,
+    changeCount: number
+  }>,
+  stabilityThresholdMs: number = 5000
+): 'disconnected' | 'connecting' | 'connected' | 'error' => {
+  const now = Date.now();
+  
+  // Initialize ref if needed
+  if (!stableStateRef.current) {
+    stableStateRef.current = {
+      state: currentState,
+      since: now,
+      changeCount: 0
+    };
+    return currentState;
+  }
+  
+  // If state hasn't changed, update duration and return stable state
+  if (stableStateRef.current.state === currentState) {
+    return currentState;
+  }
+  
+  // State has changed - increment counter
+  stableStateRef.current.changeCount++;
+  
+  // If we're seeing rapid state changes, stick with the previous stable state
+  // until we've had a consistent new state for the threshold period
+  if (stableStateRef.current.changeCount > 3 && 
+      now - stableStateRef.current.since < stabilityThresholdMs) {
+    logWithTimestamp(`Suppressing connection state flapping: actual=${currentState}, reported=${stableStateRef.current.state}`);
+    return stableStateRef.current.state;
+  }
+  
+  // Update to new stable state
+  stableStateRef.current = {
+    state: currentState,
+    since: now,
+    changeCount: 0
+  };
+  
+  return currentState;
 };

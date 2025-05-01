@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from './use-toast';
@@ -6,7 +5,8 @@ import {
   logWithTimestamp, 
   preventConnectionLoop,
   createDelayedConnectionAttempt,
-  suspendConnectionAttempts
+  suspendConnectionAttempts,
+  getStableConnectionState
 } from '@/utils/logUtils';
 
 export function useRealTimeUpdates(sessionId: string | undefined, playerCode: string | undefined) {
@@ -26,8 +26,9 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
   const connectionLoopState = useRef<any>(null);
   const isCleaningUp = useRef<boolean>(false);
   const isMounted = useRef<boolean>(true);
+  const stableConnectionState = useRef<any>(null);
   
-  // New connection management refs
+  // Connection management refs
   const connectionManager = useRef<{
     pendingTimeout: ReturnType<typeof setTimeout> | null,
     isSuspended: boolean
@@ -57,7 +58,8 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
           connectionLoopState.current = null; // Reset loop detector
           reconnectAttemptsRef.current = 0; // Reset attempt counter
           inProgressConnection.current = false;
-          setConnectionStatus('disconnected'); // Force a reconnect by changing state
+          const stableState = getStableConnectionState('disconnected', stableConnectionState);
+          setConnectionStatus(stableState); // Force a reconnect by changing state
         }
       }, 10000);
       return;
@@ -69,7 +71,8 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
     }
     
     logWithTimestamp(`Setting up real-time updates for session ${sessionId}, instance ${instanceId.current}`);
-    setConnectionStatus('connecting');
+    const stableState = getStableConnectionState('connecting', stableConnectionState);
+    setConnectionStatus(stableState);
     inProgressConnection.current = true;
     
     // Function to set up channel subscription
@@ -148,7 +151,8 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
         .on('broadcast', { event: 'caller-online' }, () => {
           logWithTimestamp('Caller is online');
           if (isMounted.current) {
-            setConnectionStatus('connected');
+            const stableState = getStableConnectionState('connected', stableConnectionState);
+            setConnectionStatus(stableState);
             reconnectAttemptsRef.current = 0;
             
             toast({
@@ -160,24 +164,29 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
         })
         .subscribe((status) => {
           logWithTimestamp(`Game updates subscription status: ${status}`);
-          inProgressConnection.current = false;
           
           if (status === 'SUBSCRIBED') {
+            inProgressConnection.current = false;
             if (isMounted.current) {
-              setConnectionStatus('connected');
+              const stableState = getStableConnectionState('connected', stableConnectionState);
+              setConnectionStatus(stableState);
               reconnectAttemptsRef.current = 0;
               connectionLoopState.current = null; // Reset loop detector on success
             }
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            inProgressConnection.current = false;
             if (isMounted.current) {
-              setConnectionStatus('error');
+              const stableState = getStableConnectionState('error', stableConnectionState);
+              setConnectionStatus(stableState);
             }
             if (!connectionManager.current.isSuspended) {
               handleReconnect();
             }
           } else if (status === 'CLOSED') {
+            inProgressConnection.current = false;
             if (isMounted.current) {
-              setConnectionStatus('disconnected');
+              const stableState = getStableConnectionState('disconnected', stableConnectionState);
+              setConnectionStatus(stableState);
             }
             
             // Only attempt to reconnect if not deliberately closing
@@ -198,7 +207,8 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
           connectionManager.current.isSuspended) {
         logWithTimestamp(`Max reconnection attempts (${maxReconnectAttempts}) reached or connection in progress or suspended. Giving up.`);
         if (isMounted.current) {
-          setConnectionStatus('error');
+          const stableState = getStableConnectionState('error', stableConnectionState);
+          setConnectionStatus(stableState);
         }
         return;
       }
@@ -217,7 +227,8 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
       createDelayedConnectionAttempt(() => {
         if (!inProgressConnection.current && !isCleaningUp.current && isMounted.current) {
           logWithTimestamp("Attempting to reconnect...");
-          setConnectionStatus('connecting');
+          const stableState = getStableConnectionState('connecting', stableConnectionState);
+          setConnectionStatus(stableState);
           inProgressConnection.current = true;
           setupChannel();
         }
