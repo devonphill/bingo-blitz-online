@@ -10,7 +10,8 @@ import {
   logConnectionSuccess, 
   safeLogObject,
   shouldAttemptReconnect,
-  logConnectionCleanup
+  logConnectionCleanup,
+  preventConnectionLoop
 } from '@/utils/logUtils';
 
 interface ConnectedPlayer {
@@ -42,11 +43,12 @@ export function useCallerHub(sessionId?: string) {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const instanceId = useRef<string>(Date.now().toString());
   const lastConnectionAttempt = useRef<number | null>(null);
+  const connectionLoopState = useRef<any>(null);
   const isMounted = useRef<boolean>(true);
-  const inProgressConnection = useRef<boolean>(false);
+  const isCleaningUp = useRef<boolean>(false);
   
-  // Prevent connection loop
-  const preventConnectionLoop = useRef<boolean>(false);
+  // Critical flag to prevent multiple concurrent connection attempts
+  const inProgressConnection = useRef<boolean>(false);
 
   // Set up the caller as the central hub using Supabase Realtime
   useEffect(() => {
@@ -59,10 +61,13 @@ export function useCallerHub(sessionId?: string) {
     
     // On mount
     isMounted.current = true;
+    isCleaningUp.current = false;
     
     // Clear things on unmount
     return () => {
       isMounted.current = false;
+      isCleaningUp.current = true;
+      
       logConnectionCleanup('useCallerHub', 'component unmounting');
       
       if (connectionTimeout.current) {
@@ -79,17 +84,40 @@ export function useCallerHub(sessionId?: string) {
       Object.values(channelRefs.current).forEach((channel) => {
         if (channel) {
           logWithTimestamp(`Removing channel on unmount for session ${sessionId}`);
-          supabase.removeChannel(channel);
+          try {
+            supabase.removeChannel(channel);
+          } catch (err) {
+            // Silently handle errors during cleanup
+          }
         }
       });
       
+      // Reset channels
       channelRefs.current = {};
     };
   }, [sessionId]); // Only re-run on sessionId change
   
-  // Effect to handle actual connection setup
+  // Effect to handle actual connection setup (only when not in a connection loop)
   useEffect(() => {
-    if (!sessionId || !isMounted.current || inProgressConnection.current || preventConnectionLoop.current) {
+    if (!sessionId || !isMounted.current || inProgressConnection.current || isCleaningUp.current) {
+      return;
+    }
+    
+    // Check if we're in a connection loop, and if so, prevent further attempts
+    if (preventConnectionLoop(connectionLoopState)) {
+      logWithTimestamp(`Preventing connection loop for session ${sessionId}`);
+      
+      if (isMounted.current) {
+        // Wait 5 seconds before trying again
+        setTimeout(() => {
+          if (isMounted.current) {
+            connectionLoopState.current = null; // Reset loop detector
+            reconnectAttempt.current = 0; // Reset attempt counter
+            inProgressConnection.current = false;
+            setConnectionState('disconnected'); // Force a reconnect by changing state
+          }
+        }, 5000);
+      }
       return;
     }
     
@@ -100,6 +128,11 @@ export function useCallerHub(sessionId?: string) {
     
     // Set up the connection
     const setupConnection = () => {
+      if (inProgressConnection.current || isCleaningUp.current) {
+        // Prevent multiple simultaneous connection attempts
+        return null;
+      }
+      
       inProgressConnection.current = true;
       lastConnectionAttempt.current = Date.now();
       
@@ -114,10 +147,11 @@ export function useCallerHub(sessionId?: string) {
       
       // Set a timeout to consider connection failed if not connected within 10 seconds
       connectionTimeout.current = setTimeout(() => {
-        if (connectionState === 'connecting' && isMounted.current) {
+        if (isMounted.current && connectionState === 'connecting') {
           logWithTimestamp(`Connection timeout for session ${sessionId} - setting state to error`);
           setConnectionState('error');
           setConnectionError("Connection timed out");
+          inProgressConnection.current = false;
         }
       }, 10000);
       
@@ -170,8 +204,6 @@ export function useCallerHub(sessionId?: string) {
                   playerCode,
                   timestamp: Date.now()
                 }
-              }).then(() => {
-                logWithTimestamp(`Sent join acknowledgment to player: ${playerCode}`);
               }).catch(err => {
                 console.error("Error sending join acknowledgment:", err);
               });
@@ -188,7 +220,7 @@ export function useCallerHub(sessionId?: string) {
           })
           .subscribe((status) => {
             // Log the connection state for debugging
-            logWithTimestamp(`Game updates channel: connection state: ${status}, isConnected: ${isChannelConnected(status)}`);
+            logConnectionState('Game updates channel', status, isChannelConnected(status));
             
             if (isChannelConnected(status)) {
               // Clear the timeout as we're connected
@@ -237,6 +269,9 @@ export function useCallerHub(sessionId?: string) {
                 console.error("Error broadcasting caller online:", err);
               });
               
+              // Reset connection state
+              connectionLoopState.current = null;
+              
               // Mark connection as no longer in progress
               inProgressConnection.current = false;
             } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -254,12 +289,16 @@ export function useCallerHub(sessionId?: string) {
               
               logWithTimestamp(`Channel error or timeout for ${channelName}`);
               
-              // Mark connection as no longer in progress and schedule reconnect
+              // Mark connection as no longer in progress
               inProgressConnection.current = false;
-              scheduleReconnect();
+              
+              // Schedule reconnect only if not in a connection loop
+              if (!connectionLoopState.current?.inLoop) {
+                scheduleReconnect();
+              }
             } else if (status === 'CLOSED') {
               // Handle disconnection
-              if (isMounted.current) {
+              if (isMounted.current && !isCleaningUp.current) {
                 setIsConnected(false);
                 setConnectionState('disconnected');
               }
@@ -269,8 +308,8 @@ export function useCallerHub(sessionId?: string) {
               // Mark connection as no longer in progress
               inProgressConnection.current = false;
               
-              // Only attempt reconnect if it wasn't deliberate and we're not preventing loops
-              if (!preventConnectionLoop.current && reconnectAttempt.current < maxReconnectAttempts) {
+              // Only attempt reconnect if it wasn't deliberate (cleaning up) and we're not in a loop
+              if (isMounted.current && !isCleaningUp.current && !connectionLoopState.current?.inLoop) {
                 scheduleReconnect();
               }
             }
@@ -309,7 +348,8 @@ export function useCallerHub(sessionId?: string) {
             logWithTimestamp(`Claim channel status: ${status}`);
           });
         
-        // Store channels for later reference
+        // Store channels for later reference - safely update the ref 
+        // to avoid race conditions with cleanup functions
         channelRefs.current = {
           gameChannel,
           claimChannel
@@ -344,16 +384,21 @@ export function useCallerHub(sessionId?: string) {
           setConnectionError(`Error: ${err instanceof Error ? err.message : String(err)}`);
         }
         
-        // Mark connection as no longer in progress and schedule reconnect
+        // Mark connection as no longer in progress
         inProgressConnection.current = false;
-        scheduleReconnect();
+        
+        // Schedule reconnect if not in a loop
+        if (!connectionLoopState.current?.inLoop) {
+          scheduleReconnect();
+        }
+        
         return null;
       }
     };
     
     // Function to schedule reconnect with exponential backoff
     const scheduleReconnect = () => {
-      if (!isMounted.current || reconnectAttempt.current >= maxReconnectAttempts) {
+      if (!isMounted.current || isCleaningUp.current || reconnectAttempt.current >= maxReconnectAttempts) {
         logWithTimestamp(`Max reconnection attempts (${maxReconnectAttempts}) reached for session ${sessionId}. Giving up.`);
         if (isMounted.current) {
           setConnectionState('error');
@@ -372,7 +417,7 @@ export function useCallerHub(sessionId?: string) {
       
       // Schedule reconnect
       reconnectTimer.current = setTimeout(() => {
-        if (isMounted.current) {
+        if (isMounted.current && !inProgressConnection.current && !isCleaningUp.current) {
           logWithTimestamp(`Attempting reconnection #${reconnectAttempt.current} for session ${sessionId}...`);
           setConnectionState('connecting');
           setupConnection();
@@ -387,42 +432,42 @@ export function useCallerHub(sessionId?: string) {
 
   // Function to manually reconnect (called by UI reconnect button)
   const reconnect = useCallback(() => {
-    if (!sessionId || !isMounted.current || inProgressConnection.current) {
+    if (!sessionId || !isMounted.current || inProgressConnection.current || isCleaningUp.current) {
       return;
     }
     
-    logWithTimestamp(`Manual reconnection attempt for session ${sessionId}`);
+    // Reset loop detector on manual reconnect
+    connectionLoopState.current = null;
     
     // Clean up existing channels
-    Object.values(channelRefs.current).forEach((channel) => {
+    const existingChannels = { ...channelRefs.current };
+    channelRefs.current = {};
+    
+    // Actually clean up channels one by one
+    Object.values(existingChannels).forEach((channel) => {
       if (channel) {
-        logWithTimestamp(`Removing channel for manual reconnect: ${sessionId}`);
-        supabase.removeChannel(channel);
+        try {
+          logWithTimestamp(`Removing channel for manual reconnect: ${sessionId}`);
+          supabase.removeChannel(channel);
+        } catch (err) {
+          // Silently handle errors during manual cleanup
+        }
       }
     });
     
-    channelRefs.current = {};
-    
     // Reset connection state
     if (isMounted.current) {
+      inProgressConnection.current = false; // Allow new connection
+      reconnectAttempt.current = 0; // Reset attempt counter
       setIsConnected(false);
-      setConnectionState('disconnected');
-    }
-    
-    // Reset reconnect attempt counter for fresh start
-    reconnectAttempt.current = 0;
-    inProgressConnection.current = false;
-    
-    // Force reconnection by changing state
-    if (isMounted.current) {
-      setConnectionState('connecting');
+      setConnectionState('connecting'); // Start connection process again
     }
   }, [sessionId]);
 
   // Function to broadcast game updates to all connected players
   const broadcastGameUpdate = useCallback((updateData: any) => {
-    if (!sessionId || !channelRefs.current.gameChannel) {
-      logWithTimestamp("Cannot broadcast: missing sessionId or channel");
+    if (!sessionId || !channelRefs.current.gameChannel || !isConnected) {
+      logWithTimestamp("Cannot broadcast: missing sessionId or channel, or not connected");
       return false;
     }
     
@@ -437,13 +482,11 @@ export function useCallerHub(sessionId?: string) {
           sessionId,
           timestamp: Date.now()
         }
-      }).then(() => {
-        logWithTimestamp("Game update broadcast successful");
       }).catch(err => {
         console.error("Error broadcasting game update:", err);
         
         // If we got an error while broadcasting, check connection and attempt reconnect
-        if (connectionState !== 'connecting' && isMounted.current) {
+        if (connectionState !== 'connecting' && isMounted.current && !isCleaningUp.current) {
           reconnect();
         }
       });
@@ -453,7 +496,7 @@ export function useCallerHub(sessionId?: string) {
       console.error("Error sending broadcast:", err);
       return false;
     }
-  }, [sessionId, connectionState, reconnect]);
+  }, [sessionId, connectionState, isConnected, reconnect]);
 
   // Function to call a new number
   const callNumber = useCallback((number: number, allCalledNumbers: number[]) => {
@@ -528,6 +571,8 @@ export function useCallerHub(sessionId?: string) {
         })
         .catch(err => {
           console.error("Error sending claim result:", err);
+          // Clean up even on error
+          supabase.removeChannel(channel);
         });
       
       return true;

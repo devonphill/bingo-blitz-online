@@ -85,3 +85,34 @@ export const logConnectionCleanup = (component: string, reason: string) => {
   logWithTimestamp(`${component}: Cleaning up connection (${reason})`);
 };
 
+/**
+ * Helper function for tracking connection events and preventing loops
+ */
+export const preventConnectionLoop = (connectionStateRef: { current: any }): boolean => {
+  if (!connectionStateRef.current) {
+    connectionStateRef.current = {
+      attempts: 0,
+      lastAttempt: Date.now(),
+      inProgress: true
+    };
+    return false; // Not in a loop, proceed with connection
+  }
+  
+  const now = Date.now();
+  const timeSince = now - connectionStateRef.current.lastAttempt;
+  
+  // If multiple attempts in less than 2 seconds, might be in a loop
+  if (connectionStateRef.current.attempts > 2 && timeSince < 2000) {
+    connectionStateRef.current.attempts++;
+    connectionStateRef.current.inLoop = true;
+    return true; // Likely in a loop, prevent further connection attempts
+  }
+  
+  // Update connection state
+  connectionStateRef.current.attempts++;
+  connectionStateRef.current.lastAttempt = now;
+  connectionStateRef.current.inProgress = true;
+  connectionStateRef.current.inLoop = false;
+  
+  return false; // Not in a loop, proceed with connection
+};

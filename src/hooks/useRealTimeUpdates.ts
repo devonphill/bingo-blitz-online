@@ -2,7 +2,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from './use-toast';
-import { logWithTimestamp } from '@/utils/logUtils';
+import { 
+  logWithTimestamp, 
+  preventConnectionLoop
+} from '@/utils/logUtils';
 
 export function useRealTimeUpdates(sessionId: string | undefined, playerCode: string | undefined) {
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
@@ -18,10 +21,28 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
   const maxReconnectAttempts = 5;
   const channelRef = useRef<any>(null);
   const inProgressConnection = useRef<boolean>(false);
+  const connectionLoopState = useRef<any>(null);
+  const isCleaningUp = useRef<boolean>(false);
 
   // Set up real-time listener for game updates
   useEffect(() => {
     if (!sessionId) return;
+    
+    isCleaningUp.current = false;
+    
+    // Check if we're in a connection loop, and if so, prevent further attempts
+    if (preventConnectionLoop(connectionLoopState)) {
+      logWithTimestamp(`Preventing realtime connection loop for session ${sessionId}`);
+      
+      // Wait 5 seconds before trying again
+      setTimeout(() => {
+        connectionLoopState.current = null; // Reset loop detector
+        reconnectAttemptsRef.current = 0; // Reset attempt counter
+        inProgressConnection.current = false;
+        setConnectionStatus('disconnected'); // Force a reconnect by changing state
+      }, 5000);
+      return;
+    }
     
     logWithTimestamp(`Setting up real-time updates for session ${sessionId}, instance ${instanceId.current}`);
     setConnectionStatus('connecting');
@@ -31,7 +52,11 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
     const setupChannel = () => {
       // Remove any existing channel
       if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
+        try {
+          supabase.removeChannel(channelRef.current);
+        } catch (err) {
+          // Silent cleanup error handling
+        }
         channelRef.current = null;
       }
       
@@ -111,12 +136,17 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
           if (status === 'SUBSCRIBED') {
             setConnectionStatus('connected');
             reconnectAttemptsRef.current = 0;
+            connectionLoopState.current = null; // Reset loop detector on success
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
             setConnectionStatus('error');
             handleReconnect();
           } else if (status === 'CLOSED') {
             setConnectionStatus('disconnected');
-            handleReconnect();
+            
+            // Only attempt to reconnect if not deliberately closing
+            if (!isCleaningUp.current) {
+              handleReconnect();
+            }
           }
         });
       
@@ -125,9 +155,15 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
     };
     
     const handleReconnect = () => {
-      if (reconnectAttemptsRef.current >= maxReconnectAttempts || inProgressConnection.current) {
+      if (reconnectAttemptsRef.current >= maxReconnectAttempts || inProgressConnection.current || isCleaningUp.current) {
         logWithTimestamp(`Max reconnection attempts (${maxReconnectAttempts}) reached or connection in progress. Giving up.`);
         setConnectionStatus('error');
+        return;
+      }
+      
+      // Check if we might be in a reconnection loop
+      if (connectionLoopState.current?.inLoop) {
+        logWithTimestamp(`Detected potential reconnection loop, pausing reconnects`);
         return;
       }
       
@@ -136,7 +172,7 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
       logWithTimestamp(`Attempting to reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
       
       setTimeout(() => {
-        if (!inProgressConnection.current) {
+        if (!inProgressConnection.current && !isCleaningUp.current) {
           logWithTimestamp("Attempting to reconnect...");
           setConnectionStatus('connecting');
           inProgressConnection.current = true;
@@ -192,9 +228,14 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
     checkInitialStatus();
     
     return () => {
+      isCleaningUp.current = true;
       logWithTimestamp(`Cleaning up real-time subscription`);
       if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
+        try {
+          supabase.removeChannel(channelRef.current);
+        } catch (err) {
+          // Silently handle cleanup errors
+        }
         channelRef.current = null;
       }
       inProgressConnection.current = false;
@@ -234,7 +275,11 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
       });
       
     return () => {
-      supabase.removeChannel(claimsChannel);
+      try {
+        supabase.removeChannel(claimsChannel);
+      } catch (err) {
+        // Silently handle cleanup errors
+      }
     };
   }, [sessionId, playerCode, toast]);
 
