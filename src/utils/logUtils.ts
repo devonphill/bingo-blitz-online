@@ -72,10 +72,10 @@ export const shouldAttemptReconnect = (lastAttemptTime: number | null, connectio
     return false;
   }
   
-  // Only allow reconnection if more than 2 seconds have passed since last attempt
+  // Only allow reconnection if more than 5 seconds have passed since last attempt
   const now = Date.now();
   const timeSinceLastAttempt = now - lastAttemptTime;
-  return timeSinceLastAttempt > 2000; // 2 seconds delay between reconnect attempts
+  return timeSinceLastAttempt > 5000; // 5 seconds delay between reconnect attempts
 };
 
 /**
@@ -101,10 +101,11 @@ export const preventConnectionLoop = (connectionStateRef: { current: any }): boo
   const now = Date.now();
   const timeSince = now - connectionStateRef.current.lastAttempt;
   
-  // If multiple attempts in less than 2 seconds, might be in a loop
-  if (connectionStateRef.current.attempts > 2 && timeSince < 2000) {
+  // If multiple attempts in less than 3 seconds, might be in a loop
+  if (connectionStateRef.current.attempts > 2 && timeSince < 3000) {
     connectionStateRef.current.attempts++;
     connectionStateRef.current.inLoop = true;
+    logWithTimestamp(`Detected potential connection loop after ${connectionStateRef.current.attempts} attempts in ${timeSince}ms`);
     return true; // Likely in a loop, prevent further connection attempts
   }
   
@@ -115,4 +116,66 @@ export const preventConnectionLoop = (connectionStateRef: { current: any }): boo
   connectionStateRef.current.inLoop = false;
   
   return false; // Not in a loop, proceed with connection
+};
+
+/**
+ * Create a structured delay function that properly suppresses connection attempts
+ * when multiple useEffect hooks may be triggering them
+ */
+export const createDelayedConnectionAttempt = (
+  callback: () => void, 
+  delayMs: number = 5000,
+  isMountedRef: React.MutableRefObject<boolean>,
+  connectionRef: React.MutableRefObject<{
+    pendingTimeout: ReturnType<typeof setTimeout> | null,
+    isSuspended: boolean
+  }>
+) => {
+  // Clear any existing timeouts
+  if (connectionRef.current.pendingTimeout) {
+    clearTimeout(connectionRef.current.pendingTimeout);
+    connectionRef.current.pendingTimeout = null;
+  }
+  
+  // If connection is suspended, don't schedule anything
+  if (connectionRef.current.isSuspended) {
+    logWithTimestamp(`Connection attempts are suspended. Ignoring request.`);
+    return;
+  }
+  
+  // Set a new timeout
+  logWithTimestamp(`Scheduling connection attempt in ${delayMs}ms`);
+  connectionRef.current.pendingTimeout = setTimeout(() => {
+    if (isMountedRef.current && !connectionRef.current.isSuspended) {
+      callback();
+    }
+    connectionRef.current.pendingTimeout = null;
+  }, delayMs);
+};
+
+/**
+ * Suspend connection attempts for a period of time
+ */
+export const suspendConnectionAttempts = (
+  connectionRef: React.MutableRefObject<{
+    pendingTimeout: ReturnType<typeof setTimeout> | null,
+    isSuspended: boolean
+  }>,
+  durationMs: number = 10000
+) => {
+  // Clear any pending timeouts
+  if (connectionRef.current.pendingTimeout) {
+    clearTimeout(connectionRef.current.pendingTimeout);
+    connectionRef.current.pendingTimeout = null;
+  }
+  
+  // Set the suspended flag
+  connectionRef.current.isSuspended = true;
+  logWithTimestamp(`Connection attempts suspended for ${durationMs}ms`);
+  
+  // Set timeout to clear the suspension
+  setTimeout(() => {
+    connectionRef.current.isSuspended = false;
+    logWithTimestamp(`Connection suspension lifted`);
+  }, durationMs);
 };

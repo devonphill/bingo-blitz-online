@@ -4,7 +4,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from './use-toast';
 import { 
   logWithTimestamp, 
-  preventConnectionLoop
+  preventConnectionLoop,
+  createDelayedConnectionAttempt,
+  suspendConnectionAttempts
 } from '@/utils/logUtils';
 
 export function useRealTimeUpdates(sessionId: string | undefined, playerCode: string | undefined) {
@@ -23,24 +25,46 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
   const inProgressConnection = useRef<boolean>(false);
   const connectionLoopState = useRef<any>(null);
   const isCleaningUp = useRef<boolean>(false);
+  const isMounted = useRef<boolean>(true);
+  
+  // New connection management refs
+  const connectionManager = useRef<{
+    pendingTimeout: ReturnType<typeof setTimeout> | null,
+    isSuspended: boolean
+  }>({
+    pendingTimeout: null,
+    isSuspended: false
+  });
 
   // Set up real-time listener for game updates
   useEffect(() => {
     if (!sessionId) return;
     
+    // Set mounted flag
+    isMounted.current = true;
     isCleaningUp.current = false;
     
     // Check if we're in a connection loop, and if so, prevent further attempts
     if (preventConnectionLoop(connectionLoopState)) {
       logWithTimestamp(`Preventing realtime connection loop for session ${sessionId}`);
       
-      // Wait 5 seconds before trying again
+      // Suspend connection attempts for 10 seconds
+      suspendConnectionAttempts(connectionManager, 10000);
+      
+      // Wait 10 seconds before trying again
       setTimeout(() => {
-        connectionLoopState.current = null; // Reset loop detector
-        reconnectAttemptsRef.current = 0; // Reset attempt counter
-        inProgressConnection.current = false;
-        setConnectionStatus('disconnected'); // Force a reconnect by changing state
-      }, 5000);
+        if (isMounted.current) {
+          connectionLoopState.current = null; // Reset loop detector
+          reconnectAttemptsRef.current = 0; // Reset attempt counter
+          inProgressConnection.current = false;
+          setConnectionStatus('disconnected'); // Force a reconnect by changing state
+        }
+      }, 10000);
+      return;
+    }
+    
+    // Don't attempt to connect if already in progress
+    if (inProgressConnection.current) {
       return;
     }
     
@@ -53,6 +77,7 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
       // Remove any existing channel
       if (channelRef.current) {
         try {
+          logWithTimestamp(`Removing existing channel before setting up new one`);
           supabase.removeChannel(channelRef.current);
         } catch (err) {
           // Silent cleanup error handling
@@ -90,11 +115,13 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
                 setLastCalledNumber(lastCalledNumber);
                 
                 // Show toast for new number
-                toast({
-                  title: "New Number Called",
-                  description: `Number ${lastCalledNumber} has been called`,
-                  duration: 3000
-                });
+                if (isMounted.current) {
+                  toast({
+                    title: "New Number Called",
+                    description: `Number ${lastCalledNumber} has been called`,
+                    duration: 3000
+                  });
+                }
               }
               
               if (currentWinPattern) {
@@ -120,31 +147,41 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
         )
         .on('broadcast', { event: 'caller-online' }, () => {
           logWithTimestamp('Caller is online');
-          setConnectionStatus('connected');
-          reconnectAttemptsRef.current = 0;
-          
-          toast({
-            title: "Caller Connected",
-            description: "The caller is now online",
-            duration: 3000
-          });
+          if (isMounted.current) {
+            setConnectionStatus('connected');
+            reconnectAttemptsRef.current = 0;
+            
+            toast({
+              title: "Caller Connected",
+              description: "The caller is now online",
+              duration: 3000
+            });
+          }
         })
         .subscribe((status) => {
           logWithTimestamp(`Game updates subscription status: ${status}`);
           inProgressConnection.current = false;
           
           if (status === 'SUBSCRIBED') {
-            setConnectionStatus('connected');
-            reconnectAttemptsRef.current = 0;
-            connectionLoopState.current = null; // Reset loop detector on success
+            if (isMounted.current) {
+              setConnectionStatus('connected');
+              reconnectAttemptsRef.current = 0;
+              connectionLoopState.current = null; // Reset loop detector on success
+            }
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            setConnectionStatus('error');
-            handleReconnect();
+            if (isMounted.current) {
+              setConnectionStatus('error');
+            }
+            if (!connectionManager.current.isSuspended) {
+              handleReconnect();
+            }
           } else if (status === 'CLOSED') {
-            setConnectionStatus('disconnected');
+            if (isMounted.current) {
+              setConnectionStatus('disconnected');
+            }
             
             // Only attempt to reconnect if not deliberately closing
-            if (!isCleaningUp.current) {
+            if (!isCleaningUp.current && !connectionManager.current.isSuspended) {
               handleReconnect();
             }
           }
@@ -155,9 +192,14 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
     };
     
     const handleReconnect = () => {
-      if (reconnectAttemptsRef.current >= maxReconnectAttempts || inProgressConnection.current || isCleaningUp.current) {
-        logWithTimestamp(`Max reconnection attempts (${maxReconnectAttempts}) reached or connection in progress. Giving up.`);
-        setConnectionStatus('error');
+      if (reconnectAttemptsRef.current >= maxReconnectAttempts || 
+          inProgressConnection.current || 
+          isCleaningUp.current || 
+          connectionManager.current.isSuspended) {
+        logWithTimestamp(`Max reconnection attempts (${maxReconnectAttempts}) reached or connection in progress or suspended. Giving up.`);
+        if (isMounted.current) {
+          setConnectionStatus('error');
+        }
         return;
       }
       
@@ -171,14 +213,15 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
       const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000); // Exponential backoff with 30s max
       logWithTimestamp(`Attempting to reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
       
-      setTimeout(() => {
-        if (!inProgressConnection.current && !isCleaningUp.current) {
+      // Use the delayed connection manager
+      createDelayedConnectionAttempt(() => {
+        if (!inProgressConnection.current && !isCleaningUp.current && isMounted.current) {
           logWithTimestamp("Attempting to reconnect...");
           setConnectionStatus('connecting');
           inProgressConnection.current = true;
           setupChannel();
         }
-      }, delay);
+      }, delay, isMounted, connectionManager);
     };
     
     // Initial setup
@@ -198,7 +241,7 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
           return;
         }
         
-        if (data) {
+        if (data && isMounted.current) {
           logWithTimestamp(`Initial game data from database: ${JSON.stringify(data)}`);
           
           if (data.game_status) {
@@ -228,16 +271,29 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
     checkInitialStatus();
     
     return () => {
+      // Update refs for cleanup
       isCleaningUp.current = true;
+      isMounted.current = false;
+      
       logWithTimestamp(`Cleaning up real-time subscription`);
+      
+      // Clear any pending timeouts
+      if (connectionManager.current.pendingTimeout) {
+        clearTimeout(connectionManager.current.pendingTimeout);
+        connectionManager.current.pendingTimeout = null;
+      }
+      
+      // Clean up channel
       if (channelRef.current) {
         try {
+          logWithTimestamp(`Removing channel on cleanup`);
           supabase.removeChannel(channelRef.current);
         } catch (err) {
           // Silently handle cleanup errors
         }
         channelRef.current = null;
       }
+      
       inProgressConnection.current = false;
     };
   }, [sessionId, toast]);
@@ -254,13 +310,13 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
           if (payload.payload && payload.payload.playerId === playerCode) {
             const result = payload.payload.result;
             
-            if (result === 'valid') {
+            if (result === 'valid' && isMounted.current) {
               toast({
                 title: "Claim Verified!",
                 description: "Your bingo claim has been verified.",
                 duration: 5000
               });
-            } else if (result === 'rejected') {
+            } else if (result === 'rejected' && isMounted.current) {
               toast({
                 title: "Claim Rejected",
                 description: "Your claim was not valid. Please check your numbers.",
@@ -276,7 +332,9 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
       
     return () => {
       try {
-        supabase.removeChannel(claimsChannel);
+        if (claimsChannel) {
+          supabase.removeChannel(claimsChannel);
+        }
       } catch (err) {
         // Silently handle cleanup errors
       }
