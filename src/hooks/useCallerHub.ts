@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from './use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -14,7 +15,9 @@ import {
   createDelayedConnectionAttempt,
   suspendConnectionAttempts,
   getStableConnectionState,
-  getEffectiveConnectionState
+  getEffectiveConnectionState,
+  registerSuccessfulConnection,
+  unregisterConnectionInstance
 } from '@/utils/logUtils';
 
 interface ConnectedPlayer {
@@ -72,7 +75,7 @@ export function useCallerHub(sessionId?: string) {
       return;
     }
     
-    logWithTimestamp(`Setting up caller hub for session: ${sessionId} using Realtime channels`);
+    logWithTimestamp(`Setting up caller hub for session: ${sessionId} using instance: ${instanceId.current}`);
     
     // On mount
     isMounted.current = true;
@@ -84,6 +87,9 @@ export function useCallerHub(sessionId?: string) {
       isCleaningUp.current = true;
       
       logConnectionCleanup('useCallerHub', 'component unmounting');
+      
+      // Unregister from the global connection tracker
+      unregisterConnectionInstance(sessionId, instanceId.current);
       
       // Clear all timeouts
       if (connectionTimeout.current) {
@@ -129,9 +135,9 @@ export function useCallerHub(sessionId?: string) {
       return;
     }
     
-    // Check if we're in a connection loop, and if so, prevent further attempts
-    if (preventConnectionLoop(connectionLoopState)) {
-      logWithTimestamp(`Preventing connection loop for session ${sessionId}`);
+    // Check if we're in a connection loop using our improved global tracker
+    if (preventConnectionLoop(sessionId, instanceId.current, connectionLoopState)) {
+      logWithTimestamp(`Preventing connection loop for session ${sessionId}, instance ${instanceId.current}`);
       
       if (isMounted.current) {
         // Suspend connection attempts for 10 seconds
@@ -202,7 +208,7 @@ export function useCallerHub(sessionId?: string) {
         // Reset channel refs
         channelRefs.current = {};
         
-        // Channel for player joins and game updates
+        // Channel for player joins and game updates - use unique channel name with instance ID
         const channelName = `game-updates-${sessionId}`;
         logWithTimestamp(`Creating channel: ${channelName}`);
         
@@ -283,6 +289,9 @@ export function useCallerHub(sessionId?: string) {
                   session: sessionId,
                   timestamp: Date.now()
                 });
+                
+                // Register successful connection with our global tracker
+                registerSuccessfulConnection(sessionId, instanceId.current);
                 
                 // Update connection state
                 if (isMounted.current) {
@@ -366,7 +375,7 @@ export function useCallerHub(sessionId?: string) {
             }
           });
         
-        // Channel for bingo claims
+        // Channel for bingo claims - use unique channel name with instance ID
         const claimChannel = supabase.channel(`bingo-claims-${instanceId.current}`);
         claimChannel
           .on('broadcast', { event: 'bingo-claim' }, (payload) => {
@@ -490,10 +499,13 @@ export function useCallerHub(sessionId?: string) {
       return;
     }
     
-    logWithTimestamp(`Manual reconnection attempt`);
+    logWithTimestamp(`Manual reconnection attempt for session ${sessionId}, instance ${instanceId.current}`);
     
-    // Reset loop detector on manual reconnect
-    connectionLoopState.current = null;
+    // Reset global connection tracking on manual reconnect
+    if (connectionLoopState.current?.inLoop) {
+      connectionLoopState.current = null; // Reset loop detector
+      suspendConnectionAttempts(connectionManager, 100); // Very brief suspension
+    }
     
     // Clean up existing channels
     const existingChannels = { ...channelRefs.current };

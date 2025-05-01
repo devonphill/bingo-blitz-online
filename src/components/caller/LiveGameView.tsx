@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -62,24 +61,59 @@ export function LiveGameView({
   // Use caller WebSocket hub to receive claims
   const callerHub = useCallerHub(sessionId);
   
-  // Add a debounced actual connection state
-  const [isActuallyConnected, setIsActuallyConnected] = useState(callerHub.isConnected);
+  // Use state that doesn't change too rapidly
+  const [uiConnectionState, setUiConnectionState] = useState('disconnected');
   
-  // Debounce connection state to avoid flashing
+  // Add a debounced actual connection state with longer timers for better UX
+  const [isActuallyConnected, setIsActuallyConnected] = useState(callerHub.isConnected);
+  const disconnectionTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Debounce connection state to avoid flashing - heavily favor "connected" state
   useEffect(() => {
     // Immediately update to connected state for good UX
-    if (callerHub.connectionState === 'connected') {
+    if (callerHub.connectionState === 'connected' && callerHub.isConnected) {
+      // Clear any pending disconnection timer
+      if (disconnectionTimerRef.current) {
+        clearTimeout(disconnectionTimerRef.current);
+        disconnectionTimerRef.current = null;
+      }
       setIsActuallyConnected(true);
+      setUiConnectionState('connected');
       return;
     }
     
-    // For disconnection states, use a debounce
-    const timer = setTimeout(() => {
-      setIsActuallyConnected(callerHub.connectionState === 'connected');
-    }, 3000); // 3 second debounce for stability
+    // For disconnection states, use a longer debounce to prevent flashing
+    // Showing a longer "connecting..." state is better UX than flashing between connected/disconnected
+    if (callerHub.connectionState === 'connecting') {
+      setUiConnectionState('connecting');
+      // Don't change isActuallyConnected yet - we want to keep showing as connected until clearly not
+      return;
+    }
     
-    return () => clearTimeout(timer);
-  }, [callerHub.connectionState]);
+    // Only actually report disconnection after several seconds of confirmed disconnection
+    // This prevents UI flashing during brief network hiccups
+    if (disconnectionTimerRef.current) {
+      clearTimeout(disconnectionTimerRef.current);
+    }
+    
+    disconnectionTimerRef.current = setTimeout(() => {
+      setIsActuallyConnected(callerHub.isConnected);
+      setUiConnectionState(callerHub.connectionState);
+      disconnectionTimerRef.current = null;
+    }, 5000); // 5 second debounce for stability
+    
+    // For error states, show those more quickly
+    if (callerHub.connectionState === 'error') {
+      setUiConnectionState('error');
+    }
+    
+    return () => {
+      if (disconnectionTimerRef.current) {
+        clearTimeout(disconnectionTimerRef.current);
+        disconnectionTimerRef.current = null;
+      }
+    };
+  }, [callerHub.connectionState, callerHub.isConnected]);
   
   const remainingNumbers = React.useMemo(() => {
     const allNumbers = Array.from({ length: gameType === 'mainstage' ? 90 : 75 }, (_, i) => i + 1);
@@ -95,8 +129,8 @@ export function LiveGameView({
 
   // Debug logging for connection status
   useEffect(() => {
-    logWithTimestamp(`LiveGameView: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}, isActuallyConnected: ${isActuallyConnected}`);
-  }, [callerHub.connectionState, callerHub.isConnected, isActuallyConnected]);
+    logWithTimestamp(`LiveGameView: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}, isActuallyConnected: ${isActuallyConnected}, uiState: ${uiConnectionState}`);
+  }, [callerHub.connectionState, callerHub.isConnected, isActuallyConnected, uiConnectionState]);
   
   const openClaimSheet = () => {
     setIsClaimSheetOpen(true);
@@ -111,7 +145,8 @@ export function LiveGameView({
       callerHub.reconnect();
       toast({
         title: "Reconnecting",
-        description: "Attempting to reconnect to the game server..."
+        description: "Attempting to reconnect to the game server...",
+        duration: 3000
       });
     }
   };
@@ -170,18 +205,18 @@ export function LiveGameView({
               <div className="bg-gray-100 p-4 rounded-md">
                 <div className="text-sm text-gray-500 mb-1">Connection Status</div>
                 <div className={`text-lg font-bold ${isActuallyConnected ? 'text-green-600' : 
-                                displayConnectionState === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
+                                uiConnectionState === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
                   {isActuallyConnected ? 'Connected' : 
-                   displayConnectionState === 'connecting' ? 'Connecting...' :
-                   displayConnectionState === 'error' ? 'Connection Error' : 'Disconnected'}
+                   uiConnectionState === 'connecting' ? 'Connecting...' :
+                   uiConnectionState === 'error' ? 'Connection Error' : 'Disconnected'}
                 </div>
                 <div className="mt-2 text-sm text-gray-500">
                   {callerHub.connectionError || 
                     (isActuallyConnected
                     ? 'WebSocket connection is established and working correctly.'
-                    : displayConnectionState === 'connecting'
+                    : uiConnectionState === 'connecting'
                     ? 'Establishing WebSocket connection...'
-                    : displayConnectionState === 'error'
+                    : uiConnectionState === 'error'
                     ? 'Error with WebSocket connection. Some features may not work.'
                     : 'WebSocket disconnected. Reconnecting...')}
                 </div>

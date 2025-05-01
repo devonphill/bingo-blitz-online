@@ -8,7 +8,9 @@ import {
   createDelayedConnectionAttempt,
   suspendConnectionAttempts,
   getStableConnectionState,
-  getEffectiveConnectionState
+  getEffectiveConnectionState,
+  registerSuccessfulConnection,
+  unregisterConnectionInstance
 } from '@/utils/logUtils';
 
 export function useRealTimeUpdates(sessionId: string | undefined, playerCode: string | undefined) {
@@ -21,7 +23,7 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
   const [gameStatus, setGameStatus] = useState<string>('pending');
   const lastUpdateTimestamp = useRef<number>(0);
   const { toast } = useToast();
-  const instanceId = useRef(Date.now());
+  const instanceId = useRef(Date.now().toString());
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 5;
   const channelRef = useRef<any>(null);
@@ -49,7 +51,7 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
     isCleaningUp.current = false;
     
     // Check if we're in a connection loop, and if so, prevent further attempts
-    if (preventConnectionLoop(connectionLoopState)) {
+    if (preventConnectionLoop(sessionId, instanceId.current, connectionLoopState)) {
       logWithTimestamp(`Preventing realtime connection loop for session ${sessionId}`);
       
       // Suspend connection attempts for 10 seconds
@@ -177,6 +179,9 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
               setIsConnected(true);
               reconnectAttemptsRef.current = 0;
               connectionLoopState.current = null; // Reset loop detector on success
+              
+              // Register successful connection with global tracker
+              registerSuccessfulConnection(sessionId, instanceId.current);
             }
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
             inProgressConnection.current = false;
@@ -228,8 +233,8 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
       }
       
       reconnectAttemptsRef.current++;
-      const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000); // Exponential backoff with 30s max
-      logWithTimestamp(`Attempting to reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 10000); // Exponential backoff with 10s max
+      logWithTimestamp(`Scheduling reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
       
       // Use the delayed connection manager
       createDelayedConnectionAttempt(() => {
@@ -296,6 +301,9 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
       isMounted.current = false;
       
       logWithTimestamp(`Cleaning up real-time subscription`);
+      
+      // Unregister this instance from global connection tracker
+      unregisterConnectionInstance(sessionId, instanceId.current);
       
       // Clear any pending timeouts
       if (connectionManager.current.pendingTimeout) {

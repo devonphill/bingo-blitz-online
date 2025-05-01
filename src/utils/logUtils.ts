@@ -1,4 +1,3 @@
-
 /**
  * Helper function for consistent timestamped logging
  */
@@ -87,50 +86,139 @@ export const logConnectionCleanup = (component: string, reason: string) => {
   logWithTimestamp(`${component}: Cleaning up connection (${reason})`);
 };
 
+// Create a global connection tracker to prevent multiple instances from reconnecting
+// This is a singleton that tracks connections across the entire app
+const globalConnectionTracker: {
+  [sessionId: string]: {
+    lastAttempt: number;
+    attempts: number;
+    cooldownUntil: number;
+    activeInstances: Set<string>;
+  };
+} = {};
+
 /**
- * FIXED: Loop prevention with connection tracking
- * Tracks connection attempts and prevents reconnection loops
+ * IMPROVED: Loop prevention with global connection tracking
+ * Tracks connection attempts across all hooks to prevent reconnection loops
  */
-export const preventConnectionLoop = (connectionStateRef: { current: any }): boolean => {
-  if (!connectionStateRef.current) {
-    connectionStateRef.current = {
-      attempts: 0,
-      lastAttempt: Date.now(),
-      inProgress: true,
-      cooldownUntil: 0
-    };
-    return false; // Not in a loop, proceed with connection
-  }
-  
+export const preventConnectionLoop = (
+  sessionId: string,
+  instanceId: string,
+  connectionStateRef: { current: any }
+): boolean => {
   const now = Date.now();
   
+  // Initialize session tracker if it doesn't exist
+  if (!globalConnectionTracker[sessionId]) {
+    globalConnectionTracker[sessionId] = {
+      lastAttempt: now,
+      attempts: 0,
+      cooldownUntil: 0,
+      activeInstances: new Set([instanceId])
+    };
+    
+    // Initialize local state
+    if (!connectionStateRef.current) {
+      connectionStateRef.current = {
+        attempts: 0,
+        lastAttempt: now,
+        inProgress: true,
+        cooldownUntil: 0
+      };
+    }
+    
+    return false; // Allow first connection attempt
+  }
+
+  // Register this instance
+  globalConnectionTracker[sessionId].activeInstances.add(instanceId);
+  
   // If we're in cooldown, prevent further connections
-  if (connectionStateRef.current.cooldownUntil > now) {
-    logWithTimestamp(`Connection in cooldown until ${new Date(connectionStateRef.current.cooldownUntil).toISOString()}`);
-    return true;
+  if (globalConnectionTracker[sessionId].cooldownUntil > now) {
+    logWithTimestamp(`Session ${sessionId} in global cooldown until ${new Date(globalConnectionTracker[sessionId].cooldownUntil).toISOString()}`);
+    
+    // Update local state to match global state
+    connectionStateRef.current = {
+      attempts: globalConnectionTracker[sessionId].attempts,
+      lastAttempt: globalConnectionTracker[sessionId].lastAttempt,
+      inProgress: false,
+      cooldownUntil: globalConnectionTracker[sessionId].cooldownUntil
+    };
+    
+    return true; // Prevent connection
   }
   
-  const timeSince = now - connectionStateRef.current.lastAttempt;
+  // Count instances trying to connect within a small window (100ms)
+  const timeSince = now - globalConnectionTracker[sessionId].lastAttempt;
   
-  // If multiple attempts in less than 2 seconds, might be in a loop
-  if (connectionStateRef.current.attempts > 3 && timeSince < 2000) {
-    connectionStateRef.current.attempts++;
-    connectionStateRef.current.inLoop = true;
+  // If we have multiple instances or rapid reconnects, we're likely in a loop
+  if ((globalConnectionTracker[sessionId].activeInstances.size > 1 && timeSince < 1000) ||
+      (globalConnectionTracker[sessionId].attempts > 3 && timeSince < 2000)) {
     
-    // Set a cooldown of 15 seconds
-    connectionStateRef.current.cooldownUntil = now + 15000;
+    globalConnectionTracker[sessionId].attempts++;
+    globalConnectionTracker[sessionId].cooldownUntil = now + 15000; // 15 second global cooldown
     
-    logWithTimestamp(`⚠️ Detected potential connection loop after ${connectionStateRef.current.attempts} attempts in ${timeSince}ms - enforcing 15s cooldown`);
-    return true; // Likely in a loop, prevent further connection attempts
+    // Update local state
+    connectionStateRef.current = {
+      attempts: globalConnectionTracker[sessionId].attempts,
+      lastAttempt: now,
+      inProgress: false,
+      cooldownUntil: globalConnectionTracker[sessionId].cooldownUntil,
+      inLoop: true
+    };
+    
+    logWithTimestamp(`⚠️ Detected connection loop for session ${sessionId} with ${globalConnectionTracker[sessionId].activeInstances.size} active instances - enforcing 15s cooldown`);
+    return true; // Prevent connection
   }
   
-  // Update connection state
-  connectionStateRef.current.attempts++;
-  connectionStateRef.current.lastAttempt = now;
-  connectionStateRef.current.inProgress = true;
-  connectionStateRef.current.inLoop = false;
+  // Update global connection state
+  globalConnectionTracker[sessionId].attempts++;
+  globalConnectionTracker[sessionId].lastAttempt = now;
   
-  return false; // Not in a loop, proceed with connection
+  // Update local connection state
+  connectionStateRef.current = {
+    attempts: globalConnectionTracker[sessionId].attempts,
+    lastAttempt: now,
+    inProgress: true,
+    inLoop: false,
+    cooldownUntil: 0
+  };
+  
+  return false; // Allow connection
+};
+
+/**
+ * Handle successful connection by resetting attempt counters
+ */
+export const registerSuccessfulConnection = (
+  sessionId: string,
+  instanceId: string
+): void => {
+  if (globalConnectionTracker[sessionId]) {
+    // Reset attempt counter but keep tracking the instance
+    globalConnectionTracker[sessionId].attempts = 0;
+    globalConnectionTracker[sessionId].cooldownUntil = 0;
+    logWithTimestamp(`Connection successful for session ${sessionId}, instance ${instanceId} - resetting counters`);
+  }
+};
+
+/**
+ * Clean up instance tracking when component unmounts
+ */
+export const unregisterConnectionInstance = (
+  sessionId: string,
+  instanceId: string
+): void => {
+  if (globalConnectionTracker[sessionId]) {
+    globalConnectionTracker[sessionId].activeInstances.delete(instanceId);
+    logWithTimestamp(`Unregistered instance ${instanceId} from session ${sessionId} - remaining instances: ${globalConnectionTracker[sessionId].activeInstances.size}`);
+    
+    // If no more instances, clean up the session entry
+    if (globalConnectionTracker[sessionId].activeInstances.size === 0) {
+      delete globalConnectionTracker[sessionId];
+      logWithTimestamp(`Removed session ${sessionId} from global connection tracker - no more active instances`);
+    }
+  }
 };
 
 /**
@@ -193,7 +281,6 @@ export const useStableConnectionState = () => {
   return { getStableState };
 };
 
-// Adding the missing functions that are being imported
 /**
  * Helper function to create a delayed connection attempt
  */
@@ -383,8 +470,8 @@ export class ConnectionManager {
       return;
     }
     
-    const delay = Math.min(1000 * Math.pow(2, this._connectionAttempts), 10000);
-    logWithTimestamp(`Scheduling reconnect in ${delay}ms (attempt ${this._connectionAttempts}/${this._maxReconnectAttempts})`);
+    const delay = Math.min(1000 * Math.pow(2, this._connectionAttempts), 10000); // Exponential backoff with 10s max
+    logWithTimestamp(`Scheduling reconnect in ${delay/1000}s (attempt ${this._connectionAttempts}/${this._maxReconnectAttempts})...`);
     
     this._reconnectTimer = setTimeout(() => {
       this._reconnectTimer = null;
