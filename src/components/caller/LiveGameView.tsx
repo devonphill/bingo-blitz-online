@@ -6,6 +6,10 @@ import CallerControls from '@/components/game/CallerControls';
 import { useGameData } from '@/hooks/useGameData';
 import ClaimVerificationSheet from '../game/ClaimVerificationSheet';
 import { useCallerHub } from '@/hooks/useCallerHub';
+import { Button } from '@/components/ui/button';
+import { RefreshCw } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 interface WinPattern {
   id: string;
@@ -53,6 +57,7 @@ export function LiveGameView({
 }: LiveGameViewProps) {
   const [isClaimSheetOpen, setIsClaimSheetOpen] = useState(false);
   const { getCurrentGamePatterns } = useGameData(sessionId);
+  const { toast } = useToast();
   
   // Use caller WebSocket hub to receive claims
   const callerHub = useCallerHub(sessionId);
@@ -76,6 +81,21 @@ export function LiveGameView({
   const closeClaimSheet = () => {
     setIsClaimSheetOpen(false);
   };
+  
+  const handleReconnect = () => {
+    if (callerHub.reconnect) {
+      callerHub.reconnect();
+      toast({
+        title: "Reconnecting",
+        description: "Attempting to reconnect to the game server..."
+      });
+    }
+  };
+  
+  // Add debug logging
+  useEffect(() => {
+    logWithTimestamp(`LiveGameView connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}`);
+  }, [callerHub.connectionState, callerHub.isConnected]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -113,6 +133,9 @@ export function LiveGameView({
                 <div className="text-sm text-gray-500 mb-1">Connected Players</div>
                 <div className="text-lg font-bold">{callerHub.connectedPlayers.length}</div>
                 <div className="mt-2 max-h-40 overflow-y-auto">
+                  {callerHub.connectedPlayers.length === 0 && (
+                    <p className="text-sm text-gray-500">No players connected yet</p>
+                  )}
                   {callerHub.connectedPlayers.map((player, idx) => (
                     <div key={player.playerCode || idx} className="text-sm py-1 border-b border-gray-200 last:border-0">
                       {player.playerName || player.playerCode}
@@ -140,6 +163,18 @@ export function LiveGameView({
                     ? 'Error with WebSocket connection. Some features may not work.'
                     : 'WebSocket disconnected. Reconnecting...')}
                 </div>
+                
+                {callerHub.connectionState !== 'connected' && (
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="w-full mt-2 flex items-center justify-center gap-1"
+                    onClick={handleReconnect}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    Reconnect
+                  </Button>
+                )}
               </div>
             </div>
           </CardContent>

@@ -31,6 +31,7 @@ export function useCallerHub(sessionId?: string) {
   const [pendingClaims, setPendingClaims] = useState<BingoClaim[]>([]);
   const { toast } = useToast();
   const channelRefs = useRef<{ [key: string]: any }>({});
+  const connectionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Set up the caller as the central hub using Supabase Realtime
   useEffect(() => {
@@ -42,6 +43,20 @@ export function useCallerHub(sessionId?: string) {
     
     logWithTimestamp(`Setting up caller hub for session: ${sessionId} using Realtime channels`);
     setConnectionState('connecting');
+    
+    // Clear any existing timeout
+    if (connectionTimeout.current) {
+      clearTimeout(connectionTimeout.current);
+    }
+    
+    // Set a timeout to consider connection failed if not connected within 10 seconds
+    connectionTimeout.current = setTimeout(() => {
+      if (connectionState === 'connecting') {
+        logWithTimestamp("Connection timeout - setting state to error");
+        setConnectionState('error');
+        setConnectionError("Connection timed out");
+      }
+    }, 10000);
     
     try {
       // Channel for player joins and game updates
@@ -94,6 +109,12 @@ export function useCallerHub(sessionId?: string) {
           logWithTimestamp(`Game updates channel status: ${status}`);
           
           if (status === 'SUBSCRIBED') {
+            // Clear the timeout as we're connected
+            if (connectionTimeout.current) {
+              clearTimeout(connectionTimeout.current);
+              connectionTimeout.current = null;
+            }
+            
             setIsConnected(true);
             setConnectionState('connected');
             setConnectionError(null);
@@ -104,6 +125,11 @@ export function useCallerHub(sessionId?: string) {
               duration: 3000
             });
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            if (connectionTimeout.current) {
+              clearTimeout(connectionTimeout.current);
+              connectionTimeout.current = null;
+            }
+            
             setConnectionState('error');
             setConnectionError("Error connecting to realtime server");
           }
@@ -142,9 +168,27 @@ export function useCallerHub(sessionId?: string) {
         claimChannel
       };
       
+      // Send a ping to test the connection
+      gameChannel.send({
+        type: 'broadcast',
+        event: 'caller-ping',
+        payload: {
+          timestamp: Date.now()
+        }
+      }).then(() => {
+        logWithTimestamp("Sent ping to test connection");
+      }).catch(err => {
+        console.error("Error sending ping:", err);
+      });
+      
       return () => {
         // Cleanup function
         logWithTimestamp("Cleaning up caller realtime connections");
+        
+        if (connectionTimeout.current) {
+          clearTimeout(connectionTimeout.current);
+          connectionTimeout.current = null;
+        }
         
         Object.values(channelRefs.current).forEach((channel) => {
           if (channel) {
@@ -153,6 +197,11 @@ export function useCallerHub(sessionId?: string) {
         });
       };
     } catch (err) {
+      if (connectionTimeout.current) {
+        clearTimeout(connectionTimeout.current);
+        connectionTimeout.current = null;
+      }
+      
       console.error("Error setting up realtime channels:", err);
       setConnectionState('error');
       setConnectionError(`Error: ${err instanceof Error ? err.message : String(err)}`);

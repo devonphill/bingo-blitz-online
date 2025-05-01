@@ -277,6 +277,19 @@ export default function CallerControls({
     }
   };
 
+  // We need to ensure the Go Live button is enabled when the connection is established
+  // and any required conditions are met
+  const isGoLiveDisabled = isGoingLive || 
+                          winPatterns.length === 0 || 
+                          sessionStatus === 'active' || 
+                          !callerHub.isConnected;
+
+  // Add some debug information
+  useEffect(() => {
+    logWithTimestamp(`CallerControls connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}`);
+    logWithTimestamp(`Go Live button disabled: ${isGoLiveDisabled}, winPatterns: ${winPatterns.length}, sessionStatus: ${sessionStatus}`);
+  }, [callerHub.connectionState, callerHub.isConnected, isGoLiveDisabled, winPatterns.length, sessionStatus]);
+
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -334,10 +347,11 @@ export default function CallerControls({
           
           <Button
             className="bg-green-600 hover:bg-green-700 text-white"
-            disabled={isGoingLive || winPatterns.length === 0 || sessionStatus === 'active' || !callerHub.isConnected}
+            disabled={isGoLiveDisabled}
             onClick={handleGoLiveClick}
           >
             {isGoingLive ? 'Going Live...' : 'Go Live'}
+            {callerHub.connectionState !== 'connected' && !isGoingLive && " (Connect First)"}
           </Button>
         </div>
         

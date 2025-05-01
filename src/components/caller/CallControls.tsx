@@ -1,12 +1,19 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
-import { Bell } from 'lucide-react';
+import { Bell, RefreshCw, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { useCallerHub } from '@/hooks/useCallerHub';
+
+const logWithTimestamp = (message: string) => {
+  const now = new Date();
+  const timestamp = now.toISOString();
+  console.log(`[${timestamp}] - CHANGED 18:19 - ${message}`);
+};
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -44,6 +51,13 @@ export default function CallerControls({
   const [isGoingLive, setIsGoingLive] = useState(false);
   const [isClosingConfirmOpen, setIsClosingConfirmOpen] = useState(false);
   const { toast } = useToast();
+  
+  // Connect to the WebSocket hub as a caller
+  const callerHub = useCallerHub(sessionId);
+
+  useEffect(() => {
+    logWithTimestamp(`CallControls connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}`);
+  }, [callerHub.connectionState, callerHub.isConnected]);
 
   const handleCallNumber = () => {
     if (remainingNumbers.length === 0) {
@@ -78,6 +92,11 @@ export default function CallerControls({
 
     setIsGoingLive(true);
     try {
+      if (callerHub.isConnected) {
+        logWithTimestamp("Broadcasting game start via realtime");
+        callerHub.startGame();
+      }
+      
       await onGoLive();
     } catch (error) {
       console.error('Error going live:', error);
@@ -105,8 +124,54 @@ export default function CallerControls({
     }
     setIsClosingConfirmOpen(false);
   };
+  
+  const handleReconnectClick = () => {
+    if (callerHub.reconnect) {
+      callerHub.reconnect();
+      toast({
+        title: "Reconnecting",
+        description: "Attempting to reconnect to the game server...",
+      });
+    }
+  };
 
   const isLastGame = currentGameNumber >= numberOfGames;
+  
+  // Ensure the Go Live button is enabled when connection is established
+  const isGoLiveDisabled = isGoingLive || 
+                          winPatterns.length === 0 || 
+                          sessionStatus === 'active' || 
+                          !callerHub.isConnected;
+
+  // Connection status indicator                        
+  const renderConnectionStatus = () => {
+    if (callerHub.connectionState !== 'connected') {
+      return (
+        <div className="bg-amber-50 border border-amber-200 rounded-md p-2 mt-2">
+          <div className="flex items-center">
+            <AlertCircle className="h-4 w-4 text-amber-500 mr-2" />
+            <div className="text-xs text-amber-700">
+              {callerHub.connectionState === 'connecting' 
+                ? 'Connecting to game server...' 
+                : callerHub.connectionState === 'error' 
+                  ? 'Failed to connect to game server' 
+                  : 'Disconnected from game server'}
+            </div>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="mt-2 w-full text-xs flex items-center gap-1"
+            onClick={handleReconnectClick}
+          >
+            <RefreshCw className="h-3 w-3" />
+            Reconnect
+          </Button>
+        </div>
+      );
+    }
+    return null;
+  };
 
   return (
     <>
@@ -121,6 +186,11 @@ export default function CallerControls({
               {currentGameNumber && numberOfGames && (
                 <Badge className="ml-2" variant="outline">
                   Game {currentGameNumber} of {numberOfGames}
+                </Badge>
+              )}
+              {callerHub.isConnected && (
+                <Badge className="ml-2 bg-green-500 text-white">
+                  Connected
                 </Badge>
               )}
             </div>
@@ -158,7 +228,7 @@ export default function CallerControls({
           <div className="grid grid-cols-1 gap-3">
             <Button
               className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-              disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active'}
+              disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active' || !callerHub.isConnected}
               onClick={handleCallNumber}
             >
               {isCallingNumber ? 'Calling...' : 'Call Next Number'}
@@ -183,12 +253,15 @@ export default function CallerControls({
             
             <Button
               className="bg-green-600 hover:bg-green-700 text-white"
-              disabled={isGoingLive || winPatterns.length === 0 || sessionStatus === 'active'}
+              disabled={isGoLiveDisabled}
               onClick={handleGoLiveClick}
             >
               {isGoingLive ? 'Going Live...' : 'Go Live'}
+              {callerHub.connectionState !== 'connected' && !isGoingLive && " (Connect First)"}
             </Button>
           </div>
+          
+          {renderConnectionStatus()}
         </CardContent>
       </Card>
 

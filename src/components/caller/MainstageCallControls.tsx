@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Loader } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PrizeDetails } from '@/types';
+import { useCallerHub } from '@/hooks/useCallerHub';
 
 interface MainstageCallControlsProps {
   onCallNumber: () => void;
@@ -61,6 +62,10 @@ export function MainstageCallControls({
     return defaultPatterns.slice(currentIndex + 1).map(formatWinPattern);
   };
 
+  // Get connection status from the caller hub
+  const callerHub = useCallerHub(currentSession?.id);
+  const isConnected = callerHub.isConnected;
+
   const nextPatterns = getNextPatterns();
   const currentPattern = activeWinPatterns.length > 0 ? formatWinPattern(activeWinPatterns[0]) : 'None';
   const nextPatternsText = nextPatterns.length > 0 ? nextPatterns.join(', ') : 'None';
@@ -73,7 +78,16 @@ export function MainstageCallControls({
   return (
     <Card className="shadow">
       <CardHeader>
-        <CardTitle>Game Controls</CardTitle>
+        <CardTitle className="flex justify-between items-center">
+          <span>Game Controls</span>
+          {isConnected ? (
+            <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">Connected</span>
+          ) : (
+            <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
+              {callerHub.connectionState === 'connecting' ? 'Connecting...' : 'Not Connected'}
+            </span>
+          )}
+        </CardTitle>
         <CardDescription>Manage the game flow and view session details.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -120,9 +134,10 @@ export function MainstageCallControls({
             onClick={onCallNumber} 
             className="w-full" 
             size="lg"
-            disabled={sessionStatus !== 'active'}
+            disabled={sessionStatus !== 'active' || !isConnected}
           >
-            {sessionStatus === 'active' ? "Call Next Number" : "Game Paused"}
+            {!isConnected ? "Reconnect Required" : 
+              sessionStatus === 'active' ? "Call Next Number" : "Game Paused"}
           </Button>
           
           <div className="grid grid-cols-2 gap-2">
