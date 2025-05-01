@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Loader, RefreshCw, AlertCircle } from 'lucide-react';
@@ -116,6 +115,7 @@ export function MainstageCallControls({
   const displayConnectionState = isActuallyConnected ? 'connected' : callerHub.connectionState;
   
   return (
+    
     <Card className="shadow">
       <CardHeader>
         <CardTitle className="flex justify-between items-center">
@@ -149,6 +149,7 @@ export function MainstageCallControls({
             <p className="text-lg font-medium">{pendingClaims}</p>
           </div>
         </div>
+        
         
         <div className="bg-gray-50 p-4 rounded-md mt-4">
           <p className="text-sm text-gray-500">Current Pattern:</p>

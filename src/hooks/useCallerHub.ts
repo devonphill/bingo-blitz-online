@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { GameType } from '@/types';
 import { useToast } from './use-toast';
@@ -332,8 +331,6 @@ export function useCallerHub(sessionId?: string) {
       return false;
     }
   };
-
-  // ADDING NEW METHODS TO FIX BUILD ERRORS
 
   // Method for calling a number
   const callNumber = (number: number, allCalledNumbers: number[]) => {

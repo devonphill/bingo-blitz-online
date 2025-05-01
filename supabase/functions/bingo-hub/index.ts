@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 
@@ -39,11 +38,11 @@ const sessions: Map<string, Set<string>> = new Map(); // sessionId -> Set of cli
 const logWithTimestamp = (message: string) => {
   const now = new Date();
   const timestamp = now.toISOString();
-  console.log(`[${timestamp}] - CHANGED 09:52 - ${message}`);
+  console.log(`[${timestamp}] - ${message}`);
 };
 
 // Initial startup log
-logWithTimestamp("Bingo Hub function initialized with increased resources");
+logWithTimestamp("Bingo Hub function initialized with improved connection handling");
 
 // Set up realtime broadcast channel for fallback
 const setupRealtimeFallback = () => {

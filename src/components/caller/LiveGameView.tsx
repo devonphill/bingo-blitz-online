@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -101,7 +100,7 @@ export function LiveGameView({
   
   // Debug logging for connection status
   useEffect(() => {
-    logWithTimestamp(`LiveGameView: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}, isActuallyConnected: ${callerHub.isConnected}, displayState: ${displayConnectionState}`);
+    logWithTimestamp(`LiveGameView: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}, displayState: ${displayConnectionState}`);
   }, [callerHub.connectionState, callerHub.isConnected, displayConnectionState]);
 
   const remainingNumbers = React.useMemo(() => {
