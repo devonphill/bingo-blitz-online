@@ -131,10 +131,9 @@ export default function CallerControls({
 
   const isLastGame = currentGameNumber >= numberOfGames;
   
-  // Fix the condition for Go Live button
-  // Only disable if going live, no win patterns, already active, or no connection
-  const isGoLiveDisabled = isGoingLive || 
-                          winPatterns.length === 0 || 
+  // IMPORTANT: Remove all conditions that would disable the Go Live button
+  // Only disable if no win patterns are selected or the session is already active
+  const isGoLiveDisabled = winPatterns.length === 0 || 
                           sessionStatus === 'active';
 
   // Connection status indicator                        
@@ -253,7 +252,7 @@ export default function CallerControls({
                 handleGoLiveClick();
               }}
             >
-              {callerHub.connectionState !== 'connected' ? 'Connect First' : 'Go Live'}
+              Go Live
             </GoLiveButton>
           </div>
           
