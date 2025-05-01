@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -61,6 +62,25 @@ export function LiveGameView({
   // Use caller WebSocket hub to receive claims
   const callerHub = useCallerHub(sessionId);
   
+  // Add a debounced actual connection state
+  const [isActuallyConnected, setIsActuallyConnected] = useState(callerHub.isConnected);
+  
+  // Debounce connection state to avoid flashing
+  useEffect(() => {
+    // Immediately update to connected state for good UX
+    if (callerHub.connectionState === 'connected') {
+      setIsActuallyConnected(true);
+      return;
+    }
+    
+    // For disconnection states, use a debounce
+    const timer = setTimeout(() => {
+      setIsActuallyConnected(callerHub.connectionState === 'connected');
+    }, 3000); // 3 second debounce for stability
+    
+    return () => clearTimeout(timer);
+  }, [callerHub.connectionState]);
+  
   const remainingNumbers = React.useMemo(() => {
     const allNumbers = Array.from({ length: gameType === 'mainstage' ? 90 : 75 }, (_, i) => i + 1);
     return allNumbers.filter(num => !calledNumbers.includes(num));
@@ -75,8 +95,8 @@ export function LiveGameView({
 
   // Debug logging for connection status
   useEffect(() => {
-    logWithTimestamp(`LiveGameView: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}`);
-  }, [callerHub.connectionState, callerHub.isConnected]);
+    logWithTimestamp(`LiveGameView: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}, isActuallyConnected: ${isActuallyConnected}`);
+  }, [callerHub.connectionState, callerHub.isConnected, isActuallyConnected]);
   
   const openClaimSheet = () => {
     setIsClaimSheetOpen(true);
@@ -95,6 +115,9 @@ export function LiveGameView({
       });
     }
   };
+  
+  // Use the actual connection state for display consistency
+  const displayConnectionState = isActuallyConnected ? 'connected' : callerHub.connectionState;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -146,24 +169,24 @@ export function LiveGameView({
               {/* WebSocket connection status */}
               <div className="bg-gray-100 p-4 rounded-md">
                 <div className="text-sm text-gray-500 mb-1">Connection Status</div>
-                <div className={`text-lg font-bold ${callerHub.connectionState === 'connected' ? 'text-green-600' : 
-                                callerHub.connectionState === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
-                  {callerHub.connectionState === 'connected' ? 'Connected' : 
-                   callerHub.connectionState === 'connecting' ? 'Connecting...' :
-                   callerHub.connectionState === 'error' ? 'Connection Error' : 'Disconnected'}
+                <div className={`text-lg font-bold ${isActuallyConnected ? 'text-green-600' : 
+                                displayConnectionState === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
+                  {isActuallyConnected ? 'Connected' : 
+                   displayConnectionState === 'connecting' ? 'Connecting...' :
+                   displayConnectionState === 'error' ? 'Connection Error' : 'Disconnected'}
                 </div>
                 <div className="mt-2 text-sm text-gray-500">
                   {callerHub.connectionError || 
-                    (callerHub.connectionState === 'connected'
+                    (isActuallyConnected
                     ? 'WebSocket connection is established and working correctly.'
-                    : callerHub.connectionState === 'connecting'
+                    : displayConnectionState === 'connecting'
                     ? 'Establishing WebSocket connection...'
-                    : callerHub.connectionState === 'error'
+                    : displayConnectionState === 'error'
                     ? 'Error with WebSocket connection. Some features may not work.'
                     : 'WebSocket disconnected. Reconnecting...')}
                 </div>
                 
-                {callerHub.connectionState !== 'connected' && (
+                {!isActuallyConnected && (
                   <Button 
                     size="sm" 
                     variant="outline" 

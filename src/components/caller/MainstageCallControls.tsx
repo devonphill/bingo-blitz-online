@@ -1,5 +1,5 @@
 
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Loader, RefreshCw, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,12 +68,30 @@ export function MainstageCallControls({
 
   // Get connection status from the caller hub
   const callerHub = useCallerHub(currentSession?.id);
-  const isConnected = callerHub.connectionState === 'connected';
+  
+  // Add a debounced actual connection state
+  const [isActuallyConnected, setIsActuallyConnected] = useState(callerHub.isConnected);
+  
+  // Debounce connection state to avoid flashing
+  useEffect(() => {
+    // Immediately update to connected state for good UX
+    if (callerHub.connectionState === 'connected') {
+      setIsActuallyConnected(true);
+      return;
+    }
+    
+    // For disconnection states, use a debounce
+    const timer = setTimeout(() => {
+      setIsActuallyConnected(callerHub.connectionState === 'connected');
+    }, 3000); // 3 second debounce for stability
+    
+    return () => clearTimeout(timer);
+  }, [callerHub.connectionState]);
 
   // Debug logging for connection status
   useEffect(() => {
-    logWithTimestamp(`MainstageCallControls: connection state: ${callerHub.connectionState}, isConnected: ${isConnected}`);
-  }, [callerHub.connectionState, isConnected]);
+    logWithTimestamp(`MainstageCallControls: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}, isActuallyConnected: ${isActuallyConnected}`);
+  }, [callerHub.connectionState, callerHub.isConnected, isActuallyConnected]);
 
   const nextPatterns = getNextPatterns();
   const currentPattern = activeWinPatterns.length > 0 ? formatWinPattern(activeWinPatterns[0]) : 'None';
@@ -94,16 +112,19 @@ export function MainstageCallControls({
     }
   };
   
+  // Use the actual connection state for display consistency
+  const displayConnectionState = isActuallyConnected ? 'connected' : callerHub.connectionState;
+  
   return (
     <Card className="shadow">
       <CardHeader>
         <CardTitle className="flex justify-between items-center">
           <span>Game Controls</span>
-          {isConnected ? (
+          {isActuallyConnected ? (
             <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">Connected</span>
           ) : (
             <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
-              {callerHub.connectionState === 'connecting' ? 'Connecting...' : 'Not Connected'}
+              {displayConnectionState === 'connecting' ? 'Connecting...' : 'Not Connected'}
             </span>
           )}
         </CardTitle>
@@ -153,9 +174,9 @@ export function MainstageCallControls({
             onClick={onCallNumber} 
             className="w-full" 
             size="lg"
-            disabled={sessionStatus !== 'active' || !isConnected}
+            disabled={sessionStatus !== 'active' || !isActuallyConnected}
           >
-            {!isConnected ? "Reconnect Required" : 
+            {!isActuallyConnected ? "Reconnect Required" : 
               sessionStatus === 'active' ? "Call Next Number" : "Game Paused"}
           </Button>
           
@@ -185,14 +206,14 @@ export function MainstageCallControls({
         </div>
 
         {/* Add reconnect button if not connected */}
-        {!isConnected && (
+        {!isActuallyConnected && (
           <div className="mt-2 bg-amber-50 border border-amber-200 rounded-md p-2">
             <div className="flex items-center">
               <AlertCircle className="h-4 w-4 text-amber-500 mr-2" />
               <div className="text-xs text-amber-700">
-                {callerHub.connectionState === 'connecting' 
+                {displayConnectionState === 'connecting' 
                   ? 'Connecting to game server...' 
-                  : callerHub.connectionState === 'error' 
+                  : displayConnectionState === 'error' 
                     ? 'Failed to connect to game server' 
                     : 'Disconnected from game server'}
               </div>
