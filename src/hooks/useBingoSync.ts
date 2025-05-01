@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from './use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -166,7 +167,6 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     // Reconnection will be triggered by the useEffect above
   }, []);
 
-  // Function to claim bingo
   const claimBingo = useCallback((ticketData?: any) => {
     if (!sessionId || !playerCode) {
       toast({
@@ -231,7 +231,7 @@ export function useBingoSync(sessionId?: string, playerCode?: string, playerName
     currentWinPattern: realtimeUpdates.currentWinPattern || gameState.currentWinPattern,
     currentPrize: gameState.currentPrize,
     currentPrizeDescription: gameState.currentPrizeDescription,
-    gameStatus: gameState.gameStatus
+    gameStatus: realtimeUpdates.gameStatus || gameState.gameStatus
   };
 
   return {

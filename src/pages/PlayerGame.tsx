@@ -1,4 +1,3 @@
-
 import React, { useEffect, useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -85,8 +84,18 @@ export default function PlayerGame() {
   // Initialize session state
   const isSessionActive = currentSession?.status === 'active';
   const isGameLive = currentSession?.lifecycle_state === 'live';
-  const gameStatus = sessionProgress?.game_status || 'pending';
+  
+  // Get game status from bingoSync or sessionProgress
+  const gameStatus = bingoSync.gameState.gameStatus || sessionProgress?.game_status || 'pending';
   const isGameActive = gameStatus === 'active';
+  
+  // Debug logging of game status
+  useEffect(() => {
+    if (gameStatus) {
+      logWithTimestamp(`Current game status from all sources: ${gameStatus}`);
+      logWithTimestamp(`Session active: ${isSessionActive}, Game live: ${isGameLive}, Game active: ${isGameActive}`);
+    }
+  }, [gameStatus, isSessionActive, isGameLive, isGameActive]);
   
   // Always initialize tickets hook with the same parameters, even if it will not be used
   const { tickets } = useTickets(playerCode, currentSession?.id);
@@ -193,12 +202,7 @@ export default function PlayerGame() {
     (!isGameActive || !isGameLive || !isSessionActive);
 
   if (shouldShowLoader) {
-    console.log("Showing PlayerGameLoader with:", {
-      isLoading,
-      errorMessage: (bingoSync.connectionState === 'error' && currentSession) ? bingoSync.connectionError : errorMessage,
-      currentSession,
-      loadingStep
-    });
+    logWithTimestamp(`Showing PlayerGameLoader with game status: ${gameStatus}, session active: ${isSessionActive}, game live: ${isGameLive}`);
     
     // Pass WebSocket connection error to loader, but don't make it fatal for waiting room
     return (
@@ -207,7 +211,10 @@ export default function PlayerGame() {
         errorMessage={(bingoSync.connectionState === 'error' && currentSession) ? bingoSync.connectionError : errorMessage}
         currentSession={currentSession}
         loadingStep={loadingStep}
-        sessionProgress={sessionProgress}
+        sessionProgress={{
+          ...sessionProgress,
+          game_status: gameStatus
+        }}
       />
     );
   }

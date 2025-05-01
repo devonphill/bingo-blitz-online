@@ -101,7 +101,22 @@ export default function CallerControls({
       
       // Go live via WebSocket first
       if (callerHub.isConnected) {
+        logWithTimestamp("Broadcasting game start via realtime");
         callerHub.startGame();
+      } else {
+        // If not connected to WebSocket, use Supabase realtime broadcast instead
+        logWithTimestamp("Broadcasting game start via Supabase realtime broadcast");
+        const channel = supabase.channel('game-updates');
+        await channel.send({
+          type: 'broadcast',
+          event: 'game-update',
+          payload: {
+            sessionId,
+            gameStatus: 'active',
+            timestamp: Date.now()
+          }
+        });
+        supabase.removeChannel(channel);
       }
       
       // Then also use the regular method (updates database directly)
@@ -133,7 +148,7 @@ export default function CallerControls({
         return;
       }
       
-      console.log("Initializing session progress with Game 1 config:", game1Config);
+      logWithTimestamp("Initializing session progress with Game 1 config: " + JSON.stringify(game1Config));
       
       // Find the active pattern in Game 1
       const activePatterns = Object.entries(game1Config.patterns)
@@ -152,18 +167,38 @@ export default function CallerControls({
       const [patternId, patternConfig] = activePatterns[0];
       const config = patternConfig as any;
       
-      console.log("Using active pattern:", patternId, config);
+      logWithTimestamp("Using active pattern: " + patternId + ", " + JSON.stringify(config));
       
-      // Also notify players via WebSocket
-      if (callerHub.isConnected) {
-        callerHub.changePattern(
-          patternId, 
-          config.prizeAmount || '0.00', 
-          config.description || ''
-        );
-      }
+      // Update the database directly
+      await supabase
+        .from('sessions_progress')
+        .update({
+          current_win_pattern: patternId,
+          current_prize: config.prizeAmount || '0.00',
+          current_prize_description: config.description || '',
+          game_status: 'active'  // Set initial game status to active
+        })
+        .eq('session_id', sessionId);
+      
+      // Also notify players via Supabase broadcast
+      const broadcastChannel = supabase.channel('broadcast-channel');
+      await broadcastChannel.send({
+        type: 'broadcast',
+        event: 'game-update',
+        payload: {
+          sessionId,
+          currentWinPattern: patternId,
+          currentPrize: config.prizeAmount || '0.00',
+          currentPrizeDescription: config.description || '',
+          gameStatus: 'active',  // Include game status in broadcast
+          timestamp: Date.now()
+        }
+      });
+      
+      supabase.removeChannel(broadcastChannel);
+      
     } catch (error) {
-      console.error("Error in initializeSessionProgress:", error);
+      logWithTimestamp("Error in initializeSessionProgress: " + error);
       toast({
         title: "Initialization Error",
         description: "Failed to initialize game settings. Please try again.",

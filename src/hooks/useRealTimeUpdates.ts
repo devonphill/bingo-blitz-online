@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from './use-toast';
@@ -16,6 +15,7 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
   const [currentWinPattern, setCurrentWinPattern] = useState<string | null>(null);
   const [prizeInfo, setPrizeInfo] = useState<any>(null);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+  const [gameStatus, setGameStatus] = useState<string>('pending');
   const lastUpdateTimestamp = useRef<number>(0);
   const { toast } = useToast();
   const instanceId = useRef(Date.now());
@@ -74,12 +74,17 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
               }
               
               if (currentPrize || currentPrizeDescription) {
-                // Fix: Remove the second parameter to logWithTimestamp
                 logWithTimestamp(`New prize info: ${JSON.stringify({ currentPrize, currentPrizeDescription })}`);
                 setPrizeInfo({
                   currentPrize,
                   currentPrizeDescription
                 });
+              }
+              
+              // Add handling for gameStatus updates
+              if (gameStatus) {
+                logWithTimestamp(`Game status updated: ${gameStatus}`);
+                setGameStatus(gameStatus);
               }
             }
           }
@@ -123,6 +128,31 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
     
     // Initial setup
     const channel = setupChannel();
+    
+    // Check initial session status from sessions_progress
+    const checkInitialStatus = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('sessions_progress')
+          .select('game_status')
+          .eq('session_id', sessionId)
+          .single();
+          
+        if (error) {
+          logWithTimestamp(`Error fetching initial game status: ${error.message}`);
+          return;
+        }
+        
+        if (data && data.game_status) {
+          logWithTimestamp(`Initial game status from database: ${data.game_status}`);
+          setGameStatus(data.game_status);
+        }
+      } catch (err) {
+        logWithTimestamp(`Exception checking initial status: ${err}`);
+      }
+    };
+    
+    checkInitialStatus();
     
     return () => {
       logWithTimestamp(`Cleaning up subscription`);
@@ -172,6 +202,7 @@ export function useRealTimeUpdates(sessionId: string | undefined, playerCode: st
     calledNumbers,
     currentWinPattern,
     prizeInfo,
-    connectionStatus
+    connectionStatus,
+    gameStatus
   };
 }

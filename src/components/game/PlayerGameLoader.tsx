@@ -1,8 +1,14 @@
-
-import React from "react";
+import React, { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { GameSession } from "@/types";
 import { AlertCircle, RefreshCw, Info, Calendar, Clock, Wifi, WifiOff } from "lucide-react";
+
+// Helper function for consistent timestamped logging
+const logWithTimestamp = (message: string) => {
+  const now = new Date();
+  const timestamp = now.toISOString();
+  console.log(`[${timestamp}] - CHANGED 10:20 - ${message}`);
+};
 
 interface Props {
   isLoading: boolean;
@@ -20,11 +26,12 @@ export default function PlayerGameLoader({
   sessionProgress 
 }: Props) {
   // Only log when there's a change to help debug flickering
-  const logCacheKey = `${isLoading}-${!!errorMessage}-${!!currentSession}-${loadingStep}`;
+  const logCacheKey = `${isLoading}-${!!errorMessage}-${!!currentSession}-${loadingStep}-${sessionProgress?.game_status}`;
   React.useEffect(() => {
-    console.log("PlayerGameLoader - Session data:", currentSession);
-    console.log("PlayerGameLoader - Loading step:", loadingStep);
-  }, [logCacheKey, currentSession, loadingStep]);
+    logWithTimestamp("PlayerGameLoader - Session data: " + JSON.stringify(currentSession));
+    logWithTimestamp("PlayerGameLoader - Loading step: " + loadingStep);
+    logWithTimestamp("PlayerGameLoader - Session progress: " + JSON.stringify(sessionProgress));
+  }, [logCacheKey, currentSession, loadingStep, sessionProgress]);
 
   // Format date and time for display
   const formatSessionDate = (dateStr?: string) => {
@@ -119,10 +126,14 @@ export default function PlayerGameLoader({
   console.log("Session data:", currentSession);
   
   // Check if the game is in an active state
-  const isGameLive = currentSession.lifecycle_state === 'live';
-  const isSessionActive = currentSession.status === 'active';
+  const isGameLive = currentSession?.lifecycle_state === 'live';
+  const isSessionActive = currentSession?.status === 'active';
   const gameStatus = sessionProgress?.game_status || 'pending';
   const isGameActive = gameStatus === 'active';
+  
+  useEffect(() => {
+    logWithTimestamp(`Loader state check - Session active: ${isSessionActive}, Game live: ${isGameLive}, Game status: ${gameStatus}, Game active: ${isGameActive}`);
+  }, [isGameActive, isGameLive, isSessionActive, gameStatus]);
   
   // FIX: Get session time from appropriate fields - fixing type errors
   // Instead of using currentSession.sessionTime (which doesn't exist on type)
