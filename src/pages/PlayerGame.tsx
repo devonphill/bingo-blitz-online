@@ -104,7 +104,7 @@ export default function PlayerGame() {
   const gameStatus = bingoSync.gameState.gameStatus || sessionProgress?.game_status || 'pending';
   const isGameActive = gameStatus === 'active';
   
-  // Debug logging of game status
+  // Debug logging of game status with a stable dependency array
   useEffect(() => {
     if (gameStatus) {
       logWithTimestamp(`Current game status from all sources: ${gameStatus}`);
@@ -149,7 +149,7 @@ export default function PlayerGame() {
     }
   }, [isSessionActive, isGameActive, isGameLive, bingoSync]);
   
-  // Debug logging
+  // Debug logging with stable dependencies
   useEffect(() => {
     console.log("PlayerGame render state:", {
       playerCode,
@@ -166,7 +166,19 @@ export default function PlayerGame() {
       socketLastCalledNumber: bingoSync.gameState.lastCalledNumber,
       socketCalledNumbers: bingoSync.gameState.calledNumbers.length
     });
-  }, [playerCode, isLoading, loadingStep, tickets, currentSession, currentGameState, effectiveErrorMessage, sessionProgress, bingoSync]);
+  }, [
+    playerCode, 
+    isLoading, 
+    loadingStep, 
+    tickets, 
+    currentSession, 
+    currentGameState, 
+    effectiveErrorMessage, 
+    sessionProgress, 
+    bingoSync.connectionState,
+    bingoSync.gameState.lastCalledNumber,
+    bingoSync.gameState.calledNumbers.length
+  ]);
 
   // Early return during initial loading - no conditional hooks after this point
   if (loadingPlayerCode) {

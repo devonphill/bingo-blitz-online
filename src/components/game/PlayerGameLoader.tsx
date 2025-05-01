@@ -1,3 +1,4 @@
+
 import React, { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { GameSession } from "@/types";
@@ -25,13 +26,25 @@ export default function PlayerGameLoader({
   loadingStep = "initializing",
   sessionProgress 
 }: Props) {
+  // Create a stable reference for the log cache key
+  const loggingData = {
+    isLoading,
+    hasError: !!errorMessage,
+    hasSession: !!currentSession,
+    loadingStep,
+    gameStatus: sessionProgress?.game_status
+  };
+
   // Only log when there's a change to help debug flickering
-  const logCacheKey = `${isLoading}-${!!errorMessage}-${!!currentSession}-${loadingStep}-${sessionProgress?.game_status}`;
-  React.useEffect(() => {
-    logWithTimestamp("PlayerGameLoader - Session data: " + JSON.stringify(currentSession));
+  useEffect(() => {
+    if (currentSession) {
+      logWithTimestamp("PlayerGameLoader - Session data: " + JSON.stringify(currentSession));
+    }
     logWithTimestamp("PlayerGameLoader - Loading step: " + loadingStep);
-    logWithTimestamp("PlayerGameLoader - Session progress: " + JSON.stringify(sessionProgress));
-  }, [logCacheKey, currentSession, loadingStep, sessionProgress]);
+    if (sessionProgress) {
+      logWithTimestamp("PlayerGameLoader - Session progress: " + JSON.stringify(sessionProgress));
+    }
+  }, [currentSession, loadingStep, sessionProgress]);
 
   // Format date and time for display
   const formatSessionDate = (dateStr?: string) => {
@@ -131,9 +144,8 @@ export default function PlayerGameLoader({
   const gameStatus = sessionProgress?.game_status || 'pending';
   const isGameActive = gameStatus === 'active';
   
-  useEffect(() => {
-    logWithTimestamp(`Loader state check - Session active: ${isSessionActive}, Game live: ${isGameLive}, Game status: ${gameStatus}, Game active: ${isGameActive}`);
-  }, [isGameActive, isGameLive, isSessionActive, gameStatus]);
+  // Log game state info without using useEffect
+  logWithTimestamp(`Loader state check - Session active: ${isSessionActive}, Game live: ${isGameLive}, Game status: ${gameStatus}, Game active: ${isGameActive}`);
   
   // FIX: Get session time from appropriate fields - fixing type errors
   // Instead of using currentSession.sessionTime (which doesn't exist on type)
