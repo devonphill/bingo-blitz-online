@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from './use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { logWithTimestamp } from '@/utils/logUtils';
+import { logWithTimestamp, logConnectionState, isChannelConnected } from '@/utils/logUtils';
 
 interface ConnectedPlayer {
   playerCode: string;
@@ -27,6 +27,7 @@ export function useCallerHub(sessionId?: string) {
   const connectionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempt = useRef<number>(0);
   const maxReconnectAttempts = 5;
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Set up the caller as the central hub using Supabase Realtime
   useEffect(() => {
@@ -55,8 +56,19 @@ export function useCallerHub(sessionId?: string) {
     
     try {
       // Channel for player joins and game updates
-      const gameChannel = supabase.channel(`game-updates-${sessionId}`);
+      const gameChannel = supabase.channel(`game-updates-${sessionId}`, {
+        config: {
+          presence: {
+            key: 'caller',
+          },
+        },
+      });
+      
       gameChannel
+        .on('presence', { event: 'sync' }, () => {
+          const state = gameChannel.presenceState();
+          logWithTimestamp(`Presence sync: ${JSON.stringify(state)}`);
+        })
         .on('broadcast', { event: 'player-join' }, (payload) => {
           if (payload.payload) {
             const { playerCode, playerName, timestamp } = payload.payload;
@@ -101,14 +113,21 @@ export function useCallerHub(sessionId?: string) {
           }
         })
         .subscribe((status) => {
-          logWithTimestamp(`Game updates channel status: ${status}`);
+          logConnectionState("Game updates channel", status, isChannelConnected(status));
           
-          if (status === 'SUBSCRIBED') {
+          if (isChannelConnected(status)) {
             // Clear the timeout as we're connected
             if (connectionTimeout.current) {
               clearTimeout(connectionTimeout.current);
               connectionTimeout.current = null;
             }
+            
+            // Track caller presence to let players know the game is hosted
+            gameChannel.track({
+              user: 'caller',
+              online: true,
+              timestamp: Date.now()
+            });
             
             setIsConnected(true);
             setConnectionState('connected');
@@ -117,7 +136,7 @@ export function useCallerHub(sessionId?: string) {
             
             toast({
               title: "Connection Established",
-              description: "Successfully connected to the realtime server.",
+              description: "Successfully connected to the game server.",
               duration: 3000
             });
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -128,14 +147,18 @@ export function useCallerHub(sessionId?: string) {
             
             setIsConnected(false);
             setConnectionState('error');
-            setConnectionError("Error connecting to realtime server");
+            setConnectionError("Error connecting to game server");
             
             // Attempt reconnect after error
             if (reconnectAttempt.current < maxReconnectAttempts) {
               const delay = Math.min(1000 * Math.pow(2, reconnectAttempt.current), 30000);
               logWithTimestamp(`Will attempt to reconnect in ${delay/1000}s (attempt ${reconnectAttempt.current + 1}/${maxReconnectAttempts})`);
               
-              setTimeout(() => {
+              if (reconnectTimer.current) {
+                clearTimeout(reconnectTimer.current);
+              }
+              
+              reconnectTimer.current = setTimeout(() => {
                 reconnect();
               }, delay);
             }
@@ -171,7 +194,9 @@ export function useCallerHub(sessionId?: string) {
             });
           }
         })
-        .subscribe();
+        .subscribe((status) => {
+          logWithTimestamp(`Claim channel status: ${status}`);
+        });
       
       channelRefs.current = {
         gameChannel,
@@ -198,6 +223,11 @@ export function useCallerHub(sessionId?: string) {
         if (connectionTimeout.current) {
           clearTimeout(connectionTimeout.current);
           connectionTimeout.current = null;
+        }
+        
+        if (reconnectTimer.current) {
+          clearTimeout(reconnectTimer.current);
+          reconnectTimer.current = null;
         }
         
         Object.values(channelRefs.current).forEach((channel) => {
@@ -359,80 +389,11 @@ export function useCallerHub(sessionId?: string) {
     connectedPlayers,
     pendingClaims,
     reconnect,
-    callNumber: useCallback((number: number, allCalledNumbers: number[]) => {
-      return broadcastGameUpdate({
-        lastCalledNumber: number,
-        calledNumbers: allCalledNumbers
-      });
-    }, [broadcastGameUpdate]),
-    
-    changePattern: useCallback((pattern: string, prize?: string, prizeDescription?: string) => {
-      return broadcastGameUpdate({
-        currentWinPattern: pattern,
-        currentPrize: prize,
-        currentPrizeDescription: prizeDescription
-      });
-    }, [broadcastGameUpdate]),
-    
-    startGame: useCallback(() => {
-      return broadcastGameUpdate({
-        gameStatus: 'active'
-      });
-    }, [broadcastGameUpdate]),
-    
-    endGame: useCallback(() => {
-      return broadcastGameUpdate({
-        gameStatus: 'completed'
-      });
-    }, [broadcastGameUpdate]),
-    
-    nextGame: useCallback((gameNumber: number) => {
-      return broadcastGameUpdate({
-        gameNumber,
-        calledNumbers: [],
-        lastCalledNumber: null
-      });
-    }, [broadcastGameUpdate]),
-    
-    respondToClaim: useCallback((playerCode: string, result: 'valid' | 'rejected', instanceId?: string) => {
-      if (!sessionId) {
-        return false;
-      }
-      
-      try {
-        // Use player-specific channel if we have instanceId
-        const channelName = instanceId ? `player-claims-${instanceId}` : 'player-claims';
-        const channel = supabase.channel(channelName);
-        
-        logWithTimestamp(`Sending claim result to ${playerCode}: ${result}`);
-        
-        channel
-          .send({
-            type: 'broadcast',
-            event: 'claim-result',
-            payload: {
-              playerId: playerCode,
-              result,
-              timestamp: Date.now()
-            }
-          })
-          .then(() => {
-            // Remove this claim from the pending claims
-            setPendingClaims(prev => prev.filter(claim => claim.playerCode !== playerCode));
-            logWithTimestamp(`Sent claim result via realtime: ${playerCode} - ${result}`);
-            
-            // Clean up temporary channel
-            supabase.removeChannel(channel);
-          })
-          .catch(err => {
-            console.error("Error sending claim result:", err);
-          });
-        
-        return true;
-      } catch (err) {
-        console.error("Error with claim response:", err);
-        return false;
-      }
-    }, [sessionId])
+    callNumber,
+    changePattern,
+    startGame,
+    endGame,
+    nextGame,
+    respondToClaim
   };
 }

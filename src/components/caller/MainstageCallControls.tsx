@@ -68,7 +68,7 @@ export function MainstageCallControls({
 
   // Get connection status from the caller hub
   const callerHub = useCallerHub(currentSession?.id);
-  const isConnected = callerHub.isConnected;
+  const isConnected = callerHub.connectionState === 'connected';
 
   // Debug logging for connection status
   React.useEffect(() => {

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -5,8 +6,8 @@ import { Bell, RefreshCw, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useCallerHub } from '@/hooks/useCallerHub';
-import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { supabase } from '@/integrations/supabase/client';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -55,6 +56,10 @@ export default function CallerControls({
       openClaimSheet();
     }
   }, [pendingClaimsCount, claimCount, openClaimSheet]);
+
+  useEffect(() => {
+    logWithTimestamp(`CallerControls: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}`);
+  }, [callerHub.connectionState, callerHub.isConnected]);
 
   const handleCallNumber = () => {
     if (remainingNumbers.length === 0) {
@@ -214,16 +219,6 @@ export default function CallerControls({
     openClaimSheet();
   };
 
-  const handleEndGameClick = () => {
-    // Use WebSocket to notify players
-    if (callerHub.isConnected) {
-      callerHub.endGame();
-    }
-    
-    // Also call the regular method
-    onEndGame();
-  };
-
   const handleReconnectClick = () => {
     if (callerHub.reconnect) {
       callerHub.reconnect();
@@ -333,7 +328,7 @@ export default function CallerControls({
           
           <Button 
             variant="destructive"
-            onClick={handleEndGameClick}
+            onClick={onEndGame}
           >
             End Game
           </Button>
