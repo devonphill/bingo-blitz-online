@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { GameType } from '@/types';
 import { useToast } from './use-toast';
@@ -332,6 +333,92 @@ export function useCallerHub(sessionId?: string) {
     }
   };
 
+  // ADDING NEW METHODS TO FIX BUILD ERRORS
+
+  // Method for calling a number
+  const callNumber = (number: number, allCalledNumbers: number[]) => {
+    if (!socket.current || socket.current.readyState !== WebSocket.OPEN || !sessionId) {
+      logWithTimestamp(`Cannot call number: socket not connected`);
+      return false;
+    }
+    
+    try {
+      socket.current.send(JSON.stringify({
+        type: 'call-number',
+        sessionId,
+        data: {
+          lastCalledNumber: number,
+          calledNumbers: allCalledNumbers,
+          timestamp: Date.now(),
+          instanceId: instanceId.current
+        }
+      }));
+      
+      logWithTimestamp(`Called number ${number} via WebSocket`);
+      return true;
+    } catch (error) {
+      console.error('Error calling number:', error);
+      return false;
+    }
+  };
+
+  // Method for starting the game
+  const startGame = () => {
+    if (!socket.current || socket.current.readyState !== WebSocket.OPEN || !sessionId) {
+      logWithTimestamp(`Cannot start game: socket not connected`);
+      return false;
+    }
+    
+    try {
+      socket.current.send(JSON.stringify({
+        type: 'start-game',
+        sessionId,
+        data: {
+          gameStatus: 'active',
+          timestamp: Date.now(),
+          instanceId: instanceId.current
+        }
+      }));
+      
+      logWithTimestamp(`Started game via WebSocket`);
+      return true;
+    } catch (error) {
+      console.error('Error starting game:', error);
+      return false;
+    }
+  };
+
+  // Method for responding to a claim
+  const respondToClaim = (playerCode: string, result: 'valid' | 'rejected') => {
+    return sendClaimResult(playerCode, result);
+  };
+
+  // Method for changing the win pattern
+  const changePattern = (newPattern: string) => {
+    if (!socket.current || socket.current.readyState !== WebSocket.OPEN || !sessionId) {
+      logWithTimestamp(`Cannot change pattern: socket not connected`);
+      return false;
+    }
+    
+    try {
+      socket.current.send(JSON.stringify({
+        type: 'change-pattern',
+        sessionId,
+        data: {
+          currentWinPattern: newPattern,
+          timestamp: Date.now(),
+          instanceId: instanceId.current
+        }
+      }));
+      
+      logWithTimestamp(`Changed win pattern to ${newPattern} via WebSocket`);
+      return true;
+    } catch (error) {
+      console.error('Error changing pattern:', error);
+      return false;
+    }
+  };
+
   const reconnect = () => {
     if (!sessionId || connectionInProgress.current) return;
     
@@ -357,6 +444,11 @@ export function useCallerHub(sessionId?: string) {
     connectionError,
     clearClaim,
     sendClaimResult,
-    reconnect
+    reconnect,
+    // Add the new methods
+    callNumber,
+    startGame,
+    respondToClaim,
+    changePattern
   };
 }
