@@ -67,29 +67,13 @@ export default function PlayerGameLayout({
   const [showClaimError, setShowClaimError] = useState<boolean>(false);
   const { toast } = useToast();
   
-  // To track actual connection status with debounce - use a longer debounce to prevent flapping
-  const [isActuallyConnected, setIsActuallyConnected] = useState<boolean>(connectionState === 'connected');
+  // Simplified connection handling - directly use the connection state without complex debouncing
+  const isConnected = connectionState === 'connected';
   
   // Log the connection state for debugging
   useEffect(() => {
-    logWithTimestamp(`PlayerGameLayout: connectionState=${connectionState}, isActuallyConnected=${isActuallyConnected}`);
-  }, [connectionState, isActuallyConnected]);
-  
-  // Debounce connection state to avoid flashing - increased from 2s to 3s
-  useEffect(() => {
-    // Immediately update to connected state to provide good UX
-    if (connectionState === 'connected') {
-      setIsActuallyConnected(true);
-      return;
-    }
-    
-    // For disconnection, use a debounce to prevent UI flashing
-    const timer = setTimeout(() => {
-      setIsActuallyConnected(connectionState === 'connected');
-    }, 3000); // Increased debounce time to be more stable
-    
-    return () => clearTimeout(timer);
-  }, [connectionState]);
+    logWithTimestamp(`PlayerGameLayout: connectionState=${connectionState}, isConnected=${isConnected}`);
+  }, [connectionState, isConnected]);
   
   // Handle claim status changes
   useEffect(() => {
@@ -102,7 +86,7 @@ export default function PlayerGameLayout({
     }
   }, [claimStatus]);
   
-  // Handle connection state changes
+  // Handle connection state changes with simplified notification approach
   useEffect(() => {
     if (connectionState === 'error') {
       toast({
@@ -111,28 +95,22 @@ export default function PlayerGameLayout({
         variant: "destructive",
         duration: 5000
       });
-    } else if (connectionState === 'connected' && !isActuallyConnected) {
-      // Only show connected toast when transitioning from disconnected to connected
+    } else if (connectionState === 'connected') {
       toast({
         title: "Connected",
         description: "Successfully connected to the game server.",
         duration: 3000
       });
     }
-  }, [connectionState, isActuallyConnected, toast]);
+  }, [connectionState, toast]);
 
   const handleSettingsChange = (autoMark: boolean) => {
     setAutoMarking(autoMark);
     localStorage.setItem('autoMarking', autoMark ? 'true' : 'false');
   };
 
-  // Determine the actual display state for the bottom banner
-  // Only show the warning if we've been disconnected for longer than the debounce period
-  const showConnectionWarning = !isActuallyConnected;
-  
-  // Use both connectionState and isActuallyConnected for UI state
-  // This ensures the UI is consistent between the top bar and bottom warning
-  const displayConnectionState = isActuallyConnected ? 'connected' : connectionState;
+  // Determine if we should show the connection warning
+  const showConnectionWarning = connectionState !== 'connected';
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
@@ -143,8 +121,8 @@ export default function PlayerGameLayout({
           activeWinPattern={currentWinPattern || undefined}
           autoMarking={autoMarking}
           setAutoMarking={setAutoMarking}
-          isConnected={isActuallyConnected}
-          connectionState={displayConnectionState}
+          isConnected={isConnected}
+          connectionState={connectionState}
         />
       </div>
       
@@ -175,14 +153,14 @@ export default function PlayerGameLayout({
           </div>
           <div className="flex items-center">
             <span className={`h-2 w-2 rounded-full mr-1 ${
-              isActuallyConnected ? 'bg-green-500' : 
-              displayConnectionState === 'connecting' ? 'bg-amber-500' : 
+              isConnected ? 'bg-green-500' : 
+              connectionState === 'connecting' ? 'bg-amber-500' : 
               'bg-red-500'
             }`}></span>
             <span>{
-              isActuallyConnected ? 'Connected' : 
-              displayConnectionState === 'connecting' ? 'Connecting...' : 
-              displayConnectionState === 'error' ? 'Connection Error' :
+              isConnected ? 'Connected' : 
+              connectionState === 'connecting' ? 'Connecting...' : 
+              connectionState === 'error' ? 'Connection Error' :
               'Disconnected'
             }</span>
           </div>
@@ -229,14 +207,14 @@ export default function PlayerGameLayout({
               </Label>
               <div className="flex items-center">
                 <span className={`h-3 w-3 rounded-full mr-2 ${
-                  isActuallyConnected ? 'bg-green-500' : 
-                  displayConnectionState === 'connecting' ? 'bg-amber-500' : 
+                  isConnected ? 'bg-green-500' : 
+                  connectionState === 'connecting' ? 'bg-amber-500' : 
                   'bg-red-500'
                 }`}></span>
                 <span className="text-sm">
-                  {isActuallyConnected ? 'Connected' : 
-                   displayConnectionState === 'connecting' ? 'Connecting...' : 
-                   displayConnectionState === 'error' ? 'Connection Error' :
+                  {isConnected ? 'Connected' : 
+                   connectionState === 'connecting' ? 'Connecting...' : 
+                   connectionState === 'error' ? 'Connection Error' :
                    'Disconnected'}
                 </span>
               </div>
@@ -289,15 +267,37 @@ export default function PlayerGameLayout({
         </DialogContent>
       </Dialog>
       
-      {/* Connection Warning - Only show when not actually connected */}
+      {/* Enhanced Connection Warning with Reconnect Button */}
       {showConnectionWarning && (
-        <div className="fixed bottom-20 left-4 right-4 bg-amber-50 border border-amber-200 p-3 rounded-lg shadow-md text-sm flex items-center">
-          <AlertCircle className="h-5 w-5 text-amber-500 mr-2 flex-shrink-0" />
-          <div className="flex-grow">
-            {displayConnectionState === 'connecting' ? 
-              "Connecting to game server... Game updates will resume when connected." :
-              "Connection to game server lost. Trying to reconnect... Some features may be unavailable."}
+        <div className="fixed bottom-20 left-4 right-4 bg-amber-50 border border-amber-300 p-4 rounded-lg shadow-lg flex flex-col gap-3">
+          <div className="flex items-center">
+            <AlertCircle className="h-5 w-5 text-amber-500 mr-2 flex-shrink-0" />
+            <div className="flex-grow font-medium">
+              {connectionState === 'connecting' ? 
+                "Connecting to game server..." :
+                connectionState === 'error' ?
+                "Connection error with game server" :
+                "Disconnected from game server"}
+            </div>
           </div>
+          
+          <p className="text-sm text-amber-700 pl-7">
+            {connectionState === 'connecting' ? 
+              "Game updates will resume when connected." :
+              "Some features may be unavailable. Game updates will not be received."}
+          </p>
+          
+          {connectionState !== 'connecting' && (
+            <Button 
+              size="sm"
+              variant="outline"
+              className="ml-7 bg-white border-amber-300 hover:bg-amber-100 text-amber-700 flex items-center gap-2"
+              onClick={() => window.location.reload()}
+            >
+              <RefreshCw className="h-4 w-4" />
+              Reconnect
+            </Button>
+          )}
         </div>
       )}
     </div>
