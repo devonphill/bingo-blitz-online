@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Loader, RefreshCw, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,7 +71,7 @@ export function MainstageCallControls({
   const isConnected = callerHub.connectionState === 'connected';
 
   // Debug logging for connection status
-  React.useEffect(() => {
+  useEffect(() => {
     logWithTimestamp(`MainstageCallControls: connection state: ${callerHub.connectionState}, isConnected: ${isConnected}`);
   }, [callerHub.connectionState, isConnected]);
 
