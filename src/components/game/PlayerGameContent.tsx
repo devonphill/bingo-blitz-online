@@ -42,8 +42,11 @@ export default function PlayerGameContent({
   claimStatus,
   gameType = '90-ball'
 }: PlayerGameContentProps) {
-  // Use our enhanced real-time sync hook with the session ID
-  const { gameState, isConnected, connectionState } = useBingoSync(currentSession?.id);
+  // Fix: Pass all required parameters to useBingoSync (sessionId, playerCode)
+  const { gameState, isConnected, connectionState } = useBingoSync(
+    currentSession?.id || '',
+    playerCode || ''
+  );
 
   // Log state for debugging
   useEffect(() => {
