@@ -2,6 +2,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from './use-toast';
 
+// Helper function for consistent timestamped logging
+const logWithTimestamp = (message: string) => {
+  const now = new Date();
+  const timestamp = now.toISOString();
+  console.log(`[${timestamp}] - CHANGED 09:39 - ${message}`);
+};
+
 interface ConnectedPlayer {
   playerCode: string;
   playerName: string | null;
@@ -42,7 +49,7 @@ export function useCallerHub(sessionId?: string) {
   // Function to create WebSocket connection
   const createWebSocketConnection = useCallback(() => {
     if (!sessionId) {
-      console.log("No sessionId provided to useCallerHub");
+      logWithTimestamp("No sessionId provided to useCallerHub");
       setConnectionState('disconnected');
       return;
     }
@@ -58,7 +65,7 @@ export function useCallerHub(sessionId?: string) {
       connectionTimeoutRef.current = null;
     }
 
-    console.log(`Setting up caller WebSocket connection for session: ${sessionId} (attempt ${reconnectAttemptsRef.current + 1})`);
+    logWithTimestamp(`Setting up caller WebSocket connection for session: ${sessionId} (attempt ${reconnectAttemptsRef.current + 1})`);
     setConnectionState('connecting');
     setConnectionError(null);
 
@@ -67,7 +74,7 @@ export function useCallerHub(sessionId?: string) {
       const projectRef = "weqosgnuiixccghdoccw";
       const wsUrl = `wss://${projectRef}.supabase.co/functions/v1/bingo-hub?type=caller&sessionId=${sessionId}`;
       
-      console.log("Connecting to WebSocket URL:", wsUrl);
+      logWithTimestamp(`Connecting to WebSocket URL: ${wsUrl}`);
       
       // Create WebSocket connection
       const socket = new WebSocket(wsUrl);
@@ -76,7 +83,7 @@ export function useCallerHub(sessionId?: string) {
       // Set a connection timeout
       connectionTimeoutRef.current = window.setTimeout(() => {
         if (socket.readyState !== WebSocket.OPEN) {
-          console.log("WebSocket connection timeout");
+          logWithTimestamp("WebSocket connection timeout");
           socket.close(4000, "Connection timeout");
           setConnectionState('error');
           setConnectionError("Connection timeout. Please try again.");
@@ -84,20 +91,20 @@ export function useCallerHub(sessionId?: string) {
           // Try to reconnect
           if (reconnectAttemptsRef.current < maxReconnectAttempts) {
             const delay = Math.min(1000 * Math.pow(1.3, Math.min(reconnectAttemptsRef.current, 10)), 8000); // Reduced max delay to 8 seconds
-            console.log(`Will try to reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1})`);
+            logWithTimestamp(`Will try to reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1})`);
             reconnectTimerRef.current = window.setTimeout(() => {
               reconnectAttemptsRef.current++;
               createWebSocketConnection();
             }, delay);
           } else {
-            console.log("Maximum reconnection attempts reached");
+            logWithTimestamp("Maximum reconnection attempts reached");
             setConnectionError("Maximum reconnection attempts reached. Please reload the page.");
           }
         }
       }, 12000); // 12 second timeout
       
       socket.onopen = () => {
-        console.log("Caller WebSocket connection established");
+        logWithTimestamp("Caller WebSocket connection established");
         clearTimeout(connectionTimeoutRef.current!);
         connectionTimeoutRef.current = null;
         setIsConnected(true);
@@ -113,6 +120,7 @@ export function useCallerHub(sessionId?: string) {
                 type: "ping",
                 sessionId
               }));
+              logWithTimestamp("Sent ping to server");
             } catch (err) {
               console.error("Error sending ping:", err);
             }
@@ -130,15 +138,15 @@ export function useCallerHub(sessionId?: string) {
       socket.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          console.log("Received message from server:", message.type);
+          logWithTimestamp(`Received message from server: ${message.type}`);
           
           switch (message.type) {
             case "connected":
-              console.log("Caller WebSocket connection confirmed:", message.data);
+              logWithTimestamp(`Caller WebSocket connection confirmed: ${JSON.stringify(message.data)}`);
               break;
               
             case "player_joined":
-              console.log("Player joined:", message.data);
+              logWithTimestamp(`Player joined: ${JSON.stringify(message.data)}`);
               if (message.data) {
                 setConnectedPlayers(prev => [
                   ...prev.filter(p => p.playerCode !== message.data.playerCode),
@@ -158,7 +166,7 @@ export function useCallerHub(sessionId?: string) {
               break;
               
             case "player_left":
-              console.log("Player left:", message.data);
+              logWithTimestamp(`Player left: ${JSON.stringify(message.data)}`);
               if (message.data?.playerCode) {
                 setConnectedPlayers(prev => 
                   prev.filter(p => p.playerCode !== message.data.playerCode)
@@ -173,7 +181,7 @@ export function useCallerHub(sessionId?: string) {
               break;
               
             case "bingo_claimed":
-              console.log("Bingo claimed:", message.data);
+              logWithTimestamp(`Bingo claimed: ${JSON.stringify(message.data)}`);
               if (message.data) {
                 setPendingClaims(prev => [
                   ...prev,
@@ -195,12 +203,14 @@ export function useCallerHub(sessionId?: string) {
               
             case "pong":
               // Just update connection status
+              logWithTimestamp("Received pong from server");
               setIsConnected(true);
               setConnectionState('connected');
               break;
               
             case "error":
               console.error("Error from server:", message.data);
+              logWithTimestamp(`Error from server: ${JSON.stringify(message.data)}`);
               toast({
                 title: "Server Error",
                 description: message.data.message || "Unknown error occurred",
@@ -210,7 +220,7 @@ export function useCallerHub(sessionId?: string) {
               break;
               
             default:
-              console.log("Received unknown message type:", message.type, message);
+              logWithTimestamp(`Received unknown message type: ${message.type}, ${JSON.stringify(message)}`);
           }
         } catch (err) {
           console.error("Error processing WebSocket message:", err);
@@ -218,7 +228,7 @@ export function useCallerHub(sessionId?: string) {
       };
       
       socket.onclose = (event) => {
-        console.log("Caller WebSocket connection closed:", event.code, event.reason);
+        logWithTimestamp(`Caller WebSocket connection closed: ${event.code}, ${event.reason}`);
         if (connectionTimeoutRef.current !== null) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
@@ -236,10 +246,10 @@ export function useCallerHub(sessionId?: string) {
         if (event.code !== 1000 && event.code !== 1001 && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
           const delay = Math.min(1000 * Math.pow(1.3, Math.min(reconnectAttemptsRef.current, 10)), 8000); // Reduced max delay
-          console.log(`Attempting to reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
+          logWithTimestamp(`Attempting to reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
           
           reconnectTimerRef.current = window.setTimeout(() => {
-            console.log("Attempting to reconnect WebSocket...");
+            logWithTimestamp("Attempting to reconnect WebSocket...");
             createWebSocketConnection();
           }, delay);
           
@@ -253,7 +263,7 @@ export function useCallerHub(sessionId?: string) {
             });
           }
         } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-          console.log("Maximum reconnection attempts reached. Giving up.");
+          logWithTimestamp("Maximum reconnection attempts reached. Giving up.");
           setConnectionState('error');
           setConnectionError(`Could not establish a connection to the game server after multiple attempts. Error code: ${event.code}.`);
           toast({
@@ -267,6 +277,7 @@ export function useCallerHub(sessionId?: string) {
       
       socket.onerror = (error) => {
         console.error("WebSocket error:", error);
+        logWithTimestamp(`WebSocket error occurred: ${JSON.stringify(error)}`);
         setIsConnected(false);
         setConnectionState('error');
         setConnectionError("Error connecting to the game server. Will try to reconnect...");
@@ -283,6 +294,7 @@ export function useCallerHub(sessionId?: string) {
       };
     } catch (err) {
       console.error("Error creating WebSocket:", err);
+      logWithTimestamp(`Error creating WebSocket: ${err.message}`);
       setConnectionState('error');
       setConnectionError(`Error creating WebSocket: ${err.message}`);
       
@@ -294,7 +306,7 @@ export function useCallerHub(sessionId?: string) {
           createWebSocketConnection();
         }, delay);
       } else {
-        console.log("Maximum reconnection attempts reached. Giving up.");
+        logWithTimestamp("Maximum reconnection attempts reached. Giving up.");
         setConnectionError("Maximum reconnection attempts reached. Please reload the page.");
       }
     }
@@ -309,7 +321,7 @@ export function useCallerHub(sessionId?: string) {
 
     // Cleanup function
     return () => {
-      console.log("Cleaning up caller WebSocket connection");
+      logWithTimestamp("Cleaning up caller WebSocket connection");
       
       // Clear intervals and timers
       if (pingIntervalRef.current !== null) {
@@ -337,7 +349,7 @@ export function useCallerHub(sessionId?: string) {
 
   // Manual reconnect function
   const reconnect = useCallback(() => {
-    console.log("Manual reconnection attempt initiated");
+    logWithTimestamp("Manual reconnection attempt initiated");
     reconnectAttemptsRef.current = 0;
     createWebSocketConnection();
   }, [createWebSocketConnection]);
@@ -355,6 +367,7 @@ export function useCallerHub(sessionId?: string) {
             timestamp: Date.now()
           }
         }));
+        logWithTimestamp(`Called number: ${number}, total called numbers: ${allCalledNumbers.length}`);
         return true;
       } catch (err) {
         console.error("Error calling number:", err);
@@ -378,6 +391,7 @@ export function useCallerHub(sessionId?: string) {
             timestamp: Date.now()
           }
         }));
+        logWithTimestamp(`Changed pattern to: ${pattern}, prize: ${prize}`);
         return true;
       } catch (err) {
         console.error("Error changing pattern:", err);
@@ -398,6 +412,7 @@ export function useCallerHub(sessionId?: string) {
             timestamp: Date.now()
           }
         }));
+        logWithTimestamp(`Started game for session: ${sessionId}`);
         return true;
       } catch (err) {
         console.error("Error starting game:", err);
@@ -418,6 +433,7 @@ export function useCallerHub(sessionId?: string) {
             timestamp: Date.now()
           }
         }));
+        logWithTimestamp(`Ended game for session: ${sessionId}`);
         return true;
       } catch (err) {
         console.error("Error ending game:", err);
@@ -439,6 +455,7 @@ export function useCallerHub(sessionId?: string) {
             timestamp: Date.now()
           }
         }));
+        logWithTimestamp(`Advanced to next game: ${gameNumber}`);
         return true;
       } catch (err) {
         console.error("Error advancing to next game:", err);
@@ -464,6 +481,7 @@ export function useCallerHub(sessionId?: string) {
         
         // Remove this claim from the pending claims
         setPendingClaims(prev => prev.filter(claim => claim.playerCode !== playerCode));
+        logWithTimestamp(`Responded to claim from ${playerCode} with result: ${result}`);
         
         return true;
       } catch (err) {

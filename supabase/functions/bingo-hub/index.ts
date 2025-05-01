@@ -27,8 +27,15 @@ const clients: Map<string, Client> = new Map();
 // Track clients by session
 const sessions: Map<string, Set<string>> = new Map(); // sessionId -> Set of client ids
 
-// Debug logging to help troubleshoot
-console.log("Bingo Hub function initialized with increased resources");
+// Debug logging with timestamps
+const logWithTimestamp = (message: string) => {
+  const now = new Date();
+  const timestamp = now.toISOString();
+  console.log(`[${timestamp}] - CHANGED 09:39 - ${message}`);
+};
+
+// Initial startup log
+logWithTimestamp("Bingo Hub function initialized with increased resources");
 
 // Clean up inactive connections every 30 seconds
 setInterval(() => {
@@ -36,11 +43,11 @@ setInterval(() => {
     const now = Date.now();
     const timeoutThreshold = 300000; // 5 minutes timeout
     
-    console.log(`Checking for inactive clients. Total clients: ${clients.size}`);
+    logWithTimestamp(`Checking for inactive clients. Total clients: ${clients.size}`);
     
     for (const [id, client] of clients.entries()) {
       if (now - client.lastActivity > timeoutThreshold) {
-        console.log(`Removing inactive client: ${id}, type: ${client.type}, session: ${client.sessionId}`);
+        logWithTimestamp(`Removing inactive client: ${id}, type: ${client.type}, session: ${client.sessionId}`);
         try {
           removeClient(id);
         } catch (err) {
@@ -56,7 +63,7 @@ setInterval(() => {
 function removeClient(clientId: string) {
   const client = clients.get(clientId);
   if (!client) {
-    console.log(`Client ${clientId} not found for removal`);
+    logWithTimestamp(`Client ${clientId} not found for removal`);
     return;
   }
   
@@ -65,11 +72,11 @@ function removeClient(clientId: string) {
     const sessionClients = sessions.get(client.sessionId);
     if (sessionClients) {
       sessionClients.delete(clientId);
-      console.log(`Removed client ${clientId} from session ${client.sessionId}. Remaining clients in session: ${sessionClients.size}`);
+      logWithTimestamp(`Removed client ${clientId} from session ${client.sessionId}. Remaining clients in session: ${sessionClients.size}`);
       
       // If session has no more clients, remove the session
       if (sessionClients.size === 0) {
-        console.log(`Session ${client.sessionId} has no more clients. Removing session.`);
+        logWithTimestamp(`Session ${client.sessionId} has no more clients. Removing session.`);
         sessions.delete(client.sessionId);
       } else {
         // Notify others that this client left
@@ -91,7 +98,7 @@ function removeClient(clientId: string) {
   
   try {
     if (client.socket.readyState !== WebSocket.CLOSED && client.socket.readyState !== WebSocket.CLOSING) {
-      console.log(`Closing socket for client ${clientId}`);
+      logWithTimestamp(`Closing socket for client ${clientId}`);
       client.socket.close(1000, "Normal close");
     }
   } catch (err) {
@@ -99,18 +106,18 @@ function removeClient(clientId: string) {
   }
   
   clients.delete(clientId);
-  console.log(`Client ${clientId} removed from clients map. New total: ${clients.size}`);
+  logWithTimestamp(`Client ${clientId} removed from clients map. New total: ${clients.size}`);
 }
 
 function broadcastToSession(sessionId: string, message: any) {
   const sessionClients = sessions.get(sessionId);
   if (!sessionClients || sessionClients.size === 0) {
-    console.log(`No clients found for session ${sessionId} to broadcast to`);
+    logWithTimestamp(`No clients found for session ${sessionId} to broadcast to`);
     return;
   }
   
   const messageStr = JSON.stringify(message);
-  console.log(`Broadcasting to session ${sessionId} (${sessionClients.size} clients): ${message.type}`);
+  logWithTimestamp(`Broadcasting to session ${sessionId} (${sessionClients.size} clients): ${message.type}`);
   
   let sentCount = 0;
   let errorCount = 0;
@@ -118,7 +125,7 @@ function broadcastToSession(sessionId: string, message: any) {
   for (const clientId of sessionClients) {
     const client = clients.get(clientId);
     if (!client) {
-      console.log(`Client ${clientId} not found in clients map`);
+      logWithTimestamp(`Client ${clientId} not found in clients map`);
       continue;
     }
     
@@ -131,16 +138,16 @@ function broadcastToSession(sessionId: string, message: any) {
         errorCount++;
       }
     } else {
-      console.log(`Client ${clientId} socket not open (state: ${client.socket.readyState})`);
+      logWithTimestamp(`Client ${clientId} socket not open (state: ${client.socket.readyState})`);
     }
   }
-  console.log(`Message sent to ${sentCount} clients, errors: ${errorCount}, total clients: ${sessionClients.size}`);
+  logWithTimestamp(`Message sent to ${sentCount} clients, errors: ${errorCount}, total clients: ${sessionClients.size}`);
 }
 
 function broadcastToPlayers(sessionId: string, message: any) {
   const sessionClients = sessions.get(sessionId);
   if (!sessionClients) {
-    console.log(`No clients found for session ${sessionId}`);
+    logWithTimestamp(`No clients found for session ${sessionId}`);
     return;
   }
   
@@ -158,13 +165,13 @@ function broadcastToPlayers(sessionId: string, message: any) {
       }
     }
   }
-  console.log(`Player broadcast sent to ${sentCount} players`);
+  logWithTimestamp(`Player broadcast sent to ${sentCount} players`);
 }
 
 function notifyCaller(sessionId: string, message: any) {
   const sessionClients = sessions.get(sessionId);
   if (!sessionClients) {
-    console.log(`No clients found for session ${sessionId}`);
+    logWithTimestamp(`No clients found for session ${sessionId}`);
     return;
   }
   
@@ -175,7 +182,7 @@ function notifyCaller(sessionId: string, message: any) {
     if (client && client.type === "caller" && client.socket.readyState === WebSocket.OPEN) {
       try {
         client.socket.send(messageStr);
-        console.log(`Notified caller ${clientId} in session ${sessionId}: ${message.type}`);
+        logWithTimestamp(`Notified caller ${clientId} in session ${sessionId}: ${message.type}`);
         break; // Only notify one caller (should only be one per session)
       } catch (err) {
         console.error(`Error sending message to caller ${clientId}:`, err);
@@ -193,7 +200,7 @@ async function handlePlayerMessage(client: Client, message: any) {
     }
 
     client.lastActivity = Date.now(); // Update last activity
-    console.log(`Processing player message of type: ${message.type}`);
+    logWithTimestamp(`Processing player message of type: ${message.type}`);
 
     switch (message.type) {
       case "join":
@@ -211,7 +218,7 @@ async function handlePlayerMessage(client: Client, message: any) {
         if (message.playerName) client.playerName = message.playerName;
         
         // Log successful join
-        console.log(`Player ${client.playerCode} (${client.playerName}) joined session ${client.sessionId}`);
+        logWithTimestamp(`Player ${client.playerCode} (${client.playerName}) joined session ${client.sessionId}`);
         
         // Notify caller about new player
         notifyCaller(message.sessionId, {
@@ -238,7 +245,7 @@ async function handlePlayerMessage(client: Client, message: any) {
         
       case "claim":
         // Forward claim to caller
-        console.log(`Player ${client.playerCode} claiming bingo in session ${message.sessionId}`);
+        logWithTimestamp(`Player ${client.playerCode} claiming bingo in session ${message.sessionId}`);
         notifyCaller(message.sessionId, {
           type: "bingo_claimed",
           data: {
@@ -258,7 +265,7 @@ async function handlePlayerMessage(client: Client, message: any) {
         break;
         
       default:
-        console.log(`Unknown player message type: ${message.type}`);
+        logWithTimestamp(`Unknown player message type: ${message.type}`);
     }
   } catch (error) {
     console.error(`Error handling player message: ${error}`);
@@ -289,12 +296,12 @@ async function handleCallerMessage(client: Client, message: any) {
     }
 
     client.lastActivity = Date.now(); // Update last activity
-    console.log(`Processing caller message of type: ${message.type}`);
+    logWithTimestamp(`Processing caller message of type: ${message.type}`);
     
     switch (message.type) {
       case "number-called":
         // Broadcast to all players in session
-        console.log(`Caller called number: ${message.data?.lastCalledNumber}, session: ${message.sessionId}`);
+        logWithTimestamp(`Caller called number: ${message.data?.lastCalledNumber}, session: ${message.sessionId}`);
         broadcastToPlayers(message.sessionId, {
           type: "number_called",
           data: {
@@ -307,7 +314,7 @@ async function handleCallerMessage(client: Client, message: any) {
         
       case "pattern-change":
         // Broadcast to all players in session
-        console.log(`Caller changed pattern to: ${message.data?.pattern}, session: ${message.sessionId}`);
+        logWithTimestamp(`Caller changed pattern to: ${message.data?.pattern}, session: ${message.sessionId}`);
         broadcastToPlayers(message.sessionId, {
           type: "pattern_changed",
           data: {
@@ -321,7 +328,7 @@ async function handleCallerMessage(client: Client, message: any) {
         
       case "game-start":
         // Broadcast to all players in session
-        console.log(`Caller started game in session: ${message.sessionId}`);
+        logWithTimestamp(`Caller started game in session: ${message.sessionId}`);
         broadcastToPlayers(message.sessionId, {
           type: "game_started",
           data: {
@@ -333,7 +340,7 @@ async function handleCallerMessage(client: Client, message: any) {
         
       case "game-end":
         // Broadcast to all players in session
-        console.log(`Caller ended game in session: ${message.sessionId}`);
+        logWithTimestamp(`Caller ended game in session: ${message.sessionId}`);
         broadcastToPlayers(message.sessionId, {
           type: "game_ended",
           data: {
@@ -345,7 +352,7 @@ async function handleCallerMessage(client: Client, message: any) {
         
       case "next-game":
         // Broadcast to all players in session
-        console.log(`Caller advanced to next game (${message.data?.gameNumber}) in session: ${message.sessionId}`);
+        logWithTimestamp(`Caller advanced to next game (${message.data?.gameNumber}) in session: ${message.sessionId}`);
         broadcastToPlayers(message.sessionId, {
           type: "next_game",
           data: {
@@ -361,7 +368,7 @@ async function handleCallerMessage(client: Client, message: any) {
         // Broadcast claim result to specific player
         const playerCode = message.data?.playerCode;
         if (playerCode) {
-          console.log(`Claim result for player ${playerCode}: ${message.data?.result}`);
+          logWithTimestamp(`Claim result for player ${playerCode}: ${message.data?.result}`);
           const sessionClients = sessions.get(message.sessionId);
           if (sessionClients) {
             for (const clientId of sessionClients) {
@@ -377,7 +384,7 @@ async function handleCallerMessage(client: Client, message: any) {
                     timestamp: Date.now()
                   }
                 }));
-                console.log(`Sent claim result to player ${playerCode}`);
+                logWithTimestamp(`Sent claim result to player ${playerCode}`);
                 break;
               }
             }
@@ -393,7 +400,7 @@ async function handleCallerMessage(client: Client, message: any) {
         break;
         
       default:
-        console.log(`Unknown caller message type: ${message.type}`);
+        logWithTimestamp(`Unknown caller message type: ${message.type}`);
     }
   } catch (error) {
     console.error(`Error handling caller message: ${error}`);
@@ -416,11 +423,11 @@ async function handleCallerMessage(client: Client, message: any) {
 }
 
 serve(async (req) => {
-  console.log(`Received request to bingo-hub endpoint: ${req.url}`);
+  logWithTimestamp(`Received request to bingo-hub endpoint: ${req.url}`);
   
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    console.log("Handling OPTIONS preflight request");
+    logWithTimestamp("Handling OPTIONS preflight request");
     return new Response(null, { 
       status: 204,
       headers: corsHeaders 
@@ -430,7 +437,7 @@ serve(async (req) => {
   try {
     const upgradeHeader = req.headers.get('upgrade') || '';
     if (upgradeHeader.toLowerCase() !== 'websocket') {
-      console.log("Non-WebSocket request rejected");
+      logWithTimestamp("Non-WebSocket request rejected");
       return new Response('Expected WebSocket connection', { 
         status: 400,
         headers: corsHeaders
@@ -438,11 +445,11 @@ serve(async (req) => {
     }
     
     const url = new URL(req.url);
-    console.log(`Received WebSocket connection request URL: ${req.url}`);
+    logWithTimestamp(`Received WebSocket connection request URL: ${req.url}`);
     
     const clientType = url.searchParams.get('type');
     if (clientType !== 'caller' && clientType !== 'player') {
-      console.log(`Invalid client type: ${clientType}`);
+      logWithTimestamp(`Invalid client type: ${clientType}`);
       return new Response('Client type must be caller or player', { 
         status: 400,
         headers: corsHeaders
@@ -451,7 +458,7 @@ serve(async (req) => {
     
     const sessionId = url.searchParams.get('sessionId');
     if (!sessionId) {
-      console.log("Missing sessionId parameter");
+      logWithTimestamp("Missing sessionId parameter");
       return new Response('Session ID is required', { 
         status: 400,
         headers: corsHeaders
@@ -461,14 +468,14 @@ serve(async (req) => {
     const playerCode = url.searchParams.get('playerCode') || undefined;
     const playerName = url.searchParams.get('playerName') || undefined;
     
-    console.log(`New WebSocket connection request: ${clientType} for session ${sessionId}, playerCode: ${playerCode}`);
+    logWithTimestamp(`New WebSocket connection request: ${clientType} for session ${sessionId}, playerCode: ${playerCode}`);
     
     // Create WebSocket connection
     try {
       const { socket, response } = Deno.upgradeWebSocket(req);
       const clientId = crypto.randomUUID();
       
-      console.log(`WebSocket upgrade successful for clientId: ${clientId}`);
+      logWithTimestamp(`WebSocket upgrade successful for clientId: ${clientId}`);
       
       // Set up client object
       const client: Client = {
@@ -486,7 +493,7 @@ serve(async (req) => {
       
       // Set up socket event listeners
       socket.onopen = () => {
-        console.log(`Client ${clientId} connected as ${clientType} to session ${sessionId}`);
+        logWithTimestamp(`Client ${clientId} connected as ${clientType} to session ${sessionId}`);
         
         // Add to session tracking
         let sessionClients = sessions.get(sessionId);
@@ -495,7 +502,7 @@ serve(async (req) => {
           sessions.set(sessionId, sessionClients);
         }
         sessionClients.add(clientId);
-        console.log(`Added client ${clientId} to session ${sessionId}. Total clients in session: ${sessionClients.size}`);
+        logWithTimestamp(`Added client ${clientId} to session ${sessionId}. Total clients in session: ${sessionClients.size}`);
         
         // Send welcome message
         try {
@@ -509,7 +516,7 @@ serve(async (req) => {
               timestamp: Date.now()
             }
           }));
-          console.log(`Sent welcome message to client ${clientId}`);
+          logWithTimestamp(`Sent welcome message to client ${clientId}`);
         } catch (err) {
           console.error(`Error sending welcome message to client ${clientId}:`, err);
         }
@@ -546,12 +553,13 @@ serve(async (req) => {
       };
       
       socket.onclose = (event) => {
-        console.log(`Client ${clientId} disconnected with code ${event.code}: ${event.reason}`);
+        logWithTimestamp(`Client ${clientId} disconnected with code ${event.code}: ${event.reason}`);
         removeClient(clientId);
       };
       
       socket.onerror = (error) => {
         console.error(`WebSocket error for client ${clientId}:`, error);
+        logWithTimestamp(`WebSocket error occurred for client ${clientId}`);
         try {
           removeClient(clientId);
         } catch (err) {
@@ -571,6 +579,7 @@ serve(async (req) => {
       
     } catch (error) {
       console.error("Error upgrading WebSocket connection:", error);
+      logWithTimestamp(`Error upgrading WebSocket connection: ${error.message}`);
       return new Response(`WebSocket upgrade error: ${error.message}`, { 
         status: 500,
         headers: corsHeaders
@@ -578,6 +587,7 @@ serve(async (req) => {
     }
   } catch (error) {
     console.error("Unhandled error in main serve function:", error);
+    logWithTimestamp(`Unhandled error in main serve function: ${error.message}`);
     return new Response(`Server error: ${error.message}`, { 
       status: 500,
       headers: corsHeaders
