@@ -11,9 +11,18 @@ export interface PlayerListProps {
     tickets?: number;
     clientId?: string;
   }[];
+  isLoading?: boolean;
 }
 
-const PlayerList: React.FC<PlayerListProps> = ({ players }) => {
+const PlayerList: React.FC<PlayerListProps> = ({ players, isLoading = false }) => {
+  if (isLoading) {
+    return (
+      <div className="text-amber-500 text-center py-4">
+        Connecting to game server...
+      </div>
+    );
+  }
+
   if (!players || players.length === 0) {
     return (
       <div className="text-gray-500 text-center py-4">

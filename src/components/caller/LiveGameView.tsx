@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp, cleanupAllConnections } from '@/utils/logUtils';
+import PlayerList from '../game/PlayerList';
 
 interface WinPattern {
   id: string;
@@ -145,14 +146,10 @@ export function LiveGameView({
                 <div className="text-sm text-gray-500 mb-1">Connected Players</div>
                 <div className="text-lg font-bold">{callerHub.connectedPlayers.length}</div>
                 <div className="mt-2 max-h-40 overflow-y-auto">
-                  {callerHub.connectedPlayers.length === 0 && (
-                    <p className="text-sm text-gray-500">No players connected yet</p>
-                  )}
-                  {callerHub.connectedPlayers.map((player, idx) => (
-                    <div key={player.playerCode || idx} className="text-sm py-1 border-b border-gray-200 last:border-0">
-                      {player.playerName || player.playerCode}
-                    </div>
-                  ))}
+                  <PlayerList 
+                    players={callerHub.connectedPlayers} 
+                    isLoading={callerHub.connectionState === 'connecting'} 
+                  />
                 </div>
               </div>
 

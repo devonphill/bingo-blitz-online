@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from "react";
 import GameHeader from "./GameHeader";
 import BingoWinProgress from "./BingoWinProgress";
@@ -321,7 +320,7 @@ export default function PlayerGameLayout({
         </DialogContent>
       </Dialog>
       
-      {/* Enhanced Connection Warning with Reconnect Button */}
+      {/* Enhanced Connection Warning with Reconnect Button - UPDATED */}
       {showConnectionWarning && (
         <div className="fixed bottom-20 left-4 right-4 bg-amber-50 border border-amber-300 p-4 rounded-lg shadow-lg flex flex-col gap-3 z-50">
           <div className="flex items-center">

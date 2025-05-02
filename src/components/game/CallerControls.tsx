@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -82,10 +83,10 @@ export default function CallerControls({
       
       // Also broadcast via WebSocket for connected players
       if (callerHub.isConnected) {
-        // Create a new array of called numbers by adding the newly called number
-        // FIXED: Create newCalledNumbers array since calledNumbers doesn't exist in this scope
-        const newCalledNumbers = [...remainingNumbers.filter(n => n !== number)];
-        callerHub.callNumber(number, newCalledNumbers);
+        // Create a new array with all previously called numbers plus the new one
+        // FIX: Use the current remainingNumbers to derive what the newCalledNumbers would be
+        const currentCalledNumbers = remainingNumbers.filter(n => n !== number);
+        callerHub.callNumber(number, currentCalledNumbers);
       }
       
       setIsCallingNumber(false);
@@ -193,7 +194,8 @@ export default function CallerControls({
     openClaimSheet();
   };
 
-  const isGoLiveDisabled = !callerHub.isConnected;
+  // Only disable the Go Live button if there's no connection at all
+  const isGoLiveDisabled = callerHub.connectionState === 'error';
 
   return (
     <Card>
@@ -256,14 +258,14 @@ export default function CallerControls({
             onClick={handleGoLiveClick}
           >
             {isGoingLive ? 'Going Live...' : 
-              !callerHub.isConnected ? 'Connect First' : 'Go Live'}
+              callerHub.connectionState === 'error' ? 'Connect First' : 'Go Live'}
           </Button>
         </div>
         
-        {!callerHub.isConnected && (
+        {callerHub.connectionState !== 'connected' && (
           <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded flex items-center justify-center mt-2">
             <span className="h-2 w-2 bg-amber-500 rounded-full mr-2"></span>
-            Not connected to game server
+            {callerHub.connectionState === 'connecting' ? 'Connecting to game server...' : 'Not connected to game server'}
           </div>
         )}
         {callerHub.isConnected && (
