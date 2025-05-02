@@ -33,7 +33,7 @@ const PlayerList: React.FC<PlayerListProps> = ({ players, isLoading = false }) =
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+    <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto">
       {players.map((player, idx) => (
         <div key={player.id || player.clientId || player.playerCode || idx} className="bg-gray-50 p-3 rounded-md">
           <div className="font-medium flex items-center justify-between">

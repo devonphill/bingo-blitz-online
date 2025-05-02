@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { logWithTimestamp, ConnectionManagerClass } from '@/utils/logUtils';
 import { supabase } from '@/integrations/supabase/client';
@@ -251,6 +250,9 @@ export function useCallerHub(sessionId?: string) {
           
           // Debug log for player presence
           logWithTimestamp(`Found player in presence data: ${presence.playerCode} (${presence.playerName || 'unnamed'})`);
+        } else if (presence.playerCode) {
+          // Log other entities with playerCode that don't have client_type = 'player'
+          logWithTimestamp(`Found entity with playerCode but not client_type='player': ${JSON.stringify(presence)}`);
         }
       });
     });
@@ -357,15 +359,20 @@ export function useCallerHub(sessionId?: string) {
     }
   }, [isConnected, sessionId]);
   
-  // Verify claim result
-  const verifyClaim = useCallback((playerCode: string, isValid: boolean) => {
+  // Method to verify a claim - changed to accept string or boolean
+  const verifyClaim = useCallback((playerCode: string, isValid: boolean | string) => {
     if (!channelRef.current || !isConnected) {
       logWithTimestamp('Cannot verify claim: not connected');
       return false;
     }
     
     try {
-      logWithTimestamp(`Broadcasting claim verification for player: ${playerCode}, valid: ${isValid}`);
+      // Convert string 'valid' to boolean true and 'rejected' to false if needed
+      const validBoolean = typeof isValid === 'string' 
+        ? isValid === 'valid' 
+        : isValid;
+      
+      logWithTimestamp(`Broadcasting claim verification for player: ${playerCode}, valid: ${validBoolean}`);
       
       channelRef.current.send({
         type: 'broadcast',
@@ -373,7 +380,7 @@ export function useCallerHub(sessionId?: string) {
         payload: {
           sessionId,
           playerId: playerCode,
-          result: isValid ? 'valid' : 'rejected',
+          result: validBoolean ? 'valid' : 'rejected',
           timestamp: Date.now()
         }
       });
