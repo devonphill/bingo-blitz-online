@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { logWithTimestamp, ConnectionManagerClass } from '@/utils/logUtils';
 import { supabase } from '@/integrations/supabase/client';
@@ -230,10 +231,10 @@ export function useCallerHub(sessionId?: string) {
     }
   }, [sessionId]);
   
-  // Improved presence state processing
+  // Improved presence state processing - Fix for playerPresenceMap.current.clear issue
   const processPresenceState = useCallback((state: Record<string, any[]>, eventId?: number) => {
-    // Clear map first to rebuild from scratch with fresh data
-    playerPresenceMap.current.clear();
+    // Create a new map instead of clearing the existing one
+    const newPlayerMap = new Map<string, ConnectedPlayer>();
     
     // Extract players from presence state
     Object.entries(state).forEach(([clientId, presences]) => {
@@ -241,7 +242,7 @@ export function useCallerHub(sessionId?: string) {
         // Only add players to the list (not callers)
         if (presence.client_type === 'player' && presence.playerCode) {
           // Use playerCode as the unique identifier
-          playerPresenceMap.current.set(presence.playerCode, {
+          newPlayerMap.set(presence.playerCode, {
             playerCode: presence.playerCode,
             playerName: presence.playerName || presence.playerCode,
             joinedAt: presence.online_at || new Date().toISOString(),
@@ -256,6 +257,9 @@ export function useCallerHub(sessionId?: string) {
         }
       });
     });
+    
+    // Update the ref with the new map
+    playerPresenceMap.current = newPlayerMap;
     
     // Convert map to array for state update
     const players = Array.from(playerPresenceMap.current.values());
