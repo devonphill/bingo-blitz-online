@@ -299,6 +299,66 @@ export function useCallerHub(sessionId?: string) {
     }
   }, [isConnected, sessionId]);
   
+  // ADD NEW METHOD: respond to claim with a specific result (valid or rejected)
+  const respondToClaim = useCallback((playerCode: string, result: 'valid' | 'rejected') => {
+    if (!channelRef.current || !isConnected) {
+      logWithTimestamp('Cannot respond to claim: not connected');
+      return false;
+    }
+    
+    try {
+      logWithTimestamp(`Broadcasting claim result for player: ${playerCode}, result: ${result}`);
+      
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'claim-result',
+        payload: {
+          sessionId,
+          playerId: playerCode,
+          result: result,
+          timestamp: Date.now()
+        }
+      });
+      
+      // Remove from pending claims if it was responded to
+      if (result === 'valid' || result === 'rejected') {
+        setPendingClaims(prev => prev.filter(claim => claim.playerCode !== playerCode));
+      }
+      
+      return true;
+    } catch (error) {
+      logWithTimestamp(`Error responding to claim: ${error}`);
+      return false;
+    }
+  }, [isConnected, sessionId]);
+  
+  // ADD NEW METHOD: change win pattern
+  const changePattern = useCallback((pattern: string) => {
+    if (!channelRef.current || !isConnected) {
+      logWithTimestamp('Cannot change pattern: not connected');
+      return false;
+    }
+    
+    try {
+      logWithTimestamp(`Broadcasting pattern change to: ${pattern}`);
+      
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'pattern-change',
+        payload: {
+          sessionId,
+          pattern: pattern,
+          timestamp: Date.now()
+        }
+      });
+      
+      return true;
+    } catch (error) {
+      logWithTimestamp(`Error changing pattern: ${error}`);
+      return false;
+    }
+  }, [isConnected, sessionId]);
+  
   // Initialize on first render
   useEffect(() => {
     if (sessionId) {
@@ -324,6 +384,9 @@ export function useCallerHub(sessionId?: string) {
     reconnect,
     callNumber,
     startGame,
-    verifyClaim
+    verifyClaim,
+    // Add new functions to the return object
+    respondToClaim,
+    changePattern
   };
 }
