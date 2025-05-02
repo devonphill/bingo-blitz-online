@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { logWithTimestamp, ConnectionManagerClass } from '@/utils/logUtils';
 import { supabase } from '@/integrations/supabase/client';
@@ -64,7 +65,7 @@ export function useCallerHub(sessionId?: string) {
       // Register this instance as the active connection
       activeCallerConnections.set(connectionKey, instanceId.current);
       
-      // Clean up any existing connection first
+      // Clean up any existing channel first
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;

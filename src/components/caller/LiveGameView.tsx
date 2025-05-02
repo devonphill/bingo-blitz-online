@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -59,9 +60,8 @@ export function LiveGameView({
   const { toast } = useToast();
   
   // CRITICAL FIX: Reset all global connection state on mount
-  // This is essential to break any connection loops between components
   useEffect(() => {
-    // Make sure we're not instantiating multiple connection instances
+    // Clean up global connection state to break any connection loops
     logWithTimestamp("LiveGameView mounted - cleaning up all connections");
     cleanupAllConnections();
     
@@ -72,14 +72,12 @@ export function LiveGameView({
     };
   }, []);
   
-  // Use caller WebSocket hub to receive claims
-  // We're adding it AFTER cleanup to ensure clean state
+  // Use caller WebSocket hub to receive claims - after cleanup to ensure clean state
   const callerHub = useCallerHub(sessionId);
   
-  // Simplified connection state management
+  // Simplified connection state management with debounce
   const [displayConnectionState, setDisplayConnectionState] = useState('disconnected');
   
-  // Update the connection state with debounce for UI stability
   useEffect(() => {
     // For connected state, update immediately for better UX
     if (callerHub.isConnected && callerHub.connectionState === 'connected') {
@@ -87,7 +85,7 @@ export function LiveGameView({
       return;
     }
     
-    // For disconnection or errors, use a short delay to prevent flashing
+    // For disconnection or errors, use a delay to prevent UI flashing
     const timer = setTimeout(() => {
       // Only update if still not connected after delay
       if (!callerHub.isConnected) {
@@ -108,7 +106,7 @@ export function LiveGameView({
     return allNumbers.filter(num => !calledNumbers.includes(num));
   }, [calledNumbers, gameType]);
   
-  // Update claim sheet when new claims arrive
+  // Update claim sheet when new claims arrive via WebSocket
   useEffect(() => {
     if (callerHub.pendingClaims.length > 0) {
       setIsClaimSheetOpen(true);
@@ -125,7 +123,7 @@ export function LiveGameView({
   
   const handleReconnect = () => {
     if (callerHub.reconnect) {
-      // CRITICAL FIX: Clean up all connections first to break any loops
+      // Clean up all connections first to break loops
       cleanupAllConnections();
       
       callerHub.reconnect();

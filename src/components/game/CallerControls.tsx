@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -104,8 +105,9 @@ export default function CallerControls({
       
       // Also broadcast via WebSocket for connected players
       if (callerHub.isConnected) {
-        const allCalledNumbers = [...remainingNumbers.filter(n => n !== number)];
-        callerHub.callNumber(number, allCalledNumbers);
+        // Create a new array of called numbers by adding the newly called number
+        const newCalledNumbers = [...calledNumbers, number];
+        callerHub.callNumber(number, newCalledNumbers);
       }
       
       setIsCallingNumber(false);
@@ -121,26 +123,18 @@ export default function CallerControls({
       
       // Go live via WebSocket first
       if (callerHub.isConnected) {
-        logWithTimestamp("Broadcasting game start via realtime");
+        logWithTimestamp("Broadcasting game start via WebSocket");
         callerHub.startGame();
-      } else {
-        // If not connected to WebSocket, use Supabase realtime broadcast instead
-        logWithTimestamp("Broadcasting game start via Supabase realtime broadcast");
-        const channel = supabase.channel('game-updates');
-        await channel.send({
-          type: 'broadcast',
-          event: 'game-update',
-          payload: {
-            sessionId,
-            gameStatus: 'active',
-            timestamp: Date.now()
-          }
-        });
-        supabase.removeChannel(channel);
       }
       
       // Then also use the regular method (updates database directly)
       await onGoLive();
+      
+      toast({
+        title: "Game is now live",
+        description: "Players can now join and play.",
+        duration: 3000
+      });
     } catch (error) {
       console.error('Error going live:', error);
       toast({
@@ -200,22 +194,11 @@ export default function CallerControls({
         })
         .eq('session_id', sessionId);
       
-      // Also notify players via Supabase broadcast
-      const broadcastChannel = supabase.channel('broadcast-channel');
-      await broadcastChannel.send({
-        type: 'broadcast',
-        event: 'game-update',
-        payload: {
-          sessionId,
-          currentWinPattern: patternId,
-          currentPrize: config.prizeAmount || '0.00',
-          currentPrizeDescription: config.description || '',
-          gameStatus: 'active',  // Include game status in broadcast
-          timestamp: Date.now()
-        }
-      });
-      
-      supabase.removeChannel(broadcastChannel);
+      // Also notify players via WebSocket broadcast
+      if (callerHub.isConnected) {
+        logWithTimestamp("Broadcasting pattern and prize info via WebSocket");
+        callerHub.changePattern(patternId);
+      }
       
     } catch (error) {
       logWithTimestamp("Error in initializeSessionProgress: " + error);

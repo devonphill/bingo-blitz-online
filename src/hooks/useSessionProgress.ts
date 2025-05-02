@@ -40,8 +40,6 @@ export function useSessionProgress(sessionId: string | undefined) {
       return;
     }
 
-    let subscription: any;
-
     async function fetchSessionProgress() {
       setLoading(true);
       try {
@@ -90,67 +88,9 @@ export function useSessionProgress(sessionId: string | undefined) {
     }
 
     fetchSessionProgress();
-
-    // Set up a real-time subscription to updates
-    subscription = supabase
-      .channel('session-progress-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'sessions_progress',
-          filter: `session_id=eq.${sessionId}`,
-        },
-        (payload: RealtimePostgresChangesPayload<any>) => {
-          const newData = payload.new;
-          console.log("Received real-time update for session progress:", newData);
-          
-          // Ensure the update is for our session
-          if (newData.session_id === sessionId) {
-            setProgress(prev => {
-              if (!prev) {
-                return {
-                  id: newData.id,
-                  session_id: newData.session_id,
-                  current_game_number: newData.current_game_number,
-                  max_game_number: newData.max_game_number,
-                  current_game_type: newData.current_game_type,
-                  current_win_pattern: newData.current_win_pattern,
-                  called_numbers: newData.called_numbers || [],
-                  game_status: newData.game_status,
-                  current_prize: newData.current_prize,
-                  current_prize_description: newData.current_prize_description,
-                  created_at: newData.created_at,
-                  updated_at: newData.updated_at
-                };
-              }
-              
-              return {
-                ...prev,
-                current_game_number: newData.current_game_number,
-                current_game_type: newData.current_game_type,
-                current_win_pattern: newData.current_win_pattern,
-                called_numbers: newData.called_numbers || prev.called_numbers || [],
-                game_status: newData.game_status,
-                current_prize: newData.current_prize,
-                current_prize_description: newData.current_prize_description,
-                updated_at: newData.updated_at,
-              };
-            });
-          }
-        }
-      )
-      .subscribe((status) => {
-        console.log("Session progress subscription status:", status);
-      });
-
-    return () => {
-      console.log("Unsubscribing from session progress changes");
-      if (subscription) {
-        subscription.unsubscribe();
-      }
-    };
+    
+    // No need to set up a real-time subscription since we'll use the WebSocket server for real-time updates
+    
   }, [sessionId]);
 
   const updateProgress = async (updates: SessionProgressUpdate): Promise<boolean> => {

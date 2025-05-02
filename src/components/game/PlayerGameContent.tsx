@@ -15,7 +15,7 @@ interface PlayerGameContentProps {
   autoMarking: boolean;
   setAutoMarking: (value: boolean) => void;
   playerCode: string;
-  playerName?: string; // Added playerName prop
+  playerName?: string;
   winPrizes: { [key: string]: string };
   activeWinPatterns: string[];
   onClaimBingo: () => Promise<boolean>;
@@ -34,7 +34,7 @@ export default function PlayerGameContent({
   autoMarking,
   setAutoMarking,
   playerCode,
-  playerName = '', // Default to empty string
+  playerName = '',
   winPrizes,
   activeWinPatterns,
   onClaimBingo,
@@ -44,7 +44,7 @@ export default function PlayerGameContent({
   claimStatus,
   gameType = '90-ball'
 }: PlayerGameContentProps) {
-  // Fix: Pass all required parameters to useBingoSync (sessionId, playerCode, and playerName)
+  // Use WebSocket-based sync with required parameters
   const { gameState, isConnected, connectionState } = useBingoSync(
     currentSession?.id || '',
     playerCode || '',
