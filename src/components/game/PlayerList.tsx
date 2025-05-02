@@ -22,6 +22,9 @@ const PlayerList: React.FC<PlayerListProps> = ({
   isLoading = false,
   connectionState = 'connected'
 }) => {
+  // Determine if we're actually connected - this drives the main UI display
+  const isConnected = connectionState === 'connected';
+  
   if (isLoading) {
     return (
       <div className="text-amber-500 text-center py-4 flex flex-col items-center gap-2">
@@ -64,8 +67,8 @@ const PlayerList: React.FC<PlayerListProps> = ({
     <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto">
       <div className="flex items-center justify-between mb-1">
         <span className="text-sm text-gray-500">Connected players ({players.length})</span>
-        <Badge variant="outline" className={`text-xs ${connectionState === 'connected' ? 'bg-green-100 text-green-800 border-green-200' : ''}`}>
-          {connectionState === 'connected' ? 'Server Connected' : 'Connecting...'}
+        <Badge variant="outline" className={`text-xs ${isConnected ? 'bg-green-100 text-green-800 border-green-200' : ''}`}>
+          {isConnected ? 'Server Connected' : 'Connecting...'}
         </Badge>
       </div>
 

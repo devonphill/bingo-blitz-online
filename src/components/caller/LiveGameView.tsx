@@ -150,7 +150,7 @@ export function LiveGameView({
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Connected players from WebSocket - Now with connection state */}
+              {/* Connected players from WebSocket - with correct connection state */}
               <div className="bg-gray-100 p-4 rounded-md">
                 <div className="text-sm text-gray-500 mb-2 flex items-center justify-between">
                   <span>Connected Players</span>
@@ -159,8 +159,8 @@ export function LiveGameView({
                 <div className="mt-2">
                   <PlayerList 
                     players={callerHub.connectedPlayers} 
-                    isLoading={connectionState === 'connecting'} 
-                    connectionState={connectionState}
+                    isLoading={callerHub.connectionState === 'connecting'} 
+                    connectionState={callerHub.connectionState}
                   />
                 </div>
               </div>
@@ -168,22 +168,22 @@ export function LiveGameView({
               {/* WebSocket connection status with more detailed display */}
               <div className="bg-gray-100 p-4 rounded-md">
                 <div className="text-sm text-gray-500 mb-2">Game Server Connection</div>
-                <div className={`text-lg font-bold ${isConnected ? 'text-green-600' : 
-                              connectionState === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
-                  {isConnected ? 'Connected' : 
-                   connectionState === 'connecting' ? 'Connecting...' :
-                   connectionState === 'error' ? 'Connection Error' : 'Disconnected'}
+                <div className={`text-lg font-bold ${callerHub.isConnected ? 'text-green-600' : 
+                              callerHub.connectionState === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
+                  {callerHub.isConnected ? 'Connected' : 
+                   callerHub.connectionState === 'connecting' ? 'Connecting...' :
+                   callerHub.connectionState === 'error' ? 'Connection Error' : 'Disconnected'}
                 </div>
                 <div className="mt-2 text-sm text-gray-500">
                   {callerHub.connectionError || 
-                    (isConnected
+                    (callerHub.isConnected
                     ? 'WebSocket connection is established and working correctly.'
-                    : connectionState === 'connecting'
+                    : callerHub.connectionState === 'connecting'
                     ? 'Establishing WebSocket connection...'
                     : 'Attempting to reconnect to game server...')}
                 </div>
                 
-                {!isConnected && (
+                {!callerHub.isConnected && (
                   <Button 
                     size="sm" 
                     variant="outline" 
