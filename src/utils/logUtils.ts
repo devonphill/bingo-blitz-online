@@ -225,12 +225,12 @@ export function getEffectiveConnectionState(
  * Enhanced ConnectionManager class to handle connection state more effectively
  */
 export class ConnectionManagerClass {
-  private pendingTimeout: ReturnType<typeof setTimeout> | null = null;
+  private _pendingTimeout: ReturnType<typeof setTimeout> | null = null;
   private _isConnecting: boolean = false;
   private _isInCooldown: boolean = false;
-  private cooldownUntil: number = 0;
-  private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 10;
+  private _cooldownUntil: number = 0;
+  private _reconnectAttempts: number = 0;
+  private _maxReconnectAttempts: number = 10;
   
   constructor(private backoffFactor: number = 2) {}
   
@@ -248,12 +248,19 @@ export class ConnectionManagerClass {
     if (!this._isInCooldown) return false;
     
     // Check if cooldown has expired
-    if (Date.now() > this.cooldownUntil) {
+    if (Date.now() > this._cooldownUntil) {
       this._isInCooldown = false;
       return false;
     }
     
     return true;
+  }
+  
+  /**
+   * Returns the timestamp when cooldown will end
+   */
+  get cooldownUntil(): number {
+    return this._cooldownUntil;
   }
   
   /**
@@ -267,7 +274,7 @@ export class ConnectionManagerClass {
     }
     
     if (this.isInCooldown) {
-      const remainingCooldown = Math.ceil((this.cooldownUntil - Date.now()) / 1000);
+      const remainingCooldown = Math.ceil((this._cooldownUntil - Date.now()) / 1000);
       logWithTimestamp(`In cooldown period, ${remainingCooldown}s remaining before next attempt`);
       return false;
     }
@@ -284,24 +291,24 @@ export class ConnectionManagerClass {
     
     if (success) {
       // Reset reconnect attempts on success
-      this.reconnectAttempts = 0;
+      this._reconnectAttempts = 0;
       return;
     }
     
     // Increment failed attempt counter
-    this.reconnectAttempts++;
+    this._reconnectAttempts++;
     
     // Set cooldown if we've had too many failed attempts
-    if (this.reconnectAttempts > 3) {
-      const cooldownMs = Math.min(30000, 1000 * Math.pow(this.backoffFactor, this.reconnectAttempts - 3));
+    if (this._reconnectAttempts > 3) {
+      const cooldownMs = Math.min(30000, 1000 * Math.pow(this.backoffFactor, this._reconnectAttempts - 3));
       this._isInCooldown = true;
-      this.cooldownUntil = Date.now() + cooldownMs;
-      logWithTimestamp(`Setting reconnect cooldown for ${cooldownMs}ms after ${this.reconnectAttempts} failed attempts`);
+      this._cooldownUntil = Date.now() + cooldownMs;
+      logWithTimestamp(`Setting reconnect cooldown for ${cooldownMs}ms after ${this._reconnectAttempts} failed attempts`);
     }
     
     // Give up after max attempts
-    if (this.reconnectAttempts > this.maxReconnectAttempts) {
-      logWithTimestamp(`Giving up after ${this.maxReconnectAttempts} failed connection attempts`);
+    if (this._reconnectAttempts > this._maxReconnectAttempts) {
+      logWithTimestamp(`Giving up after ${this._maxReconnectAttempts} failed connection attempts`);
     }
   }
   
@@ -311,12 +318,12 @@ export class ConnectionManagerClass {
   reset(): void {
     this._isConnecting = false;
     this._isInCooldown = false;
-    this.reconnectAttempts = 0;
-    this.cooldownUntil = 0;
+    this._reconnectAttempts = 0;
+    this._cooldownUntil = 0;
     
-    if (this.pendingTimeout) {
-      clearTimeout(this.pendingTimeout);
-      this.pendingTimeout = null;
+    if (this._pendingTimeout) {
+      clearTimeout(this._pendingTimeout);
+      this._pendingTimeout = null;
     }
   }
   
@@ -324,19 +331,19 @@ export class ConnectionManagerClass {
    * Schedule a reconnection attempt with exponential backoff
    */
   scheduleReconnect(callback: () => void): void {
-    if (this.pendingTimeout) {
-      clearTimeout(this.pendingTimeout);
+    if (this._pendingTimeout) {
+      clearTimeout(this._pendingTimeout);
     }
     
     // Calculate backoff delay
     const baseDelay = 1000; // Start with 1 second
     const maxDelay = 30000; // Cap at 30 seconds
-    const delay = Math.min(maxDelay, baseDelay * Math.pow(this.backoffFactor, this.reconnectAttempts));
+    const delay = Math.min(maxDelay, baseDelay * Math.pow(this.backoffFactor, this._reconnectAttempts));
     
     logWithTimestamp(`Scheduling reconnect attempt in ${delay}ms`);
     
-    this.pendingTimeout = setTimeout(() => {
-      this.pendingTimeout = null;
+    this._pendingTimeout = setTimeout(() => {
+      this._pendingTimeout = null;
       this._isInCooldown = false;
       callback();
     }, delay);
@@ -348,11 +355,11 @@ export class ConnectionManagerClass {
   forceReconnect(): void {
     this._isConnecting = false;
     this._isInCooldown = false;
-    this.cooldownUntil = 0;
+    this._cooldownUntil = 0;
     
-    if (this.pendingTimeout) {
-      clearTimeout(this.pendingTimeout);
-      this.pendingTimeout = null;
+    if (this._pendingTimeout) {
+      clearTimeout(this._pendingTimeout);
+      this._pendingTimeout = null;
     }
   }
 }
