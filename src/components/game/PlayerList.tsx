@@ -1,7 +1,7 @@
 
 import React from "react";
 import { Badge } from "@/components/ui/badge";
-import { Loader, Wifi, WifiOff } from "lucide-react";
+import { Loader, Wifi, WifiOff, Users } from "lucide-react";
 
 export interface PlayerListProps {
   players: {
@@ -52,7 +52,7 @@ const PlayerList: React.FC<PlayerListProps> = ({
           </>
         ) : (
           <>
-            <Wifi className="h-5 w-5" />
+            <Users className="h-5 w-5" />
             <span>No players have joined yet. Share the access code.</span>
           </>
         )}
@@ -64,7 +64,7 @@ const PlayerList: React.FC<PlayerListProps> = ({
     <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto">
       <div className="flex items-center justify-between mb-1">
         <span className="text-sm text-gray-500">Connected players ({players.length})</span>
-        <Badge variant={connectionState === 'connected' ? "success" : "outline"} className="text-xs">
+        <Badge variant="outline" className={`text-xs ${connectionState === 'connected' ? 'bg-green-100 text-green-800 border-green-200' : ''}`}>
           {connectionState === 'connected' ? 'Server Connected' : 'Connecting...'}
         </Badge>
       </div>
