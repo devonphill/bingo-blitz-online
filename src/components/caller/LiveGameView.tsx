@@ -217,6 +217,7 @@ export function LiveGameView({
                     players={callerHub.connectedPlayers} 
                     isLoading={stableConnectionState === 'connecting'} 
                     connectionState={stableConnectionState}
+                    onReconnect={handleReconnect}
                   />
                 </div>
               </div>

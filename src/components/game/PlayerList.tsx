@@ -1,7 +1,9 @@
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Loader, Wifi, WifiOff, Users } from "lucide-react";
+import { Loader, Wifi, WifiOff, Users, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { logWithTimestamp } from "@/utils/logUtils";
 
 export interface PlayerListProps {
   players: {
@@ -15,13 +17,20 @@ export interface PlayerListProps {
   }[];
   isLoading?: boolean;
   connectionState?: 'disconnected' | 'connecting' | 'connected' | 'error';
+  onReconnect?: () => void;
 }
 
 const PlayerList: React.FC<PlayerListProps> = ({ 
   players, 
   isLoading = false,
-  connectionState = 'connected'
+  connectionState = 'connected',
+  onReconnect
 }) => {
+  // Enhanced logging for component render and state
+  useEffect(() => {
+    logWithTimestamp(`PlayerList rendering with connectionState: ${connectionState}, players: ${players.length}, isLoading: ${isLoading}`);
+  }, [connectionState, players.length, isLoading]);
+
   // Determine if we're actually connected - this drives the main UI display
   const isConnected = connectionState === 'connected';
   
@@ -57,6 +66,17 @@ const PlayerList: React.FC<PlayerListProps> = ({
         <WifiOff className="h-5 w-5" />
         <span>Disconnected from game server</span>
         <span className="text-xs">Players may not appear until connection is restored</span>
+        {onReconnect && (
+          <Button 
+            size="sm" 
+            variant="outline" 
+            className="mt-2 flex items-center gap-1"
+            onClick={onReconnect}
+          >
+            <RefreshCw className="h-3 w-3" />
+            Reconnect
+          </Button>
+        )}
       </div>
     );
   }
@@ -78,6 +98,17 @@ const PlayerList: React.FC<PlayerListProps> = ({
           <>
             <WifiOff className="h-5 w-5" />
             <span>Check connection status. No players currently visible.</span>
+            {onReconnect && (
+              <Button 
+                size="sm" 
+                variant="outline" 
+                className="mt-2 flex items-center gap-1"
+                onClick={onReconnect}
+              >
+                <RefreshCw className="h-3 w-3" />
+                Reconnect
+              </Button>
+            )}
           </>
         )}
       </div>
