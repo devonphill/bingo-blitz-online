@@ -106,7 +106,8 @@ export default function CallerControls({
       // Also broadcast via WebSocket for connected players
       if (callerHub.isConnected) {
         // Create a new array of called numbers by adding the newly called number
-        const newCalledNumbers = [...calledNumbers, number];
+        // FIXED: Create newCalledNumbers array since calledNumbers doesn't exist in this scope
+        const newCalledNumbers = [...remainingNumbers.filter(n => n !== number)];
         callerHub.callNumber(number, newCalledNumbers);
       }
       
