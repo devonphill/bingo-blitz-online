@@ -16,7 +16,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { AlertCircle, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
-import { logWithTimestamp, cleanupAllConnections } from "@/utils/logUtils";
+import { cleanupAllConnections } from "@/utils/logUtils";
 
 interface PlayerGameLayoutProps {
   tickets: any[];
@@ -27,6 +27,7 @@ interface PlayerGameLayoutProps {
   autoMarking: boolean;
   setAutoMarking: (value: boolean) => void;
   playerCode: string;
+  playerName?: string;
   winPrizes: { [key: string]: string };
   activeWinPatterns: string[];
   currentWinPattern: string | null;
@@ -50,6 +51,7 @@ export default function PlayerGameLayout({
   autoMarking,
   setAutoMarking,
   playerCode,
+  playerName = '',
   winPrizes,
   activeWinPatterns,
   currentWinPattern,
@@ -70,11 +72,12 @@ export default function PlayerGameLayout({
   // CRITICAL FIX: Reset all global connection state on mount
   // This ensures we don't have multiple competing connections
   useEffect(() => {
-    logWithTimestamp("PlayerGameLayout mounted - cleaning up all connections");
+    const cleanupId = `layout-${Date.now()}`;
+    console.log(`PlayerGameLayout mounted (${cleanupId}) - cleaning up all connections`);
     cleanupAllConnections();
     
     return () => {
-      logWithTimestamp("PlayerGameLayout unmounting - cleaning up connections");
+      console.log(`PlayerGameLayout unmounting (${cleanupId}) - cleaning up connections`);
       cleanupAllConnections();
     };
   }, []);
@@ -103,7 +106,7 @@ export default function PlayerGameLayout({
     connectionUpdateTimeoutRef.current = setTimeout(() => {
       setDisplayConnectionState(connectionState);
       connectionUpdateTimeoutRef.current = null;
-    }, 3000); // 3 second debounce
+    }, 2000); // 2 second debounce
     
     return () => {
       if (connectionUpdateTimeoutRef.current) {
@@ -126,7 +129,7 @@ export default function PlayerGameLayout({
   
   // Handle connection state changes with improved notification approach
   useEffect(() => {
-    logWithTimestamp(`PlayerGameLayout: connectionState changed to ${connectionState}, displaying as ${displayConnectionState}`);
+    console.log(`PlayerGameLayout: connectionState changed to ${connectionState}, displaying as ${displayConnectionState}`);
     
     if (connectionState === 'error' && displayConnectionState === 'error') {
       toast({
@@ -272,8 +275,8 @@ export default function PlayerGameLayout({
             </div>
           </div>
           <DialogFooter>
-            <div className="text-xs text-gray-500 w-full text-center">
-              Player Code: {playerCode}
+            <div className="text-xs text-gray-500 w-full">
+              <p className="text-center">Player: {playerName || playerCode}</p>
             </div>
           </DialogFooter>
         </DialogContent>

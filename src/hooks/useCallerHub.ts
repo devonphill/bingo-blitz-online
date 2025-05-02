@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { logWithTimestamp } from '@/utils/logUtils';
+import { logWithTimestamp, ConnectionManagerClass } from '@/utils/logUtils';
 import { supabase } from '@/integrations/supabase/client';
 
 export interface ConnectedPlayer {
@@ -17,6 +17,9 @@ export interface PendingClaim {
   ticketData?: any;
 }
 
+// Global registry of active caller connections to prevent duplicates
+const activeCallerConnections = new Map<string, string>();
+
 // Hook to handle caller WebSocket hub connection and state
 export function useCallerHub(sessionId?: string) {
   const [isConnected, setIsConnected] = useState(false);
@@ -25,31 +28,47 @@ export function useCallerHub(sessionId?: string) {
   const [connectedPlayers, setConnectedPlayers] = useState<ConnectedPlayer[]>([]);
   const [pendingClaims, setPendingClaims] = useState<PendingClaim[]>([]);
   const channelRef = useRef<any>(null);
-  const instanceId = useRef<string>(Date.now().toString());
-  const reconnectAttemptsRef = useRef(0);
-  const maxReconnectAttempts = 5;
-  const connectionInProgressRef = useRef(false); // Track if connection attempt is in progress
+  const instanceId = useRef<string>(`${Date.now().toString()}`);
+  const connectionManager = useRef(new ConnectionManagerClass());
   
   // CRITICAL FIX: Track received presence data separately from processed players list
   const presenceStateRef = useRef<Record<string, any[]>>({});
 
   // Function to establish WebSocket connection to bingo hub
   const connectToHub = useCallback(() => {
+    // Skip if no session ID
+    if (!sessionId) return () => {};
+    
     // Don't reconnect if we're already connecting
-    if (connectionInProgressRef.current) {
+    if (connectionManager.current.isConnecting) {
       logWithTimestamp("Connection attempt already in progress, skipping redundant attempt");
-      return;
+      return () => {};
     }
     
-    if (!sessionId) return;
+    if (connectionManager.current.isInCooldown) {
+      const remainingCooldown = Math.ceil((connectionManager.current.cooldownUntil - Date.now()) / 1000);
+      logWithTimestamp(`In cooldown period, ${remainingCooldown}s remaining before next attempt`);
+      return () => {};
+    }
+    
+    // Check for duplicate connection from this same session
+    const connectionKey = `caller:${sessionId}`;
+    if (activeCallerConnections.has(connectionKey) && activeCallerConnections.get(connectionKey) !== instanceId.current) {
+      logWithTimestamp(`Another active caller connection exists for ${connectionKey}, skipping`);
+      return () => {};
+    }
     
     try {
-      connectionInProgressRef.current = true;
+      connectionManager.current.startConnection();
       logWithTimestamp(`Caller connecting to WebSocket for session ${sessionId}, instance ${instanceId.current}`);
+      
+      // Register this instance as the active connection
+      activeCallerConnections.set(connectionKey, instanceId.current);
       
       // Clean up any existing connection first
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
       
       setConnectionState('connecting');
@@ -124,13 +143,12 @@ export function useCallerHub(sessionId?: string) {
       // Subscribe and track connection status
       channel.subscribe(status => {
         logWithTimestamp(`Caller WebSocket ${status} for session ${sessionId}`);
-        connectionInProgressRef.current = false;
+        connectionManager.current.endConnection(status === 'SUBSCRIBED');
         
         if (status === 'SUBSCRIBED') {
           setIsConnected(true);
           setConnectionState('connected');
           setConnectionError(null);
-          reconnectAttemptsRef.current = 0;
           
           // Broadcast presence as caller
           channel.track({
@@ -147,31 +165,43 @@ export function useCallerHub(sessionId?: string) {
           setConnectionState('error');
           setConnectionError('Channel error connecting to game server');
           
-          // Only attempt reconnect if not at max attempts
-          if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-            // Schedule reconnect
-            handleReconnect();
-          }
+          // Schedule reconnect through connection manager
+          connectionManager.current.scheduleReconnect(reconnect);
         } else if (status === 'CLOSED') {
           setIsConnected(false);
           setConnectionState('disconnected');
           
-          // Only attempt reconnect if not at max attempts
-          if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-            // Schedule reconnect
-            handleReconnect();
-          }
+          // Schedule reconnect through connection manager
+          connectionManager.current.scheduleReconnect(reconnect);
         }
       });
       
       // Store channel reference
       channelRef.current = channel;
+      
+      return () => {
+        logWithTimestamp(`Cleaning up caller WebSocket connection`);
+        
+        if (channelRef.current) {
+          supabase.removeChannel(channelRef.current);
+          channelRef.current = null;
+        }
+        
+        // Remove from active connections registry
+        activeCallerConnections.delete(connectionKey);
+      };
     } catch (error) {
-      connectionInProgressRef.current = false;
+      connectionManager.current.endConnection(false);
       logWithTimestamp(`Error establishing WebSocket connection: ${error}`);
       setIsConnected(false);
       setConnectionState('error');
       setConnectionError(`Connection error: ${error}`);
+      
+      // Remove from active connections registry on error
+      const connectionKey = `caller:${sessionId}`;
+      activeCallerConnections.delete(connectionKey);
+      
+      return () => {};
     }
   }, [sessionId]);
   
@@ -198,37 +228,17 @@ export function useCallerHub(sessionId?: string) {
     setConnectedPlayers(players);
   }, []);
   
-  // Function to handle reconnect with exponential backoff
-  const handleReconnect = useCallback(() => {
-    // Only increment if not already at max
-    if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-      reconnectAttemptsRef.current++;
-    }
-    
-    // Calculate delay with exponential backoff
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 10000);
-    
-    logWithTimestamp(`Scheduling reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
-    
-    setTimeout(() => {
-      if (reconnectAttemptsRef.current <= maxReconnectAttempts) {
-        logWithTimestamp(`Attempting reconnect for session ${sessionId} (${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
-        connectToHub();
-      }
-    }, delay);
-  }, [connectToHub, sessionId]);
-  
   // Function to manually reconnect
   const reconnect = useCallback(() => {
-    logWithTimestamp(`Closing caller WebSocket connection`);
+    logWithTimestamp(`Manually triggered caller WebSocket reconnect`);
     
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
     
-    reconnectAttemptsRef.current = 0;
-    connectionInProgressRef.current = false;
+    // Reset connection manager
+    connectionManager.current.forceReconnect();
     setConnectionState('connecting');
     connectToHub();
   }, [connectToHub]);
@@ -392,8 +402,14 @@ export function useCallerHub(sessionId?: string) {
         supabase.removeChannel(channelRef.current);
       }
       
-      // Reset connection flags on unmount
-      connectionInProgressRef.current = false;
+      // Clean up connection registration
+      if (sessionId) {
+        const connectionKey = `caller:${sessionId}`;
+        activeCallerConnections.delete(connectionKey);
+      }
+      
+      // Reset connection manager
+      connectionManager.current.reset();
     };
   }, [connectToHub, sessionId]);
   

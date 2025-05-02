@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { GameType } from '@/types';
-import { logWithTimestamp } from '@/utils/logUtils';
+import { logWithTimestamp, ConnectionManagerClass } from '@/utils/logUtils';
 
 export interface GameState {
   gameStatus: string;
@@ -12,6 +12,9 @@ export interface GameState {
   currentPrize: string | null;
   currentPrizeDescription: string | null;
 }
+
+// Global registry of active connections to prevent duplicates
+const activeConnections = new Map<string, string>();
 
 export function useBingoSync(sessionId: string, playerCode: string, playerName: string = '') {
   const [isConnected, setIsConnected] = useState(false);
@@ -29,27 +32,51 @@ export function useBingoSync(sessionId: string, playerCode: string, playerName: 
   // Store channel reference
   const channelRef = useRef<any>(null);
   
-  // Track connection state
-  const connectionInProgressRef = useRef<boolean>(false);
-  const reconnectAttemptsRef = useRef(0);
-  const maxReconnectAttempts = 5;
+  // Use connection manager for better connection stability
+  const connectionManager = useRef(new ConnectionManagerClass());
   
-  // CRITICAL FIX: Function to properly subscribe to a channel before using presence
+  // Create a unique instance ID for this hook instance to track connections
+  const instanceId = useRef<string>(`${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
+  
+  // IMPROVED: Function to properly subscribe to a channel before using presence
   const subscribeToChannel = useCallback(() => {
-    // Don't reconnect if we're already connecting
-    if (connectionInProgressRef.current) {
-      logWithTimestamp("Connection attempt already in progress, skipping redundant attempt");
-      return;
+    // Skip if missing required params
+    if (!sessionId || !playerCode) {
+      logWithTimestamp("Missing required params for connection");
+      return () => {};
     }
     
-    if (!sessionId) return;
+    // Don't reconnect if we're already connecting or in cooldown
+    if (connectionManager.current.isConnecting) {
+      logWithTimestamp("Connection attempt already in progress, skipping redundant attempt");
+      return () => {};
+    }
+    
+    if (connectionManager.current.isInCooldown) {
+      const remainingCooldown = Math.ceil((connectionManager.current.cooldownUntil - Date.now()) / 1000);
+      logWithTimestamp(`In cooldown period, ${remainingCooldown}s remaining before next attempt`);
+      return () => {};
+    }
+    
+    // Check for duplicate connection from this same session/player
+    const connectionKey = `${sessionId}:${playerCode}`;
+    if (activeConnections.has(connectionKey) && activeConnections.get(connectionKey) !== instanceId.current) {
+      logWithTimestamp(`Another active connection exists for ${connectionKey}, skipping`);
+      return () => {};
+    }
     
     try {
-      connectionInProgressRef.current = true;
+      connectionManager.current.startConnection();
+      setConnectionState('connecting');
+      
+      // Register this instance as the active connection
+      activeConnections.set(connectionKey, instanceId.current);
       
       // Cleanup any existing channel first
       if (channelRef.current) {
+        logWithTimestamp(`Cleaning up existing channel before reconnect`);
         supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
       
       // Create a unique channel name for this session
@@ -62,7 +89,6 @@ export function useBingoSync(sessionId: string, playerCode: string, playerName: 
       // CRITICAL: First subscribe to the channel
       channel.subscribe((status) => {
         logWithTimestamp(`Channel status: ${status}`);
-        connectionInProgressRef.current = false;
         
         if (status === 'SUBSCRIBED') {
           // Only after subscription is confirmed, try to use presence
@@ -83,24 +109,22 @@ export function useBingoSync(sessionId: string, playerCode: string, playerName: 
           setIsConnected(true);
           setConnectionState('connected');
           setConnectionError(null);
-          reconnectAttemptsRef.current = 0;
+          connectionManager.current.endConnection(true);
         } else if (status === 'CHANNEL_ERROR') {
           setIsConnected(false);
           setConnectionState('error');
           setConnectionError('Channel error connecting to game server');
+          connectionManager.current.endConnection(false);
           
-          // Schedule reconnect if under max attempts
-          if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-            handleReconnect();
-          }
+          // Schedule reconnect with backoff through manager
+          connectionManager.current.scheduleReconnect(reconnect);
         } else if (status === 'CLOSED') {
           setIsConnected(false);
           setConnectionState('disconnected');
+          connectionManager.current.endConnection(false);
           
-          // Schedule reconnect if under max attempts
-          if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-            handleReconnect();
-          }
+          // Schedule reconnect with backoff through manager
+          connectionManager.current.scheduleReconnect(reconnect);
         }
       });
       
@@ -155,6 +179,11 @@ export function useBingoSync(sessionId: string, playerCode: string, playerName: 
               currentWinPattern: payload.payload.pattern,
             }));
           }
+        })
+        .on('broadcast', { event: 'claim-result' }, (payload) => {
+          if (payload.payload && payload.payload.playerId === playerCode) {
+            logWithTimestamp(`Received claim result: ${payload.payload.result}`);
+          }
         });
       
       // Store the channel reference
@@ -166,55 +195,55 @@ export function useBingoSync(sessionId: string, playerCode: string, playerName: 
           supabase.removeChannel(channelRef.current);
           channelRef.current = null;
         }
-        connectionInProgressRef.current = false;
+        
+        // Remove from active connections registry
+        activeConnections.delete(connectionKey);
       };
     } catch (error) {
-      connectionInProgressRef.current = false;
       logWithTimestamp(`Error setting up realtime channel: ${error}`);
       setConnectionState('error');
       setConnectionError(`Failed to connect: ${error}`);
+      connectionManager.current.endConnection(false);
+      
+      // Remove from active connections registry on error
+      activeConnections.delete(connectionKey);
+      
       return () => {};
     }
   }, [sessionId, playerCode, playerName]);
   
-  // Function to handle reconnect with exponential backoff
-  const handleReconnect = useCallback(() => {
-    // Only increment if not already at max
-    if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-      reconnectAttemptsRef.current++;
-    }
-    
-    // Calculate delay with exponential backoff
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 10000);
-    
-    logWithTimestamp(`Scheduling reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
-    
-    setTimeout(() => {
-      if (reconnectAttemptsRef.current <= maxReconnectAttempts) {
-        logWithTimestamp(`Attempting reconnect for player ${playerCode} in session ${sessionId}`);
-        subscribeToChannel();
-      }
-    }, delay);
-  }, [subscribeToChannel, playerCode, sessionId]);
-  
-  // Setup channel on mount
-  useEffect(() => {
-    if (sessionId && playerCode) {
-      setConnectionState('connecting');
-      const cleanup = subscribeToChannel();
-      return cleanup;
-    }
-  }, [sessionId, playerCode, subscribeToChannel]);
-  
   // Reconnect function for manual reconnection
   const reconnect = useCallback(() => {
-    // Reset reconnect attempts
-    reconnectAttemptsRef.current = 0;
-    connectionInProgressRef.current = false;
+    // Reset connection manager state
+    connectionManager.current.forceReconnect();
     
     setConnectionState('connecting');
     subscribeToChannel();
   }, [subscribeToChannel]);
+  
+  // Setup channel on mount and cleanup on unmount
+  useEffect(() => {
+    if (sessionId && playerCode) {
+      setConnectionState('connecting');
+      const cleanup = subscribeToChannel();
+      
+      return () => {
+        logWithTimestamp(`Cleaning up player connection for ${playerCode} from session ${sessionId}`);
+        
+        // Remove from active connections registry
+        const connectionKey = `${sessionId}:${playerCode}`;
+        activeConnections.delete(connectionKey);
+        
+        // Clean up the connection
+        cleanup();
+        
+        // Reset connection manager
+        connectionManager.current.reset();
+      };
+    }
+    
+    return () => {};
+  }, [sessionId, playerCode, subscribeToChannel]);
   
   // Claim bingo function
   const claimBingo = useCallback((ticket: any) => {

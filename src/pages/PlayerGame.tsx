@@ -1,9 +1,9 @@
+
 import React, { useEffect, useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { usePlayerGame } from '@/hooks/usePlayerGame';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
-import { useBingoSync } from '@/hooks/useBingoSync';
 import { useTickets } from '@/hooks/useTickets';
 import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import PlayerGameLoader from '@/components/game/PlayerGameLoader';
@@ -88,25 +88,18 @@ export default function PlayerGame() {
     isSubmittingClaim,
     handleClaimBingo: submitBingoClaim
   } = usePlayerGame(playerCode);
-
+  
   // Initialize session progress hook - but only use it if we have a valid session
   const { progress: sessionProgress } = useSessionProgress(
     currentSession?.id
-  );
-  
-  // Always initialize bingoSync hook with the same parameters - IMPORTANT: declare before using it
-  const bingoSync = useBingoSync(
-    currentSession?.id || '', 
-    playerCode || '', 
-    playerName || ''
   );
   
   // Initialize session state
   const isSessionActive = currentSession?.status === 'active';
   const isGameLive = currentSession?.lifecycle_state === 'live';
   
-  // Get game status from bingoSync or sessionProgress
-  const gameStatus = bingoSync.gameState.gameStatus || sessionProgress?.game_status || 'pending';
+  // Get game status from sessionProgress
+  const gameStatus = sessionProgress?.game_status || 'pending';
   const isGameActive = gameStatus === 'active';
   
   // Debug logging of game status with memoized stable values
@@ -136,36 +129,21 @@ export default function PlayerGame() {
     }
     console.log("Claiming bingo with ticket:", tickets[0]);
     
-    // Try to claim bingo through WebSocket first
-    if (bingoSync.isConnected) {
-      const claimed = bingoSync.claimBingo(tickets[0]);
-      if (claimed) {
-        return Promise.resolve(true);
-      }
-    }
-    
-    // Fall back to regular claim method if WebSocket claim fails
+    // Try to claim bingo
     return submitBingoClaim();
-  }, [submitBingoClaim, tickets, bingoSync]);
+  }, [submitBingoClaim, tickets]);
   
   // Determine error message with better priority handling
   // For the waiting room, WebSocket errors should not be blockers
   const effectiveErrorMessage = playerCode 
-    ? (isSessionActive && isGameActive && isGameLive ? (bingoSync.connectionError || errorMessage || '') : errorMessage || '')
+    ? errorMessage || ''
     : "Player code is required. Please join the game again.";
-  
-  // If game is active and WebSocket isn't, try to reconnect
-  useEffect(() => {
-    if (isSessionActive && isGameActive && isGameLive && !bingoSync.isConnected && bingoSync.reconnect) {
-      console.log("Game is active but not connected to WebSocket, attempting reconnect");
-      bingoSync.reconnect();
-    }
-  }, [isSessionActive, isGameActive, isGameLive, bingoSync]);
   
   // Debug logging with stable dependencies
   useEffect(() => {
     console.log("PlayerGame render state:", {
       playerCode,
+      playerName,
       isLoading,
       loadingStep,
       hasTickets: tickets && tickets.length > 0,
@@ -174,23 +152,18 @@ export default function PlayerGame() {
       sessionStatus: currentSession?.status,
       gameState: currentGameState?.status,
       errorMessage: effectiveErrorMessage,
-      sessionProgress,
-      socketConnectionState: bingoSync.connectionState,
-      socketLastCalledNumber: bingoSync.gameState.lastCalledNumber,
-      socketCalledNumbers: bingoSync.gameState.calledNumbers.length
+      sessionProgress
     });
   }, [
     playerCode, 
+    playerName,
     isLoading, 
     loadingStep, 
     tickets, 
     currentSession, 
     currentGameState, 
     effectiveErrorMessage, 
-    sessionProgress, 
-    bingoSync.connectionState,
-    bingoSync.gameState.lastCalledNumber,
-    bingoSync.gameState.calledNumbers.length
+    sessionProgress
   ]);
 
   // Early return during initial loading - no conditional hooks after this point
@@ -237,17 +210,14 @@ export default function PlayerGame() {
   if (shouldShowLoader) {
     logWithTimestamp(`Showing PlayerGameLoader with game status: ${gameStatus}, session active: ${isSessionActive}, game live: ${isGameLive}`);
     
-    // Pass WebSocket connection error to loader, but don't make it fatal for waiting room
+    // Pass session progress to loader
     return (
       <PlayerGameLoader 
         isLoading={isLoading} 
-        errorMessage={(bingoSync.connectionState === 'error' && currentSession) ? bingoSync.connectionError : errorMessage}
+        errorMessage={errorMessage}
         currentSession={currentSession}
         loadingStep={loadingStep}
-        sessionProgress={{
-          ...sessionProgress,
-          game_status: gameStatus
-        }}
+        sessionProgress={sessionProgress}
       />
     );
   }
@@ -277,17 +247,13 @@ export default function PlayerGame() {
     );
   }
 
-  // Use WebSocket data first, then fall back to database data
-  const finalCalledNumbers = bingoSync.gameState.calledNumbers.length > 0 
-    ? bingoSync.gameState.calledNumbers 
-    : (sessionProgress?.called_numbers || calledItems || []);
+  // Use session progress data for current state
+  const finalCalledNumbers = sessionProgress?.called_numbers || calledItems || [];
+  const finalLastCalledNumber = finalCalledNumbers.length > 0 
+    ? finalCalledNumbers[finalCalledNumbers.length - 1] 
+    : lastCalledItem;
   
-  const finalLastCalledNumber = bingoSync.gameState.lastCalledNumber !== null
-    ? bingoSync.gameState.lastCalledNumber
-    : (finalCalledNumbers.length > 0 ? finalCalledNumbers[finalCalledNumbers.length - 1] : lastCalledItem);
-  
-  const currentWinPattern = bingoSync.gameState.currentWinPattern || 
-                           sessionProgress?.current_win_pattern || 
+  const currentWinPattern = sessionProgress?.current_win_pattern || 
                            (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
 
   const currentGameNumber = sessionProgress?.current_game_number || 
@@ -305,19 +271,12 @@ export default function PlayerGame() {
     };
   }
 
-  if (bingoSync.gameState.currentPrize && bingoSync.gameState.currentWinPattern) {
-    finalWinPrizes = {
-      ...finalWinPrizes,
-      [bingoSync.gameState.currentWinPattern]: bingoSync.gameState.currentPrize
-    };
-  }
-
   console.log("Rendering main player game interface with:");
   console.log("- Called numbers:", finalCalledNumbers.length);
   console.log("- Last called number:", finalLastCalledNumber);
   console.log("- Current win pattern:", currentWinPattern);
   console.log("- Prize info:", finalWinPrizes);
-  console.log("- WebSocket connection state:", bingoSync.connectionState);
+  console.log("- Player name:", playerName);
 
   return (
     <React.Fragment>
@@ -329,6 +288,7 @@ export default function PlayerGame() {
         autoMarking={autoMarking}
         setAutoMarking={setAutoMarking}
         playerCode={playerCode || ''}
+        playerName={playerName || ''}
         winPrizes={finalWinPrizes}
         activeWinPatterns={currentWinPattern ? [currentWinPattern] : []}
         currentWinPattern={currentWinPattern}
@@ -340,7 +300,6 @@ export default function PlayerGame() {
         gameType={gameType}
         currentGameNumber={currentGameNumber}
         numberOfGames={numberOfGames}
-        connectionState={bingoSync.connectionState}
       >
         <GameTypePlayspace
           gameType={gameType as any}

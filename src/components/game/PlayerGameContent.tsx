@@ -15,6 +15,7 @@ interface PlayerGameContentProps {
   autoMarking: boolean;
   setAutoMarking: (value: boolean) => void;
   playerCode: string;
+  playerName?: string; // Added playerName prop
   winPrizes: { [key: string]: string };
   activeWinPatterns: string[];
   onClaimBingo: () => Promise<boolean>;
@@ -33,6 +34,7 @@ export default function PlayerGameContent({
   autoMarking,
   setAutoMarking,
   playerCode,
+  playerName = '', // Default to empty string
   winPrizes,
   activeWinPatterns,
   onClaimBingo,
@@ -42,15 +44,16 @@ export default function PlayerGameContent({
   claimStatus,
   gameType = '90-ball'
 }: PlayerGameContentProps) {
-  // Fix: Pass all required parameters to useBingoSync (sessionId, playerCode)
+  // Fix: Pass all required parameters to useBingoSync (sessionId, playerCode, and playerName)
   const { gameState, isConnected, connectionState } = useBingoSync(
     currentSession?.id || '',
-    playerCode || ''
+    playerCode || '',
+    playerName || ''
   );
 
   // Log state for debugging
   useEffect(() => {
-    console.log(`[PlayerGameContent] Session ID: ${currentSession?.id}, Connection: ${connectionState}`);
+    console.log(`[PlayerGameContent] Session ID: ${currentSession?.id}, Player: ${playerName || playerCode}, Connection: ${connectionState}`);
     console.log(`[PlayerGameContent] gameState:`, gameState);
     console.log(`[PlayerGameContent] Original props:`, { 
       calledNumbers, 
@@ -59,7 +62,7 @@ export default function PlayerGameContent({
       claimStatus,
       tickets: tickets?.length || 0 
     });
-  }, [currentSession?.id, connectionState, gameState, calledNumbers, currentNumber, isClaiming, claimStatus, tickets]);
+  }, [currentSession?.id, playerName, playerCode, connectionState, gameState, calledNumbers, currentNumber, isClaiming, claimStatus, tickets]);
 
   const currentWinPattern = 
     // First check real-time updates
