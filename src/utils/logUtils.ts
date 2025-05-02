@@ -1,4 +1,3 @@
-
 // Utility functions for logging and connection management
 
 /**
@@ -11,244 +10,215 @@ export function logWithTimestamp(message: string) {
 }
 
 /**
- * Global tracker for connection instances
- * This helps prevent connection loops by tracking active connections per session
+ * Global connection registry to prevent multiple instances competing
  */
-const globalConnectionTracker: {
-  [sessionId: string]: {
-    instances: Set<string>,
-    lastReconnect: number
-  }
-} = {};
+const connectionRegistry = {
+  sessions: new Map<string, Set<string>>(),
+  loopDetection: new Map<string, {
+    attempts: number,
+    lastAttempt: number,
+    inLoop: boolean
+  }>()
+};
 
 /**
- * Completely cleans up all tracked connections
- * Use this to break connection loops
+ * Cleanup all active connections to reset state
  */
 export function cleanupAllConnections() {
-  logWithTimestamp('Global connection cleanup: Resetting all connection states');
-  
-  // Reset the entire connection tracker
-  for (const sessionId in globalConnectionTracker) {
-    delete globalConnectionTracker[sessionId];
-  }
-  
-  logWithTimestamp('All connection states have been reset');
+  logWithTimestamp("Global connection cleanup: Resetting all connection states");
+  connectionRegistry.sessions.clear();
+  connectionRegistry.loopDetection.clear();
+  logWithTimestamp("All connection states have been reset");
 }
 
 /**
- * Registers a successful connection with the global tracker
+ * Register a successful connection to track active instances
  */
 export function registerSuccessfulConnection(sessionId: string, instanceId: string) {
   if (!sessionId || !instanceId) return;
   
-  if (!globalConnectionTracker[sessionId]) {
-    globalConnectionTracker[sessionId] = {
-      instances: new Set(),
-      lastReconnect: Date.now()
-    };
+  if (!connectionRegistry.sessions.has(sessionId)) {
+    connectionRegistry.sessions.set(sessionId, new Set());
   }
   
-  globalConnectionTracker[sessionId].instances.add(instanceId);
-  logWithTimestamp(`Registered connection for session ${sessionId}, instance ${instanceId}`);
+  connectionRegistry.sessions.get(sessionId)?.add(instanceId);
+  
+  // Reset loop detection state on successful connection
+  if (connectionRegistry.loopDetection.has(sessionId)) {
+    const loopState = connectionRegistry.loopDetection.get(sessionId);
+    if (loopState) {
+      loopState.attempts = 0;
+      loopState.inLoop = false;
+    }
+  }
 }
 
 /**
- * Unregisters a connection instance from the global tracker
+ * Unregister a connection instance when component unmounts
  */
 export function unregisterConnectionInstance(sessionId: string, instanceId: string) {
-  if (!sessionId || !instanceId || !globalConnectionTracker[sessionId]) return;
+  if (!sessionId || !instanceId) return;
   
-  globalConnectionTracker[sessionId].instances.delete(instanceId);
-  logWithTimestamp(`Unregistered connection for session ${sessionId}, instance ${instanceId}`);
-  
-  if (globalConnectionTracker[sessionId].instances.size === 0) {
-    delete globalConnectionTracker[sessionId];
-    logWithTimestamp(`Removed tracking for session ${sessionId} - no more active instances`);
+  if (connectionRegistry.sessions.has(sessionId)) {
+    connectionRegistry.sessions.get(sessionId)?.delete(instanceId);
   }
 }
 
 /**
- * Checks if we might be in a connection loop and if so, prevents further connection attempts
+ * Prevent connection loops by detecting rapid reconnection attempts
  */
-export function preventConnectionLoop(
-  sessionId: string, 
-  instanceId: string,
-  loopStateRef: React.MutableRefObject<any>
-): boolean {
-  if (!sessionId || !instanceId) return false;
+export function preventConnectionLoop(sessionId: string, instanceId: string, stateRef: React.MutableRefObject<any>) {
+  if (!sessionId) return false;
   
-  // Initialize tracker for this session if needed
-  if (!globalConnectionTracker[sessionId]) {
-    globalConnectionTracker[sessionId] = {
-      instances: new Set(),
-      lastReconnect: Date.now()
-    };
+  const now = Date.now();
+  
+  if (!connectionRegistry.loopDetection.has(sessionId)) {
+    connectionRegistry.loopDetection.set(sessionId, {
+      attempts: 1,
+      lastAttempt: now,
+      inLoop: false
+    });
+    return false;
   }
   
-  const tracker = globalConnectionTracker[sessionId];
+  const loopState = connectionRegistry.loopDetection.get(sessionId)!;
   
-  // Check if we already have this instance registered
-  const alreadyRegistered = tracker.instances.has(instanceId);
-  
-  // If we have multiple instances or this instance is already trying to connect, we might be in a loop
-  const potentialLoop = tracker.instances.size > 0 || alreadyRegistered;
-  
-  if (potentialLoop) {
-    // Check if we're reconnecting too quickly
-    const timeSinceLastReconnect = Date.now() - tracker.lastReconnect;
-    const isTooQuick = timeSinceLastReconnect < 30000; // 30 seconds cooldown
+  // If attempts are happening too fast, we might be in a loop
+  if (now - loopState.lastAttempt < 2000) {
+    loopState.attempts++;
     
-    if (isTooQuick) {
-      logWithTimestamp(`⚠️ Detected connection loop for session ${sessionId} with ${tracker.instances.size} active instances - enforcing 30s cooldown`);
+    if (loopState.attempts > 5) {
+      loopState.inLoop = true;
       
-      if (loopStateRef.current) {
-        loopStateRef.current = {
-          inLoop: true,
-          cooldownUntil: Date.now() + 30000
-        };
+      if (stateRef && stateRef.current !== loopState) {
+        stateRef.current = loopState;
       }
       
+      logWithTimestamp(`Connection loop detected for session ${sessionId}. Suspending further attempts.`);
       return true;
+    }
+  } else {
+    // Reset counter if attempts are spaced out
+    if (now - loopState.lastAttempt > 5000) {
+      loopState.attempts = 1;
+      loopState.inLoop = false;
     }
   }
   
-  // Update last reconnect time
-  tracker.lastReconnect = Date.now();
+  loopState.lastAttempt = now;
   
-  // Not in a loop or cooldown expired
-  if (loopStateRef.current) {
-    loopStateRef.current = null;
+  if (stateRef) {
+    stateRef.current = loopState;
   }
   
-  return false;
+  return loopState.inLoop;
 }
 
 /**
- * Type for connection manager reference
- */
-export type ConnectionManager = {
-  pendingTimeout: ReturnType<typeof setTimeout> | null,
-  isSuspended: boolean
-};
-
-/**
- * Creates a delayed connection attempt that respects the mounted state
+ * Create a delayed connection attempt with proper cleanup
  */
 export function createDelayedConnectionAttempt(
-  callback: () => void,
+  callback: () => void, 
   delay: number,
-  isMountedRef: React.MutableRefObject<boolean>,
-  connectionManagerRef: React.MutableRefObject<{
+  isMounted: React.MutableRefObject<boolean>,
+  connectionManager: React.MutableRefObject<{
     pendingTimeout: ReturnType<typeof setTimeout> | null,
     isSuspended: boolean
   }>
 ) {
   // Clear any existing timeout
-  if (connectionManagerRef.current.pendingTimeout) {
-    clearTimeout(connectionManagerRef.current.pendingTimeout);
+  if (connectionManager.current.pendingTimeout) {
+    clearTimeout(connectionManager.current.pendingTimeout);
+    connectionManager.current.pendingTimeout = null;
   }
   
-  // Set up new timeout
-  connectionManagerRef.current.pendingTimeout = setTimeout(() => {
-    connectionManagerRef.current.pendingTimeout = null;
-    
-    // Only execute if still mounted and not suspended
-    if (isMountedRef.current && !connectionManagerRef.current.isSuspended) {
+  // Create new timeout
+  connectionManager.current.pendingTimeout = setTimeout(() => {
+    if (isMounted.current && !connectionManager.current.isSuspended) {
       callback();
     }
+    connectionManager.current.pendingTimeout = null;
   }, delay);
 }
 
 /**
- * Temporarily suspends connection attempts
+ * Suspend connection attempts for a period of time
  */
 export function suspendConnectionAttempts(
-  connectionManagerRef: React.MutableRefObject<{
+  connectionManager: React.MutableRefObject<{
     pendingTimeout: ReturnType<typeof setTimeout> | null,
     isSuspended: boolean
   }>,
-  duration: number = 15000
+  duration: number = 10000
 ) {
-  // Clear any pending timeout
-  if (connectionManagerRef.current.pendingTimeout) {
-    clearTimeout(connectionManagerRef.current.pendingTimeout);
-    connectionManagerRef.current.pendingTimeout = null;
+  // Clear any pending reconnect
+  if (connectionManager.current.pendingTimeout) {
+    clearTimeout(connectionManager.current.pendingTimeout);
+    connectionManager.current.pendingTimeout = null;
   }
   
-  // Set suspended flag
-  connectionManagerRef.current.isSuspended = true;
+  // Set suspension flag
+  connectionManager.current.isSuspended = true;
   
-  // Set timeout to clear suspension
+  // Schedule end of suspension
   setTimeout(() => {
-    connectionManagerRef.current.isSuspended = false;
+    connectionManager.current.isSuspended = false;
   }, duration);
 }
 
 /**
- * Gets a stable connection state to prevent UI flashing
+ * Get a stable connection state that won't flicker
  */
 export function getStableConnectionState(
-  newState: 'disconnected' | 'connecting' | 'connected' | 'error',
-  stableStateRef: React.MutableRefObject<{
-    state: string,
-    timestamp: number
+  currentState: 'disconnected' | 'connecting' | 'connected' | 'error',
+  stateRef: React.MutableRefObject<{
+    state: 'disconnected' | 'connecting' | 'connected' | 'error',
+    since: number
   } | null>
-): 'disconnected' | 'connecting' | 'connected' | 'error' {
+) {
   const now = Date.now();
   
-  // Initialize if needed
-  if (!stableStateRef.current) {
-    stableStateRef.current = {
-      state: newState,
-      timestamp: now
+  // Initialize if not present
+  if (!stateRef.current) {
+    stateRef.current = {
+      state: currentState,
+      since: now
     };
-    return newState;
+    return currentState;
   }
   
-  // Always immediately update to connected state for good UX
-  if (newState === 'connected') {
-    stableStateRef.current = {
-      state: 'connected',
-      timestamp: now
-    };
-    return 'connected';
+  // If transitioning from connected to non-connected, delay the transition
+  // to prevent flickering UI
+  if (stateRef.current.state === 'connected' && currentState !== 'connected') {
+    if (now - stateRef.current.since < 2000) {
+      // Keep showing connected for a short period to prevent flickering
+      return 'connected';
+    }
   }
   
-  // For other states, only update if the current state has been stable for at least 3 seconds
-  const timeSinceLastUpdate = now - stableStateRef.current.timestamp;
-  
-  if (timeSinceLastUpdate > 3000 || stableStateRef.current.state === 'disconnected') {
-    stableStateRef.current = {
-      state: newState,
-      timestamp: now
+  // If state changed, update the reference
+  if (stateRef.current.state !== currentState) {
+    stateRef.current = {
+      state: currentState,
+      since: now
     };
-    return newState;
   }
   
-  // Otherwise keep the existing state for UI stability
-  return stableStateRef.current.state as 'disconnected' | 'connecting' | 'connected' | 'error';
+  return currentState;
 }
 
 /**
- * Gets the effective connection state based on isConnected flag and current state
+ * Get an effective connection state based on multiple factors
  */
 export function getEffectiveConnectionState(
-  state: 'disconnected' | 'connecting' | 'connected' | 'error',
+  connectionState: 'disconnected' | 'connecting' | 'connected' | 'error',
   isConnected: boolean
-): 'disconnected' | 'connecting' | 'connected' | 'error' {
-  // If isConnected is true, but state isn't 'connected', the state should be 'connected'
-  if (isConnected && state !== 'connected') {
+) {
+  if (isConnected) {
     return 'connected';
   }
   
-  // If isConnected is false, but state is 'connected', the state should be 'disconnected'
-  if (!isConnected && state === 'connected') {
-    return 'disconnected';
-  }
-  
-  // Otherwise return the current state
-  return state;
+  return connectionState;
 }
 
 /**
@@ -386,4 +356,3 @@ export class ConnectionManagerClass {
     }
   }
 }
-

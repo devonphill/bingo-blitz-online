@@ -28,15 +28,23 @@ export function useCallerHub(sessionId?: string) {
   const instanceId = useRef<string>(Date.now().toString());
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 5;
+  const connectionInProgressRef = useRef(false); // Track if connection attempt is in progress
   
   // CRITICAL FIX: Track received presence data separately from processed players list
   const presenceStateRef = useRef<Record<string, any[]>>({});
 
   // Function to establish WebSocket connection to bingo hub
   const connectToHub = useCallback(() => {
+    // Don't reconnect if we're already connecting
+    if (connectionInProgressRef.current) {
+      logWithTimestamp("Connection attempt already in progress, skipping redundant attempt");
+      return;
+    }
+    
     if (!sessionId) return;
     
     try {
+      connectionInProgressRef.current = true;
       logWithTimestamp(`Caller connecting to WebSocket for session ${sessionId}, instance ${instanceId.current}`);
       
       // Clean up any existing connection first
@@ -116,6 +124,7 @@ export function useCallerHub(sessionId?: string) {
       // Subscribe and track connection status
       channel.subscribe(status => {
         logWithTimestamp(`Caller WebSocket ${status} for session ${sessionId}`);
+        connectionInProgressRef.current = false;
         
         if (status === 'SUBSCRIBED') {
           setIsConnected(true);
@@ -138,6 +147,7 @@ export function useCallerHub(sessionId?: string) {
           setConnectionState('error');
           setConnectionError('Channel error connecting to game server');
           
+          // Only attempt reconnect if not at max attempts
           if (reconnectAttemptsRef.current < maxReconnectAttempts) {
             // Schedule reconnect
             handleReconnect();
@@ -146,6 +156,7 @@ export function useCallerHub(sessionId?: string) {
           setIsConnected(false);
           setConnectionState('disconnected');
           
+          // Only attempt reconnect if not at max attempts
           if (reconnectAttemptsRef.current < maxReconnectAttempts) {
             // Schedule reconnect
             handleReconnect();
@@ -156,6 +167,7 @@ export function useCallerHub(sessionId?: string) {
       // Store channel reference
       channelRef.current = channel;
     } catch (error) {
+      connectionInProgressRef.current = false;
       logWithTimestamp(`Error establishing WebSocket connection: ${error}`);
       setIsConnected(false);
       setConnectionState('error');
@@ -186,16 +198,23 @@ export function useCallerHub(sessionId?: string) {
     setConnectedPlayers(players);
   }, []);
   
-  // Function to handle reconnect
+  // Function to handle reconnect with exponential backoff
   const handleReconnect = useCallback(() => {
-    reconnectAttemptsRef.current++;
+    // Only increment if not already at max
+    if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+      reconnectAttemptsRef.current++;
+    }
+    
+    // Calculate delay with exponential backoff
     const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 10000);
     
     logWithTimestamp(`Scheduling reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
     
     setTimeout(() => {
-      logWithTimestamp(`Attempting reconnect for session ${sessionId} (${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
-      connectToHub();
+      if (reconnectAttemptsRef.current <= maxReconnectAttempts) {
+        logWithTimestamp(`Attempting reconnect for session ${sessionId} (${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
+        connectToHub();
+      }
     }, delay);
   }, [connectToHub, sessionId]);
   
@@ -209,6 +228,7 @@ export function useCallerHub(sessionId?: string) {
     }
     
     reconnectAttemptsRef.current = 0;
+    connectionInProgressRef.current = false;
     setConnectionState('connecting');
     connectToHub();
   }, [connectToHub]);
@@ -299,7 +319,7 @@ export function useCallerHub(sessionId?: string) {
     }
   }, [isConnected, sessionId]);
   
-  // ADD NEW METHOD: respond to claim with a specific result (valid or rejected)
+  // Method to respond to claim with a specific result (valid or rejected)
   const respondToClaim = useCallback((playerCode: string, result: 'valid' | 'rejected') => {
     if (!channelRef.current || !isConnected) {
       logWithTimestamp('Cannot respond to claim: not connected');
@@ -332,7 +352,7 @@ export function useCallerHub(sessionId?: string) {
     }
   }, [isConnected, sessionId]);
   
-  // ADD NEW METHOD: change win pattern
+  // Method to change win pattern
   const changePattern = useCallback((pattern: string) => {
     if (!channelRef.current || !isConnected) {
       logWithTimestamp('Cannot change pattern: not connected');
@@ -371,6 +391,9 @@ export function useCallerHub(sessionId?: string) {
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
       }
+      
+      // Reset connection flags on unmount
+      connectionInProgressRef.current = false;
     };
   }, [connectToHub, sessionId]);
   
@@ -385,7 +408,6 @@ export function useCallerHub(sessionId?: string) {
     callNumber,
     startGame,
     verifyClaim,
-    // Add new functions to the return object
     respondToClaim,
     changePattern
   };

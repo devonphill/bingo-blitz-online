@@ -13,7 +13,6 @@ export interface GameState {
   currentPrizeDescription: string | null;
 }
 
-// Only export if this file already exists, otherwise create it
 export function useBingoSync(sessionId: string, playerCode: string, playerName: string = '') {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
@@ -30,11 +29,24 @@ export function useBingoSync(sessionId: string, playerCode: string, playerName: 
   // Store channel reference
   const channelRef = useRef<any>(null);
   
+  // Track connection state
+  const connectionInProgressRef = useRef<boolean>(false);
+  const reconnectAttemptsRef = useRef(0);
+  const maxReconnectAttempts = 5;
+  
   // CRITICAL FIX: Function to properly subscribe to a channel before using presence
   const subscribeToChannel = useCallback(() => {
+    // Don't reconnect if we're already connecting
+    if (connectionInProgressRef.current) {
+      logWithTimestamp("Connection attempt already in progress, skipping redundant attempt");
+      return;
+    }
+    
     if (!sessionId) return;
     
     try {
+      connectionInProgressRef.current = true;
+      
       // Cleanup any existing channel first
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
@@ -50,6 +62,7 @@ export function useBingoSync(sessionId: string, playerCode: string, playerName: 
       // CRITICAL: First subscribe to the channel
       channel.subscribe((status) => {
         logWithTimestamp(`Channel status: ${status}`);
+        connectionInProgressRef.current = false;
         
         if (status === 'SUBSCRIBED') {
           // Only after subscription is confirmed, try to use presence
@@ -70,6 +83,24 @@ export function useBingoSync(sessionId: string, playerCode: string, playerName: 
           setIsConnected(true);
           setConnectionState('connected');
           setConnectionError(null);
+          reconnectAttemptsRef.current = 0;
+        } else if (status === 'CHANNEL_ERROR') {
+          setIsConnected(false);
+          setConnectionState('error');
+          setConnectionError('Channel error connecting to game server');
+          
+          // Schedule reconnect if under max attempts
+          if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+            handleReconnect();
+          }
+        } else if (status === 'CLOSED') {
+          setIsConnected(false);
+          setConnectionState('disconnected');
+          
+          // Schedule reconnect if under max attempts
+          if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+            handleReconnect();
+          }
         }
       });
       
@@ -113,6 +144,17 @@ export function useBingoSync(sessionId: string, playerCode: string, playerName: 
               calledNumbers: payload.payload.calledNumbers || prevState.calledNumbers,
             }));
           }
+        })
+        .on('broadcast', { event: 'pattern-change' }, (payload) => {
+          if (payload.payload && payload.payload.sessionId === sessionId) {
+            logWithTimestamp(`Received pattern change: ${payload.payload.pattern}`);
+            
+            // Update win pattern
+            setGameState(prevState => ({
+              ...prevState,
+              currentWinPattern: payload.payload.pattern,
+            }));
+          }
         });
       
       // Store the channel reference
@@ -122,15 +164,38 @@ export function useBingoSync(sessionId: string, playerCode: string, playerName: 
         logWithTimestamp(`Cleaning up channel: ${channelName}`);
         if (channelRef.current) {
           supabase.removeChannel(channelRef.current);
+          channelRef.current = null;
         }
+        connectionInProgressRef.current = false;
       };
     } catch (error) {
+      connectionInProgressRef.current = false;
       logWithTimestamp(`Error setting up realtime channel: ${error}`);
       setConnectionState('error');
       setConnectionError(`Failed to connect: ${error}`);
       return () => {};
     }
   }, [sessionId, playerCode, playerName]);
+  
+  // Function to handle reconnect with exponential backoff
+  const handleReconnect = useCallback(() => {
+    // Only increment if not already at max
+    if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+      reconnectAttemptsRef.current++;
+    }
+    
+    // Calculate delay with exponential backoff
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 10000);
+    
+    logWithTimestamp(`Scheduling reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
+    
+    setTimeout(() => {
+      if (reconnectAttemptsRef.current <= maxReconnectAttempts) {
+        logWithTimestamp(`Attempting reconnect for player ${playerCode} in session ${sessionId}`);
+        subscribeToChannel();
+      }
+    }, delay);
+  }, [subscribeToChannel, playerCode, sessionId]);
   
   // Setup channel on mount
   useEffect(() => {
@@ -143,6 +208,10 @@ export function useBingoSync(sessionId: string, playerCode: string, playerName: 
   
   // Reconnect function for manual reconnection
   const reconnect = useCallback(() => {
+    // Reset reconnect attempts
+    reconnectAttemptsRef.current = 0;
+    connectionInProgressRef.current = false;
+    
     setConnectionState('connecting');
     subscribeToChannel();
   }, [subscribeToChannel]);
