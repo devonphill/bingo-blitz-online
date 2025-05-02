@@ -59,21 +59,38 @@ export function LiveGameView({
   const [isClaimSheetOpen, setIsClaimSheetOpen] = useState(false);
   const { getCurrentGamePatterns } = useGameData(sessionId);
   const { toast } = useToast();
+  const connectionId = React.useId();
   
-  // Reset all global connection state on mount
+  // Enhanced logging for component lifecycle
   useEffect(() => {
-    logWithTimestamp("LiveGameView mounted - cleaning up all connections");
+    logWithTimestamp(`[LiveGameView-${connectionId}] Component mounted - cleaning up all connections`);
     cleanupAllConnections();
     
     // Clean up on unmount too
     return () => {
-      logWithTimestamp("LiveGameView unmounting - cleaning up all connections");
+      logWithTimestamp(`[LiveGameView-${connectionId}] Component unmounting - cleaning up all connections`);
       cleanupAllConnections();
     };
-  }, []);
+  }, [connectionId]);
   
   // Use caller WebSocket hub to receive claims - after cleanup to ensure clean state
   const callerHub = useCallerHub(sessionId);
+
+  // Log detailed connection status changes for debugging
+  useEffect(() => {
+    logWithTimestamp(`[LiveGameView-${connectionId}] Connection state changed: ${callerHub.connectionState}`);
+    logWithTimestamp(`[LiveGameView-${connectionId}] Connected: ${callerHub.isConnected}`);
+    logWithTimestamp(`[LiveGameView-${connectionId}] Players: ${callerHub.connectedPlayers.length}`);
+    if (callerHub.connectionError) {
+      logWithTimestamp(`[LiveGameView-${connectionId}] Connection error: ${callerHub.connectionError}`);
+    }
+  }, [
+    callerHub.connectionState, 
+    callerHub.isConnected,
+    callerHub.connectedPlayers.length,
+    callerHub.connectionError,
+    connectionId
+  ]);
 
   // Add a debounced connection state for UI consistency
   const [stableConnectionState, setStableConnectionState] = useState(callerHub.connectionState);
@@ -85,17 +102,23 @@ export function LiveGameView({
     if (callerHub.isConnected && callerHub.connectionState === 'connected') {
       setStableIsConnected(true);
       setStableConnectionState('connected');
+      logWithTimestamp(`[LiveGameView-${connectionId}] Stable connection state updated immediately to connected`);
       return;
     }
     
     // For disconnection, use a short debounce
+    logWithTimestamp(`[LiveGameView-${connectionId}] Debouncing connection state change to: ${callerHub.connectionState}`);
     const timer = setTimeout(() => {
       setStableIsConnected(callerHub.isConnected);
       setStableConnectionState(callerHub.connectionState);
+      logWithTimestamp(`[LiveGameView-${connectionId}] Stable connection state updated to: ${callerHub.connectionState}`);
     }, 1000);
     
-    return () => clearTimeout(timer);
-  }, [callerHub.isConnected, callerHub.connectionState]);
+    return () => {
+      clearTimeout(timer);
+      logWithTimestamp(`[LiveGameView-${connectionId}] Cleared connection state debounce timer`);
+    };
+  }, [callerHub.isConnected, callerHub.connectionState, connectionId]);
 
   const remainingNumbers = React.useMemo(() => {
     const allNumbers = Array.from({ length: gameType === 'mainstage' ? 90 : 75 }, (_, i) => i + 1);
@@ -105,36 +128,50 @@ export function LiveGameView({
   // Update claim sheet when new claims arrive via WebSocket
   useEffect(() => {
     if (callerHub.pendingClaims.length > 0) {
+      logWithTimestamp(`[LiveGameView-${connectionId}] Received ${callerHub.pendingClaims.length} pending claims, opening claim sheet`);
       setIsClaimSheetOpen(true);
     }
-  }, [callerHub.pendingClaims]);
+  }, [callerHub.pendingClaims, connectionId]);
   
-  // Debug effect for checking player status
+  // Enhanced debug effect for checking player status with more detailed logging
   useEffect(() => {
-    console.log("CallerHub connected players:", callerHub.connectedPlayers);
-    console.log("CallerHub connection state:", callerHub.connectionState);
-    console.log("CallerHub isConnected:", callerHub.isConnected);
-  }, [callerHub.connectedPlayers, callerHub.connectionState, callerHub.isConnected]);
+    logWithTimestamp(`[LiveGameView-${connectionId}] Connection and player status:`);
+    logWithTimestamp(`[LiveGameView-${connectionId}] - Connected players: ${callerHub.connectedPlayers.length}`);
+    callerHub.connectedPlayers.forEach((player, index) => {
+      logWithTimestamp(`[LiveGameView-${connectionId}] - Player ${index+1}: ${player.playerName || player.playerCode}`);
+    });
+    logWithTimestamp(`[LiveGameView-${connectionId}] - Connection state: ${callerHub.connectionState}`);
+    logWithTimestamp(`[LiveGameView-${connectionId}] - isConnected: ${callerHub.isConnected}`);
+  }, [callerHub.connectedPlayers, callerHub.connectionState, callerHub.isConnected, connectionId]);
   
   const openClaimSheet = () => {
+    logWithTimestamp(`[LiveGameView-${connectionId}] Opening claim verification sheet`);
     setIsClaimSheetOpen(true);
   };
   
   const closeClaimSheet = () => {
+    logWithTimestamp(`[LiveGameView-${connectionId}] Closing claim verification sheet`);
     setIsClaimSheetOpen(false);
   };
   
   const handleReconnect = () => {
     if (callerHub.reconnect) {
+      logWithTimestamp(`[LiveGameView-${connectionId}] Reconnect button clicked - cleaning up connections`);
+      
       // Clean up all connections first to break loops
       cleanupAllConnections();
       
+      // Attempt reconnection with enhanced logging
+      logWithTimestamp(`[LiveGameView-${connectionId}] Initiating reconnection`);
       callerHub.reconnect();
+      
       toast({
         title: "Reconnecting",
         description: "Attempting to reconnect to the game server...",
         duration: 3000
       });
+    } else {
+      logWithTimestamp(`[LiveGameView-${connectionId}] Reconnect function not available`);
     }
   };
 

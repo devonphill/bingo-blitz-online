@@ -25,6 +25,22 @@ const PlayerList: React.FC<PlayerListProps> = ({
   // Determine if we're actually connected - this drives the main UI display
   const isConnected = connectionState === 'connected';
   
+  // Enhanced status message based on connection state
+  const getConnectionMessage = () => {
+    switch(connectionState) {
+      case 'connected':
+        return players.length > 0 
+          ? `${players.length} player${players.length > 1 ? 's' : ''} connected` 
+          : 'Connected to game server, waiting for players';
+      case 'connecting':
+        return 'Connecting to game server...';
+      case 'error':
+        return 'Connection error with game server';
+      default:
+        return 'Disconnected from game server';
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="text-amber-500 text-center py-4 flex flex-col items-center gap-2">
@@ -53,10 +69,15 @@ const PlayerList: React.FC<PlayerListProps> = ({
             <Loader className="h-5 w-5 animate-spin" />
             <span>Waiting for players to connect...</span>
           </>
-        ) : (
+        ) : isConnected ? (
           <>
             <Users className="h-5 w-5" />
             <span>No players have joined yet. Share the access code.</span>
+          </>
+        ) : (
+          <>
+            <WifiOff className="h-5 w-5" />
+            <span>Check connection status. No players currently visible.</span>
           </>
         )}
       </div>
@@ -67,8 +88,14 @@ const PlayerList: React.FC<PlayerListProps> = ({
     <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto">
       <div className="flex items-center justify-between mb-1">
         <span className="text-sm text-gray-500">Connected players ({players.length})</span>
-        <Badge variant="outline" className={`text-xs ${isConnected ? 'bg-green-100 text-green-800 border-green-200' : ''}`}>
-          {isConnected ? 'Server Connected' : 'Connecting...'}
+        <Badge variant="outline" className={`text-xs ${
+          isConnected 
+            ? 'bg-green-100 text-green-800 border-green-200' 
+            : connectionState === 'connecting'
+            ? 'bg-amber-100 text-amber-800 border-amber-200'
+            : 'bg-red-100 text-red-800 border-red-200'
+        }`}>
+          {isConnected ? 'Server Connected' : connectionState === 'connecting' ? 'Connecting...' : 'Disconnected'}
         </Badge>
       </div>
 
