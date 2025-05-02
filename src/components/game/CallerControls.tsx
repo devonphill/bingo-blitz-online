@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Bell, RefreshCw, AlertCircle } from 'lucide-react';
+import { Bell } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useCallerHub } from '@/hooks/useCallerHub';
@@ -49,9 +48,6 @@ export default function CallerControls({
   
   // Use pending claims from the WebSocket hub
   const pendingClaimsCount = callerHub.pendingClaims.length;
-  
-  // Simplified connection state management
-  const [displayConnectionState, setDisplayConnectionState] = useState('disconnected');
 
   // Update claims when we receive new ones
   useEffect(() => {
@@ -60,29 +56,10 @@ export default function CallerControls({
     }
   }, [pendingClaimsCount, claimCount, openClaimSheet]);
 
-  // More reliable connection state management with debounce
-  useEffect(() => {
-    // For connected state, update immediately for better UX
-    if (callerHub.isConnected && callerHub.connectionState === 'connected') {
-      setDisplayConnectionState('connected');
-      return;
-    }
-    
-    // For disconnection or errors, use a short delay to prevent flashing
-    const timer = setTimeout(() => {
-      // Only update if still not connected after delay
-      if (!callerHub.isConnected) {
-        setDisplayConnectionState(callerHub.connectionState);
-      }
-    }, 2000); // 2 second debounce
-    
-    return () => clearTimeout(timer);
-  }, [callerHub.connectionState, callerHub.isConnected]);
-
   // Debug logging
   useEffect(() => {
-    logWithTimestamp(`CallerControls: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}, displayState: ${displayConnectionState}`);
-  }, [callerHub.connectionState, callerHub.isConnected, displayConnectionState]);
+    logWithTimestamp(`CallerControls: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}`);
+  }, [callerHub.connectionState, callerHub.isConnected]);
 
   const handleCallNumber = () => {
     if (remainingNumbers.length === 0) {
@@ -216,52 +193,7 @@ export default function CallerControls({
     openClaimSheet();
   };
 
-  const handleReconnectClick = () => {
-    if (callerHub.reconnect) {
-      callerHub.reconnect();
-      toast({
-        title: "Reconnecting",
-        description: "Attempting to reconnect to the game server...",
-      });
-    }
-  };
-
-  const isGoLiveDisabled = false;
-
-  const renderConnectionStatus = () => {
-    if (displayConnectionState === 'connected') {
-      return (
-        <div className="text-xs text-green-600 flex items-center justify-center mt-2">
-          <span className="h-2 w-2 bg-green-500 rounded-full mr-2"></span>
-          Connected to game server
-        </div>
-      );
-    } else {
-      return (
-        <div className="bg-amber-50 border border-amber-200 rounded-md p-2 mt-2">
-          <div className="flex items-center">
-            <AlertCircle className="h-4 w-4 text-amber-500 mr-2" />
-            <div className="text-xs text-amber-700">
-              {displayConnectionState === 'connecting' 
-                ? 'Connecting to game server...' 
-                : displayConnectionState === 'error' 
-                  ? 'Failed to connect to game server' 
-                  : 'Disconnected from game server'}
-            </div>
-          </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="mt-2 w-full text-xs flex items-center gap-1"
-            onClick={handleReconnectClick}
-          >
-            <RefreshCw className="h-3 w-3" />
-            Reconnect
-          </Button>
-        </div>
-      );
-    }
-  };
+  const isGoLiveDisabled = !callerHub.isConnected;
 
   return (
     <Card>
@@ -305,7 +237,7 @@ export default function CallerControls({
         <div className="grid grid-cols-1 gap-3">
           <Button
             className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-            disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active' || displayConnectionState !== 'connected'}
+            disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active' || !callerHub.isConnected}
             onClick={handleCallNumber}
           >
             {isCallingNumber ? 'Calling...' : 'Call Next Number'}
@@ -324,11 +256,22 @@ export default function CallerControls({
             onClick={handleGoLiveClick}
           >
             {isGoingLive ? 'Going Live...' : 
-              displayConnectionState !== 'connected' ? 'Connect First' : 'Go Live'}
+              !callerHub.isConnected ? 'Connect First' : 'Go Live'}
           </Button>
         </div>
         
-        {renderConnectionStatus()}
+        {!callerHub.isConnected && (
+          <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded flex items-center justify-center mt-2">
+            <span className="h-2 w-2 bg-amber-500 rounded-full mr-2"></span>
+            Not connected to game server
+          </div>
+        )}
+        {callerHub.isConnected && (
+          <div className="text-xs text-green-600 flex items-center justify-center mt-2">
+            <span className="h-2 w-2 bg-green-500 rounded-full mr-2"></span>
+            Connected to game server
+          </div>
+        )}
       </CardContent>
     </Card>
   );

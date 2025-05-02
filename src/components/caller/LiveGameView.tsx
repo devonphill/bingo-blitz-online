@@ -74,32 +74,6 @@ export function LiveGameView({
   
   // Use caller WebSocket hub to receive claims - after cleanup to ensure clean state
   const callerHub = useCallerHub(sessionId);
-  
-  // Simplified connection state management with debounce
-  const [displayConnectionState, setDisplayConnectionState] = useState('disconnected');
-  
-  useEffect(() => {
-    // For connected state, update immediately for better UX
-    if (callerHub.isConnected && callerHub.connectionState === 'connected') {
-      setDisplayConnectionState('connected');
-      return;
-    }
-    
-    // For disconnection or errors, use a delay to prevent UI flashing
-    const timer = setTimeout(() => {
-      // Only update if still not connected after delay
-      if (!callerHub.isConnected) {
-        setDisplayConnectionState(callerHub.connectionState);
-      }
-    }, 2000); // 2 second debounce
-    
-    return () => clearTimeout(timer);
-  }, [callerHub.connectionState, callerHub.isConnected]);
-  
-  // Debug logging for connection status
-  useEffect(() => {
-    logWithTimestamp(`LiveGameView: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}, displayState: ${displayConnectionState}`);
-  }, [callerHub.connectionState, callerHub.isConnected, displayConnectionState]);
 
   const remainingNumbers = React.useMemo(() => {
     const allNumbers = Array.from({ length: gameType === 'mainstage' ? 90 : 75 }, (_, i) => i + 1);
@@ -182,27 +156,27 @@ export function LiveGameView({
                 </div>
               </div>
 
-              {/* WebSocket connection status with improved display */}
+              {/* WebSocket connection status */}
               <div className="bg-gray-100 p-4 rounded-md">
-                <div className="text-sm text-gray-500 mb-1">Connection Status</div>
-                <div className={`text-lg font-bold ${displayConnectionState === 'connected' ? 'text-green-600' : 
-                                displayConnectionState === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
-                  {displayConnectionState === 'connected' ? 'Connected' : 
-                   displayConnectionState === 'connecting' ? 'Connecting...' :
-                   displayConnectionState === 'error' ? 'Connection Error' : 'Disconnected'}
+                <div className="text-sm text-gray-500 mb-1">Game Server Connection</div>
+                <div className={`text-lg font-bold ${callerHub.isConnected ? 'text-green-600' : 
+                              callerHub.connectionState === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
+                  {callerHub.isConnected ? 'Connected' : 
+                   callerHub.connectionState === 'connecting' ? 'Connecting...' :
+                   callerHub.connectionState === 'error' ? 'Connection Error' : 'Disconnected'}
                 </div>
                 <div className="mt-2 text-sm text-gray-500">
                   {callerHub.connectionError || 
-                    (displayConnectionState === 'connected'
+                    (callerHub.isConnected
                     ? 'WebSocket connection is established and working correctly.'
-                    : displayConnectionState === 'connecting'
+                    : callerHub.connectionState === 'connecting'
                     ? 'Establishing WebSocket connection...'
-                    : displayConnectionState === 'error'
+                    : callerHub.connectionState === 'error'
                     ? 'Error with WebSocket connection. Some features may not work.'
                     : 'WebSocket disconnected. Attempting to reconnect automatically...')}
                 </div>
                 
-                {displayConnectionState !== 'connected' && (
+                {!callerHub.isConnected && (
                   <Button 
                     size="sm" 
                     variant="outline" 
@@ -210,7 +184,7 @@ export function LiveGameView({
                     onClick={handleReconnect}
                   >
                     <RefreshCw className="h-4 w-4" />
-                    Reconnect Manually
+                    Reconnect
                   </Button>
                 )}
               </div>
