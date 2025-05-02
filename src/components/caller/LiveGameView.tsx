@@ -60,9 +60,8 @@ export function LiveGameView({
   const { getCurrentGamePatterns } = useGameData(sessionId);
   const { toast } = useToast();
   
-  // CRITICAL FIX: Reset all global connection state on mount
+  // Reset all global connection state on mount
   useEffect(() => {
-    // Clean up global connection state to break any connection loops
     logWithTimestamp("LiveGameView mounted - cleaning up all connections");
     cleanupAllConnections();
     
@@ -150,8 +149,10 @@ export function LiveGameView({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Connected players from WebSocket */}
               <div className="bg-gray-100 p-4 rounded-md">
-                <div className="text-sm text-gray-500 mb-1">Connected Players</div>
-                <div className="text-lg font-bold">{callerHub.connectedPlayers.length}</div>
+                <div className="text-sm text-gray-500 mb-2 flex items-center justify-between">
+                  <span>Connected Players</span>
+                  <span className="font-medium">{callerHub.connectedPlayers.length}</span>
+                </div>
                 <div className="mt-2 max-h-40 overflow-y-auto">
                   <PlayerList 
                     players={callerHub.connectedPlayers} 
@@ -162,7 +163,7 @@ export function LiveGameView({
 
               {/* WebSocket connection status with more detailed display */}
               <div className="bg-gray-100 p-4 rounded-md">
-                <div className="text-sm text-gray-500 mb-1">Game Server Connection</div>
+                <div className="text-sm text-gray-500 mb-2">Game Server Connection</div>
                 <div className={`text-lg font-bold ${callerHub.isConnected ? 'text-green-600' : 
                               callerHub.connectionState === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
                   {callerHub.isConnected ? 'Connected' : 

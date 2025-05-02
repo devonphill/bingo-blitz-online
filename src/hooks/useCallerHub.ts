@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { logWithTimestamp, ConnectionManagerClass } from '@/utils/logUtils';
 import { supabase } from '@/integrations/supabase/client';
@@ -27,14 +28,15 @@ export function useCallerHub(sessionId?: string) {
   const [connectedPlayers, setConnectedPlayers] = useState<ConnectedPlayer[]>([]);
   const [pendingClaims, setPendingClaims] = useState<PendingClaim[]>([]);
   const channelRef = useRef<any>(null);
-  const instanceId = useRef<string>(`${Date.now().toString()}`);
+  const instanceId = useRef<string>(`caller-${Date.now().toString()}`);
   const connectionManager = useRef(new ConnectionManagerClass());
   
-  // CRITICAL FIX: Track received presence data separately from processed players list
+  // Track presence data separately
   const presenceStateRef = useRef<Record<string, any[]>>({});
-  
-  // Debug event counter for tracking presence updates
   const presenceEventsRef = useRef<number>(0);
+  
+  // Tracking mechanism for player presence specifically
+  const playerPresenceMap = useRef<Map<string, ConnectedPlayer>>(new Map());
 
   // Function to establish WebSocket connection to bingo hub
   const connectToHub = useCallback(() => {
@@ -47,6 +49,7 @@ export function useCallerHub(sessionId?: string) {
       return () => {};
     }
     
+    // Check cooldown
     if (connectionManager.current.isInCooldown) {
       const remainingCooldown = Math.ceil((connectionManager.current.cooldownUntil - Date.now()) / 1000);
       logWithTimestamp(`In cooldown period, ${remainingCooldown}s remaining before next attempt`);
@@ -67,16 +70,19 @@ export function useCallerHub(sessionId?: string) {
       // Register this instance as the active connection
       activeCallerConnections.set(connectionKey, instanceId.current);
       
-      // Clean up any existing channel first
+      // Clean up any existing channel first to avoid duplicates
       if (channelRef.current) {
+        logWithTimestamp(`Removing existing channel before creating a new one`);
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
       
       setConnectionState('connecting');
       
-      // Create a channel for this session
-      const channel = supabase.channel(`game-updates-${sessionId}`);
+      // Create a channel for this session with unique name to avoid conflicts
+      const channelName = `game-updates-${sessionId}-${instanceId.current}`;
+      logWithTimestamp(`Creating channel with name: ${channelName}`);
+      const channel = supabase.channel(channelName);
       
       // Set up presence handlers with improved logging
       channel
@@ -85,10 +91,10 @@ export function useCallerHub(sessionId?: string) {
           const eventId = ++presenceEventsRef.current;
           logWithTimestamp(`[Event ${eventId}] Presence state synchronized: ${JSON.stringify(state)}`);
           
-          // CRITICAL FIX: Store the raw presence state for processing
+          // Store the raw presence state for processing
           presenceStateRef.current = state;
           
-          // Process and update connected players from presence state
+          // Process players data from presence state
           processPresenceState(state, eventId);
         })
         .on('presence', { event: 'join' }, ({ key, newPresences }) => {
@@ -161,7 +167,7 @@ export function useCallerHub(sessionId?: string) {
           setConnectionState('connected');
           setConnectionError(null);
           
-          // CRITICAL FIX: Explicitly track presence after successful subscription
+          // Track presence after successful subscription
           const presenceData = {
             caller_id: instanceId.current,
             online_at: new Date().toISOString(),
@@ -181,14 +187,18 @@ export function useCallerHub(sessionId?: string) {
           setConnectionState('error');
           setConnectionError('Channel error connecting to game server');
           
-          // Schedule reconnect through connection manager
-          connectionManager.current.scheduleReconnect(reconnect);
+          // Schedule reconnect with exponential backoff
+          connectionManager.current.scheduleReconnect(() => {
+            reconnect();
+          });
         } else if (status === 'CLOSED') {
           setIsConnected(false);
           setConnectionState('disconnected');
           
-          // Schedule reconnect through connection manager
-          connectionManager.current.scheduleReconnect(reconnect);
+          // Schedule reconnect with exponential backoff
+          connectionManager.current.scheduleReconnect(() => {
+            reconnect();
+          });
         }
       });
       
@@ -221,17 +231,18 @@ export function useCallerHub(sessionId?: string) {
     }
   }, [sessionId]);
   
-  // CRITICAL FIX: Improved presence state processing
+  // Improved presence state processing
   const processPresenceState = useCallback((state: Record<string, any[]>, eventId?: number) => {
-    // Extract players from presence state
-    const players: ConnectedPlayer[] = [];
+    // Clear map first to rebuild from scratch with fresh data
+    playerPresenceMap.current.clear();
     
+    // Extract players from presence state
     Object.entries(state).forEach(([clientId, presences]) => {
       presences.forEach(presence => {
         // Only add players to the list (not callers)
         if (presence.client_type === 'player' && presence.playerCode) {
-          // Add the player to our list
-          players.push({
+          // Use playerCode as the unique identifier
+          playerPresenceMap.current.set(presence.playerCode, {
             playerCode: presence.playerCode,
             playerName: presence.playerName || presence.playerCode,
             joinedAt: presence.online_at || new Date().toISOString(),
@@ -244,18 +255,12 @@ export function useCallerHub(sessionId?: string) {
       });
     });
     
+    // Convert map to array for state update
+    const players = Array.from(playerPresenceMap.current.values());
     logWithTimestamp(`Processed ${players.length} players from presence state${eventId ? ` for event ${eventId}` : ''}`);
     
-    // Only update state if players array has changed
-    setConnectedPlayers(prevPlayers => {
-      // Simple check for change: different length or different order/content
-      const hasChanged = 
-        prevPlayers.length !== players.length ||
-        JSON.stringify(prevPlayers.map(p => p.playerCode).sort()) !== 
-        JSON.stringify(players.map(p => p.playerCode).sort());
-      
-      return hasChanged ? players : prevPlayers;
-    });
+    // Update state
+    setConnectedPlayers(players);
   }, []);
   
   // Function to manually reconnect
@@ -273,8 +278,32 @@ export function useCallerHub(sessionId?: string) {
     connectToHub();
   }, [connectToHub]);
   
+  // Initialize on first render
+  useEffect(() => {
+    if (sessionId) {
+      connectToHub();
+    }
+    
+    return () => {
+      logWithTimestamp(`Cleaning up caller WebSocket connection`);
+      
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+      }
+      
+      // Clean up connection registration
+      if (sessionId) {
+        const connectionKey = `caller:${sessionId}`;
+        activeCallerConnections.delete(connectionKey);
+      }
+      
+      // Reset connection manager
+      connectionManager.current.reset();
+    };
+  }, [connectToHub, sessionId]);
+
   // Method to broadcast a number call
-  const callNumber = useCallback((number: number, allCalledNumbers: number[]) => {
+  const callNumber = useCallback((number: number, remainingNumbers: number[]) => {
     if (!channelRef.current || !isConnected) {
       logWithTimestamp('Cannot broadcast number: not connected');
       return false;
@@ -289,7 +318,7 @@ export function useCallerHub(sessionId?: string) {
         payload: {
           sessionId,
           lastCalledNumber: number,
-          calledNumbers: allCalledNumbers,
+          calledNumbers: remainingNumbers,
           timestamp: Date.now()
         }
       });
@@ -359,40 +388,7 @@ export function useCallerHub(sessionId?: string) {
     }
   }, [isConnected, sessionId]);
   
-  // Method to respond to claim with a specific result (valid or rejected)
-  const respondToClaim = useCallback((playerCode: string, result: 'valid' | 'rejected') => {
-    if (!channelRef.current || !isConnected) {
-      logWithTimestamp('Cannot respond to claim: not connected');
-      return false;
-    }
-    
-    try {
-      logWithTimestamp(`Broadcasting claim result for player: ${playerCode}, result: ${result}`);
-      
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'claim-result',
-        payload: {
-          sessionId,
-          playerId: playerCode,
-          result: result,
-          timestamp: Date.now()
-        }
-      });
-      
-      // Remove from pending claims if it was responded to
-      if (result === 'valid' || result === 'rejected') {
-        setPendingClaims(prev => prev.filter(claim => claim.playerCode !== playerCode));
-      }
-      
-      return true;
-    } catch (error) {
-      logWithTimestamp(`Error responding to claim: ${error}`);
-      return false;
-    }
-  }, [isConnected, sessionId]);
-  
-  // Method to change win pattern
+  // Change pattern
   const changePattern = useCallback((pattern: string) => {
     if (!channelRef.current || !isConnected) {
       logWithTimestamp('Cannot change pattern: not connected');
@@ -419,30 +415,6 @@ export function useCallerHub(sessionId?: string) {
     }
   }, [isConnected, sessionId]);
   
-  // Initialize on first render
-  useEffect(() => {
-    if (sessionId) {
-      connectToHub();
-    }
-    
-    return () => {
-      logWithTimestamp(`Cleaning up caller WebSocket connection`);
-      
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-      }
-      
-      // Clean up connection registration
-      if (sessionId) {
-        const connectionKey = `caller:${sessionId}`;
-        activeCallerConnections.delete(connectionKey);
-      }
-      
-      // Reset connection manager
-      connectionManager.current.reset();
-    };
-  }, [connectToHub, sessionId]);
-  
   // Return the caller hub API
   return {
     isConnected,
@@ -451,141 +423,10 @@ export function useCallerHub(sessionId?: string) {
     connectedPlayers,
     pendingClaims,
     reconnect,
-    callNumber: (number: number, allCalledNumbers: number[]) => {
-      if (!channelRef.current || !isConnected) {
-        logWithTimestamp('Cannot broadcast number: not connected');
-        return false;
-      }
-      
-      try {
-        logWithTimestamp(`Broadcasting called number: ${number}`);
-        
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'number-called',
-          payload: {
-            sessionId,
-            lastCalledNumber: number,
-            calledNumbers: allCalledNumbers,
-            timestamp: Date.now()
-          }
-        });
-        
-        return true;
-      } catch (error) {
-        logWithTimestamp(`Error broadcasting called number: ${error}`);
-        return false;
-      }
-    },
-    startGame: () => {
-      if (!channelRef.current || !isConnected) {
-        logWithTimestamp('Cannot broadcast game start: not connected');
-        return false;
-      }
-      
-      try {
-        logWithTimestamp(`Broadcasting game start for session: ${sessionId}`);
-        
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'game-update',
-          payload: {
-            sessionId,
-            gameStatus: 'active',
-            timestamp: Date.now()
-          }
-        });
-        
-        return true;
-      } catch (error) {
-        logWithTimestamp(`Error broadcasting game start: ${error}`);
-        return false;
-      }
-    },
-    verifyClaim: (playerCode: string, isValid: boolean) => {
-      if (!channelRef.current || !isConnected) {
-        logWithTimestamp('Cannot verify claim: not connected');
-        return false;
-      }
-      
-      try {
-        logWithTimestamp(`Broadcasting claim verification for player: ${playerCode}, valid: ${isValid}`);
-        
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'claim-result',
-          payload: {
-            sessionId,
-            playerId: playerCode,
-            result: isValid ? 'valid' : 'rejected',
-            timestamp: Date.now()
-          }
-        });
-        
-        // Remove from pending claims
-        setPendingClaims(prev => prev.filter(claim => claim.playerCode !== playerCode));
-        
-        return true;
-      } catch (error) {
-        logWithTimestamp(`Error verifying claim: ${error}`);
-        return false;
-      }
-    },
-    respondToClaim: (playerCode: string, result: 'valid' | 'rejected') => {
-      if (!channelRef.current || !isConnected) {
-        logWithTimestamp('Cannot respond to claim: not connected');
-        return false;
-      }
-      
-      try {
-        logWithTimestamp(`Broadcasting claim result for player: ${playerCode}, result: ${result}`);
-        
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'claim-result',
-          payload: {
-            sessionId,
-            playerId: playerCode,
-            result: result,
-            timestamp: Date.now()
-          }
-        });
-        
-        // Remove from pending claims if it was responded to
-        if (result === 'valid' || result === 'rejected') {
-          setPendingClaims(prev => prev.filter(claim => claim.playerCode !== playerCode));
-        }
-        
-        return true;
-      } catch (error) {
-        logWithTimestamp(`Error responding to claim: ${error}`);
-        return false;
-      }
-    },
-    changePattern: (pattern: string) => {
-      if (!channelRef.current || !isConnected) {
-        logWithTimestamp('Cannot change pattern: not connected');
-        return false;
-      }
-      
-      try {
-        logWithTimestamp(`Broadcasting pattern change to: ${pattern}`);
-        
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'pattern-change',
-          payload: {
-            sessionId,
-            pattern: pattern,
-            timestamp: Date.now()
-          }
-        });
-        
-        return true;
-      } catch (error) {
-        logWithTimestamp(`Error changing pattern: ${error}`);
-        return false;
-      }
-    }
+    callNumber,
+    startGame,
+    verifyClaim,
+    changePattern,
+    respondToClaim: verifyClaim // Alias for backward compatibility
   };
 }

@@ -83,7 +83,7 @@ export default function CallerControls({
       
       // Also broadcast via WebSocket for connected players
       if (callerHub.isConnected) {
-        // Create a new array with all previously called numbers plus the new one
+        // Get the remaining numbers after removing the chosen one
         const newCalledNumbers = remainingNumbers.filter(n => n !== number);
         callerHub.callNumber(number, newCalledNumbers);
       }
