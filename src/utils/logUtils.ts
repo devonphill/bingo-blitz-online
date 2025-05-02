@@ -1,7 +1,12 @@
 
 // Simple logging utility with timestamps
-export function logWithTimestamp(message: string) {
-  console.log(`[${new Date().toISOString()}] ${message}`);
+export function logWithTimestamp(message: string, ...optionalParams: any[]) {
+  const timestamp = new Date().toISOString();
+  if (optionalParams.length > 0) {
+    console.log(`[${timestamp}] ${message}`, ...optionalParams);
+  } else {
+    console.log(`[${timestamp}] ${message}`);
+  }
   return message;
 }
 

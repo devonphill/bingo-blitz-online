@@ -1,5 +1,6 @@
 
 import { supabase } from '@/integrations/supabase/client';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 // Simple polling interval (in ms)
 const POLLING_INTERVAL = 5000;
@@ -11,6 +12,7 @@ interface Player {
   playerCode: string;
   playerName?: string;
   tickets?: number;
+  clientId?: string;
 }
 
 class ConnectionManager {
@@ -28,7 +30,7 @@ class ConnectionManager {
   }
   
   initialize(sessionId: string) {
-    console.log(`ConnectionManager initialized with sessionId: ${sessionId}`);
+    logWithTimestamp(`ConnectionManager initialized with sessionId: ${sessionId}`);
     this.sessionId = sessionId;
     this.startPolling();
     return this;
@@ -46,7 +48,8 @@ class ConnectionManager {
     // Do an immediate first poll
     this.pollForUpdates();
     
-    console.log(`Polling started with interval of ${POLLING_INTERVAL}ms`);
+    logWithTimestamp(`Polling started with interval of ${POLLING_INTERVAL}ms`);
+    return this;
   }
   
   private async pollForUpdates() {
@@ -71,7 +74,7 @@ class ConnectionManager {
     if (!this.sessionId || !this.playerRefreshCallback) return;
     
     try {
-      console.log(`Fetching players for session: ${this.sessionId}`);
+      logWithTimestamp(`Fetching players for session: ${this.sessionId}`);
       
       const { data, error } = await supabase
         .from('players')
@@ -83,8 +86,20 @@ class ConnectionManager {
         return;
       }
       
-      console.log(`Fetched ${data.length} players`);
-      this.playerRefreshCallback(data);
+      logWithTimestamp(`Fetched ${data.length} players`);
+      
+      // Map database fields to our Player interface
+      const mappedPlayers: Player[] = data.map(player => ({
+        id: player.id,
+        nickname: player.nickname,
+        joinedAt: player.joined_at,
+        playerCode: player.player_code, // Map player_code to playerCode
+        playerName: player.nickname,     // Use nickname as playerName
+        tickets: player.tickets,
+        // Add any other fields needed
+      }));
+      
+      this.playerRefreshCallback(mappedPlayers);
     } catch (err) {
       console.error('Exception in fetchPlayers:', err);
     }
@@ -94,7 +109,7 @@ class ConnectionManager {
     if (!this.sessionId || !this.sessionProgressCallback) return;
     
     try {
-      console.log(`Fetching session progress for session: ${this.sessionId}`);
+      logWithTimestamp(`Fetching session progress for session: ${this.sessionId}`);
       
       const { data, error } = await supabase
         .from('sessions_progress')
@@ -107,7 +122,7 @@ class ConnectionManager {
         return;
       }
       
-      console.log(`Fetched session progress:`, data);
+      logWithTimestamp(`Fetched session progress:`, data);
       this.sessionProgressCallback(data);
     } catch (err) {
       console.error('Exception in fetchSessionProgress:', err);
@@ -141,7 +156,7 @@ class ConnectionManager {
     if (!id) return false;
     
     try {
-      console.log(`Calling number ${number} for session ${id}`);
+      logWithTimestamp(`Calling number ${number} for session ${id}`);
       
       // Fetch current session progress first
       const { data: progressData, error: progressError } = await supabase
@@ -169,7 +184,7 @@ class ConnectionManager {
         return false;
       }
       
-      console.log(`Number ${number} called successfully`);
+      logWithTimestamp(`Number ${number} called successfully`);
       
       // Refresh session progress immediately after update
       this.fetchSessionProgress();
@@ -185,7 +200,7 @@ class ConnectionManager {
     if (!this.sessionId) return false;
     
     try {
-      console.log(`Submitting claim for session ${this.sessionId}:`, claimData);
+      logWithTimestamp(`Submitting claim for session ${this.sessionId}:`, claimData);
       
       const { error } = await supabase
         .from('universal_game_logs')
@@ -200,7 +215,7 @@ class ConnectionManager {
         return false;
       }
       
-      console.log('Claim submitted successfully');
+      logWithTimestamp('Claim submitted successfully');
       return true;
     } catch (err) {
       console.error('Exception in submitClaim:', err);
@@ -212,7 +227,7 @@ class ConnectionManager {
     if (!this.sessionId) return [];
     
     try {
-      console.log(`Fetching claims for session ${this.sessionId}`);
+      logWithTimestamp(`Fetching claims for session ${this.sessionId}`);
       
       const { data, error } = await supabase
         .from('universal_game_logs')
@@ -226,7 +241,7 @@ class ConnectionManager {
         return [];
       }
       
-      console.log(`Fetched ${data?.length || 0} claims`);
+      logWithTimestamp(`Fetched ${data?.length || 0} claims`);
       return data || [];
     } catch (err) {
       console.error('Exception in fetchClaims:', err);
@@ -238,7 +253,7 @@ class ConnectionManager {
     if (!this.sessionId) return false;
     
     try {
-      console.log(`Validating claim ${claimId}`);
+      logWithTimestamp(`Validating claim ${claimId}`);
       
       const { error } = await supabase
         .from('universal_game_logs')
@@ -250,7 +265,7 @@ class ConnectionManager {
         return false;
       }
       
-      console.log('Claim validated successfully');
+      logWithTimestamp('Claim validated successfully');
       return true;
     } catch (err) {
       console.error('Exception in validateClaim:', err);
@@ -262,7 +277,7 @@ class ConnectionManager {
     if (!this.sessionId) return false;
     
     try {
-      console.log(`Rejecting claim ${claimId}`);
+      logWithTimestamp(`Rejecting claim ${claimId}`);
       
       const { error } = await supabase
         .from('universal_game_logs')
@@ -277,7 +292,7 @@ class ConnectionManager {
         return false;
       }
       
-      console.log('Claim rejected successfully');
+      logWithTimestamp('Claim rejected successfully');
       return true;
     } catch (err) {
       console.error('Exception in rejectClaim:', err);
@@ -286,7 +301,7 @@ class ConnectionManager {
   }
   
   cleanup() {
-    console.log('Cleaning up ConnectionManager');
+    logWithTimestamp('Cleaning up ConnectionManager');
     
     if (this.pollingIntervalId) {
       clearInterval(this.pollingIntervalId);
