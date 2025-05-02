@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Bell } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { useCallerHub } from '@/hooks/useCallerHub';
-import { logWithTimestamp } from '@/utils/logUtils';
 import { supabase } from '@/integrations/supabase/client';
+import { connectionManager } from '@/utils/connectionManager';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -21,8 +21,6 @@ interface CallerControlsProps {
   gameType?: string;
   sessionStatus?: string;
   gameConfigs?: any[];
-  connectionState?: 'disconnected' | 'connecting' | 'connected' | 'error';
-  isConnected?: boolean;
 }
 
 export default function CallerControls({ 
@@ -37,37 +35,10 @@ export default function CallerControls({
   gameType,
   sessionStatus = 'pending',
   gameConfigs = [],
-  connectionState,
-  isConnected: parentIsConnected
 }: CallerControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
   const { toast } = useToast();
-
-  // Connect to the WebSocket hub as a caller
-  const callerHub = useCallerHub(sessionId);
-
-  // Use connection state from props if provided, otherwise use from callerHub
-  const effectiveConnectionState = connectionState || callerHub.connectionState;
-  const effectiveIsConnected = parentIsConnected !== undefined ? parentIsConnected : callerHub.isConnected;
-  
-  // Display the number of connected players
-  const connectedPlayersCount = callerHub.connectedPlayers.length;
-  
-  // Use pending claims from the WebSocket hub
-  const pendingClaimsCount = callerHub.pendingClaims.length;
-
-  // Update claims when we receive new ones
-  useEffect(() => {
-    if (pendingClaimsCount > 0 && pendingClaimsCount !== claimCount) {
-      openClaimSheet();
-    }
-  }, [pendingClaimsCount, claimCount, openClaimSheet]);
-
-  // Debug logging
-  useEffect(() => {
-    logWithTimestamp(`CallerControls: connection state: ${effectiveConnectionState}, isConnected: ${effectiveIsConnected}`);
-  }, [effectiveConnectionState, effectiveIsConnected]);
 
   const handleCallNumber = () => {
     if (remainingNumbers.length === 0) {
@@ -88,12 +59,8 @@ export default function CallerControls({
       // Call the regular onCallNumber function for backwards compatibility
       onCallNumber(number);
       
-      // Also broadcast via WebSocket for connected players
-      if (effectiveIsConnected) {
-        // Get the remaining numbers after removing the chosen one
-        const newCalledNumbers = remainingNumbers.filter(n => n !== number);
-        callerHub.callNumber(number, newCalledNumbers);
-      }
+      // Also call through the connection manager
+      connectionManager.callNumber(number);
       
       setIsCallingNumber(false);
     }, 1000);
@@ -105,12 +72,6 @@ export default function CallerControls({
     try {
       // Initialize sessions_progress with Game 1's active pattern and prize info
       await initializeSessionProgress();
-      
-      // Go live via WebSocket first
-      if (callerHub.isConnected) {
-        logWithTimestamp("Broadcasting game start via WebSocket");
-        callerHub.startGame();
-      }
       
       // Then also use the regular method (updates database directly)
       await onGoLive();
@@ -147,7 +108,7 @@ export default function CallerControls({
         return;
       }
       
-      logWithTimestamp("Initializing session progress with Game 1 config: " + JSON.stringify(game1Config));
+      console.log("Initializing session progress with Game 1 config: " + JSON.stringify(game1Config));
       
       // Find the active pattern in Game 1
       const activePatterns = Object.entries(game1Config.patterns)
@@ -166,7 +127,7 @@ export default function CallerControls({
       const [patternId, patternConfig] = activePatterns[0];
       const config = patternConfig as any;
       
-      logWithTimestamp("Using active pattern: " + patternId + ", " + JSON.stringify(config));
+      console.log("Using active pattern: " + patternId + ", " + JSON.stringify(config));
       
       // Update the database directly
       await supabase
@@ -179,14 +140,8 @@ export default function CallerControls({
         })
         .eq('session_id', sessionId);
       
-      // Also notify players via WebSocket broadcast
-      if (callerHub.isConnected) {
-        logWithTimestamp("Broadcasting pattern and prize info via WebSocket");
-        callerHub.changePattern(patternId);
-      }
-      
     } catch (error) {
-      logWithTimestamp("Error in initializeSessionProgress: " + error);
+      console.log("Error in initializeSessionProgress: " + error);
       toast({
         title: "Initialization Error",
         description: "Failed to initialize game settings. Please try again.",
@@ -200,10 +155,6 @@ export default function CallerControls({
     openClaimSheet();
   };
 
-  // Allow the Go Live button to be used even without a connection
-  // This helps resolve connection issues by reinitializing the session
-  const isGoLiveDisabled = false;
-
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -214,23 +165,17 @@ export default function CallerControls({
               {sessionStatus === 'active' ? 'Live' : 'Pending'}
             </Badge>
           </div>
-          <div className="flex items-center space-x-2">
-            {connectedPlayersCount > 0 && (
-              <Badge variant="secondary" className="mr-2">
-                {connectedPlayersCount} player{connectedPlayersCount !== 1 ? 's' : ''} connected
-              </Badge>
-            )}
-            
+          <div>
             <Button 
               size="sm" 
               variant="outline" 
               className="relative"
               onClick={handleBellClick}
             >
-              <Bell className={`h-4 w-4 ${pendingClaimsCount > 0 ? 'text-amber-500' : 'text-gray-500'}`} />
-              {pendingClaimsCount > 0 && (
+              <Bell className={`h-4 w-4 ${claimCount > 0 ? 'text-amber-500' : 'text-gray-500'}`} />
+              {claimCount > 0 && (
                 <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center bg-amber-500">
-                  {pendingClaimsCount}
+                  {claimCount}
                 </Badge>
               )}
             </Button>
@@ -246,7 +191,7 @@ export default function CallerControls({
         <div className="grid grid-cols-1 gap-3">
           <Button
             className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-            disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active' || !effectiveIsConnected}
+            disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active'}
             onClick={handleCallNumber}
           >
             {isCallingNumber ? 'Calling...' : 'Call Next Number'}
@@ -261,26 +206,17 @@ export default function CallerControls({
           
           <Button
             className="bg-green-600 hover:bg-green-700 text-white"
-            disabled={isGoLiveDisabled}
+            disabled={isGoingLive}
             onClick={handleGoLiveClick}
           >
             {isGoingLive ? 'Going Live...' : 'Go Live'}
           </Button>
         </div>
         
-        {/* Connection status display - use effective connection state */}
-        {!effectiveIsConnected && (
-          <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded flex items-center justify-center mt-2">
-            <span className="h-2 w-2 bg-amber-500 rounded-full mr-2"></span>
-            {effectiveConnectionState === 'connecting' ? 'Connecting to game server...' : 'Not connected to game server'}
-          </div>
-        )}
-        {effectiveIsConnected && (
-          <div className="text-xs text-green-600 flex items-center justify-center mt-2">
-            <span className="h-2 w-2 bg-green-500 rounded-full mr-2"></span>
-            Connected to game server
-          </div>
-        )}
+        <div className="text-xs text-green-600 flex items-center justify-center mt-2">
+          <span className="h-2 w-2 bg-green-500 rounded-full mr-2"></span>
+          Database polling enabled
+        </div>
       </CardContent>
     </Card>
   );

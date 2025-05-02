@@ -5,12 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import CallerControls from '@/components/game/CallerControls';
 import { useGameData } from '@/hooks/useGameData';
 import ClaimVerificationSheet from '../game/ClaimVerificationSheet';
-import { useCallerHub } from '@/hooks/useCallerHub';
 import { Button } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { logWithTimestamp, cleanupAllConnections } from '@/utils/logUtils';
 import PlayerList from '../game/PlayerList';
+import { connectionManager } from '@/utils/connectionManager';
 
 interface WinPattern {
   id: string;
@@ -59,121 +58,112 @@ export function LiveGameView({
   const [isClaimSheetOpen, setIsClaimSheetOpen] = useState(false);
   const { getCurrentGamePatterns } = useGameData(sessionId);
   const { toast } = useToast();
-  const connectionId = React.useId();
+  const [connectedPlayers, setConnectedPlayers] = useState<any[]>([]);
+  const [claims, setClaims] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   
-  // Enhanced logging for component lifecycle
+  // Set up connection manager when component mounts
   useEffect(() => {
-    logWithTimestamp(`[LiveGameView-${connectionId}] Component mounted - cleaning up all connections`);
-    cleanupAllConnections();
+    console.log('LiveGameView: Setting up connection manager');
     
-    // Clean up on unmount too
-    return () => {
-      logWithTimestamp(`[LiveGameView-${connectionId}] Component unmounting - cleaning up all connections`);
-      cleanupAllConnections();
-    };
-  }, [connectionId]);
-  
-  // Use caller WebSocket hub to receive claims - after cleanup to ensure clean state
-  const callerHub = useCallerHub(sessionId);
-
-  // Log detailed connection status changes for debugging
-  useEffect(() => {
-    logWithTimestamp(`[LiveGameView-${connectionId}] Connection state changed: ${callerHub.connectionState}`);
-    logWithTimestamp(`[LiveGameView-${connectionId}] Connected: ${callerHub.isConnected}`);
-    logWithTimestamp(`[LiveGameView-${connectionId}] Players: ${callerHub.connectedPlayers.length}`);
-    if (callerHub.connectionError) {
-      logWithTimestamp(`[LiveGameView-${connectionId}] Connection error: ${callerHub.connectionError}`);
-    }
-  }, [
-    callerHub.connectionState, 
-    callerHub.isConnected,
-    callerHub.connectedPlayers.length,
-    callerHub.connectionError,
-    connectionId
-  ]);
-
-  // Add a debounced connection state for UI consistency
-  const [stableConnectionState, setStableConnectionState] = useState(callerHub.connectionState);
-  const [stableIsConnected, setStableIsConnected] = useState(callerHub.isConnected);
-  
-  // Debounce connection state changes to prevent UI flicker
-  useEffect(() => {
-    // For connected state, update immediately for good UX
-    if (callerHub.isConnected && callerHub.connectionState === 'connected') {
-      setStableIsConnected(true);
-      setStableConnectionState('connected');
-      logWithTimestamp(`[LiveGameView-${connectionId}] Stable connection state updated immediately to connected`);
+    if (!sessionId) {
+      console.log('No session ID provided');
       return;
     }
     
-    // For disconnection, use a short debounce
-    logWithTimestamp(`[LiveGameView-${connectionId}] Debouncing connection state change to: ${callerHub.connectionState}`);
-    const timer = setTimeout(() => {
-      setStableIsConnected(callerHub.isConnected);
-      setStableConnectionState(callerHub.connectionState);
-      logWithTimestamp(`[LiveGameView-${connectionId}] Stable connection state updated to: ${callerHub.connectionState}`);
-    }, 1000);
+    // Initialize connection manager with session ID
+    connectionManager.initialize(sessionId)
+      .onPlayersUpdate((players) => {
+        console.log(`Received ${players.length} players update`);
+        setConnectedPlayers(players);
+        setIsLoading(false);
+      })
+      .onSessionProgressUpdate((progress) => {
+        console.log('Received session progress update');
+        // We don't need to do anything with this yet,
+        // as the parent component handles progress
+      });
+    
+    // Initial claims fetch
+    const fetchClaims = async () => {
+      if (sessionId) {
+        const fetchedClaims = await connectionManager.fetchClaims();
+        setClaims(fetchedClaims || []);
+      }
+    };
+    
+    fetchClaims();
+    
+    // Cleanup on unmount
+    return () => {
+      console.log('LiveGameView: Cleaning up connection manager');
+      connectionManager.cleanup();
+    };
+  }, [sessionId]);
+  
+  // Set up claims polling
+  useEffect(() => {
+    const pollClaims = async () => {
+      if (sessionId) {
+        const fetchedClaims = await connectionManager.fetchClaims();
+        setClaims(fetchedClaims || []);
+        
+        // Auto-open claims sheet if new claims arrive
+        if (fetchedClaims.length > 0 && fetchedClaims.length !== claims.length) {
+          setIsClaimSheetOpen(true);
+        }
+      }
+    };
+    
+    // Poll for claims every 5 seconds
+    const interval = setInterval(pollClaims, 5000);
     
     return () => {
-      clearTimeout(timer);
-      logWithTimestamp(`[LiveGameView-${connectionId}] Cleared connection state debounce timer`);
+      clearInterval(interval);
     };
-  }, [callerHub.isConnected, callerHub.connectionState, connectionId]);
+  }, [sessionId, claims.length]);
+  
+  const handleReconnect = () => {
+    // Simple reconnect just re-fetches player data
+    setIsLoading(true);
+    
+    // Force immediate polling
+    if (sessionId) {
+      connectionManager.initialize(sessionId);
+      
+      toast({
+        title: "Reconnecting",
+        description: "Refreshing player data...",
+        duration: 3000
+      });
+    }
+  };
+
+  const openClaimSheet = () => {
+    console.log(`Opening claim verification sheet`);
+    setIsClaimSheetOpen(true);
+  };
+  
+  const closeClaimSheet = () => {
+    console.log(`Closing claim verification sheet`);
+    setIsClaimSheetOpen(false);
+  };
+  
+  // Direct call number through connection manager
+  const handleCallNumber = (number: number) => {
+    console.log(`Calling number: ${number}`);
+    
+    // Call through connection manager
+    connectionManager.callNumber(number, sessionId);
+    
+    // Also call through the traditional method for backward compatibility
+    onCallNumber(number);
+  };
 
   const remainingNumbers = React.useMemo(() => {
     const allNumbers = Array.from({ length: gameType === 'mainstage' ? 90 : 75 }, (_, i) => i + 1);
     return allNumbers.filter(num => !calledNumbers.includes(num));
   }, [calledNumbers, gameType]);
-  
-  // Update claim sheet when new claims arrive via WebSocket
-  useEffect(() => {
-    if (callerHub.pendingClaims.length > 0) {
-      logWithTimestamp(`[LiveGameView-${connectionId}] Received ${callerHub.pendingClaims.length} pending claims, opening claim sheet`);
-      setIsClaimSheetOpen(true);
-    }
-  }, [callerHub.pendingClaims, connectionId]);
-  
-  // Enhanced debug effect for checking player status with more detailed logging
-  useEffect(() => {
-    logWithTimestamp(`[LiveGameView-${connectionId}] Connection and player status:`);
-    logWithTimestamp(`[LiveGameView-${connectionId}] - Connected players: ${callerHub.connectedPlayers.length}`);
-    callerHub.connectedPlayers.forEach((player, index) => {
-      logWithTimestamp(`[LiveGameView-${connectionId}] - Player ${index+1}: ${player.playerName || player.playerCode}`);
-    });
-    logWithTimestamp(`[LiveGameView-${connectionId}] - Connection state: ${callerHub.connectionState}`);
-    logWithTimestamp(`[LiveGameView-${connectionId}] - isConnected: ${callerHub.isConnected}`);
-  }, [callerHub.connectedPlayers, callerHub.connectionState, callerHub.isConnected, connectionId]);
-  
-  const openClaimSheet = () => {
-    logWithTimestamp(`[LiveGameView-${connectionId}] Opening claim verification sheet`);
-    setIsClaimSheetOpen(true);
-  };
-  
-  const closeClaimSheet = () => {
-    logWithTimestamp(`[LiveGameView-${connectionId}] Closing claim verification sheet`);
-    setIsClaimSheetOpen(false);
-  };
-  
-  const handleReconnect = () => {
-    if (callerHub.reconnect) {
-      logWithTimestamp(`[LiveGameView-${connectionId}] Reconnect button clicked - cleaning up connections`);
-      
-      // Clean up all connections first to break loops
-      cleanupAllConnections();
-      
-      // Attempt reconnection with enhanced logging
-      logWithTimestamp(`[LiveGameView-${connectionId}] Initiating reconnection`);
-      callerHub.reconnect();
-      
-      toast({
-        title: "Reconnecting",
-        description: "Attempting to reconnect to the game server...",
-        duration: 3000
-      });
-    } else {
-      logWithTimestamp(`[LiveGameView-${connectionId}] Reconnect function not available`);
-    }
-  };
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -206,51 +196,51 @@ export function LiveGameView({
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Connected players from WebSocket - use stable connection state */}
+              {/* Connected players */}
               <div className="bg-gray-100 p-4 rounded-md">
                 <div className="text-sm text-gray-500 mb-2 flex items-center justify-between">
                   <span>Connected Players</span>
-                  <span className="font-medium">{callerHub.connectedPlayers.length}</span>
+                  <span className="font-medium">{connectedPlayers.length}</span>
                 </div>
                 <div className="mt-2">
                   <PlayerList 
-                    players={callerHub.connectedPlayers} 
-                    isLoading={stableConnectionState === 'connecting'} 
-                    connectionState={stableConnectionState}
+                    players={connectedPlayers} 
+                    isLoading={isLoading} 
                     onReconnect={handleReconnect}
                   />
                 </div>
+                
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  className="w-full mt-4 flex items-center justify-center gap-1"
+                  onClick={handleReconnect}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Refresh Player List
+                </Button>
               </div>
-
-              {/* WebSocket connection status with more detailed display */}
+              
+              {/* Claims panel */}
               <div className="bg-gray-100 p-4 rounded-md">
-                <div className="text-sm text-gray-500 mb-2">Game Server Connection</div>
-                <div className={`text-lg font-bold ${stableIsConnected ? 'text-green-600' : 
-                              stableConnectionState === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
-                  {stableIsConnected ? 'Connected' : 
-                   stableConnectionState === 'connecting' ? 'Connecting...' :
-                   stableConnectionState === 'error' ? 'Connection Error' : 'Disconnected'}
+                <div className="text-sm text-gray-500 mb-2">Pending Claims</div>
+                <div className="text-lg font-bold">
+                  {claims.length} {claims.length === 1 ? 'claim' : 'claims'} pending
                 </div>
                 <div className="mt-2 text-sm text-gray-500">
-                  {callerHub.connectionError || 
-                    (stableIsConnected
-                    ? 'WebSocket connection is established and working correctly.'
-                    : stableConnectionState === 'connecting'
-                    ? 'Establishing WebSocket connection...'
-                    : 'Attempting to reconnect to game server...')}
+                  {claims.length > 0 
+                    ? 'Review claims by clicking the button below'
+                    : 'No claims to review at this time'}
                 </div>
                 
-                {!stableIsConnected && (
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    className="w-full mt-2 flex items-center justify-center gap-1"
-                    onClick={handleReconnect}
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                    Reconnect
-                  </Button>
-                )}
+                <Button 
+                  size="sm" 
+                  variant={claims.length > 0 ? "default" : "outline"}
+                  className="w-full mt-4"
+                  onClick={openClaimSheet}
+                >
+                  Review Claims
+                </Button>
               </div>
             </div>
           </CardContent>
@@ -259,20 +249,17 @@ export function LiveGameView({
       
       <div className="space-y-6">
         <CallerControls
-          onCallNumber={onCallNumber}
+          onCallNumber={handleCallNumber}
           onEndGame={onCloseGame}
           onGoLive={async () => {}}  // We're already live at this point
           remainingNumbers={remainingNumbers}
           sessionId={sessionId || ''}
           winPatterns={selectedPatterns}
-          claimCount={callerHub.pendingClaims.length}
+          claimCount={claims.length}
           openClaimSheet={openClaimSheet}
           gameType={gameType}
           sessionStatus={sessionStatus}
           gameConfigs={gameConfigs}
-          // Pass the stable connection state for consistency
-          connectionState={stableConnectionState}
-          isConnected={stableIsConnected}
         />
       </div>
       
@@ -283,7 +270,7 @@ export function LiveGameView({
         gameNumber={currentGameNumber}
         currentCalledNumbers={calledNumbers}
         gameType={gameType}
-        playerName={callerHub.pendingClaims[0]?.playerName}
+        playerName={claims[0]?.playerName}
         currentNumber={lastCalledNumber}
         currentWinPattern={currentWinPattern}
       />
