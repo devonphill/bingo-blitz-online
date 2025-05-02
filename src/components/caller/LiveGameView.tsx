@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -151,7 +150,7 @@ export function LiveGameView({
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Connected players from WebSocket */}
+              {/* Connected players from WebSocket - Now with connection state */}
               <div className="bg-gray-100 p-4 rounded-md">
                 <div className="text-sm text-gray-500 mb-2 flex items-center justify-between">
                   <span>Connected Players</span>
@@ -161,6 +160,7 @@ export function LiveGameView({
                   <PlayerList 
                     players={callerHub.connectedPlayers} 
                     isLoading={connectionState === 'connecting'} 
+                    connectionState={connectionState}
                   />
                 </div>
               </div>

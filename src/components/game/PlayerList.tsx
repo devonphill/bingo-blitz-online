@@ -1,6 +1,7 @@
 
 import React from "react";
 import { Badge } from "@/components/ui/badge";
+import { Loader, Wifi, WifiOff } from "lucide-react";
 
 export interface PlayerListProps {
   players: {
@@ -13,27 +14,61 @@ export interface PlayerListProps {
     clientId?: string;
   }[];
   isLoading?: boolean;
+  connectionState?: 'disconnected' | 'connecting' | 'connected' | 'error';
 }
 
-const PlayerList: React.FC<PlayerListProps> = ({ players, isLoading = false }) => {
+const PlayerList: React.FC<PlayerListProps> = ({ 
+  players, 
+  isLoading = false,
+  connectionState = 'connected'
+}) => {
   if (isLoading) {
     return (
-      <div className="text-amber-500 text-center py-4">
-        Connecting to game server...
+      <div className="text-amber-500 text-center py-4 flex flex-col items-center gap-2">
+        <Loader className="h-5 w-5 animate-spin" />
+        <span>Connecting to game server...</span>
+      </div>
+    );
+  }
+
+  // Connection status messaging
+  if (connectionState === 'error' || connectionState === 'disconnected') {
+    return (
+      <div className="text-red-500 text-center py-4 flex flex-col items-center gap-2">
+        <WifiOff className="h-5 w-5" />
+        <span>Disconnected from game server</span>
+        <span className="text-xs">Players may not appear until connection is restored</span>
       </div>
     );
   }
 
   if (!players || players.length === 0) {
     return (
-      <div className="text-gray-500 text-center py-4">
-        No players have joined yet. Share the access code.
+      <div className="text-gray-500 text-center py-4 flex flex-col items-center gap-2">
+        {connectionState === 'connecting' ? (
+          <>
+            <Loader className="h-5 w-5 animate-spin" />
+            <span>Waiting for players to connect...</span>
+          </>
+        ) : (
+          <>
+            <Wifi className="h-5 w-5" />
+            <span>No players have joined yet. Share the access code.</span>
+          </>
+        )}
       </div>
     );
   }
 
   return (
     <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-sm text-gray-500">Connected players ({players.length})</span>
+        <Badge variant={connectionState === 'connected' ? "success" : "outline"} className="text-xs">
+          {connectionState === 'connected' ? 'Server Connected' : 'Connecting...'}
+        </Badge>
+      </div>
+
       {players.map((player, idx) => (
         <div key={player.id || player.clientId || player.playerCode || idx} className="bg-gray-50 p-3 rounded-md">
           <div className="font-medium flex items-center justify-between">

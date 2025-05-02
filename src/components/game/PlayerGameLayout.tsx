@@ -193,7 +193,7 @@ export default function PlayerGameLayout({
           />
         </div>
         
-        {/* Game Info Banner */}
+        {/* Game Info Banner with enhanced connection status */}
         <div className="bg-white rounded-md shadow-sm p-3 mb-4 flex flex-wrap justify-between items-center text-sm text-gray-600">
           <div className="flex items-center">
             <span className="font-medium mr-1">Game:</span> {currentGameNumber} of {numberOfGames}
@@ -210,12 +210,23 @@ export default function PlayerGameLayout({
               displayConnectionState === 'connecting' ? 'bg-amber-500' : 
               'bg-red-500'
             }`}></span>
-            <span>{
+            <span>Server {
               isConnected ? 'Connected' : 
               displayConnectionState === 'connecting' ? 'Connecting...' : 
               displayConnectionState === 'error' ? 'Connection Error' :
               'Disconnected'
             }</span>
+            {!isConnected && (
+              <Button 
+                size="sm" 
+                variant="ghost" 
+                className="ml-1 h-6 px-2" 
+                onClick={handleReconnect}
+              >
+                <RefreshCw className="h-3 w-3 mr-1" />
+                Reconnect
+              </Button>
+            )}
           </div>
         </div>
         
@@ -320,37 +331,35 @@ export default function PlayerGameLayout({
         </DialogContent>
       </Dialog>
       
-      {/* Enhanced Connection Warning with Reconnect Button - UPDATED */}
+      {/* Enhanced Connection Warning with Reconnect Button - Updated to be less intrusive */}
       {showConnectionWarning && (
-        <div className="fixed bottom-20 left-4 right-4 bg-amber-50 border border-amber-300 p-4 rounded-lg shadow-lg flex flex-col gap-3 z-50">
-          <div className="flex items-center">
-            <AlertCircle className="h-5 w-5 text-amber-500 mr-2 flex-shrink-0" />
-            <div className="flex-grow font-medium">
-              {displayConnectionState === 'connecting' ? 
-                "Connecting to game server..." :
-                displayConnectionState === 'error' ?
-                "Connection error with game server" :
-                "Disconnected from game server"}
+        <div className="fixed bottom-20 left-4 right-4 bg-amber-50 border border-amber-300 p-3 rounded-lg shadow-lg flex flex-col gap-2 z-50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <span className={`h-2 w-2 rounded-full mr-2 ${
+                displayConnectionState === 'connecting' ? 'bg-amber-500' : 'bg-red-500'
+              }`}></span>
+              <span className="font-medium text-amber-800">
+                {displayConnectionState === 'connecting' ? 
+                  "Connecting to game server..." :
+                  displayConnectionState === 'error' ?
+                  "Connection error with game server" :
+                  "Disconnected from game server"}
+              </span>
             </div>
+            
+            {displayConnectionState !== 'connecting' && (
+              <Button 
+                size="sm"
+                variant="outline"
+                className="bg-white border-amber-300 hover:bg-amber-100 text-amber-700 flex items-center gap-1"
+                onClick={handleReconnect}
+              >
+                <RefreshCw className="h-3 w-3" />
+                Reconnect
+              </Button>
+            )}
           </div>
-          
-          <p className="text-sm text-amber-700 pl-7">
-            {displayConnectionState === 'connecting' ? 
-              "Game updates will resume when connected." :
-              "Connection issue detected. Game updates will not be received until reconnected."}
-          </p>
-          
-          {displayConnectionState !== 'connecting' && (
-            <Button 
-              size="sm"
-              variant="outline"
-              className="ml-7 bg-white border-amber-300 hover:bg-amber-100 text-amber-700 flex items-center gap-2"
-              onClick={handleReconnect}
-            >
-              <RefreshCw className="h-4 w-4" />
-              Reconnect
-            </Button>
-          )}
         </div>
       )}
     </div>
