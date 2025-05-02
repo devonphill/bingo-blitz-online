@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,6 +21,8 @@ interface CallerControlsProps {
   gameType?: string;
   sessionStatus?: string;
   gameConfigs?: any[];
+  connectionState?: 'disconnected' | 'connecting' | 'connected' | 'error';
+  isConnected?: boolean;
 }
 
 export default function CallerControls({ 
@@ -35,7 +36,9 @@ export default function CallerControls({
   openClaimSheet,
   gameType,
   sessionStatus = 'pending',
-  gameConfigs = []
+  gameConfigs = [],
+  connectionState,
+  isConnected: parentIsConnected
 }: CallerControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
@@ -44,6 +47,10 @@ export default function CallerControls({
   // Connect to the WebSocket hub as a caller
   const callerHub = useCallerHub(sessionId);
 
+  // Use connection state from props if provided, otherwise use from callerHub
+  const effectiveConnectionState = connectionState || callerHub.connectionState;
+  const effectiveIsConnected = parentIsConnected !== undefined ? parentIsConnected : callerHub.isConnected;
+  
   // Display the number of connected players
   const connectedPlayersCount = callerHub.connectedPlayers.length;
   
@@ -59,8 +66,8 @@ export default function CallerControls({
 
   // Debug logging
   useEffect(() => {
-    logWithTimestamp(`CallerControls: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}`);
-  }, [callerHub.connectionState, callerHub.isConnected]);
+    logWithTimestamp(`CallerControls: connection state: ${effectiveConnectionState}, isConnected: ${effectiveIsConnected}`);
+  }, [effectiveConnectionState, effectiveIsConnected]);
 
   const handleCallNumber = () => {
     if (remainingNumbers.length === 0) {
@@ -82,7 +89,7 @@ export default function CallerControls({
       onCallNumber(number);
       
       // Also broadcast via WebSocket for connected players
-      if (callerHub.isConnected) {
+      if (effectiveIsConnected) {
         // Get the remaining numbers after removing the chosen one
         const newCalledNumbers = remainingNumbers.filter(n => n !== number);
         callerHub.callNumber(number, newCalledNumbers);
@@ -239,7 +246,7 @@ export default function CallerControls({
         <div className="grid grid-cols-1 gap-3">
           <Button
             className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-            disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active' || !callerHub.isConnected}
+            disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active' || !effectiveIsConnected}
             onClick={handleCallNumber}
           >
             {isCallingNumber ? 'Calling...' : 'Call Next Number'}
@@ -261,14 +268,14 @@ export default function CallerControls({
           </Button>
         </div>
         
-        {/* Connection status display */}
-        {!callerHub.isConnected && (
+        {/* Connection status display - use effective connection state */}
+        {!effectiveIsConnected && (
           <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded flex items-center justify-center mt-2">
             <span className="h-2 w-2 bg-amber-500 rounded-full mr-2"></span>
-            {callerHub.connectionState === 'connecting' ? 'Connecting to game server...' : 'Not connected to game server'}
+            {effectiveConnectionState === 'connecting' ? 'Connecting to game server...' : 'Not connected to game server'}
           </div>
         )}
-        {callerHub.isConnected && (
+        {effectiveIsConnected && (
           <div className="text-xs text-green-600 flex items-center justify-center mt-2">
             <span className="h-2 w-2 bg-green-500 rounded-full mr-2"></span>
             Connected to game server

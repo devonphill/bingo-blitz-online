@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { logWithTimestamp, ConnectionManagerClass } from '@/utils/logUtils';
 import { supabase } from '@/integrations/supabase/client';
@@ -101,11 +100,15 @@ export function useCallerHub(sessionId?: string) {
           const eventId = ++presenceEventsRef.current;
           logWithTimestamp(`[Event ${eventId}] Presence join: ${key}, ${JSON.stringify(newPresences)}`);
           
-          // Add to presence state
+          // Update the presence state with new presences
           if (!presenceStateRef.current[key]) {
             presenceStateRef.current[key] = [];
           }
-          presenceStateRef.current[key].push(...newPresences);
+          
+          // Filter out duplicates before adding
+          const existingPresenceRefs = new Set(presenceStateRef.current[key].map(p => p.presence_ref));
+          const uniqueNewPresences = newPresences.filter(p => !existingPresenceRefs.has(p.presence_ref));
+          presenceStateRef.current[key].push(...uniqueNewPresences);
           
           // Log complete state after join
           logWithTimestamp(`[Event ${eventId}] Updated presence state after join: ${JSON.stringify(presenceStateRef.current)}`);
@@ -231,16 +234,19 @@ export function useCallerHub(sessionId?: string) {
     }
   }, [sessionId]);
   
-  // Improved presence state processing - Fix for playerPresenceMap.current.clear issue
+  // Improved presence state processing - Fix for playerPresenceMap issue and better player detection
   const processPresenceState = useCallback((state: Record<string, any[]>, eventId?: number) => {
-    // Create a new map instead of clearing the existing one
+    // Create a new map for processing players
     const newPlayerMap = new Map<string, ConnectedPlayer>();
+    let foundPlayers = 0;
     
     // Extract players from presence state
     Object.entries(state).forEach(([clientId, presences]) => {
       presences.forEach(presence => {
-        // Only add players to the list (not callers)
-        if (presence.client_type === 'player' && presence.playerCode) {
+        // Check for players by looking at client_type OR playerCode properties
+        const isPlayer = presence.client_type === 'player' || presence.playerCode;
+        
+        if (isPlayer && presence.playerCode) {
           // Use playerCode as the unique identifier
           newPlayerMap.set(presence.playerCode, {
             playerCode: presence.playerCode,
@@ -248,6 +254,8 @@ export function useCallerHub(sessionId?: string) {
             joinedAt: presence.online_at || new Date().toISOString(),
             clientId
           });
+          
+          foundPlayers++;
           
           // Debug log for player presence
           logWithTimestamp(`Found player in presence data: ${presence.playerCode} (${presence.playerName || 'unnamed'})`);
@@ -263,7 +271,7 @@ export function useCallerHub(sessionId?: string) {
     
     // Convert map to array for state update
     const players = Array.from(playerPresenceMap.current.values());
-    logWithTimestamp(`Processed ${players.length} players from presence state${eventId ? ` for event ${eventId}` : ''}`);
+    logWithTimestamp(`Processed ${players.length} players (found ${foundPlayers}) from presence state${eventId ? ` for event ${eventId}` : ''}`);
     
     // Update state
     setConnectedPlayers(players);
