@@ -1,469 +1,329 @@
-import { useState, useEffect, useRef } from 'react';
-import { GameType } from '@/types';
-import { useToast } from './use-toast';
-import { logWithTimestamp, cleanupAllConnections } from '@/utils/logUtils';
 
-// Define WebSocket URL with the correct Supabase project ID
-const BINGO_HUB_URL = 'wss://weqosgnuiixccghdoccw.supabase.co/functions/v1/bingo-hub';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { logWithTimestamp } from '@/utils/logUtils';
+import { supabase } from '@/integrations/supabase/client';
 
-export interface PlayerInfo {
+export interface ConnectedPlayer {
   playerCode: string;
   playerName?: string;
+  joinedAt: string;
+  clientId?: string;
 }
 
-interface PendingClaim {
+export interface PendingClaim {
   playerCode: string;
   playerName?: string;
-  ticketData?: any;
   timestamp: number;
+  ticketData?: any;
 }
 
+// Hook to handle caller WebSocket hub connection and state
 export function useCallerHub(sessionId?: string) {
-  const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [isConnected, setIsConnected] = useState(false);
-  const [pendingClaims, setPendingClaims] = useState<PendingClaim[]>([]);
-  const [connectedPlayers, setConnectedPlayers] = useState<PlayerInfo[]>([]);
+  const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const socket = useRef<WebSocket | null>(null);
-  const { toast } = useToast();
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectCount = useRef(0);
-  const MAX_RECONNECT_ATTEMPTS = 5;
+  const [connectedPlayers, setConnectedPlayers] = useState<ConnectedPlayer[]>([]);
+  const [pendingClaims, setPendingClaims] = useState<PendingClaim[]>([]);
+  const channelRef = useRef<any>(null);
   const instanceId = useRef<string>(Date.now().toString());
-  const isUnmounting = useRef(false);
-  const connectionInProgress = useRef(false);
-  const isActiveInstance = useRef(true);
+  const reconnectAttemptsRef = useRef(0);
+  const maxReconnectAttempts = 5;
   
-  useEffect(() => {
-    // Reset unmounting flag on mount
-    isUnmounting.current = false;
-    isActiveInstance.current = true;
-    
-    // CRITICAL FIX: Force cleanup of all connections on mount to prevent duplication
-    cleanupAllConnections();
-    
-    // Only proceed with connection if we have a sessionId and are the active instance
-    if (sessionId && isActiveInstance.current && !connectionInProgress.current) {
-      // Add small delay to allow React to render and avoid race conditions
-      setTimeout(() => {
-        connectToHub(sessionId);
-      }, 100);
-    }
-    
-    return () => {
-      // Mark as unmounting to prevent reconnection attempts during cleanup
-      isUnmounting.current = true;
-      isActiveInstance.current = false;
-      
-      // Clean up WebSocket connection
-      disconnectFromHub();
-      
-      // Clear any pending reconnect timers
-      if (reconnectTimer.current) {
-        clearTimeout(reconnectTimer.current);
-        reconnectTimer.current = null;
-      }
-    };
-  }, [sessionId]);
+  // CRITICAL FIX: Track received presence data separately from processed players list
+  const presenceStateRef = useRef<Record<string, any[]>>({});
 
-  const connectToHub = (sessionId: string) => {
+  // Function to establish WebSocket connection to bingo hub
+  const connectToHub = useCallback(() => {
+    if (!sessionId) return;
+    
     try {
-      // Don't attempt to connect if we're unmounting or a connection is in progress
-      if (isUnmounting.current || connectionInProgress.current) {
-        return;
-      }
-      
-      // Mark connection as in progress
-      connectionInProgress.current = true;
+      logWithTimestamp(`Caller connecting to WebSocket for session ${sessionId}, instance ${instanceId.current}`);
       
       // Clean up any existing connection first
-      disconnectFromHub();
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+      }
       
       setConnectionState('connecting');
       
-      // Log connection attempt
-      logWithTimestamp(`Caller connecting to WebSocket for session ${sessionId}, instance ${instanceId.current}`);
+      // Create a channel for this session
+      const channel = supabase.channel(`game-updates-${sessionId}`);
       
-      // Create WebSocket connection with caller type and session ID
-      const wsUrl = `${BINGO_HUB_URL}?type=caller&sessionId=${sessionId}&instanceId=${instanceId.current}`;
-      socket.current = new WebSocket(wsUrl);
-      
-      // IMPORTANT: Add proper WebSocket event handlers with timeouts
-      // Add connection timeout
-      const connectionTimeout = setTimeout(() => {
-        if (connectionState !== 'connected' && socket.current) {
-          logWithTimestamp(`WebSocket connection timed out for session ${sessionId}`);
-          socket.current.close(1000, "Connection timeout");
-          socket.current = null;
-          connectionInProgress.current = false;
-          setConnectionState('error');
-          setIsConnected(false);
-          scheduleReconnect(sessionId);
-        }
-      }, 10000); // 10 second timeout
-      
-      socket.current.onopen = () => {
-        clearTimeout(connectionTimeout);
-        if (isUnmounting.current) return;
-        
-        logWithTimestamp(`Caller WebSocket connected for session ${sessionId}`);
-        setConnectionState('connected');
-        setIsConnected(true);
-        setConnectionError(null);
-        reconnectCount.current = 0;
-        
-        // Connection is no longer in progress
-        connectionInProgress.current = false;
-        
-        // Notify the user
-        toast({
-          title: "Game Server Connected",
-          description: "Connection to game server established",
-          duration: 3000
-        });
-      };
-      
-      socket.current.onmessage = (event) => {
-        if (isUnmounting.current) return;
-        
-        try {
-          const message = JSON.parse(event.data);
+      // Set up presence handlers
+      channel
+        .on('presence', { event: 'sync' }, () => {
+          const state = channel.presenceState();
+          logWithTimestamp(`Presence state synchronized: ${JSON.stringify(state)}`);
           
-          // Handle different message types
-          switch (message.type) {
-            case 'player_joined':
-              if (message.data) {
-                const { playerCode, playerName } = message.data;
-                logWithTimestamp(`Player joined: ${playerCode} (${playerName})`);
-                
-                // Add to connected players if not already there
-                setConnectedPlayers(prev => {
-                  const exists = prev.some(p => p.playerCode === playerCode);
-                  if (!exists) {
-                    return [...prev, { playerCode, playerName }];
-                  }
-                  return prev;
-                });
-              }
-              break;
-              
-            case 'player_left':
-              if (message.data && message.data.playerCode) {
-                logWithTimestamp(`Player left: ${message.data.playerCode}`);
-                setConnectedPlayers(prev => 
-                  prev.filter(p => p.playerCode !== message.data.playerCode)
-                );
-              }
-              break;
-            
-            case 'bingo_claimed':
-              if (message.data) {
-                const { playerCode, playerName, ticketData } = message.data;
-                logWithTimestamp(`Bingo claim from player ${playerCode} (${playerName})`);
-                
-                // Add to pending claims
-                setPendingClaims(prev => [...prev, {
-                  playerCode, 
-                  playerName, 
-                  ticketData,
-                  timestamp: Date.now()
-                }]);
-                
-                // Show notification
-                toast({
-                  title: "New Bingo Claim",
-                  description: `${playerName || playerCode} has claimed bingo!`,
-                  variant: "default",
-                  duration: 5000
-                });
-              }
-              break;
-            
-            case 'pong':
-              // Heartbeat response - connection is still alive
-              break;
-              
-            default:
-              logWithTimestamp(`Unknown message type: ${message.type}`);
+          // CRITICAL FIX: Store the raw presence state for processing
+          presenceStateRef.current = state;
+          
+          // Process and update connected players from presence state
+          processPresenceState(state);
+        })
+        .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+          logWithTimestamp(`Presence join: ${key}, ${JSON.stringify(newPresences)}`);
+          
+          // Add to presence state
+          if (!presenceStateRef.current[key]) {
+            presenceStateRef.current[key] = [];
           }
-        } catch (error) {
-          console.error('Error processing WebSocket message:', error);
-        }
-      };
+          presenceStateRef.current[key].push(...newPresences);
+          
+          // Update connected players
+          processPresenceState(presenceStateRef.current);
+        })
+        .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+          logWithTimestamp(`Presence leave: ${key}, ${JSON.stringify(leftPresences)}`);
+          
+          // Remove from presence state
+          if (presenceStateRef.current[key]) {
+            // Filter out the left presences
+            presenceStateRef.current[key] = presenceStateRef.current[key].filter(
+              presence => !leftPresences.some((left: any) => left.presence_ref === presence.presence_ref)
+            );
+            
+            // Remove key if no presences left
+            if (presenceStateRef.current[key].length === 0) {
+              delete presenceStateRef.current[key];
+            }
+          }
+          
+          // Update connected players
+          processPresenceState(presenceStateRef.current);
+        });
       
-      socket.current.onerror = (error) => {
-        clearTimeout(connectionTimeout);
-        if (isUnmounting.current) return;
+      // Set up message handlers for bingo claims
+      channel
+        .on('broadcast', { event: 'bingo_claimed' }, (payload) => {
+          logWithTimestamp(`Received bingo claim: ${JSON.stringify(payload.payload)}`);
+          
+          if (payload.payload) {
+            const { playerCode, playerName, ticketData, timestamp } = payload.payload;
+            
+            setPendingClaims(prev => [
+              ...prev,
+              {
+                playerCode,
+                playerName,
+                timestamp,
+                ticketData
+              }
+            ]);
+          }
+        });
+      
+      // Subscribe and track connection status
+      channel.subscribe(status => {
+        logWithTimestamp(`Caller WebSocket ${status} for session ${sessionId}`);
         
-        console.error('WebSocket error:', error);
-        logWithTimestamp(`Caller WebSocket error for session ${sessionId}`);
-        
-        setConnectionState('error');
-        setIsConnected(false);
-        setConnectionError('Connection to game server failed. Please try reconnecting.');
-        
-        // Connection is no longer in progress
-        connectionInProgress.current = false;
-        
-        // Show error toast only if this is the first error
-        if (reconnectCount.current === 0) {
-          toast({
-            title: "Connection Error",
-            description: "Failed to connect to game server",
-            variant: "destructive",
-            duration: 5000
+        if (status === 'SUBSCRIBED') {
+          setIsConnected(true);
+          setConnectionState('connected');
+          setConnectionError(null);
+          reconnectAttemptsRef.current = 0;
+          
+          // Broadcast presence as caller
+          channel.track({
+            caller_id: instanceId.current,
+            online_at: new Date().toISOString(),
+            client_type: 'caller'
+          }).then(() => {
+            logWithTimestamp('Caller presence tracked successfully');
+          }).catch(err => {
+            logWithTimestamp(`Error tracking caller presence: ${err.message}`);
+          });
+        } else if (status === 'CHANNEL_ERROR') {
+          setIsConnected(false);
+          setConnectionState('error');
+          setConnectionError('Channel error connecting to game server');
+          
+          if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+            // Schedule reconnect
+            handleReconnect();
+          }
+        } else if (status === 'CLOSED') {
+          setIsConnected(false);
+          setConnectionState('disconnected');
+          
+          if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+            // Schedule reconnect
+            handleReconnect();
+          }
+        }
+      });
+      
+      // Store channel reference
+      channelRef.current = channel;
+    } catch (error) {
+      logWithTimestamp(`Error establishing WebSocket connection: ${error}`);
+      setIsConnected(false);
+      setConnectionState('error');
+      setConnectionError(`Connection error: ${error}`);
+    }
+  }, [sessionId]);
+  
+  // CRITICAL FIX: Improved presence state processing
+  const processPresenceState = useCallback((state: Record<string, any[]>) => {
+    // Extract players from presence state
+    const players: ConnectedPlayer[] = [];
+    
+    Object.entries(state).forEach(([clientId, presences]) => {
+      presences.forEach(presence => {
+        // Only add players to the list (not callers)
+        if (presence.client_type === 'player' && presence.playerCode) {
+          players.push({
+            playerCode: presence.playerCode,
+            playerName: presence.playerName || presence.playerCode,
+            joinedAt: presence.online_at || new Date().toISOString(),
+            clientId
           });
         }
-        
-        // Try to reconnect
-        scheduleReconnect(sessionId);
-      };
-      
-      socket.current.onclose = (event) => {
-        clearTimeout(connectionTimeout);
-        if (isUnmounting.current) return;
-        
-        logWithTimestamp(`Caller WebSocket closed for session ${sessionId}: ${event.code} - ${event.reason}`);
-        
-        setConnectionState('disconnected');
-        setIsConnected(false);
-        
-        // Connection is no longer in progress
-        connectionInProgress.current = false;
-        
-        // Only attempt to reconnect if not closing cleanly
-        if (event.code !== 1000) {
-          scheduleReconnect(sessionId);
-        }
-      };
-      
-      // Set up ping interval to keep connection alive
-      const pingInterval = setInterval(() => {
-        if (socket.current && socket.current.readyState === WebSocket.OPEN) {
-          try {
-            socket.current.send(JSON.stringify({type: 'ping', timestamp: Date.now()}));
-          } catch (err) {
-            console.error('Error sending ping:', err);
-          }
-        }
-      }, 30000); // 30 second ping
-      
-      // Clean up ping interval on component unmount
-      return () => {
-        clearInterval(pingInterval);
-      };
-    } catch (error) {
-      console.error('Error connecting to WebSocket:', error);
-      logWithTimestamp(`Error initializing WebSocket: ${error}`);
-      
-      setConnectionState('error');
-      setIsConnected(false);
-      setConnectionError(`Connection error: ${error}`);
-      
-      // Connection is no longer in progress
-      connectionInProgress.current = false;
-    }
-  };
-
-  const disconnectFromHub = () => {
-    try {
-      if (socket.current) {
-        // Only log if socket exists
-        logWithTimestamp('Closing caller WebSocket connection');
-        
-        // Close the socket
-        if (socket.current.readyState === WebSocket.OPEN || 
-            socket.current.readyState === WebSocket.CONNECTING) {
-          socket.current.close(1000, 'Normal closure');
-        }
-        
-        // Clear the socket
-        socket.current = null;
-      }
-    } catch (error) {
-      console.error('Error closing WebSocket:', error);
-    }
-  };
-
-  const scheduleReconnect = (sessionId: string) => {
-    // Clear any existing reconnect timer
-    if (reconnectTimer.current) {
-      clearTimeout(reconnectTimer.current);
-      reconnectTimer.current = null;
-    }
+      });
+    });
     
-    // Don't reconnect if we're unmounting or exceeded max attempts
-    if (isUnmounting.current || reconnectCount.current >= MAX_RECONNECT_ATTEMPTS) {
-      return;
-    }
-    
-    reconnectCount.current++;
-    
-    // Exponential backoff with maximum of 30 seconds
-    const delay = Math.min(2000 * Math.pow(2, reconnectCount.current - 1), 30000);
-    
-    logWithTimestamp(`Scheduling reconnect in ${delay}ms (attempt ${reconnectCount.current}/${MAX_RECONNECT_ATTEMPTS})`);
-    
-    reconnectTimer.current = setTimeout(() => {
-      if (!isUnmounting.current && isActiveInstance.current) {
-        logWithTimestamp(`Attempting reconnect for session ${sessionId} (${reconnectCount.current}/${MAX_RECONNECT_ATTEMPTS})`);
-        connectToHub(sessionId);
-      }
-    }, delay);
-  };
-
-  const clearClaim = (playerCode: string) => {
-    setPendingClaims(prev => 
-      prev.filter(claim => claim.playerCode !== playerCode)
-    );
-  };
+    logWithTimestamp(`Processed ${players.length} players from presence state`);
+    setConnectedPlayers(players);
+  }, []);
   
-  const sendClaimResult = (playerCode: string, result: 'valid' | 'rejected') => {
-    if (!socket.current || socket.current.readyState !== WebSocket.OPEN || !sessionId) {
-      logWithTimestamp(`Cannot send claim result: socket not connected`);
+  // Function to handle reconnect
+  const handleReconnect = useCallback(() => {
+    reconnectAttemptsRef.current++;
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 10000);
+    
+    logWithTimestamp(`Scheduling reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
+    
+    setTimeout(() => {
+      logWithTimestamp(`Attempting reconnect for session ${sessionId} (${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
+      connectToHub();
+    }, delay);
+  }, [connectToHub, sessionId]);
+  
+  // Function to manually reconnect
+  const reconnect = useCallback(() => {
+    logWithTimestamp(`Closing caller WebSocket connection`);
+    
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+    
+    reconnectAttemptsRef.current = 0;
+    setConnectionState('connecting');
+    connectToHub();
+  }, [connectToHub]);
+  
+  // Function to broadcast a number call
+  const callNumber = useCallback((number: number, allCalledNumbers: number[]) => {
+    if (!channelRef.current || !isConnected) {
+      logWithTimestamp('Cannot broadcast number: not connected');
       return false;
     }
     
     try {
-      socket.current.send(JSON.stringify({
-        type: 'claim-result',
-        sessionId,
-        data: {
-          playerCode,
-          result,
-          instanceId: instanceId.current
-        }
-      }));
+      logWithTimestamp(`Broadcasting called number: ${number}`);
       
-      logWithTimestamp(`Sent claim result for player ${playerCode}: ${result}`);
-      
-      // Remove from pending claims
-      clearClaim(playerCode);
-      
-      return true;
-    } catch (error) {
-      console.error('Error sending claim result:', error);
-      return false;
-    }
-  };
-
-  // Method for calling a number
-  const callNumber = (number: number, allCalledNumbers: number[]) => {
-    if (!socket.current || socket.current.readyState !== WebSocket.OPEN || !sessionId) {
-      logWithTimestamp(`Cannot call number: socket not connected`);
-      return false;
-    }
-    
-    try {
-      socket.current.send(JSON.stringify({
-        type: 'call-number',
-        sessionId,
-        data: {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'number-called',
+        payload: {
+          sessionId,
           lastCalledNumber: number,
           calledNumbers: allCalledNumbers,
-          timestamp: Date.now(),
-          instanceId: instanceId.current
+          timestamp: Date.now()
         }
-      }));
+      });
       
-      logWithTimestamp(`Called number ${number} via WebSocket`);
       return true;
     } catch (error) {
-      console.error('Error calling number:', error);
+      logWithTimestamp(`Error broadcasting called number: ${error}`);
       return false;
     }
-  };
-
-  // Method for starting the game
-  const startGame = () => {
-    if (!socket.current || socket.current.readyState !== WebSocket.OPEN || !sessionId) {
-      logWithTimestamp(`Cannot start game: socket not connected`);
+  }, [isConnected, sessionId]);
+  
+  // Function to broadcast game start
+  const startGame = useCallback(() => {
+    if (!channelRef.current || !isConnected) {
+      logWithTimestamp('Cannot broadcast game start: not connected');
       return false;
     }
     
     try {
-      socket.current.send(JSON.stringify({
-        type: 'start-game',
-        sessionId,
-        data: {
+      logWithTimestamp(`Broadcasting game start for session: ${sessionId}`);
+      
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'game-update',
+        payload: {
+          sessionId,
           gameStatus: 'active',
-          timestamp: Date.now(),
-          instanceId: instanceId.current
+          timestamp: Date.now()
         }
-      }));
+      });
       
-      logWithTimestamp(`Started game via WebSocket`);
       return true;
     } catch (error) {
-      console.error('Error starting game:', error);
+      logWithTimestamp(`Error broadcasting game start: ${error}`);
       return false;
     }
-  };
-
-  // Method for responding to a claim
-  const respondToClaim = (playerCode: string, result: 'valid' | 'rejected') => {
-    return sendClaimResult(playerCode, result);
-  };
-
-  // Method for changing the win pattern
-  const changePattern = (newPattern: string) => {
-    if (!socket.current || socket.current.readyState !== WebSocket.OPEN || !sessionId) {
-      logWithTimestamp(`Cannot change pattern: socket not connected`);
+  }, [isConnected, sessionId]);
+  
+  // Verify claim result
+  const verifyClaim = useCallback((playerCode: string, isValid: boolean) => {
+    if (!channelRef.current || !isConnected) {
+      logWithTimestamp('Cannot verify claim: not connected');
       return false;
     }
     
     try {
-      socket.current.send(JSON.stringify({
-        type: 'change-pattern',
-        sessionId,
-        data: {
-          currentWinPattern: newPattern,
-          timestamp: Date.now(),
-          instanceId: instanceId.current
-        }
-      }));
+      logWithTimestamp(`Broadcasting claim verification for player: ${playerCode}, valid: ${isValid}`);
       
-      logWithTimestamp(`Changed win pattern to ${newPattern} via WebSocket`);
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'claim-result',
+        payload: {
+          sessionId,
+          playerId: playerCode,
+          result: isValid ? 'valid' : 'rejected',
+          timestamp: Date.now()
+        }
+      });
+      
+      // Remove from pending claims
+      setPendingClaims(prev => prev.filter(claim => claim.playerCode !== playerCode));
+      
       return true;
     } catch (error) {
-      console.error('Error changing pattern:', error);
+      logWithTimestamp(`Error verifying claim: ${error}`);
       return false;
     }
-  };
-
-  const reconnect = () => {
-    if (!sessionId || connectionInProgress.current) return;
+  }, [isConnected, sessionId]);
+  
+  // Initialize on first render
+  useEffect(() => {
+    if (sessionId) {
+      connectToHub();
+    }
     
-    logWithTimestamp('Manual reconnect requested');
-    
-    // Reset reconnect count for a fresh start
-    reconnectCount.current = 0;
-    
-    // CRITICAL FIX: Clean up all connections first to break any loops
-    cleanupAllConnections();
-    
-    // Reset all connection states
-    connectionInProgress.current = false;
-    
-    // Connect after a short delay
-    setTimeout(() => {
-      connectToHub(sessionId);
-    }, 500);
-  };
-
+    return () => {
+      logWithTimestamp(`Cleaning up caller WebSocket connection`);
+      
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+      }
+    };
+  }, [connectToHub, sessionId]);
+  
+  // Return the caller hub API
   return {
-    connectionState,
     isConnected,
-    pendingClaims,
-    connectedPlayers,
+    connectionState,
     connectionError,
-    clearClaim,
-    sendClaimResult,
+    connectedPlayers,
+    pendingClaims,
     reconnect,
-    // Add the new methods
     callNumber,
     startGame,
-    respondToClaim,
-    changePattern
+    verifyClaim
   };
 }
