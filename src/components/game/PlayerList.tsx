@@ -1,5 +1,6 @@
 
 import React from "react";
+import { Badge } from "@/components/ui/badge";
 
 export interface PlayerListProps {
   players: {
@@ -31,18 +32,24 @@ const PlayerList: React.FC<PlayerListProps> = ({ players, isLoading = false }) =
     );
   }
 
+  // Debug information
+  console.log(`PlayerList rendering ${players.length} players:`, players);
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
       {players.map((player, idx) => (
         <div key={player.id || player.clientId || player.playerCode || idx} className="bg-gray-50 p-3 rounded-md">
-          <div className="font-medium">{player.nickname || player.playerName || player.playerCode}</div>
+          <div className="font-medium flex items-center justify-between">
+            {player.nickname || player.playerName || player.playerCode}
+            <Badge variant="outline" className="text-xs ml-1">Online</Badge>
+          </div>
           <div className="text-xs text-gray-500">
             Joined {player.joinedAt ? new Date(player.joinedAt).toLocaleTimeString() : 'recently'}
           </div>
           <div className="text-xs font-mono mt-1">
             Code: {player.playerCode}
           </div>
-          {player.tickets && (
+          {player.tickets !== undefined && (
             <div className="text-xs mt-1">
               Tickets: {player.tickets}
             </div>

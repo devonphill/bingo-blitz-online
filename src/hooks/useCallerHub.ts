@@ -32,6 +32,9 @@ export function useCallerHub(sessionId?: string) {
   
   // CRITICAL FIX: Track received presence data separately from processed players list
   const presenceStateRef = useRef<Record<string, any[]>>({});
+  
+  // Debug event counter for tracking presence updates
+  const presenceEventsRef = useRef<number>(0);
 
   // Function to establish WebSocket connection to bingo hub
   const connectToHub = useCallback(() => {
@@ -75,20 +78,22 @@ export function useCallerHub(sessionId?: string) {
       // Create a channel for this session
       const channel = supabase.channel(`game-updates-${sessionId}`);
       
-      // Set up presence handlers
+      // Set up presence handlers with improved logging
       channel
         .on('presence', { event: 'sync' }, () => {
           const state = channel.presenceState();
-          logWithTimestamp(`Presence state synchronized: ${JSON.stringify(state)}`);
+          const eventId = ++presenceEventsRef.current;
+          logWithTimestamp(`[Event ${eventId}] Presence state synchronized: ${JSON.stringify(state)}`);
           
           // CRITICAL FIX: Store the raw presence state for processing
           presenceStateRef.current = state;
           
           // Process and update connected players from presence state
-          processPresenceState(state);
+          processPresenceState(state, eventId);
         })
         .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-          logWithTimestamp(`Presence join: ${key}, ${JSON.stringify(newPresences)}`);
+          const eventId = ++presenceEventsRef.current;
+          logWithTimestamp(`[Event ${eventId}] Presence join: ${key}, ${JSON.stringify(newPresences)}`);
           
           // Add to presence state
           if (!presenceStateRef.current[key]) {
@@ -96,11 +101,15 @@ export function useCallerHub(sessionId?: string) {
           }
           presenceStateRef.current[key].push(...newPresences);
           
+          // Log complete state after join
+          logWithTimestamp(`[Event ${eventId}] Updated presence state after join: ${JSON.stringify(presenceStateRef.current)}`);
+          
           // Update connected players
-          processPresenceState(presenceStateRef.current);
+          processPresenceState(presenceStateRef.current, eventId);
         })
         .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-          logWithTimestamp(`Presence leave: ${key}, ${JSON.stringify(leftPresences)}`);
+          const eventId = ++presenceEventsRef.current;
+          logWithTimestamp(`[Event ${eventId}] Presence leave: ${key}, ${JSON.stringify(leftPresences)}`);
           
           // Remove from presence state
           if (presenceStateRef.current[key]) {
@@ -115,8 +124,11 @@ export function useCallerHub(sessionId?: string) {
             }
           }
           
+          // Log complete state after leave
+          logWithTimestamp(`[Event ${eventId}] Updated presence state after leave: ${JSON.stringify(presenceStateRef.current)}`);
+          
           // Update connected players
-          processPresenceState(presenceStateRef.current);
+          processPresenceState(presenceStateRef.current, eventId);
         });
       
       // Set up message handlers for bingo claims
@@ -149,12 +161,17 @@ export function useCallerHub(sessionId?: string) {
           setConnectionState('connected');
           setConnectionError(null);
           
-          // Broadcast presence as caller
-          channel.track({
+          // CRITICAL FIX: Explicitly track presence after successful subscription
+          const presenceData = {
             caller_id: instanceId.current,
             online_at: new Date().toISOString(),
             client_type: 'caller'
-          }).then(() => {
+          };
+          
+          logWithTimestamp(`Tracking caller presence: ${JSON.stringify(presenceData)}`);
+          
+          // Broadcast presence as caller
+          channel.track(presenceData).then(() => {
             logWithTimestamp('Caller presence tracked successfully');
           }).catch(err => {
             logWithTimestamp(`Error tracking caller presence: ${err.message}`);
@@ -205,7 +222,7 @@ export function useCallerHub(sessionId?: string) {
   }, [sessionId]);
   
   // CRITICAL FIX: Improved presence state processing
-  const processPresenceState = useCallback((state: Record<string, any[]>) => {
+  const processPresenceState = useCallback((state: Record<string, any[]>, eventId?: number) => {
     // Extract players from presence state
     const players: ConnectedPlayer[] = [];
     
@@ -213,18 +230,32 @@ export function useCallerHub(sessionId?: string) {
       presences.forEach(presence => {
         // Only add players to the list (not callers)
         if (presence.client_type === 'player' && presence.playerCode) {
+          // Add the player to our list
           players.push({
             playerCode: presence.playerCode,
             playerName: presence.playerName || presence.playerCode,
             joinedAt: presence.online_at || new Date().toISOString(),
             clientId
           });
+          
+          // Debug log for player presence
+          logWithTimestamp(`Found player in presence data: ${presence.playerCode} (${presence.playerName || 'unnamed'})`);
         }
       });
     });
     
-    logWithTimestamp(`Processed ${players.length} players from presence state`);
-    setConnectedPlayers(players);
+    logWithTimestamp(`Processed ${players.length} players from presence state${eventId ? ` for event ${eventId}` : ''}`);
+    
+    // Only update state if players array has changed
+    setConnectedPlayers(prevPlayers => {
+      // Simple check for change: different length or different order/content
+      const hasChanged = 
+        prevPlayers.length !== players.length ||
+        JSON.stringify(prevPlayers.map(p => p.playerCode).sort()) !== 
+        JSON.stringify(players.map(p => p.playerCode).sort());
+      
+      return hasChanged ? players : prevPlayers;
+    });
   }, []);
   
   // Function to manually reconnect
@@ -242,7 +273,7 @@ export function useCallerHub(sessionId?: string) {
     connectToHub();
   }, [connectToHub]);
   
-  // Function to broadcast a number call
+  // Method to broadcast a number call
   const callNumber = useCallback((number: number, allCalledNumbers: number[]) => {
     if (!channelRef.current || !isConnected) {
       logWithTimestamp('Cannot broadcast number: not connected');
@@ -270,7 +301,7 @@ export function useCallerHub(sessionId?: string) {
     }
   }, [isConnected, sessionId]);
   
-  // Function to broadcast game start
+  // Method to broadcast game start
   const startGame = useCallback(() => {
     if (!channelRef.current || !isConnected) {
       logWithTimestamp('Cannot broadcast game start: not connected');
@@ -420,10 +451,141 @@ export function useCallerHub(sessionId?: string) {
     connectedPlayers,
     pendingClaims,
     reconnect,
-    callNumber,
-    startGame,
-    verifyClaim,
-    respondToClaim,
-    changePattern
+    callNumber: (number: number, allCalledNumbers: number[]) => {
+      if (!channelRef.current || !isConnected) {
+        logWithTimestamp('Cannot broadcast number: not connected');
+        return false;
+      }
+      
+      try {
+        logWithTimestamp(`Broadcasting called number: ${number}`);
+        
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'number-called',
+          payload: {
+            sessionId,
+            lastCalledNumber: number,
+            calledNumbers: allCalledNumbers,
+            timestamp: Date.now()
+          }
+        });
+        
+        return true;
+      } catch (error) {
+        logWithTimestamp(`Error broadcasting called number: ${error}`);
+        return false;
+      }
+    },
+    startGame: () => {
+      if (!channelRef.current || !isConnected) {
+        logWithTimestamp('Cannot broadcast game start: not connected');
+        return false;
+      }
+      
+      try {
+        logWithTimestamp(`Broadcasting game start for session: ${sessionId}`);
+        
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'game-update',
+          payload: {
+            sessionId,
+            gameStatus: 'active',
+            timestamp: Date.now()
+          }
+        });
+        
+        return true;
+      } catch (error) {
+        logWithTimestamp(`Error broadcasting game start: ${error}`);
+        return false;
+      }
+    },
+    verifyClaim: (playerCode: string, isValid: boolean) => {
+      if (!channelRef.current || !isConnected) {
+        logWithTimestamp('Cannot verify claim: not connected');
+        return false;
+      }
+      
+      try {
+        logWithTimestamp(`Broadcasting claim verification for player: ${playerCode}, valid: ${isValid}`);
+        
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'claim-result',
+          payload: {
+            sessionId,
+            playerId: playerCode,
+            result: isValid ? 'valid' : 'rejected',
+            timestamp: Date.now()
+          }
+        });
+        
+        // Remove from pending claims
+        setPendingClaims(prev => prev.filter(claim => claim.playerCode !== playerCode));
+        
+        return true;
+      } catch (error) {
+        logWithTimestamp(`Error verifying claim: ${error}`);
+        return false;
+      }
+    },
+    respondToClaim: (playerCode: string, result: 'valid' | 'rejected') => {
+      if (!channelRef.current || !isConnected) {
+        logWithTimestamp('Cannot respond to claim: not connected');
+        return false;
+      }
+      
+      try {
+        logWithTimestamp(`Broadcasting claim result for player: ${playerCode}, result: ${result}`);
+        
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'claim-result',
+          payload: {
+            sessionId,
+            playerId: playerCode,
+            result: result,
+            timestamp: Date.now()
+          }
+        });
+        
+        // Remove from pending claims if it was responded to
+        if (result === 'valid' || result === 'rejected') {
+          setPendingClaims(prev => prev.filter(claim => claim.playerCode !== playerCode));
+        }
+        
+        return true;
+      } catch (error) {
+        logWithTimestamp(`Error responding to claim: ${error}`);
+        return false;
+      }
+    },
+    changePattern: (pattern: string) => {
+      if (!channelRef.current || !isConnected) {
+        logWithTimestamp('Cannot change pattern: not connected');
+        return false;
+      }
+      
+      try {
+        logWithTimestamp(`Broadcasting pattern change to: ${pattern}`);
+        
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'pattern-change',
+          payload: {
+            sessionId,
+            pattern: pattern,
+            timestamp: Date.now()
+          }
+        });
+        
+        return true;
+      } catch (error) {
+        logWithTimestamp(`Error changing pattern: ${error}`);
+        return false;
+      }
+    }
   };
 }

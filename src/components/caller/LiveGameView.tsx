@@ -88,6 +88,13 @@ export function LiveGameView({
     }
   }, [callerHub.pendingClaims]);
   
+  // Debug effect for checking player status
+  useEffect(() => {
+    console.log("CallerHub connected players:", callerHub.connectedPlayers);
+    console.log("CallerHub connection state:", callerHub.connectionState);
+    console.log("CallerHub isConnected:", callerHub.isConnected);
+  }, [callerHub.connectedPlayers, callerHub.connectionState, callerHub.isConnected]);
+  
   const openClaimSheet = () => {
     setIsClaimSheetOpen(true);
   };
@@ -153,7 +160,7 @@ export function LiveGameView({
                 </div>
               </div>
 
-              {/* WebSocket connection status */}
+              {/* WebSocket connection status with more detailed display */}
               <div className="bg-gray-100 p-4 rounded-md">
                 <div className="text-sm text-gray-500 mb-1">Game Server Connection</div>
                 <div className={`text-lg font-bold ${callerHub.isConnected ? 'text-green-600' : 
@@ -168,9 +175,7 @@ export function LiveGameView({
                     ? 'WebSocket connection is established and working correctly.'
                     : callerHub.connectionState === 'connecting'
                     ? 'Establishing WebSocket connection...'
-                    : callerHub.connectionState === 'error'
-                    ? 'Error with WebSocket connection. Some features may not work.'
-                    : 'WebSocket disconnected. Attempting to reconnect automatically...')}
+                    : 'Attempting to reconnect to game server...')}
                 </div>
                 
                 {!callerHub.isConnected && (

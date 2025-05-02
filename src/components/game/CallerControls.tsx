@@ -84,9 +84,8 @@ export default function CallerControls({
       // Also broadcast via WebSocket for connected players
       if (callerHub.isConnected) {
         // Create a new array with all previously called numbers plus the new one
-        // FIX: Use the current remainingNumbers to derive what the newCalledNumbers would be
-        const currentCalledNumbers = remainingNumbers.filter(n => n !== number);
-        callerHub.callNumber(number, currentCalledNumbers);
+        const newCalledNumbers = remainingNumbers.filter(n => n !== number);
+        callerHub.callNumber(number, newCalledNumbers);
       }
       
       setIsCallingNumber(false);
@@ -194,8 +193,9 @@ export default function CallerControls({
     openClaimSheet();
   };
 
-  // Only disable the Go Live button if there's no connection at all
-  const isGoLiveDisabled = callerHub.connectionState === 'error';
+  // Allow the Go Live button to be used even without a connection
+  // This helps resolve connection issues by reinitializing the session
+  const isGoLiveDisabled = false;
 
   return (
     <Card>
@@ -257,12 +257,12 @@ export default function CallerControls({
             disabled={isGoLiveDisabled}
             onClick={handleGoLiveClick}
           >
-            {isGoingLive ? 'Going Live...' : 
-              callerHub.connectionState === 'error' ? 'Connect First' : 'Go Live'}
+            {isGoingLive ? 'Going Live...' : 'Go Live'}
           </Button>
         </div>
         
-        {callerHub.connectionState !== 'connected' && (
+        {/* Connection status display */}
+        {!callerHub.isConnected && (
           <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded flex items-center justify-center mt-2">
             <span className="h-2 w-2 bg-amber-500 rounded-full mr-2"></span>
             {callerHub.connectionState === 'connecting' ? 'Connecting to game server...' : 'Not connected to game server'}
