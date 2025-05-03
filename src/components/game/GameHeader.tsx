@@ -75,7 +75,6 @@ export default function GameHeader({
                 id="auto-marking"
                 checked={autoMarking}
                 onCheckedChange={handleAutoMarkingToggle}
-                size="sm"
               />
               <Label htmlFor="auto-marking" className="text-xs">Auto Mark</Label>
             </div>

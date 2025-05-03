@@ -28,6 +28,7 @@ class ConnectionManager {
   // Track last poll time to avoid flooding
   private lastPlayerPollTime = 0;
   private lastProgressPollTime = 0;
+  private lastClaimsPollTime = 0;
   
   // Track connection management state
   public isInCooldown = false;
@@ -309,6 +310,41 @@ class ConnectionManager {
       this.sessionProgressCallback(data);
     } catch (err) {
       console.error('Exception in fetchSessionProgress:', err);
+    }
+  }
+  
+  async fetchClaims() {
+    if (!this.sessionId) return [];
+    
+    const now = Date.now();
+    // Add rate limiting to prevent excessive polling
+    if ((now - this.lastClaimsPollTime) < 2000) {
+      return [];
+    }
+    
+    this.lastClaimsPollTime = now;
+    
+    try {
+      logWithTimestamp(`Fetching bingo claims for session: ${this.sessionId}`);
+      
+      const { data, error } = await supabase
+        .from('bingo_claims')
+        .select('*')
+        .eq('session_id', this.sessionId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+        
+      if (error) {
+        console.error('Error fetching bingo claims:', error);
+        return [];
+      }
+      
+      logWithTimestamp(`Fetched ${data.length} pending claims`);
+      return data;
+      
+    } catch (err) {
+      console.error('Exception in fetchClaims:', err);
+      return [];
     }
   }
   

@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { motion } from "framer-motion";
 
@@ -13,13 +13,18 @@ export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNu
   const sortedNumbers = [...calledNumbers].sort((a, b) => a - b);
   
   // Animated highlight for newly called number
-  const isNewNumber = React.useRef(false);
-  const prevNumber = React.useRef<number | null>(null);
+  const isNewNumber = useRef(false);
+  const prevNumber = useRef<number | null>(null);
+  const prevCalledCount = useRef<number>(0);
   
-  React.useEffect(() => {
-    if (currentNumber !== null && currentNumber !== prevNumber.current) {
+  useEffect(() => {
+    // Check if we have a truly new number
+    if (currentNumber !== null && 
+       (currentNumber !== prevNumber.current || calledNumbers.length !== prevCalledCount.current)) {
+      console.log("New number detected:", currentNumber, "Previous:", prevNumber.current);
       isNewNumber.current = true;
       prevNumber.current = currentNumber;
+      prevCalledCount.current = calledNumbers.length;
       
       // Reset animation flag after animation completes
       const timer = setTimeout(() => {
@@ -28,7 +33,7 @@ export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNu
       
       return () => clearTimeout(timer);
     }
-  }, [currentNumber]);
+  }, [currentNumber, calledNumbers.length]);
 
   return (
     <Card className="shadow-sm">
@@ -39,6 +44,7 @@ export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNu
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-500">Last Called:</span>
               <motion.div
+                key={`current-${currentNumber}-${isNewNumber.current}`}
                 initial={isNewNumber.current ? { scale: 1.2, backgroundColor: "#4ade80" } : {}}
                 animate={isNewNumber.current ? 
                   { scale: 1, backgroundColor: "#f8fafc" } : 
@@ -61,7 +67,7 @@ export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNu
             
             return (
               <motion.div
-                key={number}
+                key={`${number}-${isCalled}-${isLastCalled}-${isNewNumber.current}`}
                 initial={isLastCalled && isNewNumber.current ? { scale: 1.5, backgroundColor: "#4ade80" } : {}}
                 animate={
                   isLastCalled && isNewNumber.current 

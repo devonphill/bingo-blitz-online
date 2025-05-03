@@ -9,9 +9,10 @@ interface GoLiveButtonProps {
   sessionId: string;
   className?: string;
   onSuccess?: () => void;
+  disabled?: boolean;
 }
 
-export function GoLiveButton({ sessionId, className, onSuccess }: GoLiveButtonProps) {
+export function GoLiveButton({ sessionId, className, onSuccess, disabled }: GoLiveButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { goLive, isUpdating } = useSessionLifecycle(sessionId);
 
@@ -47,7 +48,7 @@ export function GoLiveButton({ sessionId, className, onSuccess }: GoLiveButtonPr
     <Button 
       onClick={handleGoLive}
       className={className}
-      disabled={isLoading || isUpdating}
+      disabled={isLoading || isUpdating || disabled}
     >
       {(isLoading || isUpdating) ? (
         <>
