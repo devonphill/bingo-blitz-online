@@ -84,7 +84,9 @@ export default function CallerControls({
           payload: {
             sessionId: sessionId,
             lastCalledNumber: number,
-            calledNumbers: [...calledNumbers, number],
+            // We need to calculate the called numbers since we don't have direct access to the full list
+            // We infer it from the remaining numbers
+            calledNumbers: getCalledNumbersFromRemaining(number, remainingNumbers),
             timestamp: new Date().toISOString()
           }
         }).then(() => {
@@ -104,6 +106,24 @@ export default function CallerControls({
       onCallNumber(number);
       setIsCallingNumber(false);
     }, 1000);
+  };
+
+  // Helper function to calculate the called numbers based on the remaining numbers
+  // and the currently called number
+  const getCalledNumbersFromRemaining = (calledNumber: number, remaining: number[]): number[] => {
+    // Create a full range of numbers based on game type (75-ball or 90-ball)
+    const maxNumber = gameType === '75-ball' ? 75 : 90;
+    const allNumbers = Array.from({ length: maxNumber }, (_, i) => i + 1);
+    
+    // Filter out the remaining numbers to get previously called numbers
+    const previouslyCalled = allNumbers.filter(n => !remaining.includes(n));
+    
+    // Add the current called number if it's not already in the list
+    if (!previouslyCalled.includes(calledNumber)) {
+      return [...previouslyCalled, calledNumber];
+    }
+    
+    return previouslyCalled;
   };
 
   const handleGoLiveClick = async () => {
