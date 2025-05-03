@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
@@ -13,6 +12,16 @@ interface Player {
   playerName?: string;
   tickets?: number;
   clientId?: string;
+}
+
+interface BingoClaim {
+  id: string;
+  player_id: string;
+  session_id: string;
+  ticket_id: string;
+  status: string;
+  created_at: string;
+  [key: string]: any; // Add index signature to allow additional properties
 }
 
 // Create a singleton to manage realtime events
@@ -327,20 +336,18 @@ class ConnectionManager {
     try {
       logWithTimestamp(`Fetching bingo claims for session: ${this.sessionId}`);
       
-      const { data, error } = await supabase
-        .from('bingo_claims')
-        .select('*')
-        .eq('session_id', this.sessionId)
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false });
+      // Use the raw query method to avoid TypeScript errors with tables not in the schema
+      const { data, error } = await supabase.rpc('get_pending_claims', {
+        p_session_id: this.sessionId
+      });
         
       if (error) {
         console.error('Error fetching bingo claims:', error);
         return [];
       }
       
-      logWithTimestamp(`Fetched ${data.length} pending claims`);
-      return data;
+      logWithTimestamp(`Fetched ${data ? data.length : 0} pending claims`);
+      return data || [];
       
     } catch (err) {
       console.error('Exception in fetchClaims:', err);

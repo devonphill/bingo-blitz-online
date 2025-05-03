@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -263,7 +262,7 @@ export default function CallerControls({
             
             <GoLiveButton
               sessionId={sessionId}
-              disabled={false} /* CRITICAL: Make sure button is never disabled */
+              disabled={false}
               className="w-full"
               onSuccess={() => {
                 handleGoLiveClick();

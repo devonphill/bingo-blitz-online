@@ -10,9 +10,10 @@ interface GoLiveButtonProps {
   className?: string;
   onSuccess?: () => void;
   disabled?: boolean;
+  children?: React.ReactNode; // Added this line to accept children
 }
 
-export function GoLiveButton({ sessionId, className, onSuccess, disabled }: GoLiveButtonProps) {
+export function GoLiveButton({ sessionId, className, onSuccess, disabled, children = "Go Live" }: GoLiveButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { goLive, isUpdating } = useSessionLifecycle(sessionId);
 
@@ -56,7 +57,7 @@ export function GoLiveButton({ sessionId, className, onSuccess, disabled }: GoLi
           Going Live...
         </>
       ) : (
-        "Go Live"
+        children
       )}
     </Button>
   );
