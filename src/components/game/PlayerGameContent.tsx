@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -10,6 +9,7 @@ import { connectionManager } from "@/utils/connectionManager";
 import { logWithTimestamp } from "@/utils/logUtils";
 import CalledNumbers from "./CalledNumbers";
 import { supabase } from "@/integrations/supabase/client";
+import { GoLiveButton } from "@/components/ui/go-live-button";
 
 interface PlayerGameContentProps {
   tickets: any[];

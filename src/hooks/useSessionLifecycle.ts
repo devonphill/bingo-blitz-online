@@ -22,9 +22,14 @@ export function useSessionLifecycle(sessionId: string | undefined) {
     setIsUpdating(true);
     
     try {
+      // Update both lifecycle_state and status fields
       const { error } = await supabase
         .from('game_sessions')
-        .update({ lifecycle_state: state })
+        .update({ 
+          lifecycle_state: state,
+          // When going live, also set status to active
+          ...(state === 'live' ? { status: 'active' } : {})
+        })
         .eq('id', sessionId);
 
       if (error) {

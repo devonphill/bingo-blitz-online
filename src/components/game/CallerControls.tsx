@@ -22,6 +22,7 @@ interface CallerControlsProps {
   gameType?: string;
   sessionStatus?: string;
   gameConfigs?: any[];
+  onForceClose?: () => Promise<void>;
 }
 
 export default function CallerControls({ 
@@ -36,6 +37,7 @@ export default function CallerControls({
   gameType,
   sessionStatus = 'pending',
   gameConfigs = [],
+  onForceClose
 }: CallerControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
@@ -183,6 +185,27 @@ export default function CallerControls({
     }
   };
 
+  const handleForceClose = async () => {
+    if (onForceClose) {
+      try {
+        toast({
+          title: "Force closing game...",
+          description: "Resetting the current game and proceeding to the next",
+          duration: 2000
+        });
+        
+        await onForceClose();
+      } catch (error) {
+        console.error("Error handling force close:", error);
+        toast({
+          title: "Error",
+          description: "Failed to force close the game",
+          variant: "destructive"
+        });
+      }
+    }
+  };
+
   const handleBellClick = () => {
     openClaimSheet();
   };
@@ -235,6 +258,15 @@ export default function CallerControls({
           >
             End Game
           </Button>
+          
+          {onForceClose && (
+            <Button
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={handleForceClose}
+            >
+              FORCE Close Game
+            </Button>
+          )}
           
           <Button
             className="bg-green-600 hover:bg-green-700 text-white"

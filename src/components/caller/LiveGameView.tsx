@@ -9,6 +9,8 @@ import { RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import PlayerList from '../game/PlayerList';
 import { connectionManager } from '@/utils/connectionManager';
+import { supabase } from '@/integrations/supabase/client';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 interface WinPattern {
   id: string;
@@ -306,7 +308,7 @@ export function LiveGameView({
           gameType={gameType}
           sessionStatus={sessionStatus}
           gameConfigs={gameConfigs}
-          onForceClose={handleForceClose} // Add the force close handler
+          onForceClose={handleForceClose}
         />
       </div>
       
