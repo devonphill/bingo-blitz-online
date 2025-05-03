@@ -1,60 +1,41 @@
-
-import React, { useState, useEffect, useRef } from "react";
-import GameHeader from "./GameHeader";
-import BingoWinProgress from "./BingoWinProgress";
-import { useToast } from "@/hooks/use-toast";
-import { Button } from "../ui/button";
-import { 
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { AlertCircle, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
-import { connectionManager } from "@/utils/connectionManager";
-import { logWithTimestamp } from "@/utils/logUtils";
-import CurrentNumberDisplay from "./CurrentNumberDisplay";
-import CalledNumbers from "./CalledNumbers";
+import React from 'react';
+import CurrentNumberDisplay from '@/components/game/CurrentNumberDisplay';
+import GameHeader from '@/components/game/GameHeader';
+import BingoClaim from '@/components/game/BingoClaim';
 
 interface PlayerGameLayoutProps {
   tickets: any[];
-  children: React.ReactNode;
   calledNumbers: number[];
   currentNumber: number | null;
   currentSession: any;
   autoMarking: boolean;
   setAutoMarking: (value: boolean) => void;
   playerCode: string;
-  playerName?: string;
-  winPrizes: { [key: string]: string };
+  playerName: string;
+  winPrizes: Record<string, string>;
   activeWinPatterns: string[];
   currentWinPattern: string | null;
   onClaimBingo: () => Promise<boolean>;
   errorMessage: string;
   isLoading: boolean;
-  isClaiming?: boolean;
-  claimStatus?: 'pending' | 'validated' | 'rejected' | null;
+  isClaiming: boolean;
+  claimStatus: 'none' | 'pending' | 'valid' | 'invalid';
   gameType: string;
-  currentGameNumber: number;
+  children: React.ReactNode;
+  currentGameNumber: number; 
   numberOfGames: number;
   connectionState?: 'disconnected' | 'connecting' | 'connected' | 'error';
 }
 
 export default function PlayerGameLayout({
   tickets,
-  children,
   calledNumbers,
   currentNumber,
   currentSession,
   autoMarking,
   setAutoMarking,
   playerCode,
-  playerName = '',
+  playerName,
   winPrizes,
   activeWinPatterns,
   currentWinPattern,
@@ -64,341 +45,153 @@ export default function PlayerGameLayout({
   isClaiming,
   claimStatus,
   gameType,
+  children,
   currentGameNumber,
   numberOfGames,
-  connectionState = 'disconnected'
+  connectionState = 'connected'
 }: PlayerGameLayoutProps) {
-  const [showBingoClaimed, setShowBingoClaimed] = useState<boolean>(false);
-  const [showClaimError, setShowClaimError] = useState<boolean>(false);
-  const { toast } = useToast();
+  const resetClaimStatus = () => {}; // This is handled by the usePlayerGame hook
   
-  // Initialize connection manager with the session ID if available
-  useEffect(() => {
-    const layoutId = `layout-${Date.now()}`;
-    logWithTimestamp(`PlayerGameLayout mounted (${layoutId})`);
-    
-    // Only initialize connection if we have a session
-    if (currentSession?.id) {
-      logWithTimestamp(`Initializing connection manager with session ID: ${currentSession.id}`);
-      connectionManager.initialize(currentSession.id);
-    }
-    
-    return () => {
-      logWithTimestamp(`PlayerGameLayout unmounting (${layoutId}) - cleaning up connection`);
-      connectionManager.cleanup();
-    };
-  }, [currentSession?.id]);
-  
-  // Simplified connection state management with debounce for UI stability
-  const [displayConnectionState, setDisplayConnectionState] = useState(connectionState);
-  const connectionUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
-  // Debounce connection state changes to prevent UI flashing
-  useEffect(() => {
-    // For connected state, update immediately for good UX
-    if (connectionState === 'connected') {
-      if (connectionUpdateTimeoutRef.current) {
-        clearTimeout(connectionUpdateTimeoutRef.current);
-        connectionUpdateTimeoutRef.current = null;
-      }
-      setDisplayConnectionState('connected');
-      return;
-    }
-    
-    // For non-connected states, add a debounce to prevent flashing
-    if (connectionUpdateTimeoutRef.current) {
-      clearTimeout(connectionUpdateTimeoutRef.current);
-    }
-    
-    connectionUpdateTimeoutRef.current = setTimeout(() => {
-      setDisplayConnectionState(connectionState);
-      connectionUpdateTimeoutRef.current = null;
-    }, 2000); // 2 second debounce
-    
-    return () => {
-      if (connectionUpdateTimeoutRef.current) {
-        clearTimeout(connectionUpdateTimeoutRef.current);
-        connectionUpdateTimeoutRef.current = null;
-      }
-    };
-  }, [connectionState]);
-  
-  // Handle claim status changes
-  useEffect(() => {
-    if (claimStatus === 'validated') {
-      setShowBingoClaimed(true);
-      setShowClaimError(false);
-    } else if (claimStatus === 'rejected') {
-      setShowClaimError(true);
-      setShowBingoClaimed(false);
-    }
-  }, [claimStatus]);
-  
-  // Handle connection state changes with improved notification approach
-  useEffect(() => {
-    logWithTimestamp(`PlayerGameLayout: connectionState changed to ${connectionState}, displaying as ${displayConnectionState}`);
-    
-    if (connectionState === 'error' && displayConnectionState === 'error') {
-      toast({
-        title: "Connection Error",
-        description: "Lost connection to the game server. Use the reconnect button to try again.",
-        variant: "destructive",
-        duration: 5000
-      });
-    } else if (connectionState === 'connected' && displayConnectionState === 'connected') {
-      toast({
-        title: "Connected",
-        description: "Successfully connected to the game server.",
-        duration: 3000
-      });
-    }
-  }, [displayConnectionState, connectionState, toast]);
-
-  const handleSettingsChange = (autoMark: boolean) => {
-    setAutoMarking(autoMark);
-    localStorage.setItem('autoMarking', autoMark ? 'true' : 'false');
-  };
-
-  // Handle page refresh for reconnection
-  const handleReconnect = () => {
-    logWithTimestamp("Manual reconnection requested by user");
-    
-    // Reinitialize the connection manager if we have a session
-    if (currentSession?.id) {
-      connectionManager.initialize(currentSession.id);
-      
-      toast({
-        title: "Reconnecting",
-        description: "Attempting to reconnect to the game server...",
-        duration: 3000
-      });
-    } else {
-      // If no session, just refresh the page as fallback
-      window.location.reload();
-    }
-  };
-
-  // Determine if we should show the connection warning
-  const showConnectionWarning = displayConnectionState !== 'connected';
-  
-  // Use the display state for UI consistency
-  const isConnected = displayConnectionState === 'connected';
-
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
-      <div className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
-        <GameHeader
-          sessionName={currentSession?.name || "Bingo Game"}
-          accessCode={playerCode}
-          activeWinPattern={currentWinPattern || undefined}
-          autoMarking={autoMarking}
-          setAutoMarking={setAutoMarking}
-          isConnected={isConnected}
-          connectionState={displayConnectionState}
-        />
+    <div className="w-full min-h-screen bg-gray-100">
+      <div className="w-full bg-white shadow-sm py-4">
+        <div className="container mx-auto px-4">
+          <GameHeader 
+            gameType={gameType} 
+            playerName={playerName} 
+            playerCode={playerCode}
+            currentGameNumber={currentGameNumber}
+            numberOfGames={numberOfGames}
+          />
+        </div>
       </div>
       
-      <div className="flex flex-1">
-        {/* Left panel for number display - FIXED: Repositioned layout so number is in bottom visible area */}
-        <div className="w-[30%] bg-gradient-to-b from-blue-50 to-indigo-50 border-r border-blue-100 p-4 flex flex-col h-[calc(100vh-64px)]">
-          {/* Top section with game info */}
-          <div className="mb-4">
-            <div className="bg-white rounded-md shadow-sm p-3 mb-4">
-              <div className="text-sm font-medium text-gray-700 mb-2">Game Info</div>
-              <div className="grid grid-cols-1 gap-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Game:</span>
-                  <span className="font-medium">{currentGameNumber} of {numberOfGames}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Numbers Called:</span>
-                  <span className="font-medium">{calledNumbers.length}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Pattern:</span>
-                  <span className="font-medium">{currentWinPattern || 'Any Line'}</span>
-                </div>
-              </div>
-            </div>
-            
-            {/* Called numbers summary */}
-            <div className="bg-white rounded-md shadow-sm p-3">
-              <div className="text-sm font-medium text-gray-700 mb-2">Recent Numbers</div>
-              <div className="flex flex-wrap gap-2">
-                {calledNumbers.slice(-10).reverse().map(num => (
-                  <span key={num} className={`w-8 h-8 flex items-center justify-center rounded-full text-white text-sm font-bold ${
-                    num <= 15 ? 'bg-red-500' :
-                    num <= 30 ? 'bg-blue-500' :
-                    num <= 45 ? 'bg-green-500' :
-                    num <= 60 ? 'bg-yellow-500' :
-                    num <= 75 ? 'bg-purple-500' : 'bg-pink-500'
-                  }`}>
-                    {num}
-                  </span>
-                ))}
-              </div>
-            </div>
+      <div className="container mx-auto px-4 py-8">
+        {errorMessage ? (
+          <div className="bg-red-50 p-4 rounded-md text-red-800 mb-6">
+            <p className="font-medium">Error: {errorMessage}</p>
+            <p className="text-sm mt-1">Please try refreshing the page or re-join using your player code.</p>
           </div>
-          
-          {/* FIXED: Bottom section with animated current number - now properly aligned at bottom of visible area */}
-          <div className="mt-auto flex flex-col items-center justify-center mb-6">
-            <CurrentNumberDisplay 
-              number={currentNumber} 
-              sizePx={180}
-              gameType={gameType}
-              className="animate-pulse-subtle"
-            />
-          </div>
-        </div>
+        ) : null}
         
-        {/* Main content area */}
-        <div className="w-[70%] p-4 overflow-y-auto h-[calc(100vh-64px)]">
-          <div className="mb-4">
-            <BingoWinProgress
-              tickets={tickets}
-              calledNumbers={calledNumbers}
-              activeWinPatterns={activeWinPatterns}
-              currentWinPattern={currentWinPattern}
-              handleClaimBingo={onClaimBingo}
-              isClaiming={isClaiming}
-              claimStatus={claimStatus}
-              gameType={gameType}
-            />
-          </div>
-          
-          {children}
-        </div>
-      </div>
-      
-      {/* Settings Dialog */}
-      <Dialog>
-        <DialogTrigger asChild>
-          <Button 
-            variant="ghost" 
-            size="sm"
-            className="fixed bottom-4 right-4 bg-white shadow-md rounded-full h-12 w-12 p-0 flex items-center justify-center"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-          </Button>
-        </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Game Settings</DialogTitle>
-            <DialogDescription>
-              Adjust your game settings and preferences.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="auto-mark" className="flex flex-col space-y-1">
-                <span>Auto-Mark Numbers</span>
-                <span className="font-normal text-xs text-gray-500">Automatically mark called numbers on your card</span>
-              </Label>
-              <Switch 
-                id="auto-mark" 
-                checked={autoMarking} 
-                onCheckedChange={handleSettingsChange}
-              />
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <Label htmlFor="connection" className="flex flex-col space-y-1">
-                <span>Connection Status</span>
-                <span className="font-normal text-xs text-gray-500">Current connection to the game server</span>
-              </Label>
-              <div className="flex items-center">
-                <span className={`h-3 w-3 rounded-full mr-2 ${
-                  isConnected ? 'bg-green-500' : 
-                  displayConnectionState === 'connecting' ? 'bg-amber-500' : 
+        <div className="flex flex-col lg:flex-row">
+          {/* Left sidebar - Current Number Display */}
+          <div className="w-full lg:w-[30%] lg:pr-6 mb-6 lg:mb-0 flex flex-col">
+            {/* Connection Status */}
+            <div className={`rounded-md py-2 px-4 mb-4 text-center text-sm ${
+              connectionState === 'connected' ? 'bg-green-50 text-green-700' :
+              connectionState === 'connecting' ? 'bg-blue-50 text-blue-700' :
+              'bg-red-50 text-red-700'
+            }`}>
+              <div className="flex items-center justify-center">
+                <div className={`h-2 w-2 rounded-full mr-2 ${
+                  connectionState === 'connected' ? 'bg-green-500' :
+                  connectionState === 'connecting' ? 'bg-blue-500' :
                   'bg-red-500'
-                }`}></span>
-                <span className="text-sm">
-                  {isConnected ? 'Connected' : 
-                   displayConnectionState === 'connecting' ? 'Connecting...' : 
-                   displayConnectionState === 'error' ? 'Connection Error' :
+                }`}></div>
+                <span>
+                  {connectionState === 'connected' ? 'Connected' :
+                   connectionState === 'connecting' ? 'Connecting...' :
                    'Disconnected'}
                 </span>
               </div>
             </div>
-          </div>
-          <DialogFooter>
-            <div className="text-xs text-gray-500 w-full">
-              <p className="text-center">Player: {playerName || playerCode}</p>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      
-      {/* Claim Success Dialog */}
-      <Dialog open={showBingoClaimed} onOpenChange={setShowBingoClaimed}>
-        <DialogContent>
-          <div className="flex flex-col items-center justify-center py-4">
-            <CheckCircle2 className="h-16 w-16 text-green-500 mb-4" />
-            <DialogTitle className="text-xl mb-2">Bingo Verified!</DialogTitle>
-            <DialogDescription className="text-center mb-6">
-              Your bingo claim has been verified by the caller. Congratulations!
-            </DialogDescription>
-            <Button 
-              onClick={() => setShowBingoClaimed(false)} 
-              className="w-full bg-green-600 hover:bg-green-700"
-            >
-              Continue Playing
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-      
-      {/* Claim Error Dialog */}
-      <Dialog open={showClaimError} onOpenChange={setShowClaimError}>
-        <DialogContent>
-          <div className="flex flex-col items-center justify-center py-4">
-            <XCircle className="h-16 w-16 text-red-500 mb-4" />
-            <DialogTitle className="text-xl mb-2">Claim Rejected</DialogTitle>
-            <DialogDescription className="text-center mb-6">
-              Your bingo claim was rejected by the caller. Please check your marked numbers and try again if you believe you have a valid bingo.
-            </DialogDescription>
-            <Button 
-              onClick={() => setShowClaimError(false)} 
-              variant="destructive"
-              className="w-full"
-            >
-              Close
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-      
-      {/* Enhanced Connection Warning with Reconnect Button - Updated to be less intrusive */}
-      {showConnectionWarning && (
-        <div className="fixed bottom-20 left-4 right-4 bg-amber-50 border border-amber-300 p-3 rounded-lg shadow-lg flex flex-col gap-2 z-50">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <span className={`h-2 w-2 rounded-full mr-2 ${
-                displayConnectionState === 'connecting' ? 'bg-amber-500' : 'bg-red-500'
-              }`}></span>
-              <span className="font-medium text-amber-800">
-                {displayConnectionState === 'connecting' ? 
-                  "Connecting to game server..." :
-                  displayConnectionState === 'error' ?
-                  "Connection error with game server" :
-                  "Disconnected from game server"}
-              </span>
+            
+            {/* Game Information Card */}
+            <div className="bg-white rounded-lg shadow-sm p-6 mb-4">
+              <h3 className="text-lg font-semibold mb-3">Game Information</h3>
+              
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Game Type:</span>
+                  <span className="font-medium">{gameType === 'mainstage' ? '90-Ball' : gameType}</span>
+                </div>
+                
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Game:</span>
+                  <span className="font-medium">{currentGameNumber} of {numberOfGames}</span>
+                </div>
+                
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Called Numbers:</span>
+                  <span className="font-medium">{calledNumbers.length}</span>
+                </div>
+                
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Win Pattern:</span>
+                  <span className="font-medium">{currentWinPattern || 'Full House'}</span>
+                </div>
+              </div>
             </div>
             
-            {displayConnectionState !== 'connecting' && (
-              <Button 
-                size="sm"
-                variant="outline"
-                className="bg-white border-amber-300 hover:bg-amber-100 text-amber-700 flex items-center gap-1"
-                onClick={handleReconnect}
-              >
-                <RefreshCw className="h-3 w-3" />
-                Reconnect
-              </Button>
-            )}
+            {/* Recent Numbers */}
+            <div className="bg-white rounded-lg shadow-sm p-6 mb-4">
+              <h3 className="text-lg font-semibold mb-3">Recent Numbers</h3>
+              <div className="grid grid-cols-5 gap-2">
+                {calledNumbers.slice(-10).reverse().map((number, index) => (
+                  <div 
+                    key={`recent-${index}`}
+                    className="bg-gray-100 rounded-full h-8 w-8 flex items-center justify-center text-sm font-medium"
+                  >
+                    {number}
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            {/* Current Number - Positioned at the bottom of the viewport */}
+            <div className="fixed bottom-0 left-0 lg:relative lg:mt-auto lg:mb-0 bg-white lg:bg-transparent w-full p-4 shadow-lg lg:shadow-none">
+              <div className="flex flex-col items-center justify-center">
+                <CurrentNumberDisplay 
+                  number={currentNumber}
+                  sizePx={140}
+                  className="mb-4"
+                />
+                
+                {/* Bingo Claim Button */}
+                <div className="w-full max-w-xs mb-4 lg:mb-0">
+                  <BingoClaim
+                    onClaimBingo={onClaimBingo}
+                    claimStatus={claimStatus}
+                    isClaiming={isClaiming}
+                    resetClaimStatus={() => {}}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Main content */}
+          <div className="w-full lg:w-[70%]">
+            {/* Auto marking toggle */}
+            <div className="bg-white rounded-lg shadow-sm p-4 mb-6 flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold">Auto Marking</h3>
+                <p className="text-sm text-gray-500">Automatically mark numbers on your tickets</p>
+              </div>
+              <div className="flex items-center">
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={autoMarking}
+                    onChange={(e) => {
+                      setAutoMarking(e.target.checked);
+                      localStorage.setItem('autoMarking', e.target.checked.toString());
+                    }}
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+            </div>
+            
+            {/* Game content */}
+            <div className="bg-white rounded-lg shadow-sm p-4">
+              {children}
+            </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

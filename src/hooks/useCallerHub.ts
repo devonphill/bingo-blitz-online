@@ -1,451 +1,172 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { logWithTimestamp, ConnectionManagerClass } from '@/utils/logUtils';
+
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { logWithTimestamp } from '@/utils/logUtils';
 
-export interface ConnectedPlayer {
-  playerCode: string;
-  playerName?: string;
-  joinedAt: string;
-  clientId?: string;
-}
-
-export interface PendingClaim {
-  playerCode: string;
-  playerName?: string;
-  timestamp: number;
-  ticketData?: any;
-}
-
-// Global registry of active caller connections to prevent duplicates
-const activeCallerConnections = new Map<string, string>();
-
-// Hook to handle caller WebSocket hub connection and state
-export function useCallerHub(sessionId?: string) {
+export function useCallerHub(sessionId: string | undefined) {
+  const [pendingClaims, setPendingClaims] = useState<any[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
-  const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [connectedPlayers, setConnectedPlayers] = useState<ConnectedPlayer[]>([]);
-  const [pendingClaims, setPendingClaims] = useState<PendingClaim[]>([]);
-  const channelRef = useRef<any>(null);
-  const instanceId = useRef<string>(`caller-${Date.now().toString()}`);
-  const connectionManager = useRef(new ConnectionManagerClass());
-  
-  // Track presence data separately
-  const presenceStateRef = useRef<Record<string, any[]>>({});
-  const presenceEventsRef = useRef<number>(0);
-  
-  // Tracking mechanism for player presence specifically
-  const playerPresenceMap = useRef<Map<string, ConnectedPlayer>>(new Map());
+  const { toast } = useToast();
 
-  // Function to establish WebSocket connection to bingo hub
-  const connectToHub = useCallback(() => {
-    // Skip if no session ID
-    if (!sessionId) return () => {};
+  // Fetch pending claims on mount and periodically
+  useEffect(() => {
+    if (!sessionId) return;
     
-    // Don't reconnect if we're already connecting
-    if (connectionManager.current.isConnecting) {
-      logWithTimestamp("Connection attempt already in progress, skipping redundant attempt");
-      return () => {};
-    }
+    // Initial fetch
+    fetchPendingClaims();
     
-    // Check cooldown
-    if (connectionManager.current.isInCooldown) {
-      const remainingCooldown = Math.ceil((connectionManager.current.cooldownUntil - Date.now()) / 1000);
-      logWithTimestamp(`In cooldown period, ${remainingCooldown}s remaining before next attempt`);
-      return () => {};
-    }
+    // Set up polling
+    const interval = setInterval(fetchPendingClaims, 5000);
     
-    // Check for duplicate connection from this same session
-    const connectionKey = `caller:${sessionId}`;
-    if (activeCallerConnections.has(connectionKey) && activeCallerConnections.get(connectionKey) !== instanceId.current) {
-      logWithTimestamp(`Another active caller connection exists for ${connectionKey}, skipping`);
-      return () => {};
-    }
-    
-    try {
-      connectionManager.current.startConnection();
-      logWithTimestamp(`Caller connecting to WebSocket for session ${sessionId}, instance ${instanceId.current}`);
-      
-      // Register this instance as the active connection
-      activeCallerConnections.set(connectionKey, instanceId.current);
-      
-      // Clean up any existing channel first to avoid duplicates
-      if (channelRef.current) {
-        logWithTimestamp(`Removing existing channel before creating a new one`);
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-      
-      setConnectionState('connecting');
-      
-      // Create a channel for this session with unique name to avoid conflicts
-      const channelName = `game-updates-${sessionId}-${instanceId.current}`;
-      logWithTimestamp(`Creating channel with name: ${channelName}`);
-      const channel = supabase.channel(channelName);
-      
-      // Set up presence handlers with improved logging
-      channel
-        .on('presence', { event: 'sync' }, () => {
-          const state = channel.presenceState();
-          const eventId = ++presenceEventsRef.current;
-          logWithTimestamp(`[Event ${eventId}] Presence state synchronized: ${JSON.stringify(state)}`);
-          
-          // Store the raw presence state for processing
-          presenceStateRef.current = state;
-          
-          // Process players data from presence state
-          processPresenceState(state, eventId);
-        })
-        .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-          const eventId = ++presenceEventsRef.current;
-          logWithTimestamp(`[Event ${eventId}] Presence join: ${key}, ${JSON.stringify(newPresences)}`);
-          
-          // Update the presence state with new presences
-          if (!presenceStateRef.current[key]) {
-            presenceStateRef.current[key] = [];
-          }
-          
-          // Filter out duplicates before adding
-          const existingPresenceRefs = new Set(presenceStateRef.current[key].map(p => p.presence_ref));
-          const uniqueNewPresences = newPresences.filter(p => !existingPresenceRefs.has(p.presence_ref));
-          presenceStateRef.current[key].push(...uniqueNewPresences);
-          
-          // Log complete state after join
-          logWithTimestamp(`[Event ${eventId}] Updated presence state after join: ${JSON.stringify(presenceStateRef.current)}`);
-          
-          // Update connected players
-          processPresenceState(presenceStateRef.current, eventId);
-        })
-        .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-          const eventId = ++presenceEventsRef.current;
-          logWithTimestamp(`[Event ${eventId}] Presence leave: ${key}, ${JSON.stringify(leftPresences)}`);
-          
-          // Remove from presence state
-          if (presenceStateRef.current[key]) {
-            // Filter out the left presences
-            presenceStateRef.current[key] = presenceStateRef.current[key].filter(
-              presence => !leftPresences.some((left: any) => left.presence_ref === presence.presence_ref)
-            );
-            
-            // Remove key if no presences left
-            if (presenceStateRef.current[key].length === 0) {
-              delete presenceStateRef.current[key];
-            }
-          }
-          
-          // Log complete state after leave
-          logWithTimestamp(`[Event ${eventId}] Updated presence state after leave: ${JSON.stringify(presenceStateRef.current)}`);
-          
-          // Update connected players
-          processPresenceState(presenceStateRef.current, eventId);
-        });
-      
-      // Set up message handlers for bingo claims
-      channel
-        .on('broadcast', { event: 'bingo_claimed' }, (payload) => {
-          logWithTimestamp(`Received bingo claim: ${JSON.stringify(payload.payload)}`);
-          
-          if (payload.payload) {
-            const { playerCode, playerName, ticketData, timestamp } = payload.payload;
-            
-            setPendingClaims(prev => [
-              ...prev,
-              {
-                playerCode,
-                playerName,
-                timestamp,
-                ticketData
-              }
-            ]);
-          }
-        });
-      
-      // Subscribe and track connection status
-      channel.subscribe(status => {
-        logWithTimestamp(`Caller WebSocket ${status} for session ${sessionId}`);
-        connectionManager.current.endConnection(status === 'SUBSCRIBED');
-        
-        if (status === 'SUBSCRIBED') {
-          setIsConnected(true);
-          setConnectionState('connected');
-          setConnectionError(null);
-          
-          // Track presence after successful subscription
-          const presenceData = {
-            caller_id: instanceId.current,
-            online_at: new Date().toISOString(),
-            client_type: 'caller'
-          };
-          
-          logWithTimestamp(`Tracking caller presence: ${JSON.stringify(presenceData)}`);
-          
-          // Broadcast presence as caller
-          channel.track(presenceData).then(() => {
-            logWithTimestamp('Caller presence tracked successfully');
-          }).catch(err => {
-            logWithTimestamp(`Error tracking caller presence: ${err.message}`);
+    // Listen for new claims via broadcast channel
+    const channel = supabase
+      .channel('caller-claims-channel')
+      .on('broadcast', { event: 'bingo-claim' }, payload => {
+        logWithTimestamp('Received bingo claim broadcast:', payload);
+        if (payload.payload && payload.payload.sessionId === sessionId) {
+          toast({
+            title: "New Bingo Claim!",
+            description: `${payload.payload.playerName} has claimed bingo! Check the claims panel.`,
           });
-        } else if (status === 'CHANNEL_ERROR') {
-          setIsConnected(false);
-          setConnectionState('error');
-          setConnectionError('Channel error connecting to game server');
-          
-          // Schedule reconnect with exponential backoff
-          connectionManager.current.scheduleReconnect(() => {
-            reconnect();
-          });
-        } else if (status === 'CLOSED') {
-          setIsConnected(false);
-          setConnectionState('disconnected');
-          
-          // Schedule reconnect with exponential backoff
-          connectionManager.current.scheduleReconnect(() => {
-            reconnect();
-          });
+          fetchPendingClaims();
         }
+      })
+      .subscribe((status) => {
+        logWithTimestamp(`Caller hub connection status: ${status}`);
+        setIsConnected(status === 'SUBSCRIBED');
       });
       
-      // Store channel reference
-      channelRef.current = channel;
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
+  }, [sessionId, toast]);
+  
+  // Fetch pending claims from database
+  const fetchPendingClaims = useCallback(async () => {
+    if (!sessionId) return;
+    
+    try {
+      logWithTimestamp(`Fetching pending claims for session ${sessionId}`);
       
-      return () => {
-        logWithTimestamp(`Cleaning up caller WebSocket connection`);
+      // Use the RPC function to get pending claims
+      const { data, error } = await supabase.rpc(
+        'get_pending_claims',
+        { p_session_id: sessionId }
+      );
+      
+      if (error) {
+        console.error('Error fetching pending claims:', error);
+        return;
+      }
+      
+      if (data && Array.isArray(data)) {
+        logWithTimestamp(`Found ${data.length} pending claims`);
+        setPendingClaims(data);
         
-        if (channelRef.current) {
-          supabase.removeChannel(channelRef.current);
-          channelRef.current = null;
+        // If there are claims and we haven't shown a notification recently, show one
+        if (data.length > 0) {
+          toast({
+            title: `${data.length} Pending Claims`,
+            description: "Check the claims panel to verify these claims",
+            duration: 5000,
+          });
         }
+      }
+    } catch (err) {
+      console.error('Exception in fetchPendingClaims:', err);
+    }
+  }, [sessionId, toast]);
+  
+  // Respond to a claim (valid or rejected)
+  const respondToClaim = useCallback(async (playerCode: string, result: 'valid' | 'rejected') => {
+    if (!sessionId || !playerCode) return false;
+    
+    setIsProcessing(true);
+    try {
+      logWithTimestamp(`Responding to claim from player ${playerCode} with result: ${result}`);
+      
+      // Broadcast the result to the player
+      await supabase
+        .channel('game-updates')
+        .send({
+          type: 'broadcast',
+          event: 'claim-result',
+          payload: { 
+            playerId: playerCode,
+            result
+          }
+        });
+      
+      // Remove the claim from pending claims
+      setPendingClaims(prev => prev.filter(claim => claim.player_id !== playerCode));
+      
+      toast({
+        title: result === 'valid' ? "Claim Validated" : "Claim Rejected",
+        description: result === 'valid' 
+          ? "The claim has been validated successfully" 
+          : "The claim has been rejected"
+      });
+      
+      return true;
+    } catch (err) {
+      console.error('Error responding to claim:', err);
+      toast({
+        title: "Error",
+        description: "Failed to respond to claim",
+        variant: "destructive"
+      });
+      return false;
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [sessionId, toast]);
+  
+  // Change the current active win pattern
+  const changePattern = useCallback(async (patternId: string) => {
+    if (!sessionId) return false;
+    
+    try {
+      logWithTimestamp(`Changing win pattern to ${patternId}`);
+      
+      // Update the database
+      const { error } = await supabase
+        .from('sessions_progress')
+        .update({ current_win_pattern: patternId })
+        .eq('session_id', sessionId);
         
-        // Remove from active connections registry
-        activeCallerConnections.delete(connectionKey);
-      };
-    } catch (error) {
-      connectionManager.current.endConnection(false);
-      logWithTimestamp(`Error establishing WebSocket connection: ${error}`);
-      setIsConnected(false);
-      setConnectionState('error');
-      setConnectionError(`Connection error: ${error}`);
+      if (error) {
+        console.error('Error updating win pattern:', error);
+        return false;
+      }
       
-      // Remove from active connections registry on error
-      const connectionKey = `caller:${sessionId}`;
-      activeCallerConnections.delete(connectionKey);
+      // Broadcast the pattern change
+      await supabase
+        .channel('game-updates')
+        .send({
+          type: 'broadcast',
+          event: 'pattern-change',
+          payload: { 
+            sessionId,
+            pattern: patternId
+          }
+        });
       
-      return () => {};
+      return true;
+    } catch (err) {
+      console.error('Error changing pattern:', err);
+      return false;
     }
   }, [sessionId]);
-  
-  // Improved presence state processing - Fix for playerPresenceMap issue and better player detection
-  const processPresenceState = useCallback((state: Record<string, any[]>, eventId?: number) => {
-    // Create a new map for processing players
-    const newPlayerMap = new Map<string, ConnectedPlayer>();
-    let foundPlayers = 0;
-    
-    // Extract players from presence state
-    Object.entries(state).forEach(([clientId, presences]) => {
-      presences.forEach(presence => {
-        // Check for players by looking at client_type OR playerCode properties
-        const isPlayer = presence.client_type === 'player' || presence.playerCode;
-        
-        if (isPlayer && presence.playerCode) {
-          // Use playerCode as the unique identifier
-          newPlayerMap.set(presence.playerCode, {
-            playerCode: presence.playerCode,
-            playerName: presence.playerName || presence.playerCode,
-            joinedAt: presence.online_at || new Date().toISOString(),
-            clientId
-          });
-          
-          foundPlayers++;
-          
-          // Debug log for player presence
-          logWithTimestamp(`Found player in presence data: ${presence.playerCode} (${presence.playerName || 'unnamed'})`);
-        } else if (presence.playerCode) {
-          // Log other entities with playerCode that don't have client_type = 'player'
-          logWithTimestamp(`Found entity with playerCode but not client_type='player': ${JSON.stringify(presence)}`);
-        }
-      });
-    });
-    
-    // Update the ref with the new map
-    playerPresenceMap.current = newPlayerMap;
-    
-    // Convert map to array for state update
-    const players = Array.from(playerPresenceMap.current.values());
-    logWithTimestamp(`Processed ${players.length} players (found ${foundPlayers}) from presence state${eventId ? ` for event ${eventId}` : ''}`);
-    
-    // Update state
-    setConnectedPlayers(players);
-  }, []);
-  
-  // Function to manually reconnect
-  const reconnect = useCallback(() => {
-    logWithTimestamp(`Manually triggered caller WebSocket reconnect`);
-    
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
-    }
-    
-    // Reset connection manager
-    connectionManager.current.forceReconnect();
-    setConnectionState('connecting');
-    connectToHub();
-  }, [connectToHub]);
-  
-  // Initialize on first render
-  useEffect(() => {
-    if (sessionId) {
-      connectToHub();
-    }
-    
-    return () => {
-      logWithTimestamp(`Cleaning up caller WebSocket connection`);
-      
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-      }
-      
-      // Clean up connection registration
-      if (sessionId) {
-        const connectionKey = `caller:${sessionId}`;
-        activeCallerConnections.delete(connectionKey);
-      }
-      
-      // Reset connection manager
-      connectionManager.current.reset();
-    };
-  }, [connectToHub, sessionId]);
 
-  // Method to broadcast a number call
-  const callNumber = useCallback((number: number, remainingNumbers: number[]) => {
-    if (!channelRef.current || !isConnected) {
-      logWithTimestamp('Cannot broadcast number: not connected');
-      return false;
-    }
-    
-    try {
-      logWithTimestamp(`Broadcasting called number: ${number}`);
-      
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'number-called',
-        payload: {
-          sessionId,
-          lastCalledNumber: number,
-          calledNumbers: remainingNumbers,
-          timestamp: Date.now()
-        }
-      });
-      
-      return true;
-    } catch (error) {
-      logWithTimestamp(`Error broadcasting called number: ${error}`);
-      return false;
-    }
-  }, [isConnected, sessionId]);
-  
-  // Method to broadcast game start
-  const startGame = useCallback(() => {
-    if (!channelRef.current || !isConnected) {
-      logWithTimestamp('Cannot broadcast game start: not connected');
-      return false;
-    }
-    
-    try {
-      logWithTimestamp(`Broadcasting game start for session: ${sessionId}`);
-      
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'game-update',
-        payload: {
-          sessionId,
-          gameStatus: 'active',
-          timestamp: Date.now()
-        }
-      });
-      
-      return true;
-    } catch (error) {
-      logWithTimestamp(`Error broadcasting game start: ${error}`);
-      return false;
-    }
-  }, [isConnected, sessionId]);
-  
-  // Method to verify a claim - changed to accept string or boolean
-  const verifyClaim = useCallback((playerCode: string, isValid: boolean | string) => {
-    if (!channelRef.current || !isConnected) {
-      logWithTimestamp('Cannot verify claim: not connected');
-      return false;
-    }
-    
-    try {
-      // Convert string 'valid' to boolean true and 'rejected' to false if needed
-      const validBoolean = typeof isValid === 'string' 
-        ? isValid === 'valid' 
-        : isValid;
-      
-      logWithTimestamp(`Broadcasting claim verification for player: ${playerCode}, valid: ${validBoolean}`);
-      
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'claim-result',
-        payload: {
-          sessionId,
-          playerId: playerCode,
-          result: validBoolean ? 'valid' : 'rejected',
-          timestamp: Date.now()
-        }
-      });
-      
-      // Remove from pending claims
-      setPendingClaims(prev => prev.filter(claim => claim.playerCode !== playerCode));
-      
-      return true;
-    } catch (error) {
-      logWithTimestamp(`Error verifying claim: ${error}`);
-      return false;
-    }
-  }, [isConnected, sessionId]);
-  
-  // Change pattern
-  const changePattern = useCallback((pattern: string) => {
-    if (!channelRef.current || !isConnected) {
-      logWithTimestamp('Cannot change pattern: not connected');
-      return false;
-    }
-    
-    try {
-      logWithTimestamp(`Broadcasting pattern change to: ${pattern}`);
-      
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'pattern-change',
-        payload: {
-          sessionId,
-          pattern: pattern,
-          timestamp: Date.now()
-        }
-      });
-      
-      return true;
-    } catch (error) {
-      logWithTimestamp(`Error changing pattern: ${error}`);
-      return false;
-    }
-  }, [isConnected, sessionId]);
-  
-  // Return the caller hub API
   return {
-    isConnected,
-    connectionState,
-    connectionError,
-    connectedPlayers,
     pendingClaims,
-    reconnect,
-    callNumber,
-    startGame,
-    verifyClaim,
-    changePattern,
-    respondToClaim: verifyClaim // Alias for backward compatibility
+    isProcessing,
+    isConnected,
+    fetchPendingClaims,
+    respondToClaim,
+    changePattern
   };
 }
