@@ -9,6 +9,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useCallerHub } from '@/hooks/useCallerHub';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { GoLiveButton } from '@/components/ui/go-live-button';
+import { connectionManager } from '@/utils/connectionManager';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -71,6 +72,34 @@ export default function CallerControls({
     setTimeout(() => {
       const randomIndex = Math.floor(Math.random() * remainingNumbers.length);
       const number = remainingNumbers[randomIndex];
+      
+      // IMPORTANT: First broadcast the number to all clients immediately
+      try {
+        logWithTimestamp(`Broadcasting number ${number} via realtime channels`);
+        
+        // Use a dedicated broadcast channel
+        supabase.channel('number-broadcast').send({
+          type: 'broadcast',
+          event: 'number-called',
+          payload: {
+            sessionId: sessionId,
+            lastCalledNumber: number,
+            calledNumbers: [...calledNumbers, number],
+            timestamp: new Date().toISOString()
+          }
+        }).then(() => {
+          logWithTimestamp("Number broadcast sent successfully");
+        }).catch(error => {
+          console.error("Error broadcasting number:", error);
+        });
+      } catch (err) {
+        console.error("Error sending broadcast:", err);
+      }
+      
+      // Also use the connection manager for database persistence
+      if (connectionManager) {
+        connectionManager.callNumber(number, sessionId);
+      }
       
       onCallNumber(number);
       setIsCallingNumber(false);

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useCallback } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -9,6 +8,7 @@ import { toast } from "@/hooks/use-toast";
 import { connectionManager } from "@/utils/connectionManager";
 import { logWithTimestamp } from "@/utils/logUtils";
 import CalledNumbers from "./CalledNumbers";
+import CurrentNumberDisplay from "./CurrentNumberDisplay";
 import { supabase } from "@/integrations/supabase/client";
 import { GoLiveButton } from "@/components/ui/go-live-button";
 
@@ -270,6 +270,14 @@ export default function PlayerGameContent({
       </div>
       
       <div className="flex-1 p-4">
+        {/* Add prominent current number display */}
+        <div className="mb-6 flex justify-center">
+          <CurrentNumberDisplay 
+            number={mergedCurrentNumber} 
+            className="animate-bounce-subtle"
+          />
+        </div>
+        
         <div className="mb-4">
           <BingoWinProgress
             tickets={tickets}
@@ -283,7 +291,7 @@ export default function PlayerGameContent({
           />
         </div>
         
-        {/* Show called numbers section at the top */}
+        {/* Show called numbers section */}
         <div className="mb-4">
           <CalledNumbers 
             calledNumbers={mergedCalledNumbers} 
