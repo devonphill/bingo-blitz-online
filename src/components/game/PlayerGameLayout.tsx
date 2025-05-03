@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from "react";
 import GameHeader from "./GameHeader";
 import BingoWinProgress from "./BingoWinProgress";
@@ -198,10 +199,10 @@ export default function PlayerGameLayout({
       </div>
       
       <div className="flex flex-1">
-        {/* New left panel for number display */}
-        <div className="w-[30%] bg-gradient-to-b from-blue-50 to-indigo-50 border-r border-blue-100 p-4 flex flex-col">
-          {/* Top section can show game info */}
-          <div className="mb-auto">
+        {/* Left panel for number display - FIXED: Repositioned layout so number is in bottom visible area */}
+        <div className="w-[30%] bg-gradient-to-b from-blue-50 to-indigo-50 border-r border-blue-100 p-4 flex flex-col h-[calc(100vh-64px)]">
+          {/* Top section with game info */}
+          <div className="mb-4">
             <div className="bg-white rounded-md shadow-sm p-3 mb-4">
               <div className="text-sm font-medium text-gray-700 mb-2">Game Info</div>
               <div className="grid grid-cols-1 gap-2 text-sm">
@@ -221,7 +222,7 @@ export default function PlayerGameLayout({
             </div>
             
             {/* Called numbers summary */}
-            <div className="bg-white rounded-md shadow-sm p-3 mb-4">
+            <div className="bg-white rounded-md shadow-sm p-3">
               <div className="text-sm font-medium text-gray-700 mb-2">Recent Numbers</div>
               <div className="flex flex-wrap gap-2">
                 {calledNumbers.slice(-10).reverse().map(num => (
@@ -239,8 +240,8 @@ export default function PlayerGameLayout({
             </div>
           </div>
           
-          {/* Bottom section with large animated current number */}
-          <div className="mt-auto flex flex-col items-center">
+          {/* FIXED: Bottom section with animated current number - now properly aligned at bottom of visible area */}
+          <div className="mt-auto flex flex-col items-center justify-center mb-6">
             <CurrentNumberDisplay 
               number={currentNumber} 
               sizePx={180}
@@ -251,7 +252,7 @@ export default function PlayerGameLayout({
         </div>
         
         {/* Main content area */}
-        <div className="w-[70%] p-4">
+        <div className="w-[70%] p-4 overflow-y-auto h-[calc(100vh-64px)]">
           <div className="mb-4">
             <BingoWinProgress
               tickets={tickets}

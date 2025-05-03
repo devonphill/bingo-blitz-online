@@ -1,3 +1,4 @@
+
 import React, { useEffect, useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -71,9 +72,10 @@ export default function PlayerGame() {
     initializePlayerCode();
   }, [urlPlayerCode, navigate, toast]);
 
-  // Local state for real-time called numbers
+  // Local state for real-time called numbers - IMPROVED: Separated state for better updates
   const [rtCalledItems, setRtCalledItems] = useState<number[]>([]);
   const [rtLastCalledItem, setRtLastCalledItem] = useState<number | null>(null);
+  const [lastUpdateTime, setLastUpdateTime] = useState<number>(Date.now());
 
   // Always initialize hooks with the same ordering - even if some will not be used
   // This ensures React's hook rules are followed
@@ -113,16 +115,51 @@ export default function PlayerGame() {
         .onSessionProgressUpdate((progress) => {
           logWithTimestamp(`Received session progress update: ${progress?.game_status || 'unknown status'}`);
           setConnectionState('connected');
+          
+          // Also update numbers from progress if available
+          if (progress?.called_numbers && progress.called_numbers.length > 0) {
+            const lastNumIndex = progress.called_numbers.length - 1;
+            setRtCalledItems(progress.called_numbers);
+            setRtLastCalledItem(progress.called_numbers[lastNumIndex]);
+            setLastUpdateTime(Date.now());
+          }
         })
         .onNumberCalled((number, allNumbers) => {
           logWithTimestamp(`Received real-time number call: ${number}, total called: ${allNumbers.length}`);
           setRtLastCalledItem(number);
           setRtCalledItems(allNumbers);
+          setLastUpdateTime(Date.now());
+          
+          // Show a toast when a new number is called
+          if (number !== null) {
+            toast({
+              title: `Number Called: ${number}`,
+              description: `New number just called!`,
+              duration: 3000
+            });
+          }
+          
+          // Update connection state
+          setConnectionState('connected');
         });
       
       setConnectionState('connecting');
+      
+      // Set up polling to check connection status
+      const intervalId = setInterval(() => {
+        // If no updates in 30 seconds, try to reconnect
+        const now = Date.now();
+        if (now - lastUpdateTime > 30000) {
+          logWithTimestamp(`No updates in 30 seconds, attempting reconnect`);
+          connectionManager.reconnect();
+        }
+      }, 10000); // Check every 10 seconds
+      
+      return () => {
+        clearInterval(intervalId);
+      };
     }
-  }, [currentSession?.id]);
+  }, [currentSession?.id, toast]);
   
   // Initialize session state
   const isSessionActive = currentSession?.status === 'active';
@@ -184,7 +221,8 @@ export default function PlayerGame() {
       errorMessage: effectiveErrorMessage,
       sessionProgress,
       rtCalledItems: rtCalledItems.length,
-      rtLastCalledItem
+      rtLastCalledItem,
+      connectionState
     });
   }, [
     playerCode, 
@@ -197,7 +235,8 @@ export default function PlayerGame() {
     effectiveErrorMessage, 
     sessionProgress,
     rtCalledItems,
-    rtLastCalledItem
+    rtLastCalledItem,
+    connectionState
   ]);
 
   // Early return during initial loading - no conditional hooks after this point
