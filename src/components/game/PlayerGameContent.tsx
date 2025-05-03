@@ -1,5 +1,5 @@
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
 import BingoWinProgress from "./BingoWinProgress";
@@ -51,6 +51,7 @@ export default function PlayerGameContent({
   const [rtCalledNumbers, setRtCalledNumbers] = React.useState<number[]>([]);
   const [rtLastCalledNumber, setRtLastCalledNumber] = React.useState<number | null>(null);
   const [isConnected, setIsConnected] = React.useState(false);
+  const [connectionStatus, setConnectionStatus] = React.useState<'disconnected' | 'connecting' | 'connected' | 'error'>('connecting');
   
   // Set up connection manager for real-time number calls
   React.useEffect(() => {
@@ -64,6 +65,7 @@ export default function PlayerGameContent({
           setRtLastCalledNumber(number);
           setRtCalledNumbers(allNumbers);
           setIsConnected(true);
+          setConnectionStatus('connected');
           
           // Show toast notification for new number
           toast({
@@ -75,13 +77,17 @@ export default function PlayerGameContent({
         
       // Set up a heartbeat check to monitor connection status
       const intervalId = setInterval(() => {
-        // If we haven't received a number in a while and we're supposed to be connected,
-        // try to reconnect the connection manager
-        if (isConnected) {
-          logWithTimestamp("PlayerGameContent: Connection heartbeat check");
+        // Check connection state from manager
+        const currentState = connectionManager.getConnectionState();
+        setConnectionStatus(currentState);
+        setIsConnected(currentState === 'connected');
+        
+        // If we're not connected, try to reconnect
+        if (currentState !== 'connected') {
+          logWithTimestamp("PlayerGameContent: Connection heartbeat check - attempting reconnect");
           connectionManager.reconnect();
         }
-      }, 30000); // Every 30 seconds
+      }, 5000); // Every 5 seconds
       
       return () => {
         clearInterval(intervalId);
@@ -175,7 +181,7 @@ export default function PlayerGameContent({
           autoMarking={autoMarking}
           setAutoMarking={setAutoMarking}
           isConnected={isConnected}
-          connectionState={isConnected ? 'connected' : 'disconnected'}
+          connectionState={connectionStatus}
         />
       </div>
       

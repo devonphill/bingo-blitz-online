@@ -23,6 +23,7 @@ class ConnectionManager {
   private sessionProgressCallback: ((progress: any) => void) | null = null;
   private numberCalledCallback: ((number: number, allNumbers: number[]) => void) | null = null;
   private channel: any = null;
+  private connectionState: 'disconnected' | 'connecting' | 'connected' | 'error' = 'disconnected';
   
   // Track last poll time to avoid flooding
   private lastPlayerPollTime = 0;
@@ -36,9 +37,20 @@ class ConnectionManager {
     logWithTimestamp(`ConnectionManager initialized with sessionId: ${sessionId}`);
     this.cleanup(); // Always clean up existing resources first
     this.sessionId = sessionId;
+    this.connectionState = 'connecting';
     this.startPolling();
     this.setupRealtimeChannel();
     return this;
+  }
+  
+  // Get the current connection state
+  getConnectionState() {
+    return this.connectionState;
+  }
+  
+  // Check if connected
+  isConnected() {
+    return this.connectionState === 'connected';
   }
   
   private setupRealtimeChannel() {
@@ -59,6 +71,9 @@ class ConnectionManager {
           if (payload?.payload?.sessionId === this.sessionId) {
             logWithTimestamp(`Received realtime number called: ${JSON.stringify(payload.payload)}`);
             
+            // Update connection state when we receive messages
+            this.connectionState = 'connected';
+            
             if (this.numberCalledCallback && payload.payload.lastCalledNumber) {
               const calledNumbers = payload.payload.calledNumbers || [];
               logWithTimestamp(`Calling number callback with: ${payload.payload.lastCalledNumber}, total numbers: ${calledNumbers.length}`);
@@ -71,11 +86,21 @@ class ConnectionManager {
         })
         .subscribe(status => {
           logWithTimestamp(`Realtime channel status: ${status}`);
+          
+          // Update connection state based on the channel status
+          if (status === 'SUBSCRIBED') {
+            this.connectionState = 'connected';
+          } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+            this.connectionState = 'disconnected';
+          } else if (status === 'TIMED_OUT') {
+            this.connectionState = 'error';
+          }
         });
         
       logWithTimestamp('Realtime channel setup complete');
     } catch (err) {
       console.error('Error setting up realtime channel:', err);
+      this.connectionState = 'error';
     }
   }
   
@@ -168,6 +193,9 @@ class ConnectionManager {
         console.error('Error fetching session progress:', error);
         return;
       }
+      
+      // Update connection state when we receive data
+      this.connectionState = 'connected';
       
       logWithTimestamp(`Fetched session progress:`, data);
       this.sessionProgressCallback(data);
@@ -378,6 +406,7 @@ class ConnectionManager {
   
   reconnect() {
     logWithTimestamp('Manually reconnecting...');
+    this.connectionState = 'connecting';
     
     // Refresh realtime channel
     this.setupRealtimeChannel();
@@ -405,6 +434,7 @@ class ConnectionManager {
     this.playerRefreshCallback = null;
     this.sessionProgressCallback = null;
     this.numberCalledCallback = null;
+    this.connectionState = 'disconnected';
   }
 }
 
