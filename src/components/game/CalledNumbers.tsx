@@ -1,6 +1,7 @@
 
-import React, { useEffect, useState } from 'react';
-import CurrentNumberDisplay from './CurrentNumberDisplay';
+import React from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { motion } from "framer-motion";
 
 interface CalledNumbersProps {
   calledNumbers: number[];
@@ -8,94 +9,71 @@ interface CalledNumbersProps {
 }
 
 export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNumbersProps) {
-  const [isFlashing, setIsFlashing] = useState(false);
-  const [lastDisplayedNumber, setLastDisplayedNumber] = useState<number | null>(null);
+  // Sort the numbers for easier reference
+  const sortedNumbers = [...calledNumbers].sort((a, b) => a - b);
   
-  // Flash effect for current number when it changes
-  useEffect(() => {
-    if (currentNumber !== null && currentNumber !== lastDisplayedNumber) {
-      setLastDisplayedNumber(currentNumber);
-      setIsFlashing(true);
+  // Animated highlight for newly called number
+  const isNewNumber = React.useRef(false);
+  const prevNumber = React.useRef<number | null>(null);
+  
+  React.useEffect(() => {
+    if (currentNumber !== null && currentNumber !== prevNumber.current) {
+      isNewNumber.current = true;
+      prevNumber.current = currentNumber;
       
-      const timer = setInterval(() => {
-        setIsFlashing(prev => !prev);
-      }, 500);
-      
-      // Stop flashing after 3 seconds
-      const stopTimer = setTimeout(() => {
-        clearInterval(timer);
-        setIsFlashing(true); // Keep visible
+      // Reset animation flag after animation completes
+      const timer = setTimeout(() => {
+        isNewNumber.current = false;
       }, 3000);
       
-      return () => {
-        clearInterval(timer);
-        clearTimeout(stopTimer);
-      };
+      return () => clearTimeout(timer);
     }
-  }, [currentNumber, lastDisplayedNumber]);
-  
-  // Group called numbers by tens (1-9, 10-19, etc.)
-  const groupedNumbers: { [key: string]: number[] } = {};
-  
-  for (let i = 0; i < 9; i++) {
-    const min = i * 10 + 1;
-    const max = i === 8 ? 90 : (i + 1) * 10;
-    const label = `${min}-${max}`;
-    
-    groupedNumbers[label] = calledNumbers.filter(n => n >= min && n <= max);
-  }
-
-  // Color map for number balls based on their range
-  const getColor = (number: number) => {
-    if (number <= 9) return 'bg-red-500';
-    if (number <= 19) return 'bg-yellow-500';
-    if (number <= 29) return 'bg-green-500';
-    if (number <= 39) return 'bg-blue-500';
-    if (number <= 49) return 'bg-indigo-500';
-    if (number <= 59) return 'bg-purple-500';
-    if (number <= 69) return 'bg-pink-500';
-    if (number <= 79) return 'bg-orange-500';
-    return 'bg-teal-500';
-  };
+  }, [currentNumber]);
 
   return (
-    <div className="bg-white p-4 rounded-lg shadow-md">
-      <h2 className="text-xl font-bold mb-4 text-center">Called Numbers</h2>
-      
-      {currentNumber && (
-        <div className="mb-6 flex justify-center">
-          <div className={isFlashing ? "opacity-100 scale-110 transition-all duration-300" : "opacity-80 transition-all duration-300"}>
-            <CurrentNumberDisplay number={currentNumber} sizePx={90} />
-          </div>
-        </div>
-      )}
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {Object.entries(groupedNumbers).map(([range, numbers]) => (
-          <div key={range} className="border rounded-md p-2">
-            <div className="text-sm font-semibold mb-1">{range}</div>
-            <div className="flex flex-wrap gap-1">
-              {Array.from({ length: Math.min(10, parseInt(range.split('-')[1]) - parseInt(range.split('-')[0]) + 1) }, (_, i) => {
-                const number = parseInt(range.split('-')[0]) + i;
-                const isCalled = numbers.includes(number);
-                const isLatestCalled = number === currentNumber;
-                
-                return (
-                  <div 
-                    key={number}
-                    className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-semibold transition-all
-                      ${isCalled 
-                        ? `${getColor(number)} text-white ${isLatestCalled ? 'ring-2 ring-white animate-pulse' : ''}` 
-                        : 'bg-gray-100 text-gray-500'}`}
-                  >
-                    {number}
-                  </div>
-                );
-              })}
+    <Card className="shadow-sm">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg font-bold flex items-center justify-between">
+          <div>Called Numbers ({calledNumbers.length})</div>
+          {currentNumber && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">Last Called:</span>
+              <motion.div
+                initial={isNewNumber.current ? { scale: 1.2, backgroundColor: "#4ade80" } : {}}
+                animate={isNewNumber.current ? 
+                  { scale: 1, backgroundColor: "#f8fafc" } : 
+                  { scale: 1 }
+                }
+                transition={{ duration: 1.5 }}
+                className="rounded-full w-8 h-8 bg-gray-100 flex items-center justify-center font-bold border border-gray-300"
+              >
+                {currentNumber}
+              </motion.div>
             </div>
-          </div>
-        ))}
-      </div>
-    </div>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="grid grid-cols-10 gap-1 sm:gap-2">
+          {Array.from({ length: 90 }, (_, i) => i + 1).map((number) => {
+            const isCalled = sortedNumbers.includes(number);
+            const isLastCalled = number === currentNumber;
+            
+            return (
+              <div
+                key={number}
+                className={`
+                  w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs sm:text-sm
+                  ${isCalled ? 'bg-primary text-white font-bold' : 'bg-gray-100 text-gray-500'}
+                  ${isLastCalled ? 'ring-2 ring-offset-2 ring-primary' : ''}
+                `}
+              >
+                {number}
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

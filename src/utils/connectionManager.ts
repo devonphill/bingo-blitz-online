@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
@@ -29,17 +28,44 @@ class ConnectionManager {
   private lastPlayerPollTime = 0;
   private lastProgressPollTime = 0;
   
+  // Track connection management state
+  private isInCooldown = false;
+  private cooldownUntil = 0;
+  private isConnecting = false;
+  private activeInstanceId: string | null = null;
+  
   constructor() {
     logWithTimestamp('ConnectionManager created');
   }
   
   initialize(sessionId: string) {
+    if (this.isConnecting) {
+      logWithTimestamp(`ConnectionManager already connecting, skipping duplicate initialization`);
+      return this;
+    }
+    
+    this.isConnecting = true;
+    
     logWithTimestamp(`ConnectionManager initialized with sessionId: ${sessionId}`);
-    this.cleanup(); // Always clean up existing resources first
+    
+    // Store active session ID
     this.sessionId = sessionId;
     this.connectionState = 'connecting';
+    
+    // Create unique instance ID for this connection
+    this.activeInstanceId = `conn-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const instanceId = this.activeInstanceId;
+    
     this.startPolling();
-    this.setupRealtimeChannel();
+    
+    // Set up realtime channel with a slight delay to avoid race conditions
+    setTimeout(() => {
+      // Make sure we're still in the same connection attempt
+      if (instanceId === this.activeInstanceId) {
+        this.setupRealtimeChannel();
+      }
+    }, 500);
+    
     return this;
   }
   
@@ -53,20 +79,76 @@ class ConnectionManager {
     return this.connectionState === 'connected';
   }
   
+  // Reset cooldown and connection state to force a new connection attempt
+  forceReconnect() {
+    logWithTimestamp(`Forcing reconnection`);
+    this.isInCooldown = false;
+    this.cooldownUntil = 0;
+    this.isConnecting = false;
+  }
+  
+  // Track connection state for better reconnection handling
+  startConnection() {
+    this.isConnecting = true;
+  }
+  
+  endConnection(success: boolean) {
+    this.isConnecting = false;
+    
+    if (!success && !this.isInCooldown) {
+      // Start a cooldown period after a failed connection
+      this.isInCooldown = true;
+      this.cooldownUntil = Date.now() + 5000; // 5 second cooldown
+      
+      // Schedule end of cooldown
+      setTimeout(() => {
+        this.isInCooldown = false;
+        logWithTimestamp(`Connection cooldown ended`);
+      }, 5000);
+    }
+  }
+  
+  // Full reset of state
+  reset() {
+    this.isConnecting = false;
+    this.isInCooldown = false;
+    this.activeInstanceId = null;
+  }
+  
+  // Helper function to schedule reconnections with backoff
+  scheduleReconnect(reconnectFn: () => void) {
+    if (this.isInCooldown) {
+      logWithTimestamp(`Skipping reconnect due to active cooldown`);
+      return;
+    }
+    
+    const delay = Math.floor(Math.random() * 3000) + 2000; // 2-5 second random delay
+    
+    logWithTimestamp(`Scheduling reconnect in ${delay}ms`);
+    
+    setTimeout(() => {
+      if (!this.isConnecting) {
+        reconnectFn();
+      }
+    }, delay);
+  }
+  
   private setupRealtimeChannel() {
     if (!this.sessionId) return;
     
     try {
       // Clean up existing channel if any
       if (this.channel) {
+        logWithTimestamp(`Removing existing channel before creating a new one`);
         supabase.removeChannel(this.channel);
+        this.channel = null;
       }
       
       const channelId = `number-broadcast-${this.sessionId}-${Date.now()}`;
       logWithTimestamp(`Setting up realtime channel: ${channelId} for session: ${this.sessionId}`);
       
       // Create a new channel for this session
-      this.channel = supabase.channel('number-broadcast')
+      this.channel = supabase.channel(channelId)
         .on('broadcast', { event: 'number-called' }, (payload) => {
           if (payload?.payload?.sessionId === this.sessionId) {
             logWithTimestamp(`Received realtime number called: ${JSON.stringify(payload.payload)}`);
@@ -90,10 +172,13 @@ class ConnectionManager {
           // Update connection state based on the channel status
           if (status === 'SUBSCRIBED') {
             this.connectionState = 'connected';
+            this.endConnection(true);
           } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
             this.connectionState = 'disconnected';
+            this.endConnection(false);
           } else if (status === 'TIMED_OUT') {
             this.connectionState = 'error';
+            this.endConnection(false);
           }
         });
         
@@ -101,6 +186,7 @@ class ConnectionManager {
     } catch (err) {
       console.error('Error setting up realtime channel:', err);
       this.connectionState = 'error';
+      this.endConnection(false);
     }
   }
   
@@ -174,7 +260,8 @@ class ConnectionManager {
   
   private async fetchSessionProgress() {
     if (!this.sessionId) return;
-    // Check if the callback is defined before attempting to use it
+    
+    // CRITICAL FIX: Check if the callback is defined before attempting to use it
     if (!this.sessionProgressCallback) {
       logWithTimestamp(`Cannot fetch session progress: No callback registered`);
       return;
@@ -435,6 +522,7 @@ class ConnectionManager {
     this.sessionProgressCallback = null;
     this.numberCalledCallback = null;
     this.connectionState = 'disconnected';
+    this.reset();
   }
 }
 

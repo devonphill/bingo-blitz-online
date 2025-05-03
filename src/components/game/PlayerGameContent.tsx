@@ -48,70 +48,77 @@ export default function PlayerGameContent({
   gameType = '90-ball'
 }: PlayerGameContentProps) {
   // Track local state for real-time number calls
-  const [rtCalledNumbers, setRtCalledNumbers] = React.useState<number[]>([]);
-  const [rtLastCalledNumber, setRtLastCalledNumber] = React.useState<number | null>(null);
-  const [isConnected, setIsConnected] = React.useState(false);
-  const [connectionStatus, setConnectionStatus] = React.useState<'disconnected' | 'connecting' | 'connected' | 'error'>('connecting');
+  const [rtCalledNumbers, setRtCalledNumbers] = useState<number[]>([]);
+  const [rtLastCalledNumber, setRtLastCalledNumber] = useState<number | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('connecting');
+  
+  // Generate a unique ID for this component instance for better debug logging
+  const instanceId = React.useRef(`player-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
   
   // Set up connection manager for real-time number calls
   React.useEffect(() => {
-    if (currentSession?.id) {
-      logWithTimestamp(`PlayerGameContent: Setting up connection manager for session ${currentSession.id}`);
-      
-      // Initialize connection
-      connectionManager.initialize(currentSession.id)
-        .onNumberCalled((number, allNumbers) => {
-          logWithTimestamp(`PlayerGameContent: Received real-time number call: ${number}, total numbers: ${allNumbers.length}`);
-          setRtLastCalledNumber(number);
-          setRtCalledNumbers(allNumbers);
-          setIsConnected(true);
-          setConnectionStatus('connected');
-          
-          // Show toast notification for new number
-          toast({
-            title: `Number Called: ${number}`,
-            description: `New number has been called`,
-            duration: 3000
-          });
-        });
-        
-      // Set up a heartbeat check to monitor connection status
-      const intervalId = setInterval(() => {
-        // Check connection state from manager
-        const currentState = connectionManager.getConnectionState();
-        setConnectionStatus(currentState);
-        setIsConnected(currentState === 'connected');
-        
-        // If we're not connected, try to reconnect
-        if (currentState !== 'connected') {
-          logWithTimestamp("PlayerGameContent: Connection heartbeat check - attempting reconnect");
-          connectionManager.reconnect();
-        }
-      }, 5000); // Every 5 seconds
-      
-      return () => {
-        clearInterval(intervalId);
-      };
+    if (!currentSession?.id) {
+      logWithTimestamp(`PlayerGameContent (${instanceId.current}): No session ID, skipping connection setup`);
+      return;
     }
     
-    // Don't cleanup here - leave that to parent components to avoid disrupting other components
+    logWithTimestamp(`PlayerGameContent (${instanceId.current}): Setting up connection manager for session ${currentSession.id}`);
+    
+    // Initialize connection
+    connectionManager.initialize(currentSession.id)
+      .onNumberCalled((number, allNumbers) => {
+        logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received real-time number call: ${number}, total numbers: ${allNumbers.length}`);
+        setRtLastCalledNumber(number);
+        setRtCalledNumbers(allNumbers);
+        setIsConnected(true);
+        setConnectionStatus('connected');
+        
+        // Show toast notification for new number
+        toast({
+          title: `Number Called: ${number}`,
+          description: `New number has been called`,
+          duration: 3000
+        });
+      })
+      .onSessionProgressUpdate((progress) => {
+        // This callback is required to avoid the error we were seeing
+        logWithTimestamp(`PlayerGameContent (${instanceId.current}): Session progress update received`);
+        setIsConnected(true);
+        setConnectionStatus('connected');
+      });
+      
+    // Set up a heartbeat check to monitor connection status
+    const intervalId = setInterval(() => {
+      // Check connection state from manager
+      const currentState = connectionManager.getConnectionState();
+      setConnectionStatus(currentState);
+      setIsConnected(currentState === 'connected');
+      
+      // If we're not connected, try to reconnect
+      if (currentState !== 'connected') {
+        logWithTimestamp(`PlayerGameContent (${instanceId.current}): Connection heartbeat check - attempting reconnect`);
+        connectionManager.reconnect();
+      }
+    }, 5000); // Every 5 seconds
+    
+    // Clean up on unmount 
+    return () => {
+      logWithTimestamp(`PlayerGameContent (${instanceId.current}): Cleaning up, clearing heartbeat interval`);
+      clearInterval(intervalId);
+      // We DON'T call connectionManager.cleanup() here to avoid interrupting other components
+      // The parent component should handle that
+    };
   }, [currentSession?.id]);
 
   // Log state for debugging
   useEffect(() => {
-    logWithTimestamp(`[PlayerGameContent] Session ID: ${currentSession?.id}, Player: ${playerName || playerCode}, Connection: ${isConnected ? 'connected' : 'disconnected'}`);
-    logWithTimestamp(`[PlayerGameContent] Original props:`, { 
-      calledNumbers: calledNumbers.length || 0, 
-      currentNumber,
-      isClaiming,
-      claimStatus,
-      tickets: tickets?.length || 0 
-    });
+    logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Session ID: ${currentSession?.id}, Player: ${playerName || playerCode}, Connection: ${isConnected ? 'connected' : 'disconnected'}`);
     
     if (rtCalledNumbers.length > 0) {
-      logWithTimestamp(`[PlayerGameContent] Real-time called numbers: ${rtCalledNumbers.length}, last: ${rtLastCalledNumber}`);
+      logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Real-time called numbers: ${rtCalledNumbers.length}, last: ${rtLastCalledNumber}`);
     }
-  }, [currentSession?.id, playerName, playerCode, calledNumbers, currentNumber, isClaiming, claimStatus, tickets, rtCalledNumbers, rtLastCalledNumber, isConnected]);
+  }, [currentSession?.id, playerName, playerCode, rtCalledNumbers, rtLastCalledNumber, isConnected]);
 
   const currentWinPattern = activeWinPatterns.length > 0 ? activeWinPatterns[0] : null;
 
@@ -159,17 +166,6 @@ export default function PlayerGameContent({
       return false;
     }
   };
-
-  // Auto-flash notification for new numbers
-  React.useEffect(() => {
-    if (rtLastCalledNumber !== null) {
-      toast({
-        title: `Number Called: ${rtLastCalledNumber}`,
-        description: `New number has been called`,
-        duration: 3000
-      });
-    }
-  }, [rtLastCalledNumber]);
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
