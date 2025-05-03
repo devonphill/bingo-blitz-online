@@ -6,6 +6,8 @@ import BingoWinProgress from "./BingoWinProgress";
 import { useBingoSync } from "@/hooks/useBingoSync";
 import GameTypePlayspace from "./GameTypePlayspace";
 import { toast } from "@/hooks/use-toast";
+import { connectionManager } from "@/utils/connectionManager";
+import { logWithTimestamp } from "@/utils/logUtils";
 
 interface PlayerGameContentProps {
   tickets: any[];
@@ -44,40 +46,66 @@ export default function PlayerGameContent({
   claimStatus,
   gameType = '90-ball'
 }: PlayerGameContentProps) {
-  // Use WebSocket-based sync with required parameters
-  const { gameState, isConnected, connectionState } = useBingoSync(
-    currentSession?.id || '',
-    playerCode || '',
-    playerName || ''
-  );
+  // Track local state for real-time number calls
+  const [rtCalledNumbers, setRtCalledNumbers] = React.useState<number[]>([]);
+  const [rtLastCalledNumber, setRtLastCalledNumber] = React.useState<number | null>(null);
+  const [isConnected, setIsConnected] = React.useState(false);
+  
+  // Set up connection manager for real-time number calls
+  React.useEffect(() => {
+    if (currentSession?.id) {
+      logWithTimestamp(`PlayerGameContent: Setting up connection manager for session ${currentSession.id}`);
+      
+      connectionManager.initialize(currentSession.id)
+        .onNumberCalled((number, allNumbers) => {
+          logWithTimestamp(`PlayerGameContent: Received real-time number call: ${number}`);
+          setRtLastCalledNumber(number);
+          setRtCalledNumbers(allNumbers);
+          setIsConnected(true);
+        });
+        
+      // Set up a heartbeat check to monitor connection status
+      const intervalId = setInterval(() => {
+        // If we haven't received a number in a while and we're supposed to be connected,
+        // try to reconnect the connection manager
+        if (isConnected) {
+          logWithTimestamp("PlayerGameContent: Connection heartbeat check");
+          connectionManager.reconnect();
+        }
+      }, 30000); // Every 30 seconds
+      
+      return () => {
+        clearInterval(intervalId);
+      };
+    }
+  }, [currentSession?.id, isConnected]);
 
   // Log state for debugging
   useEffect(() => {
-    console.log(`[PlayerGameContent] Session ID: ${currentSession?.id}, Player: ${playerName || playerCode}, Connection: ${connectionState}`);
-    console.log(`[PlayerGameContent] gameState:`, gameState);
-    console.log(`[PlayerGameContent] Original props:`, { 
-      calledNumbers, 
+    logWithTimestamp(`[PlayerGameContent] Session ID: ${currentSession?.id}, Player: ${playerName || playerCode}, Connection: ${isConnected ? 'connected' : 'disconnected'}`);
+    logWithTimestamp(`[PlayerGameContent] Original props:`, { 
+      calledNumbers: calledNumbers.length || 0, 
       currentNumber,
       isClaiming,
       claimStatus,
       tickets: tickets?.length || 0 
     });
-  }, [currentSession?.id, playerName, playerCode, connectionState, gameState, calledNumbers, currentNumber, isClaiming, claimStatus, tickets]);
+    
+    if (rtCalledNumbers.length > 0) {
+      logWithTimestamp(`[PlayerGameContent] Real-time called numbers: ${rtCalledNumbers.length}, last: ${rtLastCalledNumber}`);
+    }
+  }, [currentSession?.id, playerName, playerCode, calledNumbers, currentNumber, isClaiming, claimStatus, tickets, rtCalledNumbers, rtLastCalledNumber, isConnected]);
 
-  const currentWinPattern = 
-    // First check real-time updates
-    gameState.currentWinPattern || 
-    // Fall back to prop values
-    (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
+  const currentWinPattern = activeWinPatterns.length > 0 ? activeWinPatterns[0] : null;
 
   // Merge real-time called numbers with prop values, giving priority to real-time
-  const mergedCalledNumbers = gameState.calledNumbers.length > 0 
-    ? gameState.calledNumbers 
+  const mergedCalledNumbers = rtCalledNumbers.length > 0 
+    ? rtCalledNumbers 
     : calledNumbers;
 
   // Use real-time last called number or fall back to props
-  const mergedCurrentNumber = gameState.lastCalledNumber !== null
-    ? gameState.lastCalledNumber
+  const mergedCurrentNumber = rtLastCalledNumber !== null
+    ? rtLastCalledNumber
     : currentNumber;
 
   // Force auto-marking for Mainstage games
@@ -115,6 +143,17 @@ export default function PlayerGameContent({
     }
   };
 
+  // Auto-flash notification for new numbers
+  React.useEffect(() => {
+    if (rtLastCalledNumber !== null) {
+      toast({
+        title: `Number Called: ${rtLastCalledNumber}`,
+        description: `New number has been called`,
+        duration: 3000
+      });
+    }
+  }, [rtLastCalledNumber]);
+
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
       <div className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
@@ -125,7 +164,7 @@ export default function PlayerGameContent({
           autoMarking={autoMarking}
           setAutoMarking={setAutoMarking}
           isConnected={isConnected}
-          connectionState={connectionState}
+          connectionState={isConnected ? 'connected' : 'disconnected'}
         />
       </div>
       

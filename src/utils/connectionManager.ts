@@ -15,11 +15,14 @@ interface Player {
   clientId?: string;
 }
 
+// Create a singleton to manage realtime events
 class ConnectionManager {
   private sessionId: string | null = null;
   private pollingIntervalId: number | null = null;
   private playerRefreshCallback: ((players: Player[]) => void) | null = null;
   private sessionProgressCallback: ((progress: any) => void) | null = null;
+  private numberCalledCallback: ((number: number, allNumbers: number[]) => void) | null = null;
+  private channel: any = null;
   
   // Track last poll time to avoid flooding
   private lastPlayerPollTime = 0;
@@ -33,7 +36,41 @@ class ConnectionManager {
     logWithTimestamp(`ConnectionManager initialized with sessionId: ${sessionId}`);
     this.sessionId = sessionId;
     this.startPolling();
+    this.setupRealtimeChannel();
     return this;
+  }
+  
+  private setupRealtimeChannel() {
+    if (!this.sessionId) return;
+    
+    try {
+      // Clean up existing channel if any
+      if (this.channel) {
+        supabase.removeChannel(this.channel);
+      }
+      
+      logWithTimestamp(`Setting up realtime channel for session: ${this.sessionId}`);
+      
+      // Create a new channel for this session
+      this.channel = supabase.channel(`number-broadcast-${this.sessionId}`)
+        .on('broadcast', { event: 'number-called' }, (payload) => {
+          logWithTimestamp(`Received realtime number called: ${payload.payload.lastCalledNumber}`);
+          
+          if (payload.payload.sessionId === this.sessionId && this.numberCalledCallback) {
+            this.numberCalledCallback(
+              payload.payload.lastCalledNumber, 
+              payload.payload.calledNumbers
+            );
+          }
+        })
+        .subscribe(status => {
+          logWithTimestamp(`Realtime channel status: ${status}`);
+        });
+        
+      logWithTimestamp('Realtime channel setup complete');
+    } catch (err) {
+      console.error('Error setting up realtime channel:', err);
+    }
   }
   
   private startPolling() {
@@ -93,10 +130,9 @@ class ConnectionManager {
         id: player.id,
         nickname: player.nickname,
         joinedAt: player.joined_at,
-        playerCode: player.player_code, // Map player_code to playerCode
-        playerName: player.nickname,     // Use nickname as playerName
+        playerCode: player.player_code,
+        playerName: player.nickname,
         tickets: player.tickets,
-        // Add any other fields needed
       }));
       
       this.playerRefreshCallback(mappedPlayers);
@@ -151,6 +187,11 @@ class ConnectionManager {
     return this;
   }
   
+  onNumberCalled(callback: (number: number, allNumbers: number[]) => void) {
+    this.numberCalledCallback = callback;
+    return this;
+  }
+  
   async callNumber(number: number, sessionId?: string) {
     const id = sessionId || this.sessionId;
     if (!id) return false;
@@ -174,6 +215,27 @@ class ConnectionManager {
       const currentNumbers = progressData.called_numbers || [];
       const updatedNumbers = [...currentNumbers, number];
       
+      // FIRST - Send realtime update before database update for instant feedback
+      try {
+        logWithTimestamp(`Broadcasting number ${number} via realtime`);
+        
+        await supabase.channel('number-broadcast').send({
+          type: 'broadcast',
+          event: 'number-called',
+          payload: {
+            sessionId: id,
+            lastCalledNumber: number,
+            calledNumbers: updatedNumbers,
+            timestamp: new Date().getTime()
+          }
+        });
+        
+        logWithTimestamp('Number broadcast sent');
+      } catch (err) {
+        console.error('Error broadcasting number:', err);
+      }
+      
+      // THEN - Update the database for persistence
       const { error: updateError } = await supabase
         .from('sessions_progress')
         .update({ called_numbers: updatedNumbers })
@@ -185,9 +247,6 @@ class ConnectionManager {
       }
       
       logWithTimestamp(`Number ${number} called successfully`);
-      
-      // Refresh session progress immediately after update
-      this.fetchSessionProgress();
       
       return true;
     } catch (err) {
@@ -300,6 +359,18 @@ class ConnectionManager {
     }
   }
   
+  reconnect() {
+    logWithTimestamp('Manually reconnecting...');
+    
+    // Refresh realtime channel
+    this.setupRealtimeChannel();
+    
+    // Force immediate polling
+    this.pollForUpdates();
+    
+    return this;
+  }
+  
   cleanup() {
     logWithTimestamp('Cleaning up ConnectionManager');
     
@@ -308,9 +379,15 @@ class ConnectionManager {
       this.pollingIntervalId = null;
     }
     
+    if (this.channel) {
+      supabase.removeChannel(this.channel);
+      this.channel = null;
+    }
+    
     this.sessionId = null;
     this.playerRefreshCallback = null;
     this.sessionProgressCallback = null;
+    this.numberCalledCallback = null;
   }
 }
 

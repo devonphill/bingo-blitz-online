@@ -1,3 +1,4 @@
+
 import React, { useEffect, useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -71,6 +72,10 @@ export default function PlayerGame() {
     initializePlayerCode();
   }, [urlPlayerCode, navigate, toast]);
 
+  // Local state for real-time called numbers
+  const [rtCalledItems, setRtCalledItems] = useState<number[]>([]);
+  const [rtLastCalledItem, setRtLastCalledItem] = useState<number | null>(null);
+
   // Always initialize hooks with the same ordering - even if some will not be used
   // This ensures React's hook rules are followed
   const {
@@ -109,6 +114,11 @@ export default function PlayerGame() {
         .onSessionProgressUpdate((progress) => {
           logWithTimestamp(`Received session progress update: ${progress?.game_status || 'unknown status'}`);
           setConnectionState('connected');
+        })
+        .onNumberCalled((number, allNumbers) => {
+          logWithTimestamp(`Received real-time number call: ${number}, total called: ${allNumbers.length}`);
+          setRtLastCalledItem(number);
+          setRtCalledItems(allNumbers);
         });
       
       setConnectionState('connecting');
@@ -173,7 +183,9 @@ export default function PlayerGame() {
       sessionStatus: currentSession?.status,
       gameState: currentGameState?.status,
       errorMessage: effectiveErrorMessage,
-      sessionProgress
+      sessionProgress,
+      rtCalledItems: rtCalledItems.length,
+      rtLastCalledItem
     });
   }, [
     playerCode, 
@@ -184,7 +196,9 @@ export default function PlayerGame() {
     currentSession, 
     currentGameState, 
     effectiveErrorMessage, 
-    sessionProgress
+    sessionProgress,
+    rtCalledItems,
+    rtLastCalledItem
   ]);
 
   // Early return during initial loading - no conditional hooks after this point
@@ -268,11 +282,16 @@ export default function PlayerGame() {
     );
   }
 
-  // Use session progress data for current state
-  const finalCalledNumbers = sessionProgress?.called_numbers || calledItems || [];
-  const finalLastCalledNumber = finalCalledNumbers.length > 0 
-    ? finalCalledNumbers[finalCalledNumbers.length - 1] 
-    : lastCalledItem;
+  // Use real-time called numbers with fallback to database values
+  const finalCalledNumbers = rtCalledItems.length > 0 
+    ? rtCalledItems 
+    : sessionProgress?.called_numbers || calledItems || [];
+  
+  const finalLastCalledNumber = rtLastCalledItem !== null
+    ? rtLastCalledItem
+    : finalCalledNumbers.length > 0 
+      ? finalCalledNumbers[finalCalledNumbers.length - 1] 
+      : lastCalledItem;
   
   const currentWinPattern = sessionProgress?.current_win_pattern || 
                            (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);

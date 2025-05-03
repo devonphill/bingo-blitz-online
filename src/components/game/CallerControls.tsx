@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { connectionManager } from '@/utils/connectionManager';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -56,11 +57,34 @@ export default function CallerControls({
       const randomIndex = Math.floor(Math.random() * remainingNumbers.length);
       const number = remainingNumbers[randomIndex];
       
-      // Call the regular onCallNumber function for backwards compatibility
-      onCallNumber(number);
+      logWithTimestamp(`Caller is calling number ${number}`);
       
-      // Also call through the connection manager
+      // First send real-time broadcast for immediate feedback
+      try {
+        const broadcastChannel = supabase.channel('number-broadcast');
+        broadcastChannel.send({
+          type: 'broadcast', 
+          event: 'number-called',
+          payload: {
+            sessionId: sessionId,
+            lastCalledNumber: number,
+            calledNumbers: [...(remainingNumbers.filter(n => n !== number))],
+            timestamp: new Date().getTime()
+          }
+        }).then(() => {
+          logWithTimestamp("Number broadcast sent successfully");
+        }).catch(error => {
+          console.error("Error broadcasting number:", error);
+        });
+      } catch (err) {
+        console.error("Error sending broadcast:", err);
+      }
+      
+      // Then use the connection manager for database persistence
       connectionManager.callNumber(number);
+      
+      // Also call the regular onCallNumber function for backwards compatibility
+      onCallNumber(number);
       
       setIsCallingNumber(false);
     }, 1000);
@@ -215,7 +239,7 @@ export default function CallerControls({
         
         <div className="text-xs text-green-600 flex items-center justify-center mt-2">
           <span className="h-2 w-2 bg-green-500 rounded-full mr-2"></span>
-          Database polling enabled
+          Real-time updates enabled
         </div>
       </CardContent>
     </Card>
