@@ -18,11 +18,13 @@ interface Player {
 interface BingoClaim {
   id: string;
   player_id: string;
+  player_name?: string;
   session_id: string;
+  game_number?: number;
   ticket_id: string;
+  ticket_serial?: string;
   status: string;
   created_at: string;
-  player_name?: string;
   [key: string]: any; // Add index signature to allow additional properties
 }
 
@@ -339,9 +341,11 @@ class ConnectionManager {
       logWithTimestamp(`Fetching bingo claims for session: ${this.sessionId}`);
       
       // Use the custom RPC function to get pending claims
-      const { data, error } = await supabase.rpc('get_pending_claims', {
-        p_session_id: this.sessionId
-      });
+      // Adding a type assertion to overcome TypeScript limitations with dynamic RPC functions
+      const { data, error } = await supabase.rpc(
+        'get_pending_claims' as any, 
+        { p_session_id: this.sessionId }
+      );
         
       if (error) {
         console.error('Error fetching bingo claims:', error);
@@ -354,7 +358,8 @@ class ConnectionManager {
       }
       
       logWithTimestamp(`Fetched ${data.length} pending claims`);
-      return data as BingoClaim[];
+      // Convert the data to the BingoClaim type after validating it's an array
+      return data as unknown as BingoClaim[];
       
     } catch (err) {
       console.error('Exception in fetchClaims:', err);

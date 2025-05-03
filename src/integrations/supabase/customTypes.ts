@@ -11,7 +11,8 @@ export type SupabaseRpcFunction =
   | "get_player_bingo_tickets"
   | "get_player_bingo_tickets_count"
   | "get_bingo_ticket_serials_by_session"
-  | "insert_bingo_tickets";
+  | "insert_bingo_tickets"
+  | "get_pending_claims";
 
 // Helper type for assigned ticket response
 export interface AssignedTicketResponse {
