@@ -17,6 +17,8 @@ import { Label } from "@/components/ui/label";
 import { AlertCircle, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
 import { connectionManager } from "@/utils/connectionManager";
 import { logWithTimestamp } from "@/utils/logUtils";
+import CurrentNumberDisplay from "./CurrentNumberDisplay";
+import CalledNumbers from "./CalledNumbers";
 
 interface PlayerGameLayoutProps {
   tickets: any[];
@@ -195,58 +197,76 @@ export default function PlayerGameLayout({
         />
       </div>
       
-      <div className="flex-1 p-4">
-        <div className="mb-4">
-          <BingoWinProgress
-            tickets={tickets}
-            calledNumbers={calledNumbers}
-            activeWinPatterns={activeWinPatterns}
-            currentWinPattern={currentWinPattern}
-            handleClaimBingo={onClaimBingo}
-            isClaiming={isClaiming}
-            claimStatus={claimStatus}
-            gameType={gameType}
-          />
+      <div className="flex flex-1">
+        {/* New left panel for number display */}
+        <div className="w-[30%] bg-gradient-to-b from-blue-50 to-indigo-50 border-r border-blue-100 p-4 flex flex-col">
+          {/* Top section can show game info */}
+          <div className="mb-auto">
+            <div className="bg-white rounded-md shadow-sm p-3 mb-4">
+              <div className="text-sm font-medium text-gray-700 mb-2">Game Info</div>
+              <div className="grid grid-cols-1 gap-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Game:</span>
+                  <span className="font-medium">{currentGameNumber} of {numberOfGames}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Numbers Called:</span>
+                  <span className="font-medium">{calledNumbers.length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Pattern:</span>
+                  <span className="font-medium">{currentWinPattern || 'Any Line'}</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Called numbers summary */}
+            <div className="bg-white rounded-md shadow-sm p-3 mb-4">
+              <div className="text-sm font-medium text-gray-700 mb-2">Recent Numbers</div>
+              <div className="flex flex-wrap gap-2">
+                {calledNumbers.slice(-10).reverse().map(num => (
+                  <span key={num} className={`w-8 h-8 flex items-center justify-center rounded-full text-white text-sm font-bold ${
+                    num <= 15 ? 'bg-red-500' :
+                    num <= 30 ? 'bg-blue-500' :
+                    num <= 45 ? 'bg-green-500' :
+                    num <= 60 ? 'bg-yellow-500' :
+                    num <= 75 ? 'bg-purple-500' : 'bg-pink-500'
+                  }`}>
+                    {num}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+          
+          {/* Bottom section with large animated current number */}
+          <div className="mt-auto flex flex-col items-center">
+            <CurrentNumberDisplay 
+              number={currentNumber} 
+              sizePx={180}
+              gameType={gameType}
+              className="animate-pulse-subtle"
+            />
+          </div>
         </div>
         
-        {/* Game Info Banner with enhanced connection status */}
-        <div className="bg-white rounded-md shadow-sm p-3 mb-4 flex flex-wrap justify-between items-center text-sm text-gray-600">
-          <div className="flex items-center">
-            <span className="font-medium mr-1">Game:</span> {currentGameNumber} of {numberOfGames}
+        {/* Main content area */}
+        <div className="w-[70%] p-4">
+          <div className="mb-4">
+            <BingoWinProgress
+              tickets={tickets}
+              calledNumbers={calledNumbers}
+              activeWinPatterns={activeWinPatterns}
+              currentWinPattern={currentWinPattern}
+              handleClaimBingo={onClaimBingo}
+              isClaiming={isClaiming}
+              claimStatus={claimStatus}
+              gameType={gameType}
+            />
           </div>
-          <div className="flex items-center">
-            <span className="font-medium mr-1">Numbers Called:</span> {calledNumbers.length}
-          </div>
-          <div className="flex items-center">
-            <span className="font-medium mr-1">Last Called:</span> {currentNumber || '-'}
-          </div>
-          <div className="flex items-center">
-            <span className={`h-2 w-2 rounded-full mr-1 ${
-              isConnected ? 'bg-green-500' : 
-              displayConnectionState === 'connecting' ? 'bg-amber-500' : 
-              'bg-red-500'
-            }`}></span>
-            <span>Server {
-              isConnected ? 'Connected' : 
-              displayConnectionState === 'connecting' ? 'Connecting...' : 
-              displayConnectionState === 'error' ? 'Connection Error' :
-              'Disconnected'
-            }</span>
-            {!isConnected && (
-              <Button 
-                size="sm" 
-                variant="ghost" 
-                className="ml-1 h-6 px-2" 
-                onClick={handleReconnect}
-              >
-                <RefreshCw className="h-3 w-3 mr-1" />
-                Reconnect
-              </Button>
-            )}
-          </div>
+          
+          {children}
         </div>
-        
-        {children}
       </div>
       
       {/* Settings Dialog */}

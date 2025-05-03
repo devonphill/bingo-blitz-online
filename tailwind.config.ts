@@ -1,4 +1,3 @@
-
 import type { Config } from "tailwindcss";
 
 export default {
@@ -126,6 +125,10 @@ export default {
 					'50%': {
 						transform: 'translateY(-5px)'
 					}
+				},
+				"pulse-subtle": {
+					"0%, 100%": { transform: "scale(1)" },
+					"50%": { transform: "scale(1.05)" }
 				}
 			},
 			animation: {
@@ -133,7 +136,8 @@ export default {
 				'accordion-up': 'accordion-up 0.2s ease-out',
 				'fade-in': 'fade-in 0.3s ease-out',
 				'number-pop': 'number-pop 0.4s ease-out',
-				'bounce-light': 'bounce-light 2s infinite'
+				'bounce-light': 'bounce-light 2s infinite',
+				"pulse-subtle": "pulse-subtle 2s ease-in-out infinite"
 			}
 		}
 	},
