@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -88,8 +89,18 @@ export function LiveGameView({
     // Initial claims fetch
     const fetchClaims = async () => {
       if (sessionId) {
-        const fetchedClaims = await connectionManager.fetchClaims();
-        setClaims(fetchedClaims || []);
+        try {
+          const fetchedClaims = await connectionManager.fetchClaims();
+          if (Array.isArray(fetchedClaims)) {
+            setClaims(fetchedClaims);
+          } else {
+            console.error("Fetched claims is not an array:", fetchedClaims);
+            setClaims([]);
+          }
+        } catch (error) {
+          console.error("Error fetching claims:", error);
+          setClaims([]);
+        }
       }
     };
     
@@ -106,12 +117,18 @@ export function LiveGameView({
   useEffect(() => {
     const pollClaims = async () => {
       if (sessionId) {
-        const fetchedClaims = await connectionManager.fetchClaims();
-        setClaims(fetchedClaims || []);
-        
-        // Auto-open claims sheet if new claims arrive
-        if (fetchedClaims.length > 0 && fetchedClaims.length !== claims.length) {
-          setIsClaimSheetOpen(true);
+        try {
+          const fetchedClaims = await connectionManager.fetchClaims();
+          if (Array.isArray(fetchedClaims)) {
+            setClaims(fetchedClaims);
+            
+            // Auto-open claims sheet if new claims arrive
+            if (fetchedClaims.length > 0 && fetchedClaims.length !== claims.length) {
+              setIsClaimSheetOpen(true);
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching claims during polling:", error);
         }
       }
     };

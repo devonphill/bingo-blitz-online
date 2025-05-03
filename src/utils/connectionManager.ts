@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
@@ -21,6 +22,7 @@ interface BingoClaim {
   ticket_id: string;
   status: string;
   created_at: string;
+  player_name?: string;
   [key: string]: any; // Add index signature to allow additional properties
 }
 
@@ -322,7 +324,7 @@ class ConnectionManager {
     }
   }
   
-  async fetchClaims() {
+  async fetchClaims(): Promise<BingoClaim[]> {
     if (!this.sessionId) return [];
     
     const now = Date.now();
@@ -336,7 +338,7 @@ class ConnectionManager {
     try {
       logWithTimestamp(`Fetching bingo claims for session: ${this.sessionId}`);
       
-      // Use the raw query method to avoid TypeScript errors with tables not in the schema
+      // Use the custom RPC function to get pending claims
       const { data, error } = await supabase.rpc('get_pending_claims', {
         p_session_id: this.sessionId
       });
@@ -346,8 +348,13 @@ class ConnectionManager {
         return [];
       }
       
-      logWithTimestamp(`Fetched ${data ? data.length : 0} pending claims`);
-      return data || [];
+      if (!data || !Array.isArray(data)) {
+        logWithTimestamp('No pending claims found or invalid response format');
+        return [];
+      }
+      
+      logWithTimestamp(`Fetched ${data.length} pending claims`);
+      return data as BingoClaim[];
       
     } catch (err) {
       console.error('Exception in fetchClaims:', err);
