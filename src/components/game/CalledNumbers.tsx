@@ -60,8 +60,15 @@ export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNu
             const isLastCalled = number === currentNumber;
             
             return (
-              <div
+              <motion.div
                 key={number}
+                initial={isLastCalled && isNewNumber.current ? { scale: 1.5, backgroundColor: "#4ade80" } : {}}
+                animate={
+                  isLastCalled && isNewNumber.current 
+                    ? { scale: 1, backgroundColor: isCalled ? "#0284c7" : "#f1f5f9" }
+                    : {}
+                }
+                transition={{ duration: 1 }}
                 className={`
                   w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs sm:text-sm
                   ${isCalled ? 'bg-primary text-white font-bold' : 'bg-gray-100 text-gray-500'}
@@ -69,7 +76,7 @@ export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNu
                 `}
               >
                 {number}
-              </div>
+              </motion.div>
             );
           })}
         </div>

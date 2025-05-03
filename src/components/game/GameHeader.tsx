@@ -1,18 +1,20 @@
 
 import React from "react";
 import { Badge } from "@/components/ui/badge";
-import { Settings, Wifi, WifiOff } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useNavigate } from "react-router-dom";
 
 interface GameHeaderProps {
   sessionName?: string;
   accessCode?: string;
-  activeWinPattern?: string;
-  autoMarking?: boolean;
-  setAutoMarking?: (value: boolean) => void;
+  activeWinPattern?: string | null;
+  autoMarking: boolean;
+  setAutoMarking: (value: boolean) => void;
   isConnected?: boolean;
   connectionState?: 'disconnected' | 'connecting' | 'connected' | 'error';
+  onReconnect?: () => void;
 }
 
 export default function GameHeader({
@@ -21,71 +23,80 @@ export default function GameHeader({
   activeWinPattern,
   autoMarking,
   setAutoMarking,
-  isConnected = true,
-  connectionState = 'connected'
+  isConnected = false,
+  connectionState = 'disconnected',
+  onReconnect
 }: GameHeaderProps) {
-  const navigate = useNavigate();
+  const handleAutoMarkingToggle = (checked: boolean) => {
+    setAutoMarking(checked);
+  };
 
-  const handleAutoMarkingToggle = () => {
-    if (setAutoMarking) {
-      setAutoMarking(!autoMarking);
+  // Get connection display settings
+  const getConnectionInfo = () => {
+    switch (connectionState) {
+      case 'connected':
+        return { color: "bg-green-500", text: "Connected" };
+      case 'connecting':
+        return { color: "bg-yellow-500", text: "Connecting..." };
+      case 'error':
+        return { color: "bg-red-500", text: "Connection Error" };
+      case 'disconnected':
+      default:
+        return { color: "bg-gray-500", text: "Disconnected" };
     }
   };
-
-  const getPatternDisplayName = (pattern?: string): string => {
-    if (!pattern) return "Full House";
-    if (pattern === "oneLine") return "One Line";
-    if (pattern === "twoLines") return "Two Lines";
-    if (pattern === "fullHouse") return "Full House";
-    return pattern;
-  };
-
-  const handleExitGame = () => {
-    // Clear player data from localStorage
-    localStorage.removeItem('playerCode');
-    // Navigate to join page
-    navigate('/player/join');
-  };
+  
+  const connectionInfo = getConnectionInfo();
 
   return (
-    <header className="px-4 py-3 flex items-center justify-between">
-      <div className="flex items-center">
-        <h1 className="font-bold text-lg mr-2">
-          {sessionName}
-        </h1>
-        {activeWinPattern && (
-          <Badge variant="secondary" className="hidden sm:flex">
-            {getPatternDisplayName(activeWinPattern)}
-          </Badge>
-        )}
-      </div>
-
-      <div className="flex items-center gap-3">
-        {connectionState && (
-          <div className="flex items-center text-sm">
-            {connectionState === 'connected' ? (
-              <Wifi className="h-4 w-4 text-green-500 mr-1" />
-            ) : connectionState === 'connecting' ? (
-              <Wifi className="h-4 w-4 text-amber-500 mr-1" />
-            ) : (
-              <WifiOff className="h-4 w-4 text-red-500 mr-1" />
-            )}
-            <span className="hidden sm:inline text-gray-600">
-              {connectionState === 'connected' ? 'Connected' : 
-              connectionState === 'connecting' ? 'Connecting...' : 
-              connectionState === 'error' ? 'Error' : 'Offline'}
-            </span>
-          </div>
-        )}
+    <header className="py-2 px-4">
+      <div className="container mx-auto flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center space-x-4">
+          <h1 className="text-lg font-bold truncate">{sessionName}</h1>
+          {accessCode && (
+            <Badge variant="outline" className="text-xs">
+              Code: {accessCode}
+            </Badge>
+          )}
+        </div>
         
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-gray-500 hover:text-gray-700"
-          onClick={handleExitGame}
-        >
-          Exit
-        </Button>
+        <div className="flex items-center gap-2 md:gap-4">
+          <div className="hidden md:flex items-center">
+            {activeWinPattern && (
+              <Badge variant="secondary" className="text-xs">
+                Win Pattern: {activeWinPattern}
+              </Badge>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-2 md:gap-4">
+            <div className="flex items-center space-x-1">
+              <Switch
+                id="auto-marking"
+                checked={autoMarking}
+                onCheckedChange={handleAutoMarkingToggle}
+                size="sm"
+              />
+              <Label htmlFor="auto-marking" className="text-xs">Auto Mark</Label>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <div className={`h-2 w-2 rounded-full ${connectionInfo.color}`}></div>
+              <span className="text-xs hidden sm:inline">{connectionInfo.text}</span>
+              
+              {onReconnect && (connectionState !== 'connected') && (
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-6 w-6 p-0" 
+                  onClick={onReconnect}
+                >
+                  <RefreshCw className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </header>
   );

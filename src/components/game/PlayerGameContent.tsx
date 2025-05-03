@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -69,6 +70,14 @@ export default function PlayerGameContent({
     // Initialize connection
     connectionManager.initialize(currentSession.id)
       .onNumberCalled((number, allNumbers) => {
+        // Handle null case from reset events
+        if (number === null) {
+          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received reset event, clearing numbers`);
+          setRtCalledNumbers([]);
+          setRtLastCalledNumber(null);
+          return;
+        }
+        
         logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received real-time number call: ${number}, total numbers: ${allNumbers.length}`);
         setRtLastCalledNumber(number);
         setRtCalledNumbers(allNumbers);
@@ -87,11 +96,26 @@ export default function PlayerGameContent({
         logWithTimestamp(`PlayerGameContent (${instanceId.current}): Session progress update received`);
         setIsConnected(true);
         setConnectionStatus('connected');
+        
+        // Update numbers from progress if available
+        if (progress?.called_numbers?.length > 0) {
+          const lastNumberIndex = progress.called_numbers.length - 1;
+          const lastNumber = progress.called_numbers[lastNumberIndex];
+          
+          // Only update if we have new data
+          if (!rtCalledNumbers.length || 
+              rtCalledNumbers.length !== progress.called_numbers.length ||
+              rtLastCalledNumber !== lastNumber) {
+            logWithTimestamp(`PlayerGameContent (${instanceId.current}): Updating called numbers from progress`);
+            setRtCalledNumbers(progress.called_numbers);
+            setRtLastCalledNumber(lastNumber);
+          }
+        }
       });
       
     // Listen for FORCE close events
-    const forceCloseChannel = supabase.channel('force-close-listener');
-    forceCloseChannel
+    const eventsChannel = supabase.channel('game-events-listener');
+    eventsChannel
       .on('broadcast', { event: 'game-force-closed' }, (payload) => {
         if (payload.payload?.sessionId === currentSession.id) {
           logWithTimestamp(`PlayerGameContent (${instanceId.current}): Game force closed event received`);
@@ -118,6 +142,24 @@ export default function PlayerGameContent({
           setRtLastCalledNumber(null);
         }
       })
+      .on('broadcast', { event: 'number-called' }, (payload) => {
+        if (payload.payload?.sessionId === currentSession.id) {
+          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Number called event received: ${payload.payload.lastCalledNumber}`);
+          
+          // Update our local state with the new number
+          setRtLastCalledNumber(payload.payload.lastCalledNumber);
+          setRtCalledNumbers(payload.payload.calledNumbers || []);
+          setConnectionStatus('connected');
+          setIsConnected(true);
+          
+          // Show toast notification for new number
+          toast({
+            title: `Number Called: ${payload.payload.lastCalledNumber}`,
+            description: `New number has been called`,
+            duration: 3000
+          });
+        }
+      })
       .subscribe();
       
     // Set up a heartbeat check to monitor connection status
@@ -138,8 +180,8 @@ export default function PlayerGameContent({
     return () => {
       logWithTimestamp(`PlayerGameContent (${instanceId.current}): Cleaning up, clearing heartbeat interval`);
       clearInterval(intervalId);
-      // Clean up the force close channel
-      supabase.removeChannel(forceCloseChannel);
+      // Clean up the event channels
+      supabase.removeChannel(eventsChannel);
       // We DON'T call connectionManager.cleanup() here to avoid interrupting other components
       // The parent component should handle that
     };
@@ -201,6 +243,17 @@ export default function PlayerGameContent({
     }
   };
 
+  // Function to manually trigger reconnection
+  const handleManualReconnect = () => {
+    logWithTimestamp(`Manual reconnection requested by user`);
+    connectionManager.reconnect();
+    
+    toast({
+      title: "Reconnecting...",
+      description: "Attempting to reconnect to the game server",
+    });
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
       <div className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
@@ -212,6 +265,7 @@ export default function PlayerGameContent({
           setAutoMarking={setAutoMarking}
           isConnected={isConnected}
           connectionState={connectionStatus}
+          onReconnect={handleManualReconnect}
         />
       </div>
       

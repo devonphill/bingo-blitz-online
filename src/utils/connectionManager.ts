@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
@@ -29,9 +30,9 @@ class ConnectionManager {
   private lastProgressPollTime = 0;
   
   // Track connection management state
-  private isInCooldown = false;
-  private cooldownUntil = 0;
-  private isConnecting = false;
+  public isInCooldown = false;
+  public cooldownUntil = 0;
+  public isConnecting = false;
   private activeInstanceId: string | null = null;
   
   constructor() {
@@ -151,7 +152,7 @@ class ConnectionManager {
       this.channel = supabase.channel(channelId)
         .on('broadcast', { event: 'number-called' }, (payload) => {
           if (payload?.payload?.sessionId === this.sessionId) {
-            logWithTimestamp(`Received realtime number called: ${JSON.stringify(payload.payload)}`);
+            logWithTimestamp(`Received realtime number called: ${payload.payload.lastCalledNumber}`);
             
             // Update connection state when we receive messages
             this.connectionState = 'connected';
@@ -163,6 +164,26 @@ class ConnectionManager {
                 payload.payload.lastCalledNumber, 
                 calledNumbers
               );
+            }
+          }
+        })
+        .on('broadcast', { event: 'game-force-closed' }, (payload) => {
+          if (payload?.payload?.sessionId === this.sessionId) {
+            logWithTimestamp(`Received force close event for session: ${this.sessionId}`);
+            
+            if (this.numberCalledCallback) {
+              // Reset called numbers on force close
+              this.numberCalledCallback(null, []);
+            }
+          }
+        })
+        .on('broadcast', { event: 'game-reset' }, (payload) => {
+          if (payload?.payload?.sessionId === this.sessionId) {
+            logWithTimestamp(`Received game reset event for session: ${this.sessionId}`);
+            
+            if (this.numberCalledCallback) {
+              // Reset called numbers on game reset
+              this.numberCalledCallback(null, []);
             }
           }
         })
@@ -261,7 +282,7 @@ class ConnectionManager {
   private async fetchSessionProgress() {
     if (!this.sessionId) return;
     
-    // CRITICAL FIX: Check if the callback is defined before attempting to use it
+    // Check if the callback is defined before attempting to use it
     if (!this.sessionProgressCallback) {
       logWithTimestamp(`Cannot fetch session progress: No callback registered`);
       return;
@@ -313,7 +334,7 @@ class ConnectionManager {
     return this;
   }
   
-  onNumberCalled(callback: (number: number, allNumbers: number[]) => void) {
+  onNumberCalled(callback: (number: number | null, allNumbers: number[]) => void) {
     this.numberCalledCallback = callback;
     logWithTimestamp('Number called callback registered');
     return this;
@@ -346,6 +367,7 @@ class ConnectionManager {
       try {
         logWithTimestamp(`Broadcasting number ${number} via realtime`);
         
+        // Use a separate broadcast channel to ensure all clients receive the update
         await supabase.channel('number-broadcast').send({
           type: 'broadcast',
           event: 'number-called',
@@ -387,113 +409,11 @@ class ConnectionManager {
     }
   }
   
-  async submitClaim(claimData: any) {
-    if (!this.sessionId) return false;
-    
-    try {
-      logWithTimestamp(`Submitting claim for session ${this.sessionId}:`, claimData);
-      
-      const { error } = await supabase
-        .from('universal_game_logs')
-        .insert({
-          ...claimData,
-          session_id: this.sessionId,
-          claimed_at: new Date().toISOString()
-        });
-        
-      if (error) {
-        console.error('Error submitting claim:', error);
-        return false;
-      }
-      
-      logWithTimestamp('Claim submitted successfully');
-      return true;
-    } catch (err) {
-      console.error('Exception in submitClaim:', err);
-      return false;
-    }
-  }
-  
-  async fetchClaims() {
-    if (!this.sessionId) return [];
-    
-    try {
-      logWithTimestamp(`Fetching claims for session ${this.sessionId}`);
-      
-      const { data, error } = await supabase
-        .from('universal_game_logs')
-        .select('*')
-        .eq('session_id', this.sessionId)
-        .is('validated_at', null)
-        .not('claimed_at', 'is', null);
-        
-      if (error) {
-        console.error('Error fetching claims:', error);
-        return [];
-      }
-      
-      logWithTimestamp(`Fetched ${data?.length || 0} claims`);
-      return data || [];
-    } catch (err) {
-      console.error('Exception in fetchClaims:', err);
-      return [];
-    }
-  }
-  
-  async validateClaim(claimId: string) {
-    if (!this.sessionId) return false;
-    
-    try {
-      logWithTimestamp(`Validating claim ${claimId}`);
-      
-      const { error } = await supabase
-        .from('universal_game_logs')
-        .update({ validated_at: new Date().toISOString() })
-        .eq('id', claimId);
-        
-      if (error) {
-        console.error('Error validating claim:', error);
-        return false;
-      }
-      
-      logWithTimestamp('Claim validated successfully');
-      return true;
-    } catch (err) {
-      console.error('Exception in validateClaim:', err);
-      return false;
-    }
-  }
-  
-  async rejectClaim(claimId: string) {
-    if (!this.sessionId) return false;
-    
-    try {
-      logWithTimestamp(`Rejecting claim ${claimId}`);
-      
-      const { error } = await supabase
-        .from('universal_game_logs')
-        .update({ 
-          validated_at: new Date().toISOString(),
-          prize_shared: false 
-        })
-        .eq('id', claimId);
-        
-      if (error) {
-        console.error('Error rejecting claim:', error);
-        return false;
-      }
-      
-      logWithTimestamp('Claim rejected successfully');
-      return true;
-    } catch (err) {
-      console.error('Exception in rejectClaim:', err);
-      return false;
-    }
-  }
-  
+  // Exposed reconnect method for users to manually trigger reconnection
   reconnect() {
     logWithTimestamp('Manually reconnecting...');
     this.connectionState = 'connecting';
+    this.forceReconnect(); // Clear cooldown state
     
     // Refresh realtime channel
     this.setupRealtimeChannel();
