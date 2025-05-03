@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
-import { Bell, RefreshCw, AlertCircle } from 'lucide-react';
+import { Bell, RefreshCw, AlertCircle, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -24,6 +25,7 @@ interface CallerControlsProps {
   onCloseGame?: () => void;
   numberOfGames?: number;
   currentGameNumber?: number;
+  onForceClose?: () => void; // New prop for forced game close
 }
 
 export default function CallerControls({ 
@@ -39,11 +41,13 @@ export default function CallerControls({
   sessionStatus = 'pending',
   onCloseGame,
   numberOfGames = 1,
-  currentGameNumber = 1
+  currentGameNumber = 1,
+  onForceClose // New prop handling
 }: CallerControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
   const [isClosingConfirmOpen, setIsClosingConfirmOpen] = useState(false);
+  const [isForceCloseConfirmOpen, setIsForceCloseConfirmOpen] = useState(false);
   const { toast } = useToast();
   
   // Connect to the WebSocket hub as a caller
@@ -108,6 +112,17 @@ export default function CallerControls({
       onCloseGame();
     }
     setIsClosingConfirmOpen(false);
+  };
+  
+  const handleForceClose = () => {
+    setIsForceCloseConfirmOpen(true);
+  };
+  
+  const confirmForceClose = () => {
+    if (onForceClose) {
+      onForceClose();
+    }
+    setIsForceCloseConfirmOpen(false);
   };
   
   const handleReconnectClick = () => {
@@ -227,6 +242,18 @@ export default function CallerControls({
               </Button>
             )}
             
+            {/* Add FORCE close button */}
+            {onForceClose && (
+              <Button
+                variant="outline"
+                onClick={handleForceClose}
+                className="bg-amber-600 hover:bg-amber-700 text-white flex items-center gap-2"
+              >
+                <AlertTriangle className="h-4 w-4" />
+                {isLastGame ? 'FORCE Complete Session' : 'FORCE Close Game'}
+              </Button>
+            )}
+            
             <Button 
               variant="destructive"
               onClick={onEndGame}
@@ -272,6 +299,35 @@ export default function CallerControls({
               className={isLastGame ? "bg-purple-600 hover:bg-purple-700" : "bg-blue-600 hover:bg-blue-700"}
             >
               {isLastGame ? 'Complete Session' : 'Close Game'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      
+      {/* Force Close Confirmation Dialog */}
+      <AlertDialog 
+        open={isForceCloseConfirmOpen} 
+        onOpenChange={setIsForceCloseConfirmOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle className="h-5 w-5" />
+              {isLastGame ? 'FORCE Complete Session?' : 'FORCE Close Game?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {isLastGame 
+                ? 'This will FORCE complete the session, resetting all game data. This action cannot be undone and may disrupt active players.' 
+                : 'This will FORCE close the current game, reset all numbers, and advance to the next one. This action cannot be undone and may disrupt active players.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmForceClose}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              {isLastGame ? 'FORCE Complete' : 'FORCE Close'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

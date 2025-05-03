@@ -1,11 +1,13 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import { Loader, RefreshCw, AlertCircle } from 'lucide-react';
+import { Loader, RefreshCw, AlertCircle, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PrizeDetails } from '@/types';
 import { useCallerHub } from '@/hooks/useCallerHub';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 interface MainstageCallControlsProps {
   onCallNumber: () => void;
@@ -15,6 +17,7 @@ interface MainstageCallControlsProps {
   onViewClaims: () => void;
   sessionStatus?: string;
   onCloseGame?: () => void;
+  onForceClose?: () => void; // New prop for force close functionality
   activeWinPatterns?: string[];
   currentGameNumber?: number;
   numberOfGames?: number;
@@ -30,6 +33,7 @@ export function MainstageCallControls({
   onViewClaims,
   sessionStatus = 'active',
   onCloseGame,
+  onForceClose, // New prop
   activeWinPatterns = [],
   currentGameNumber = 1,
   numberOfGames = 1,
@@ -37,6 +41,7 @@ export function MainstageCallControls({
   prizesInfo = []
 }: MainstageCallControlsProps) {
   const { toast } = useToast();
+  const [isForceCloseConfirmOpen, setIsForceCloseConfirmOpen] = useState(false);
   
   // Display the current win pattern in a more human-readable format
   const formatWinPattern = (patternId: string): string => {
@@ -91,6 +96,17 @@ export function MainstageCallControls({
   useEffect(() => {
     logWithTimestamp(`MainstageCallControls: connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}, isActuallyConnected: ${isActuallyConnected}`);
   }, [callerHub.connectionState, callerHub.isConnected, isActuallyConnected]);
+
+  const handleForceClose = () => {
+    setIsForceCloseConfirmOpen(true);
+  };
+  
+  const confirmForceClose = () => {
+    if (onForceClose) {
+      onForceClose();
+    }
+    setIsForceCloseConfirmOpen(false);
+  };
 
   const nextPatterns = getNextPatterns();
   const currentPattern = activeWinPatterns.length > 0 ? formatWinPattern(activeWinPatterns[0]) : 'None';
@@ -204,6 +220,18 @@ export function MainstageCallControls({
               </Button>
             )}
           </div>
+          
+          {/* Add FORCE close button */}
+          {onForceClose && (
+            <Button
+              onClick={handleForceClose}
+              variant="outline"
+              className="w-full mt-2 bg-amber-600 hover:bg-amber-700 text-white flex items-center justify-center gap-2"
+            >
+              <AlertTriangle className="h-4 w-4" />
+              FORCE Close Game
+            </Button>
+          )}
         </div>
 
         {/* Add reconnect button if not connected */}
@@ -231,6 +259,35 @@ export function MainstageCallControls({
           </div>
         )}
       </CardContent>
+      
+      {/* Force Close Confirmation Dialog */}
+      <AlertDialog 
+        open={isForceCloseConfirmOpen} 
+        onOpenChange={setIsForceCloseConfirmOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle className="h-5 w-5" />
+              {currentGameNumber === numberOfGames ? 'FORCE Complete Session?' : 'FORCE Close Game?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {currentGameNumber === numberOfGames 
+                ? 'This will FORCE complete the session, resetting all game data. This action cannot be undone and may disrupt active players.' 
+                : 'This will FORCE close the current game, reset all numbers, and advance to the next one. This action cannot be undone and may disrupt active players.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmForceClose}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              {currentGameNumber === numberOfGames ? 'FORCE Complete' : 'FORCE Close'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

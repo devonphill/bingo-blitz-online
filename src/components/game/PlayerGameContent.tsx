@@ -9,6 +9,7 @@ import { toast } from "@/hooks/use-toast";
 import { connectionManager } from "@/utils/connectionManager";
 import { logWithTimestamp } from "@/utils/logUtils";
 import CalledNumbers from "./CalledNumbers";
+import { supabase } from "@/integrations/supabase/client";
 
 interface PlayerGameContentProps {
   tickets: any[];
@@ -88,6 +89,37 @@ export default function PlayerGameContent({
         setConnectionStatus('connected');
       });
       
+    // Listen for FORCE close events
+    const forceCloseChannel = supabase.channel('force-close-listener');
+    forceCloseChannel
+      .on('broadcast', { event: 'game-force-closed' }, (payload) => {
+        if (payload.payload?.sessionId === currentSession.id) {
+          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Game force closed event received`);
+          
+          // Show notice to player
+          toast({
+            title: "Game Has Been Force Closed",
+            description: "The caller has force closed this game. The game will reset.",
+            variant: "destructive",
+            duration: 5000
+          });
+          
+          // Reset local state
+          setRtCalledNumbers([]);
+          setRtLastCalledNumber(null);
+        }
+      })
+      .on('broadcast', { event: 'game-reset' }, (payload) => {
+        if (payload.payload?.sessionId === currentSession.id) {
+          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Game reset event received`);
+          
+          // Reset local state
+          setRtCalledNumbers([]);
+          setRtLastCalledNumber(null);
+        }
+      })
+      .subscribe();
+      
     // Set up a heartbeat check to monitor connection status
     const intervalId = setInterval(() => {
       // Check connection state from manager
@@ -106,6 +138,8 @@ export default function PlayerGameContent({
     return () => {
       logWithTimestamp(`PlayerGameContent (${instanceId.current}): Cleaning up, clearing heartbeat interval`);
       clearInterval(intervalId);
+      // Clean up the force close channel
+      supabase.removeChannel(forceCloseChannel);
       // We DON'T call connectionManager.cleanup() here to avoid interrupting other components
       // The parent component should handle that
     };

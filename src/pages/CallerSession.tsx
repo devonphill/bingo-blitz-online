@@ -394,6 +394,79 @@ export default function CallerSession() {
     setIsClaimSheetOpen(false);
   };
 
+  const handleForceClose = async () => {
+    if (!session) return;
+
+    try {
+      console.log("Force closing game and resetting all numbers");
+      toast({
+        title: "Force Closing Game",
+        description: "Resetting game and advancing to next game...",
+      });
+
+      // Reset called numbers in session progress
+      await updateSessionProgress(session.id, {
+        called_numbers: [],
+        game_status: 'pending'
+      });
+
+      setCalledNumbers([]);
+      setLastCalledNumber(null);
+
+      // If it's the last game, complete the session
+      if (session.current_game >= session.numberOfGames) {
+        const { error } = await supabase
+          .from('game_sessions')
+          .update({ status: 'completed' })
+          .eq('id', session.id);
+
+        if (error) throw error;
+        setSessionStatus('completed');
+      } 
+      // Otherwise move to the next game
+      else {
+        const nextGameNumber = session.current_game + 1;
+        const { error } = await supabase
+          .from('game_sessions')
+          .update({ current_game: nextGameNumber })
+          .eq('id', session.id);
+
+        if (error) throw error;
+
+        setSession(prevSession => {
+          if (prevSession) {
+            return { ...prevSession, current_game: nextGameNumber };
+          }
+          return prevSession;
+        });
+        setCurrentGameNumber(nextGameNumber);
+      }
+
+      // Broadcast the reset to all connected clients
+      const broadcastChannel = supabase.channel('game-reset-broadcast');
+      broadcastChannel.send({
+        type: 'broadcast', 
+        event: 'game-reset',
+        payload: {
+          sessionId: session.id,
+          lastCalledNumber: null,
+          calledNumbers: [],
+          timestamp: new Date().getTime()
+        }
+      }).catch(error => {
+        console.error("Error broadcasting game reset:", error);
+      });
+
+    } catch (err) {
+      console.error('Error force closing game:', err);
+      toast({
+        title: "Error",
+        description: "Failed to force close the game. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
   const remainingNumbers = React.useMemo(() => {
     const allNumbers = Array.from({ length: gameType === 'mainstage' ? 90 : 75 }, (_, i) => i + 1);
     return allNumbers.filter(num => !calledNumbers.includes(num));

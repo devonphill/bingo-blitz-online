@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -160,6 +159,53 @@ export function LiveGameView({
     onCallNumber(number);
   };
 
+  const handleForceClose = async () => {
+    if (!sessionId) return;
+
+    try {
+      // Reset the called numbers
+      toast({
+        title: "Force Closing Game",
+        description: "Resetting game state and proceeding to next game...",
+        duration: 3000,
+      });
+
+      // Broadcast a message to all players about the force close
+      if (connectionManager) {
+        try {
+          // Create a channel for broadcasting
+          const broadcastChannel = supabase.channel('force-close-broadcast');
+          broadcastChannel.send({
+            type: 'broadcast', 
+            event: 'game-force-closed',
+            payload: {
+              sessionId: sessionId,
+              timestamp: new Date().getTime(),
+              message: "The game has been force closed by the caller"
+            }
+          }).then(() => {
+            logWithTimestamp("Force close broadcast sent successfully");
+          }).catch(error => {
+            console.error("Error broadcasting force close:", error);
+          });
+        } catch (err) {
+          console.error("Error sending broadcast:", err);
+        }
+      }
+
+      // Call the close game function to advance to the next game
+      onCloseGame();
+
+    } catch (error) {
+      console.error("Error force closing game:", error);
+      toast({
+        title: "Error",
+        description: "Failed to force close the game. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
   const remainingNumbers = React.useMemo(() => {
     const allNumbers = Array.from({ length: gameType === 'mainstage' ? 90 : 75 }, (_, i) => i + 1);
     return allNumbers.filter(num => !calledNumbers.includes(num));
@@ -260,6 +306,7 @@ export function LiveGameView({
           gameType={gameType}
           sessionStatus={sessionStatus}
           gameConfigs={gameConfigs}
+          onForceClose={handleForceClose} // Add the force close handler
         />
       </div>
       
