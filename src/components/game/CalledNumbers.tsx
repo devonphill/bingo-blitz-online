@@ -9,11 +9,14 @@ interface CalledNumbersProps {
 
 export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNumbersProps) {
   const [isFlashing, setIsFlashing] = useState(false);
+  const [lastDisplayedNumber, setLastDisplayedNumber] = useState<number | null>(null);
   
-  // Flash effect for current number only
+  // Flash effect for current number when it changes
   useEffect(() => {
-    if (currentNumber) {
+    if (currentNumber !== null && currentNumber !== lastDisplayedNumber) {
+      setLastDisplayedNumber(currentNumber);
       setIsFlashing(true);
+      
       const timer = setInterval(() => {
         setIsFlashing(prev => !prev);
       }, 500);
@@ -29,7 +32,7 @@ export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNu
         clearTimeout(stopTimer);
       };
     }
-  }, [currentNumber]);
+  }, [currentNumber, lastDisplayedNumber]);
   
   // Group called numbers by tens (1-9, 10-19, etc.)
   const groupedNumbers: { [key: string]: number[] } = {};
@@ -61,7 +64,8 @@ export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNu
       
       {currentNumber && (
         <div className="mb-6 flex justify-center">
-          <div className={isFlashing ? "opacity-100" : "opacity-50"} style={{ transition: "opacity 0.3s ease" }}>
+          <div className={isFlashing ? "opacity-100 scale-110" : "opacity-80"} 
+               style={{ transition: "all 0.3s ease" }}>
             <CurrentNumberDisplay number={currentNumber} sizePx={90} />
           </div>
         </div>
@@ -75,12 +79,13 @@ export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNu
               {Array.from({ length: Math.min(10, parseInt(range.split('-')[1])) - parseInt(range.split('-')[0]) + 1 }, (_, i) => {
                 const number = parseInt(range.split('-')[0]) + i;
                 const isCalled = numbers.includes(number);
+                const isLatestCalled = number === currentNumber;
                 
                 return (
                   <div 
                     key={number}
                     className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-semibold
-                      ${isCalled ? `${getColor(number)} text-white` : 'bg-gray-100 text-gray-500'}`}
+                      ${isCalled ? `${getColor(number)} text-white ${isLatestCalled ? 'ring-2 ring-white animate-pulse' : ''}` : 'bg-gray-100 text-gray-500'}`}
                   >
                     {number}
                   </div>

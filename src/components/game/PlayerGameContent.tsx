@@ -56,12 +56,21 @@ export default function PlayerGameContent({
     if (currentSession?.id) {
       logWithTimestamp(`PlayerGameContent: Setting up connection manager for session ${currentSession.id}`);
       
+      connectionManager.cleanup(); // Clean up any existing connections first
+      
       connectionManager.initialize(currentSession.id)
         .onNumberCalled((number, allNumbers) => {
-          logWithTimestamp(`PlayerGameContent: Received real-time number call: ${number}`);
+          logWithTimestamp(`PlayerGameContent: Received real-time number call: ${number}, total numbers: ${allNumbers.length}`);
           setRtLastCalledNumber(number);
           setRtCalledNumbers(allNumbers);
           setIsConnected(true);
+          
+          // Show toast notification for new number
+          toast({
+            title: `Number Called: ${number}`,
+            description: `New number has been called`,
+            duration: 3000
+          });
         });
         
       // Set up a heartbeat check to monitor connection status
@@ -76,9 +85,10 @@ export default function PlayerGameContent({
       
       return () => {
         clearInterval(intervalId);
+        connectionManager.cleanup();
       };
     }
-  }, [currentSession?.id, isConnected]);
+  }, [currentSession?.id]);
 
   // Log state for debugging
   useEffect(() => {

@@ -59,16 +59,24 @@ export default function CallerControls({
       
       logWithTimestamp(`Caller is calling number ${number}`);
       
-      // First send real-time broadcast for immediate feedback
+      // First create a new array of remaining numbers after removing the called number
+      const updatedRemainingNumbers = remainingNumbers.filter(n => n !== number);
+      
+      // Calculate the called numbers by determining what's not in the remaining numbers
+      const allPossibleNumbers = Array.from({ length: gameType === '75-ball' ? 75 : 90 }, (_, i) => i + 1);
+      const calledNumbers = allPossibleNumbers.filter(n => !updatedRemainingNumbers.includes(n));
+      
+      // FIRST - Send real-time broadcast for immediate feedback
       try {
-        const broadcastChannel = supabase.channel('number-broadcast');
-        broadcastChannel.send({
+        logWithTimestamp(`Broadcasting number ${number} via realtime channel`);
+        
+        supabase.channel('number-broadcast').send({
           type: 'broadcast', 
           event: 'number-called',
           payload: {
             sessionId: sessionId,
             lastCalledNumber: number,
-            calledNumbers: [...(remainingNumbers.filter(n => n !== number))],
+            calledNumbers: calledNumbers, // Send the full list of called numbers
             timestamp: new Date().getTime()
           }
         }).then(() => {
@@ -80,7 +88,7 @@ export default function CallerControls({
         console.error("Error sending broadcast:", err);
       }
       
-      // Then use the connection manager for database persistence
+      // THEN - Use the connection manager for database persistence
       connectionManager.callNumber(number);
       
       // Also call the regular onCallNumber function for backwards compatibility

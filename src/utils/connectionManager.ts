@@ -29,11 +29,12 @@ class ConnectionManager {
   private lastProgressPollTime = 0;
   
   constructor() {
-    console.log('ConnectionManager created');
+    logWithTimestamp('ConnectionManager created');
   }
   
   initialize(sessionId: string) {
     logWithTimestamp(`ConnectionManager initialized with sessionId: ${sessionId}`);
+    this.cleanup(); // Always clean up existing resources first
     this.sessionId = sessionId;
     this.startPolling();
     this.setupRealtimeChannel();
@@ -49,18 +50,23 @@ class ConnectionManager {
         supabase.removeChannel(this.channel);
       }
       
-      logWithTimestamp(`Setting up realtime channel for session: ${this.sessionId}`);
+      const channelId = `number-broadcast-${this.sessionId}-${Date.now()}`;
+      logWithTimestamp(`Setting up realtime channel: ${channelId} for session: ${this.sessionId}`);
       
       // Create a new channel for this session
-      this.channel = supabase.channel(`number-broadcast-${this.sessionId}`)
+      this.channel = supabase.channel('number-broadcast')
         .on('broadcast', { event: 'number-called' }, (payload) => {
-          logWithTimestamp(`Received realtime number called: ${payload.payload.lastCalledNumber}`);
-          
-          if (payload.payload.sessionId === this.sessionId && this.numberCalledCallback) {
-            this.numberCalledCallback(
-              payload.payload.lastCalledNumber, 
-              payload.payload.calledNumbers
-            );
+          if (payload?.payload?.sessionId === this.sessionId) {
+            logWithTimestamp(`Received realtime number called: ${JSON.stringify(payload.payload)}`);
+            
+            if (this.numberCalledCallback && payload.payload.lastCalledNumber) {
+              const calledNumbers = payload.payload.calledNumbers || [];
+              logWithTimestamp(`Calling number callback with: ${payload.payload.lastCalledNumber}, total numbers: ${calledNumbers.length}`);
+              this.numberCalledCallback(
+                payload.payload.lastCalledNumber, 
+                calledNumbers
+              );
+            }
           }
         })
         .subscribe(status => {
@@ -189,6 +195,7 @@ class ConnectionManager {
   
   onNumberCalled(callback: (number: number, allNumbers: number[]) => void) {
     this.numberCalledCallback = callback;
+    logWithTimestamp('Number called callback registered');
     return this;
   }
   
@@ -244,6 +251,11 @@ class ConnectionManager {
       if (updateError) {
         console.error('Error updating called numbers:', updateError);
         return false;
+      }
+      
+      // Also trigger our local callback if one is registered
+      if (this.numberCalledCallback) {
+        this.numberCalledCallback(number, updatedNumbers);
       }
       
       logWithTimestamp(`Number ${number} called successfully`);
