@@ -8,6 +8,7 @@ import GameTypePlayspace from "./GameTypePlayspace";
 import { toast } from "@/hooks/use-toast";
 import { connectionManager } from "@/utils/connectionManager";
 import { logWithTimestamp } from "@/utils/logUtils";
+import CalledNumbers from "./CalledNumbers";
 
 interface PlayerGameContentProps {
   tickets: any[];
@@ -56,8 +57,7 @@ export default function PlayerGameContent({
     if (currentSession?.id) {
       logWithTimestamp(`PlayerGameContent: Setting up connection manager for session ${currentSession.id}`);
       
-      connectionManager.cleanup(); // Clean up any existing connections first
-      
+      // Initialize connection
       connectionManager.initialize(currentSession.id)
         .onNumberCalled((number, allNumbers) => {
           logWithTimestamp(`PlayerGameContent: Received real-time number call: ${number}, total numbers: ${allNumbers.length}`);
@@ -85,9 +85,10 @@ export default function PlayerGameContent({
       
       return () => {
         clearInterval(intervalId);
-        connectionManager.cleanup();
       };
     }
+    
+    // Don't cleanup here - leave that to parent components to avoid disrupting other components
   }, [currentSession?.id]);
 
   // Log state for debugging
@@ -189,6 +190,14 @@ export default function PlayerGameContent({
             isClaiming={isClaiming}
             claimStatus={claimStatus}
             gameType={gameType}
+          />
+        </div>
+        
+        {/* Show called numbers section at the top */}
+        <div className="mb-4">
+          <CalledNumbers 
+            calledNumbers={mergedCalledNumbers} 
+            currentNumber={mergedCurrentNumber} 
           />
         </div>
         

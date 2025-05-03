@@ -148,7 +148,12 @@ class ConnectionManager {
   }
   
   private async fetchSessionProgress() {
-    if (!this.sessionId || !this.sessionProgressCallback) return;
+    if (!this.sessionId) return;
+    // Check if the callback is defined before attempting to use it
+    if (!this.sessionProgressCallback) {
+      logWithTimestamp(`Cannot fetch session progress: No callback registered`);
+      return;
+    }
     
     try {
       logWithTimestamp(`Fetching session progress for session: ${this.sessionId}`);

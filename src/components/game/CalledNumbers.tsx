@@ -64,8 +64,7 @@ export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNu
       
       {currentNumber && (
         <div className="mb-6 flex justify-center">
-          <div className={isFlashing ? "opacity-100 scale-110" : "opacity-80"} 
-               style={{ transition: "all 0.3s ease" }}>
+          <div className={isFlashing ? "opacity-100 scale-110 transition-all duration-300" : "opacity-80 transition-all duration-300"}>
             <CurrentNumberDisplay number={currentNumber} sizePx={90} />
           </div>
         </div>
@@ -76,7 +75,7 @@ export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNu
           <div key={range} className="border rounded-md p-2">
             <div className="text-sm font-semibold mb-1">{range}</div>
             <div className="flex flex-wrap gap-1">
-              {Array.from({ length: Math.min(10, parseInt(range.split('-')[1])) - parseInt(range.split('-')[0]) + 1 }, (_, i) => {
+              {Array.from({ length: Math.min(10, parseInt(range.split('-')[1]) - parseInt(range.split('-')[0]) + 1) }, (_, i) => {
                 const number = parseInt(range.split('-')[0]) + i;
                 const isCalled = numbers.includes(number);
                 const isLatestCalled = number === currentNumber;
@@ -84,8 +83,10 @@ export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNu
                 return (
                   <div 
                     key={number}
-                    className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-semibold
-                      ${isCalled ? `${getColor(number)} text-white ${isLatestCalled ? 'ring-2 ring-white animate-pulse' : ''}` : 'bg-gray-100 text-gray-500'}`}
+                    className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-semibold transition-all
+                      ${isCalled 
+                        ? `${getColor(number)} text-white ${isLatestCalled ? 'ring-2 ring-white animate-pulse' : ''}` 
+                        : 'bg-gray-100 text-gray-500'}`}
                   >
                     {number}
                   </div>
