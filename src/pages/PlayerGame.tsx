@@ -1,4 +1,3 @@
-
 import React, { useEffect, useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -8,22 +7,28 @@ import { useTickets } from '@/hooks/useTickets';
 import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 import PlayerGameLayout from '@/components/game/PlayerGameLayout';
-import { cleanupAllConnections, logWithTimestamp } from '@/utils/logUtils';
+import { connectionManager } from '@/utils/connectionManager';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 export default function PlayerGame() {
   const { playerCode: urlPlayerCode } = useParams<{ playerCode: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   
-  // CRITICAL FIX: Reset all global connection state on mount
-  // This prevents multiple competing connections
+  // Initialize connection state
+  const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('connecting');
+  
+  // Initialize when component mounts
   useEffect(() => {
-    logWithTimestamp("PlayerGame mounted - cleaning up all connections");
-    cleanupAllConnections();
+    logWithTimestamp("PlayerGame mounted - initializing connection manager");
+    
+    // We'll initialize the actual session connection once we have the session ID
+    // For now, just make sure we're in a clean state
+    connectionManager.cleanup();
     
     return () => {
-      logWithTimestamp("PlayerGame unmounting - cleaning up connections");
-      cleanupAllConnections();
+      logWithTimestamp("PlayerGame unmounting - cleaning up connection manager");
+      connectionManager.cleanup();
     };
   }, []);
   
@@ -94,6 +99,22 @@ export default function PlayerGame() {
     currentSession?.id
   );
   
+  // Setup connection manager when we have a session ID
+  useEffect(() => {
+    if (currentSession?.id) {
+      logWithTimestamp(`Setting up connection manager with session ID: ${currentSession.id}`);
+      
+      // Initialize the connection manager with the session ID
+      connectionManager.initialize(currentSession.id)
+        .onSessionProgressUpdate((progress) => {
+          logWithTimestamp(`Received session progress update: ${progress?.game_status || 'unknown status'}`);
+          setConnectionState('connected');
+        });
+      
+      setConnectionState('connecting');
+    }
+  }, [currentSession?.id]);
+  
   // Initialize session state
   const isSessionActive = currentSession?.status === 'active';
   const isGameLive = currentSession?.lifecycle_state === 'live';
@@ -138,7 +159,7 @@ export default function PlayerGame() {
   const effectiveErrorMessage = playerCode 
     ? errorMessage || ''
     : "Player code is required. Please join the game again.";
-  
+
   // Debug logging with stable dependencies
   useEffect(() => {
     console.log("PlayerGame render state:", {
@@ -277,6 +298,7 @@ export default function PlayerGame() {
   console.log("- Current win pattern:", currentWinPattern);
   console.log("- Prize info:", finalWinPrizes);
   console.log("- Player name:", playerName);
+  console.log("- Connection state:", connectionState);
 
   return (
     <React.Fragment>
@@ -300,6 +322,7 @@ export default function PlayerGame() {
         gameType={gameType}
         currentGameNumber={currentGameNumber}
         numberOfGames={numberOfGames}
+        connectionState={connectionState}
       >
         <GameTypePlayspace
           gameType={gameType as any}

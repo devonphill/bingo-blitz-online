@@ -15,7 +15,8 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { AlertCircle, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
-import { cleanupAllConnections } from "@/utils/logUtils";
+import { connectionManager } from "@/utils/connectionManager";
+import { logWithTimestamp } from "@/utils/logUtils";
 
 interface PlayerGameLayoutProps {
   tickets: any[];
@@ -68,18 +69,22 @@ export default function PlayerGameLayout({
   const [showClaimError, setShowClaimError] = useState<boolean>(false);
   const { toast } = useToast();
   
-  // CRITICAL FIX: Reset all global connection state on mount
-  // This ensures we don't have multiple competing connections
+  // Initialize connection manager with the session ID if available
   useEffect(() => {
-    const cleanupId = `layout-${Date.now()}`;
-    console.log(`PlayerGameLayout mounted (${cleanupId}) - cleaning up all connections`);
-    cleanupAllConnections();
+    const layoutId = `layout-${Date.now()}`;
+    logWithTimestamp(`PlayerGameLayout mounted (${layoutId})`);
+    
+    // Only initialize connection if we have a session
+    if (currentSession?.id) {
+      logWithTimestamp(`Initializing connection manager with session ID: ${currentSession.id}`);
+      connectionManager.initialize(currentSession.id);
+    }
     
     return () => {
-      console.log(`PlayerGameLayout unmounting (${cleanupId}) - cleaning up connections`);
-      cleanupAllConnections();
+      logWithTimestamp(`PlayerGameLayout unmounting (${layoutId}) - cleaning up connection`);
+      connectionManager.cleanup();
     };
-  }, []);
+  }, [currentSession?.id]);
   
   // Simplified connection state management with debounce for UI stability
   const [displayConnectionState, setDisplayConnectionState] = useState(connectionState);
@@ -128,7 +133,7 @@ export default function PlayerGameLayout({
   
   // Handle connection state changes with improved notification approach
   useEffect(() => {
-    console.log(`PlayerGameLayout: connectionState changed to ${connectionState}, displaying as ${displayConnectionState}`);
+    logWithTimestamp(`PlayerGameLayout: connectionState changed to ${connectionState}, displaying as ${displayConnectionState}`);
     
     if (connectionState === 'error' && displayConnectionState === 'error') {
       toast({
@@ -153,10 +158,21 @@ export default function PlayerGameLayout({
 
   // Handle page refresh for reconnection
   const handleReconnect = () => {
-    // Clean up all connections first
-    cleanupAllConnections();
-    // Simply refresh the page - most reliable way to reconnect
-    window.location.reload();
+    logWithTimestamp("Manual reconnection requested by user");
+    
+    // Reinitialize the connection manager if we have a session
+    if (currentSession?.id) {
+      connectionManager.initialize(currentSession.id);
+      
+      toast({
+        title: "Reconnecting",
+        description: "Attempting to reconnect to the game server...",
+        duration: 3000
+      });
+    } else {
+      // If no session, just refresh the page as fallback
+      window.location.reload();
+    }
   };
 
   // Determine if we should show the connection warning
