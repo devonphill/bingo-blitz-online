@@ -246,7 +246,7 @@ class ConnectionManager {
       timestamp: new Date().toISOString()
     };
     
-    // Broadcast on multiple channels for redundancy
+    // Broadcast on multiple channels for redundancy using proper Promise handling
     const promises = [
       supabase.channel('number-broadcast').send({
         type: 'broadcast',
@@ -260,8 +260,11 @@ class ConnectionManager {
       })
     ];
     
-    // Fix: Use Promise.all().catch() pattern for proper error handling with TypeScript
-    Promise.all(promises)
+    // Make sure promises is an array of Promises that definitely have a catch method
+    const safePromises = promises.map(p => Promise.resolve(p));
+    
+    // Now use Promise.all with proper error handling
+    Promise.all(safePromises)
       .then(() => logWithTimestamp('Number call broadcast successful'))
       .catch(error => console.error('Error broadcasting number call:', error));
       

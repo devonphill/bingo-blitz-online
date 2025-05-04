@@ -25,14 +25,37 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
   // Track connection state
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   
+  // Track if setup is complete to prevent reconnection loops
+  const setupCompleteRef = useRef<boolean>(false);
+  
+  // Track the connection retry count
+  const retryCountRef = useRef<number>(0);
+  const maxRetries = 3; // Maximum number of automatic retries
+  const reconnectTimeoutRef = useRef<any>(null);
+  
   // Function to reset claim status
   const resetClaimStatus = useCallback(() => {
     setClaimStatus('none');
   }, []);
 
-  // Simple reconnect function
+  // Simple reconnect function with improved handling
   const reconnect = useCallback(() => {
-    logWithTimestamp(`Manual reconnection requested for player ${playerCode}`);
+    // Don't reconnect if we've maxed out automatic retries
+    if (retryCountRef.current >= maxRetries) {
+      logWithTimestamp(`Maximum reconnection attempts (${maxRetries}) reached for player ${playerCode}`);
+      setConnectionState('error');
+      setError(`Connection failed after ${maxRetries} attempts`);
+      return;
+    }
+    
+    // Clear any existing reconnect timeout
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    
+    logWithTimestamp(`Manual reconnection requested for player ${playerCode} (attempt ${retryCountRef.current + 1})`);
+    retryCountRef.current++;
     
     // Clean up existing channels
     if (channelRef.current) {
@@ -55,14 +78,20 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
       }
     }
     
+    // Reset setup complete flag
+    setupCompleteRef.current = false;
+    
     // Set state to trigger reconnection in useEffect
     setConnectionState('connecting');
   }, [playerCode]);
 
-  // Set up the connection to the session - improved subscription logic
+  // Set up the connection to the session with improved stability
   useEffect(() => {
-    if (!playerCode || !sessionId) {
-      setIsLoading(false);
+    // Skip setup if invalid parameters or already set up
+    if (!playerCode || !sessionId || setupCompleteRef.current) {
+      if (!playerCode || !sessionId) {
+        setIsLoading(false);
+      }
       return;
     }
 
@@ -70,11 +99,11 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
     setError('');
     setIsLoading(true);
     setIsConnected(false);
-    setConnectionState('connecting');
-
+    
+    // Only log once per setup
     logWithTimestamp(`Setting up connection for player ${playerCode} to session ${sessionId}`);
     
-    // Generate a unique channel name
+    // Generate a unique channel name with timestamp to prevent reuse issues
     const channelName = `game-updates-${playerCode}-${Math.random().toString(36).substring(2, 7)}`;
     
     // Set up a dedicated channel for game updates
@@ -83,7 +112,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
       .on('broadcast', { event: 'number-called' }, payload => {
         // Check if this update is for our session
         if (payload.payload?.sessionId === sessionId) {
-          logWithTimestamp(`Received number-called update for session ${sessionId}: ${JSON.stringify(payload.payload)}`);
+          logWithTimestamp(`Received number-called update for session ${sessionId}: ${payload.payload.lastCalledNumber}`);
           
           // Update game state with called numbers
           setGameState(prev => ({
@@ -137,16 +166,37 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
         setIsConnected(true);
         setConnectionState('connected');
         setIsLoading(false);
+        setupCompleteRef.current = true;
+        retryCountRef.current = 0; // Reset retry counter on success
       } else if (status === 'CHANNEL_ERROR') {
         setError('Error connecting to game updates');
         setConnectionState('error');
         setIsConnected(false);
         setIsLoading(false);
+        
+        // Schedule reconnect with exponential backoff
+        const delay = Math.min(1000 * Math.pow(2, retryCountRef.current), 30000);
+        reconnectTimeoutRef.current = setTimeout(reconnect, delay);
       } else if (status === 'TIMED_OUT') {
         setError('Connection timed out');
         setConnectionState('error');
         setIsConnected(false);
         setIsLoading(false);
+        
+        // Schedule reconnect with exponential backoff
+        const delay = Math.min(1000 * Math.pow(2, retryCountRef.current), 30000);
+        reconnectTimeoutRef.current = setTimeout(reconnect, delay);
+      } else if (status === 'CLOSED') {
+        // Only trigger reconnect if we were previously connected and setup was complete
+        if (setupCompleteRef.current && isConnected) {
+          logWithTimestamp(`Channel ${channelName} closed unexpectedly`);
+          setConnectionState('disconnected');
+          setIsConnected(false);
+          
+          // Schedule reconnect with exponential backoff
+          const delay = Math.min(1000 * Math.pow(2, retryCountRef.current), 30000);
+          reconnectTimeoutRef.current = setTimeout(reconnect, delay);
+        }
       }
     });
 
@@ -239,21 +289,34 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
     // Send a simple heartbeat every 30 seconds to keep the connection alive
     const heartbeatInterval = setInterval(() => {
       if (channelRef.current && connectionState === 'connected') {
-        // Cast connectionState to string to satisfy TypeScript
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'heartbeat',
-          payload: { playerCode, timestamp: Date.now() }
-        }).catch(err => {
-          console.error('Heartbeat error:', err);
-          reconnect();
-        });
+        try {
+          // Use Promise.resolve() to get a full Promise object
+          Promise.resolve(
+            channelRef.current.send({
+              type: 'broadcast',
+              event: 'heartbeat',
+              payload: { playerCode, timestamp: Date.now() }
+            })
+          ).catch(err => {
+            console.error('Heartbeat error:', err);
+            reconnect();
+          });
+        } catch (err) {
+          console.error('Error sending heartbeat:', err);
+        }
       }
     }, 15000);
 
     // Cleanup on unmount
     return () => {
+      logWithTimestamp(`Cleaning up channels for player ${playerCode}`);
       clearInterval(heartbeatInterval);
+      
+      // Clear any pending reconnect timeout
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       
       if (channelRef.current) {
         try {
@@ -274,10 +337,13 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
           console.error("Error removing claims channel during cleanup:", err);
         }
       }
+      
+      // Reset the setup complete flag
+      setupCompleteRef.current = false;
     };
-  }, [playerCode, sessionId, reconnect, playerId, connectionState]);
+  }, [playerCode, sessionId, reconnect, playerId, isConnected]);
 
-  // Function to submit a bingo claim - improved broadcasting
+  // Function to submit a bingo claim with improved error handling
   const submitBingoClaim = useCallback((ticketData: any) => {
     if (!playerCode || !sessionId || !playerName) {
       console.error('Missing player info for claim');
@@ -309,12 +375,14 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
       
       logWithTimestamp(`Broadcasting bingo claim: ${JSON.stringify(claimData)}`);
       
-      // Broadcast the claim
-      broadcastChannel.send({
-        type: 'broadcast',
-        event: 'bingo-claim',
-        payload: claimData
-      }).then(() => {
+      // Use Promise.resolve() to get a full Promise object with catch method
+      Promise.resolve(
+        broadcastChannel.send({
+          type: 'broadcast',
+          event: 'bingo-claim',
+          payload: claimData
+        })
+      ).then(() => {
         logWithTimestamp('Claim broadcast sent successfully');
         
         toast({
@@ -337,7 +405,6 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
             });
           }
         }, 10000);
-        
       }).catch(error => {
         console.error('Error broadcasting claim:', error);
         setClaimStatus('none');

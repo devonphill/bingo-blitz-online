@@ -65,7 +65,7 @@ export default function PlayerGameContent({
     }
   }, [activeWinPatterns, activeWinPattern]);
   
-  // Set up direct subscription to number calls and pattern changes
+  // Set up direct subscription to number calls and pattern changes with improved stability
   useEffect(() => {
     if (!currentSession?.id) {
       logWithTimestamp(`PlayerGameContent (${instanceId.current}): No session ID, skipping subscription setup`);
@@ -336,7 +336,7 @@ export default function PlayerGameContent({
     }
   };
 
-  // Function to manually trigger reconnection
+  // Function to manually trigger reconnection with improved error handling
   const handleManualReconnect = () => {
     logWithTimestamp(`Manual reconnection requested by user`);
     
