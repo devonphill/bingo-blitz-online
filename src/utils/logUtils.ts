@@ -4,7 +4,7 @@
  */
 
 // Configure debug levels
-type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 const LOG_LEVEL: LogLevel = 'info'; // Set to 'debug' to see all logs
 
 /**
@@ -55,4 +55,21 @@ export function createLogger(componentName: string) {
  */
 export function logConnectionEvent(event: string, details?: any): void {
   logWithTimestamp(`Connection Event: ${event}${details ? ` - ${JSON.stringify(details)}` : ''}`, 'info', 'Connection');
+}
+
+/**
+ * Debug any object with pretty printing
+ */
+export function debugObject(label: string, obj: any, level: LogLevel = 'debug'): void {
+  try {
+    logWithTimestamp(`${label}: ${JSON.stringify(obj, null, 2)}`, level, 'Debug');
+  } catch (e) {
+    logWithTimestamp(`${label}: [Cannot stringify object: ${e}]`, level, 'Debug');
+  }
+}
+
+// For backward compatibility, cast string messages to LogLevel automatically
+export function ensureLogLevel(level: string): LogLevel {
+  const validLevels: LogLevel[] = ['debug', 'info', 'warn', 'error'];
+  return validLevels.includes(level as LogLevel) ? level as LogLevel : 'info';
 }

@@ -2,7 +2,7 @@
  * Unified connection manager for all game-related real-time communication
  */
 import { supabase } from "@/integrations/supabase/client";
-import { logWithTimestamp } from "./logUtils";
+import { logWithTimestamp, ensureLogLevel } from './logUtils';
 import { toast } from "sonner";
 
 interface NumberCalledCallback {
@@ -244,7 +244,7 @@ class ConnectionManager {
         // Add broadcast persistence to improve delivery reliability
         broadcast: { self: true },
         // Add channel specific options for more reliable connections
-        retryIntervalMs: 3000,
+        // Remove retryIntervalMs from options
         maxReconnectAttempts: 10
       }
     });
@@ -393,7 +393,6 @@ class ConnectionManager {
           key: presenceKey
         },
         // Add channel specific options for more reliable connections
-        retryIntervalMs: 3000,
         maxReconnectAttempts: 10
       }
     });

@@ -1,4 +1,7 @@
 
+// Fix for the specific line with the Promise catch error
+// Focus on just fixing this issue - around line 336
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -175,7 +178,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
     }
 
     try {
-      logWithTimestamp(`Player ${playerCode} submitting bingo claim`);
+      logWithTimestamp(`Player ${playerCode} submitting bingo claim`, 'info');
       
       setIsSubmittingClaim(true);
       setClaimStatus('pending');
@@ -194,7 +197,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
         timestamp
       };
       
-      logWithTimestamp(`Broadcasting bingo claim: ${JSON.stringify(claimData)}`);
+      logWithTimestamp(`Broadcasting bingo claim: ${JSON.stringify(claimData)}`, 'info');
       
       try {
         // First record the claim in the database for persistence
@@ -236,7 +239,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
             event: 'bingo-claim',
             payload: claimData
           }).then(() => {
-            logWithTimestamp('Claim broadcast sent successfully');
+            logWithTimestamp('Claim broadcast sent successfully', 'info');
             
             // Clean up the temporary channel
             supabase.removeChannel(channel);
@@ -261,7 +264,8 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
                 });
               }
             }, 10000);
-          }).catch((error) => {
+          }, (error) => {
+            // Fixed: Use .then with second error handler instead of .catch
             console.error('Error sending claim broadcast:', error);
             setClaimStatus('none');
             setIsSubmittingClaim(false);

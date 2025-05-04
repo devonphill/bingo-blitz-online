@@ -22,7 +22,7 @@ export default function CurrentNumberDisplay({
   
   useEffect(() => {
     // Log for debugging
-    logWithTimestamp(`CurrentNumberDisplay: Received number ${number}, prev was ${prevNumber}, isNew: ${isNew}`);
+    logWithTimestamp(`CurrentNumberDisplay: Received number ${number}, prev was ${prevNumber}, isNew: ${isNew}`, 'debug');
     
     // Only animate when the number actually changes
     if (number !== null && number !== prevNumber) {

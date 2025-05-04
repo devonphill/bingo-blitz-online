@@ -69,11 +69,11 @@ export default function PlayerGameContent({
   // Use CONNECTION MANAGER ONLY for all real-time updates
   useEffect(() => {
     if (!currentSession?.id) {
-      logWithTimestamp(`PlayerGameContent (${instanceId.current}): No session ID, skipping connection setup`);
+      logWithTimestamp(`PlayerGameContent (${instanceId.current}): No session ID, skipping connection setup`, 'info');
       return;
     }
     
-    logWithTimestamp(`PlayerGameContent (${instanceId.current}): Setting up connection manager for session ${currentSession.id}`);
+    logWithTimestamp(`PlayerGameContent (${instanceId.current}): Setting up connection manager for session ${currentSession.id}`, 'info');
     
     try {
       // Initialize connection without creating new channels internally
@@ -81,13 +81,13 @@ export default function PlayerGameContent({
         .onNumberCalled((number, allNumbers) => {
           // Handle null case from reset events
           if (number === null) {
-            logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received reset event, clearing numbers`);
+            logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received reset event, clearing numbers`, 'info');
             setRtCalledNumbers([]);
             setRtLastCalledNumber(null);
             return;
           }
           
-          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received number call via connection manager: ${number}, total numbers: ${allNumbers.length}`);
+          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received number call via connection manager: ${number}, total numbers: ${allNumbers.length}`, 'info');
           
           // Only update if we have new data
           if (number !== rtLastCalledNumber || allNumbers.length !== rtCalledNumbers.length) {
@@ -106,7 +106,7 @@ export default function PlayerGameContent({
         })
         .onSessionProgressUpdate((progress) => {
           // This callback is required to avoid the error we were seeing
-          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Session progress update received`);
+          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Session progress update received`, 'info');
           
           // Update connection state
           setIsConnected(true);
@@ -121,7 +121,7 @@ export default function PlayerGameContent({
             if (!rtCalledNumbers.length || 
                 rtCalledNumbers.length !== progress.called_numbers.length ||
                 rtLastCalledNumber !== lastNumber) {
-              logWithTimestamp(`PlayerGameContent (${instanceId.current}): Updating called numbers from progress`);
+              logWithTimestamp(`PlayerGameContent (${instanceId.current}): Updating called numbers from progress`, 'info');
               setRtCalledNumbers(progress.called_numbers);
               setRtLastCalledNumber(lastNumber);
             }
@@ -138,20 +138,20 @@ export default function PlayerGameContent({
       
     // Clean up on unmount - but don't call cleanup() directly to avoid interrupting other components
     return () => {
-      logWithTimestamp(`PlayerGameContent (${instanceId.current}): Unregistering callbacks from connection manager`);
+      logWithTimestamp(`PlayerGameContent (${instanceId.current}): Unregistering callbacks from connection manager`, 'info');
     };
   }, [currentSession?.id, rtCalledNumbers.length, rtLastCalledNumber]);
   
   // Log state for debugging
   useEffect(() => {
-    logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Session ID: ${currentSession?.id}, Player: ${playerName || playerCode}, Connection: ${isConnected ? 'connected' : 'disconnected'}`);
+    logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Session ID: ${currentSession?.id}, Player: ${playerName || playerCode}, Connection: ${isConnected ? 'connected' : 'disconnected'}`, 'info');
     
     if (rtCalledNumbers.length > 0) {
-      logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Real-time called numbers: ${rtCalledNumbers.length}, last: ${rtLastCalledNumber}`);
+      logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Real-time called numbers: ${rtCalledNumbers.length}, last: ${rtLastCalledNumber}`, 'info');
     }
     
     if (activeWinPattern) {
-      logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Active win pattern: ${activeWinPattern}`);
+      logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Active win pattern: ${activeWinPattern}`, 'info');
     }
   }, [currentSession?.id, playerName, playerCode, rtCalledNumbers, rtLastCalledNumber, isConnected, activeWinPattern]);
 
@@ -205,7 +205,7 @@ export default function PlayerGameContent({
 
   // Function to manually trigger reconnection with improved error handling
   const handleManualReconnect = () => {
-    logWithTimestamp(`Manual reconnection requested by user`);
+    logWithTimestamp(`Manual reconnection requested by user`, 'info');
     
     // Reset connection state
     setConnectionStatus('connecting');
