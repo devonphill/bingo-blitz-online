@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
@@ -8,6 +9,7 @@ export const connectionManager = {
   lastPingTimestamp: 0,
   sessionId: null as string | null,
   listeners: {
+    numberCalled: [] as Function[],
     gameStateUpdate: [] as Function[],
     connectionStatusChange: [] as Function[],
     playersUpdate: [] as Function[],
@@ -200,6 +202,11 @@ export const connectionManager = {
   },
   
   // Public event subscription methods (used for chaining)
+  onNumberCalled(callback: Function) {
+    this.listeners.numberCalled.push(callback);
+    return this;
+  },
+  
   onGameStateUpdate(callback: Function) {
     this.listeners.gameStateUpdate.push(callback);
     return this;
@@ -217,6 +224,12 @@ export const connectionManager = {
   
   onTicketsAssigned(callback: Function) {
     this.listeners.ticketsAssigned.push(callback);
+    return this;
+  },
+  
+  onSessionProgressUpdate(callback: Function) {
+    // Add to game state update listeners since that's what handles this data
+    this.listeners.gameStateUpdate.push(callback);
     return this;
   },
   
@@ -319,8 +332,22 @@ export const connectionManager = {
     // Update last ping time when we receive broadcasts
     this.lastPingTimestamp = Date.now();
     
-    // This is handled by game state updates, no specific listeners for this
-    logWithTimestamp(`Number called: ${payload.payload?.lastCalledNumber}`, 'debug');
+    // Extract the actual data - either from the payload.payload (Supabase broadcast structure)
+    // or directly from payload (direct message structure)
+    const data = payload.payload || payload;
+    const lastCalledNumber = data?.lastCalledNumber || data?.last_called_number;
+    const calledNumbers = data?.calledNumbers || data?.called_numbers || [];
+
+    logWithTimestamp(`Number called: ${lastCalledNumber}, all numbers: ${calledNumbers.length}`, 'debug');
+    
+    // Call all number called listeners
+    this.listeners.numberCalled.forEach(callback => {
+      try {
+        callback(lastCalledNumber, calledNumbers);
+      } catch (err) {
+        logWithTimestamp(`Error in numberCalled callback: ${err}`, 'error');
+      }
+    });
   },
   
   handleBingoClaim(payload: any) {
