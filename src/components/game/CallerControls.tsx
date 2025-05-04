@@ -25,7 +25,8 @@ interface CallerControlsProps {
   onCloseGame?: () => void;
   numberOfGames?: number;
   currentGameNumber?: number;
-  onForceClose?: () => void; // New prop for forced game close
+  onForceClose?: () => void;
+  gameConfigs?: any[]; // Added this missing prop
 }
 
 export default function CallerControls({ 
@@ -42,7 +43,8 @@ export default function CallerControls({
   onCloseGame,
   numberOfGames = 1,
   currentGameNumber = 1,
-  onForceClose // New prop handling
+  onForceClose, // New prop for forced game close
+  gameConfigs // Added this missing prop
 }: CallerControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
