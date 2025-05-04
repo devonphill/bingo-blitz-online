@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from './logUtils';
 
@@ -17,6 +16,7 @@ class ConnectionManager {
   private isConnected = false;
   private initialized = false;
   private lastNumberBroadcast = Date.now();
+  private pollingInterval: ReturnType<typeof setInterval> | null = null;
   
   // Initialize with a session ID
   initialize(sessionId: string) {
@@ -36,70 +36,93 @@ class ConnectionManager {
     // Set up channels for number calls, player updates, and session progress
     this.setupChannels();
     
-    // Set up database polling
+    // Set up database polling as a fallback
     this.setupPolling();
     
     return this;
   }
   
-  // Set up the broadcast channels
+  // Set up the broadcast channels with improved error handling
   private setupChannels() {
     if (!this.sessionId) return;
     
     logWithTimestamp(`Setting up channels for session ${this.sessionId}`);
     
-    // Create primary number broadcast channel
-    const numberBroadcastChannel = supabase.channel('number-broadcast');
-    numberBroadcastChannel
-      .on('broadcast', { event: 'number-called' }, payload => {
-        if (payload.payload?.sessionId === this.sessionId) {
-          logWithTimestamp(`Received number call: ${payload.payload.lastCalledNumber}, total numbers: ${payload.payload.calledNumbers?.length || 0}`);
-          this.notifyNumberCalled(payload.payload.lastCalledNumber, payload.payload.calledNumbers || []);
-        }
-      })
-      .subscribe((status) => {
-        logWithTimestamp(`Number broadcast channel status: ${status}`);
-        this.isConnected = status === 'SUBSCRIBED';
-      });
-    
-    // Create backup channel specific to this session
-    const sessionNumberChannel = supabase.channel(`number-broadcast-${this.sessionId}`);
-    sessionNumberChannel
-      .on('broadcast', { event: 'number-called' }, payload => {
-        if (payload.payload?.sessionId === this.sessionId) {
-          logWithTimestamp(`[Backup] Received number call: ${payload.payload.lastCalledNumber}`);
-          this.notifyNumberCalled(payload.payload.lastCalledNumber, payload.payload.calledNumbers || []);
-        }
-      })
-      .subscribe();
-    
-    // Channel for game updates
-    const gameUpdatesChannel = supabase.channel('game-updates');
-    gameUpdatesChannel
-      .on('broadcast', { event: 'players-update' }, payload => {
-        if (payload.payload?.sessionId === this.sessionId) {
-          logWithTimestamp(`Received players update for session ${this.sessionId}`);
-          this.notifyPlayersUpdate(payload.payload.players || []);
-        }
-      })
-      .on('broadcast', { event: 'session-progress' }, payload => {
-        if (payload.payload?.sessionId === this.sessionId) {
-          logWithTimestamp(`Received session progress update for session ${this.sessionId}`);
-          this.notifySessionProgressUpdate(payload.payload);
-        }
-      })
-      .subscribe();
-    
-    // Store channels for later cleanup
-    this.channels = [numberBroadcastChannel, sessionNumberChannel, gameUpdatesChannel];
+    try {
+      // Create a single main channel for all game events
+      const gameChannel = supabase.channel(`game-channel-${this.sessionId}`);
+      gameChannel
+        .on('broadcast', { event: 'number-called' }, payload => {
+          if (payload.payload?.sessionId === this.sessionId) {
+            logWithTimestamp(`Received number call: ${payload.payload.lastCalledNumber}, total numbers: ${payload.payload.calledNumbers?.length || 0}`);
+            this.notifyNumberCalled(payload.payload.lastCalledNumber, payload.payload.calledNumbers || []);
+          }
+        })
+        .on('broadcast', { event: 'players-update' }, payload => {
+          if (payload.payload?.sessionId === this.sessionId) {
+            logWithTimestamp(`Received players update for session ${this.sessionId}`);
+            this.notifyPlayersUpdate(payload.payload.players || []);
+          }
+        })
+        .on('broadcast', { event: 'session-progress' }, payload => {
+          if (payload.payload?.sessionId === this.sessionId) {
+            logWithTimestamp(`Received session progress update for session ${this.sessionId}`);
+            this.notifySessionProgressUpdate(payload.payload);
+          }
+        })
+        .on('broadcast', { event: 'claim-result' }, payload => {
+          logWithTimestamp(`Received claim result: ${JSON.stringify(payload.payload)}`);
+          // Just log this event for now - specific handling will be in the client components
+        })
+        .subscribe((status) => {
+          logWithTimestamp(`Game channel status: ${status}`);
+          this.isConnected = status === 'SUBSCRIBED';
+          
+          // If connection failed, schedule a single retry
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            setTimeout(() => {
+              logWithTimestamp(`Attempting to reconnect game channel after error`);
+              // Only attempt to reconnect if we're still initialized
+              if (this.initialized) {
+                this.reconnect();
+              }
+            }, 5000);
+          }
+        });
+      
+      this.channels.push(gameChannel);
+      
+      // Also set up a dedicated claims channel
+      const claimsChannel = supabase.channel(`claims-channel-${this.sessionId}`);
+      claimsChannel
+        .on('broadcast', { event: 'bingo-claim' }, payload => {
+          if (payload.payload?.sessionId === this.sessionId) {
+            logWithTimestamp(`Received bingo claim for session ${this.sessionId}`);
+            // This will be handled by the claim verification component
+          }
+        })
+        .subscribe();
+      
+      this.channels.push(claimsChannel);
+      
+    } catch (error) {
+      console.error('Error setting up channels:', error);
+      logWithTimestamp(`Error setting up channels: ${error}`);
+    }
   }
   
-  // Set up database polling as a fallback
+  // Set up database polling as a fallback with improved error handling
   private setupPolling() {
     if (!this.sessionId) return;
     
+    // Clear any existing polling interval
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+    }
+    
     // Set up polling every 10 seconds
-    const pollingIntervalId = setInterval(async () => {
+    this.pollingInterval = setInterval(async () => {
       try {
         // Only poll if we haven't received a broadcast recently
         if (Date.now() - this.lastNumberBroadcast > 8000) {
@@ -131,21 +154,34 @@ class ConnectionManager {
         console.error('Error during polling:', error);
       }
     }, 10000); // Poll every 10 seconds
-    
-    // Create dummy channel just to store the interval for cleanup
-    const pollingChannel = { id: 'polling', unsubscribe: () => clearInterval(pollingIntervalId) };
-    this.channels.push(pollingChannel);
   }
   
   // Clean up channels and reset state
   cleanup() {
     logWithTimestamp('Cleaning up ConnectionManager');
     
-    // Remove all channels
-    this.channels.forEach(channel => {
-      if (channel.unsubscribe) channel.unsubscribe();
-      else if (channel.id !== 'polling') supabase.removeChannel(channel);
-    });
+    // Clear polling interval if it exists
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+    }
+    
+    // Remove all channels with improved error handling
+    if (this.channels.length > 0) {
+      try {
+        this.channels.forEach(channel => {
+          if (channel) {
+            if (typeof channel.unsubscribe === 'function') {
+              channel.unsubscribe();
+            } else {
+              supabase.removeChannel(channel);
+            }
+          }
+        });
+      } catch (error) {
+        console.error('Error removing channels:', error);
+      }
+    }
     
     this.channels = [];
     this.isConnected = false;
@@ -187,7 +223,7 @@ class ConnectionManager {
     this.sessionProgressUpdateCallbacks.forEach(callback => callback(progress));
   }
   
-  // Manually call a number
+  // Manually call a number with improved error handling
   callNumber(number: number, sessionId?: string) {
     if (!this.sessionId && !sessionId) {
       logWithTimestamp('Cannot call number: no session ID');
@@ -235,7 +271,7 @@ class ConnectionManager {
       });
   }
   
-  // Broadcast a number call to all channels
+  // Broadcast a number call to all channels with improved error handling
   private broadcastNumberCall(lastCalledNumber: number, calledNumbers: number[], sessionId: string) {
     logWithTimestamp(`Broadcasting number call: ${lastCalledNumber}, total numbers: ${calledNumbers.length}`);
     
@@ -246,33 +282,35 @@ class ConnectionManager {
       timestamp: new Date().toISOString()
     };
     
-    // Broadcast on multiple channels for redundancy using proper Promise handling
-    const promises = [
-      supabase.channel('number-broadcast').send({
-        type: 'broadcast',
-        event: 'number-called',
-        payload
-      }),
-      supabase.channel(`number-broadcast-${sessionId}`).send({
-        type: 'broadcast',
-        event: 'number-called',
-        payload
-      })
-    ];
-    
-    // Make sure promises is an array of Promises that definitely have a catch method
-    const safePromises = promises.map(p => Promise.resolve(p));
-    
-    // Now use Promise.all with proper error handling
-    Promise.all(safePromises)
-      .then(() => logWithTimestamp('Number call broadcast successful'))
-      .catch(error => console.error('Error broadcasting number call:', error));
+    // Create a proper Promise that supports catch
+    try {
+      const channel = supabase.channel(`game-channel-${sessionId}`);
       
-    // Also notify local callbacks
-    this.notifyNumberCalled(lastCalledNumber, calledNumbers);
+      // Use Promise.resolve to ensure we have a full Promise with catch
+      Promise.resolve(
+        channel.send({
+          type: 'broadcast',
+          event: 'number-called',
+          payload
+        })
+      )
+      .then(() => {
+        logWithTimestamp('Number call broadcast successful');
+      })
+      .catch(error => {
+        console.error('Error broadcasting number call:', error);
+        logWithTimestamp(`Error broadcasting number call: ${error}`);
+      });
+      
+      // Also notify local callbacks
+      this.notifyNumberCalled(lastCalledNumber, calledNumbers);
+    } catch (error) {
+      console.error('Error in broadcastNumberCall:', error);
+      logWithTimestamp(`Error in broadcastNumberCall: ${error}`);
+    }
   }
   
-  // Fetch claims for the current session
+  // Fetch claims for the current session with improved error handling
   async fetchClaims() {
     if (!this.sessionId) {
       logWithTimestamp('Cannot fetch claims: no session ID');
@@ -289,17 +327,20 @@ class ConnectionManager {
         
       if (error) {
         console.error('Error fetching claims:', error);
+        logWithTimestamp(`Error fetching claims: ${error}`);
         return [];
       }
       
+      logWithTimestamp(`Fetched ${data?.length || 0} pending claims`);
       return data || [];
     } catch (error) {
       console.error('Error fetching claims:', error);
+      logWithTimestamp(`Error in fetchClaims: ${error}`);
       return [];
     }
   }
   
-  // Reconnect all channels
+  // Reconnect all channels with improved error handling
   reconnect() {
     if (!this.sessionId) {
       logWithTimestamp('Cannot reconnect: no session ID');
@@ -308,27 +349,121 @@ class ConnectionManager {
     
     logWithTimestamp(`Reconnecting ConnectionManager for session ${this.sessionId}`);
     
-    // Clean up and re-initialize everything
-    this.cleanup();
-    this.initialize(this.sessionId);
-    
-    // Force a database refresh
-    supabase
-      .from('sessions_progress')
-      .select('*')
-      .eq('session_id', this.sessionId)
-      .single()
-      .then(({ data }) => {
-        if (data) {
-          this.notifySessionProgressUpdate(data);
-          
-          if (data.called_numbers && data.called_numbers.length > 0) {
-            const lastCalledNumber = data.called_numbers[data.called_numbers.length - 1];
-            this.notifyNumberCalled(lastCalledNumber, data.called_numbers);
+    try {
+      // Clean up existing channels but keep session ID
+      const sessionIdToReconnect = this.sessionId;
+      
+      // Remove channels but don't reset session/initialized state
+      if (this.channels.length > 0) {
+        this.channels.forEach(channel => {
+          if (channel) {
+            try {
+              if (typeof channel.unsubscribe === 'function') {
+                channel.unsubscribe();
+              } else {
+                supabase.removeChannel(channel);
+              }
+            } catch (err) {
+              console.error('Error removing channel during reconnect:', err);
+            }
           }
-        }
-      })
-      .catch(error => console.error('Error during reconnection data fetch:', error));
+        });
+      }
+      
+      this.channels = [];
+      
+      // Clear polling interval if it exists
+      if (this.pollingInterval) {
+        clearInterval(this.pollingInterval);
+        this.pollingInterval = null;
+      }
+      
+      // Re-setup channels and polling
+      this.setupChannels();
+      this.setupPolling();
+      
+      // Force a database refresh
+      supabase
+        .from('sessions_progress')
+        .select('*')
+        .eq('session_id', sessionIdToReconnect)
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            this.notifySessionProgressUpdate(data);
+            
+            if (data.called_numbers && data.called_numbers.length > 0) {
+              const lastCalledNumber = data.called_numbers[data.called_numbers.length - 1];
+              this.notifyNumberCalled(lastCalledNumber, data.called_numbers);
+            }
+          }
+        })
+        .catch(error => {
+          console.error('Error during reconnection data fetch:', error);
+          logWithTimestamp(`Error during reconnection data fetch: ${error}`);
+        });
+        
+    } catch (error) {
+      console.error('Error during reconnect:', error);
+      logWithTimestamp(`Error during reconnect: ${error}`);
+    }
+  }
+  
+  // Validate a claim from a player
+  validateClaim(claim: any, isValid: boolean) {
+    if (!this.sessionId) {
+      logWithTimestamp('Cannot validate claim: no session ID');
+      return;
+    }
+    
+    logWithTimestamp(`Validating claim for player ${claim.playerName || claim.player_name}, isValid: ${isValid}`);
+    
+    try {
+      // Update the claim in the database
+      supabase
+        .from('universal_game_logs')
+        .update({
+          validated_at: new Date().toISOString(),
+          prize_shared: isValid
+        })
+        .eq('id', claim.id)
+        .then(({ error }) => {
+          if (error) {
+            console.error('Error validating claim:', error);
+            return;
+          }
+          
+          // Broadcast the result to players
+          const broadcastChannel = supabase.channel(`game-channel-${this.sessionId}`);
+          
+          try {
+            Promise.resolve(
+              broadcastChannel.send({
+                type: 'broadcast',
+                event: 'claim-result',
+                payload: {
+                  playerId: claim.player_id || claim.playerId,
+                  sessionId: this.sessionId,
+                  result: isValid ? 'valid' : 'rejected',
+                  timestamp: new Date().toISOString()
+                }
+              })
+            )
+            .then(() => {
+              logWithTimestamp(`Claim result broadcast successful: ${isValid ? 'valid' : 'rejected'}`);
+            })
+            .catch(err => {
+              console.error('Error broadcasting claim result:', err);
+              logWithTimestamp(`Error broadcasting claim result: ${err}`);
+            });
+          } catch (err) {
+            console.error('Error in claim result broadcast:', err);
+          }
+        });
+    } catch (error) {
+      console.error('Error in validateClaim:', error);
+      logWithTimestamp(`Error in validateClaim: ${error}`);
+    }
   }
 }
 
