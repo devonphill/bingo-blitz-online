@@ -63,6 +63,15 @@ export function LiveGameView({
   const [claims, setClaims] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
+  // Track component mount state
+  const isMounted = React.useRef(true);
+  
+  React.useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+  
   // Set up connection manager when component mounts
   useEffect(() => {
     console.log('LiveGameView: Setting up connection manager');
@@ -73,82 +82,82 @@ export function LiveGameView({
     }
     
     // Initialize connection manager with session ID
-    connectionManager.initialize(sessionId)
-      .onPlayersUpdate((players) => {
-        console.log(`Received ${players.length} players update`);
-        setConnectedPlayers(players);
-        setIsLoading(false);
-      })
-      .onSessionProgressUpdate((progress) => {
-        console.log('Received session progress update');
-        // We don't need to do anything with this yet,
-        // as the parent component handles progress
-      });
+    // This doesn't create a new connection if one exists
+    connectionManager.initialize(sessionId);
+    
+    // Set up players update callback - works with the existing channel
+    const playersUpdateCallback = (players: any[]) => {
+      if (!isMounted.current) return;
+      
+      console.log(`Received ${players.length} players update`);
+      setConnectedPlayers(players);
+      setIsLoading(false);
+    };
+    
+    connectionManager.onPlayersUpdate(playersUpdateCallback);
     
     // Initial claims fetch
     const fetchClaims = async () => {
       if (sessionId) {
         try {
           const fetchedClaims = await connectionManager.fetchClaims(sessionId);
-          if (Array.isArray(fetchedClaims)) {
-            setClaims(fetchedClaims);
-          } else {
-            console.error("Fetched claims is not an array:", fetchedClaims);
-            setClaims([]);
+          if (isMounted.current) {
+            if (Array.isArray(fetchedClaims)) {
+              setClaims(fetchedClaims);
+            } else {
+              console.error("Fetched claims is not an array:", fetchedClaims);
+              setClaims([]);
+            }
           }
         } catch (error) {
           console.error("Error fetching claims:", error);
-          setClaims([]);
+          if (isMounted.current) {
+            setClaims([]);
+          }
         }
       }
     };
     
     fetchClaims();
-    
-    // Cleanup on unmount
-    return () => {
-      console.log('LiveGameView: Cleaning up connection manager');
-      connectionManager.cleanup();
-    };
   }, [sessionId]);
   
-  // Set up claims polling
+  // Set up claims polling - separate from connection management
   useEffect(() => {
+    if (!sessionId) return;
+    
     const pollClaims = async () => {
-      if (sessionId) {
-        try {
-          // Use a direct supabase query to get pending claims
-          const { data, error } = await supabase
-            .from('universal_game_logs')
-            .select('*')
-            .eq('session_id', sessionId)
-            .is('validated_at', null)
-            .not('claimed_at', 'is', null);
+      try {
+        // Use a direct supabase query to get pending claims
+        const { data, error } = await supabase
+          .from('universal_game_logs')
+          .select('*')
+          .eq('session_id', sessionId)
+          .is('validated_at', null)
+          .not('claimed_at', 'is', null);
+        
+        if (error) {
+          console.error("Error fetching claims:", error);
+          return;
+        }
+        
+        if (Array.isArray(data) && isMounted.current) {
+          setClaims(data);
           
-          if (error) {
-            console.error("Error fetching claims:", error);
-            return;
-          }
-          
-          if (Array.isArray(data)) {
-            setClaims(data);
+          // Auto-open claims sheet if new claims arrive
+          if (data.length > 0 && data.length !== claims.length) {
+            logWithTimestamp(`Found ${data.length} pending claims, was ${claims.length} before`);
             
-            // Auto-open claims sheet if new claims arrive
-            if (data.length > 0 && data.length !== claims.length) {
-              logWithTimestamp(`Found ${data.length} pending claims, was ${claims.length} before`);
-              
-              if (data.length > claims.length) {
-                toast({
-                  title: "New Bingo Claim!",
-                  description: `A new bingo claim has been submitted. Check the claims panel to verify.`,
-                  variant: "default",
-                });
-              }
+            if (data.length > claims.length) {
+              toast({
+                title: "New Bingo Claim!",
+                description: `A new bingo claim has been submitted. Check the claims panel to verify.`,
+                variant: "default",
+              });
             }
           }
-        } catch (error) {
-          console.error("Error fetching claims during polling:", error);
         }
+      } catch (error) {
+        console.error("Error fetching claims during polling:", error);
       }
     };
     
@@ -166,7 +175,8 @@ export function LiveGameView({
     
     // Force immediate polling
     if (sessionId) {
-      connectionManager.initialize(sessionId);
+      // This doesn't create a new connection, just refreshes the existing one
+      connectionManager.reconnect();
       
       toast({
         title: "Reconnecting",

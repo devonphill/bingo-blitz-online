@@ -30,14 +30,51 @@ const PlayerList: React.FC<PlayerListProps> = ({
 }) => {
   const [players, setPlayers] = useState(initialPlayers);
   const [isLoading, setIsLoading] = useState(initialLoading);
+  // Use a ref to avoid stale closures in event handlers
+  const playersRef = React.useRef(initialPlayers);
+  
+  // Update ref when players prop changes
+  React.useEffect(() => {
+    playersRef.current = initialPlayers;
+  }, [initialPlayers]);
 
-  // Fetch players and set up presence tracking
+  // Track if component is mounted
+  const isMounted = React.useRef(true);
+  
+  React.useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  // Fetch players and set up presence tracking, using the single connection method
   useEffect(() => {
     if (!sessionId) return;
     
     setIsLoading(true);
+    
+    // Only add listener for players updates from connectionManager
+    // This ensures we don't create a new channel, we just listen to the existing one
+    const playersUpdateCallback = (activePlayers: any[]) => {
+      if (!isMounted.current) return;
+      
+      if (activePlayers && activePlayers.length > 0) {
+        logWithTimestamp(`PlayerList: Received ${activePlayers.length} active players update`);
+        
+        // Only set players if they've actually changed to avoid render loops
+        if (JSON.stringify(activePlayers) !== JSON.stringify(playersRef.current)) {
+          setPlayers(activePlayers);
+          playersRef.current = activePlayers;
+        }
+        
+        setIsLoading(false);
+      }
+    };
 
-    // Fetch initial players list from database
+    // Add the callback to the connection manager
+    connectionManager.onPlayersUpdate(playersUpdateCallback);
+    
+    // Initial players load from database - only once on mount
     const fetchPlayers = async () => {
       try {
         const { data, error } = await supabase
@@ -50,7 +87,7 @@ const PlayerList: React.FC<PlayerListProps> = ({
           return;
         }
 
-        if (data) {
+        if (data && isMounted.current) {
           // Format the players data
           const formattedPlayers = data.map(p => ({
             id: p.id,
@@ -60,30 +97,33 @@ const PlayerList: React.FC<PlayerListProps> = ({
             joinedAt: p.joined_at,
             tickets: p.tickets
           }));
+          
+          // Only update if the component is still mounted
           setPlayers(formattedPlayers);
+          playersRef.current = formattedPlayers;
           logWithTimestamp(`PlayerList: Fetched ${formattedPlayers.length} players from database`);
         }
       } catch (err) {
         console.error('Error in player fetch:', err);
       } finally {
-        setIsLoading(false);
+        if (isMounted.current) {
+          setIsLoading(false);
+        }
       }
     };
 
     // Execute the fetch
     fetchPlayers();
     
-    // Set up realtime updates for player presence using the connectionManager
-    connectionManager.initialize(sessionId)
-      .onPlayersUpdate((activePlayers) => {
-        if (activePlayers && activePlayers.length > 0) {
-          logWithTimestamp(`PlayerList: Received ${activePlayers.length} active players update`);
-          setPlayers(activePlayers);
-          setIsLoading(false);
-        }
-      });
-
-    // No need for cleanup here as connectionManager handles it
+    // Request a reconnect to ensure we're connected to the latest data
+    // This will trigger presence updates through the existing channel
+    connectionManager.reconnect();
+    
+    // Cleanup - we don't remove the callback since connectionManager is a singleton
+    // and other components may rely on the same channel
+    return () => {
+      // Nothing to do here - connectionManager handles cleanup
+    };
   }, [sessionId]);
 
   // Simple loading state
