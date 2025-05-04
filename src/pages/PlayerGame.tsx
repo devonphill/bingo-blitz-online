@@ -356,6 +356,11 @@ export default function PlayerGame() {
   console.log("- Prize info:", finalWinPrizes);
   console.log("- Player name:", playerName);
   console.log("- Connection state:", connectionState);
+  
+  // Map the claimStatus to the expected format
+  const mappedClaimStatus = claimStatus === 'valid' ? 'validated' : 
+                          claimStatus === 'invalid' ? 'rejected' : 
+                          claimStatus;
 
   return (
     <React.Fragment>
@@ -375,7 +380,7 @@ export default function PlayerGame() {
         errorMessage={effectiveErrorMessage || ''}
         isLoading={isLoading}
         isClaiming={isSubmittingClaim}
-        claimStatus={claimStatus}
+        claimStatus={mappedClaimStatus as any}
         gameType={gameType}
         currentGameNumber={currentGameNumber}
         numberOfGames={numberOfGames}

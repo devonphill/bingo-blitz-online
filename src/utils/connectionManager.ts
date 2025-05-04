@@ -12,6 +12,7 @@ class ConnectionManager {
   private progressUpdateCallback: ProgressCallback | null = null;
   private numberCalledCallback: NumberCallback | null = null;
   private playersUpdateCallback: PlayersCallback | null = null;
+  private connectionState: 'disconnected' | 'connecting' | 'connected' | 'error' = 'disconnected';
 
   constructor() {
     logWithTimestamp("ConnectionManager created");
@@ -19,7 +20,9 @@ class ConnectionManager {
 
   public initialize(sessionId: string) {
     this.sessionId = sessionId;
+    this.connectionState = 'connecting';
     logWithTimestamp(`Initializing connection manager with session ID: ${sessionId}`);
+    this.setupListeners();
     return this;
   }
 
@@ -61,6 +64,7 @@ class ConnectionManager {
           ) {
             const { lastCalledNumber, calledNumbers } = payload.payload;
             this.numberCalledCallback(lastCalledNumber, calledNumbers);
+            this.connectionState = 'connected';
           }
         }
       )
@@ -75,6 +79,7 @@ class ConnectionManager {
             this.progressUpdateCallback
           ) {
             this.progressUpdateCallback(payload.payload);
+            this.connectionState = 'connected';
           }
         }
       )
@@ -82,6 +87,13 @@ class ConnectionManager {
         logWithTimestamp(`Channel subscription status: ${status}`);
         if (error) {
           logWithTimestamp(`Channel subscription error: ${JSON.stringify(error)}`);
+          this.connectionState = 'error';
+        } else if (status === 'SUBSCRIBED') {
+          this.connectionState = 'connected';
+        } else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR') {
+          this.connectionState = 'error';
+        } else {
+          this.connectionState = 'connecting';
         }
       });
   }
@@ -113,6 +125,7 @@ class ConnectionManager {
         
       if (error) {
         logWithTimestamp(`Error fetching players: ${JSON.stringify(error)}`);
+        this.connectionState = 'error';
         return [];
       }
       
@@ -123,6 +136,7 @@ class ConnectionManager {
       return data || [];
     } catch (err) {
       logWithTimestamp(`Exception fetching players: ${err}`);
+      this.connectionState = 'error';
       return [];
     }
   }
@@ -135,20 +149,23 @@ class ConnectionManager {
     try {
       logWithTimestamp(`Fetching claims for session ${this.sessionId}`);
       
-      // Use the get_pending_claims RPC function
-      const { data, error } = await supabase.rpc(
-        'get_pending_claims', 
-        { p_session_id: this.sessionId }
-      );
+      // Use direct query instead of RPC
+      const { data, error } = await supabase
+        .from('universal_game_logs')
+        .select('*')
+        .eq('session_id', this.sessionId)
+        .is('validated_at', null);
       
       if (error) {
         logWithTimestamp(`Error fetching claims: ${JSON.stringify(error)}`);
+        this.connectionState = 'error';
         return [];
       }
       
       return data || [];
     } catch (err) {
       logWithTimestamp(`Exception fetching claims: ${err}`);
+      this.connectionState = 'error';
       return [];
     }
   }
@@ -175,8 +192,10 @@ class ConnectionManager {
         .then(({ error }) => {
           if (error) {
             logWithTimestamp(`Error updating called numbers: ${JSON.stringify(error)}`);
+            this.connectionState = 'error';
           } else {
             logWithTimestamp(`Successfully updated called numbers in database`);
+            this.connectionState = 'connected';
           }
         });
       
@@ -195,9 +214,11 @@ class ConnectionManager {
         })
         .then(() => {
           logWithTimestamp(`Successfully broadcast number ${number}`);
+          this.connectionState = 'connected';
         })
         .catch(err => {
           logWithTimestamp(`Error broadcasting number: ${err}`);
+          this.connectionState = 'error';
         });
     });
   }
@@ -216,18 +237,21 @@ class ConnectionManager {
         
       if (error) {
         logWithTimestamp(`Error fetching session progress: ${JSON.stringify(error)}`);
+        this.connectionState = 'error';
         return null;
       }
       
       return data;
     } catch (err) {
       logWithTimestamp(`Exception fetching session progress: ${err}`);
+      this.connectionState = 'error';
       return null;
     }
   }
 
   public reconnect() {
     logWithTimestamp("Attempting to reconnect");
+    this.connectionState = 'connecting';
     this.setupListeners();
   }
 
@@ -236,7 +260,13 @@ class ConnectionManager {
       logWithTimestamp("Cleaning up connection manager");
       supabase.removeChannel(this.channel);
       this.channel = null;
+      this.connectionState = 'disconnected';
     }
+  }
+  
+  // Add method to get connection state
+  public getConnectionState(): 'disconnected' | 'connecting' | 'connected' | 'error' {
+    return this.connectionState;
   }
 }
 

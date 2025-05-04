@@ -250,7 +250,7 @@ export function usePlayerGame(playerCode: string | null) {
     
     try {
       // Insert claim record in game logs
-      const { error: logError } = await supabase.from('universal_game_logs').insert([{
+      const { error: logError } = await supabase.from('universal_game_logs').insert({
         session_id: currentSession.id,
         game_number: currentSession.current_game,
         game_type: gameType,
@@ -258,8 +258,14 @@ export function usePlayerGame(playerCode: string | null) {
         player_id: playerCode,
         player_name: playerName,
         claimed_at: new Date().toISOString(),
-        validated_at: null // This will be updated when the caller validates
-      }]);
+        validated_at: null,
+        // Add missing required fields
+        called_numbers: calledItems || [],
+        ticket_numbers: [],
+        ticket_layout_mask: 0,
+        ticket_perm: 0,
+        total_calls: calledItems ? calledItems.length : 0
+      });
       
       if (logError) {
         console.error('Error logging claim:', logError);
@@ -310,7 +316,7 @@ export function usePlayerGame(playerCode: string | null) {
     } finally {
       setIsSubmittingClaim(false);
     }
-  }, [currentSession, playerId, playerName, playerCode, gameType, activeWinPatterns, claimStatus, toast, isSubmittingClaim]);
+  }, [currentSession, playerId, playerName, playerCode, gameType, activeWinPatterns, calledItems, claimStatus, toast, isSubmittingClaim]);
 
   return {
     playerName,

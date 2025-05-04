@@ -8,6 +8,7 @@ export function useCallerHub(sessionId: string | undefined) {
   const [pendingClaims, setPendingClaims] = useState<any[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const { toast } = useToast();
 
   // Fetch pending claims on mount and periodically
@@ -16,6 +17,7 @@ export function useCallerHub(sessionId: string | undefined) {
     
     // Initial fetch
     fetchPendingClaims();
+    setConnectionState('connecting');
     
     // Set up polling
     const interval = setInterval(fetchPendingClaims, 5000);
@@ -36,11 +38,13 @@ export function useCallerHub(sessionId: string | undefined) {
       .subscribe((status) => {
         logWithTimestamp(`Caller hub connection status: ${status}`);
         setIsConnected(status === 'SUBSCRIBED');
+        setConnectionState(status === 'SUBSCRIBED' ? 'connected' : 'connecting');
       });
       
     return () => {
       clearInterval(interval);
       supabase.removeChannel(channel);
+      setConnectionState('disconnected');
     };
   }, [sessionId, toast]);
   
@@ -51,14 +55,16 @@ export function useCallerHub(sessionId: string | undefined) {
     try {
       logWithTimestamp(`Fetching pending claims for session ${sessionId}`);
       
-      // Use the RPC function to get pending claims
-      const { data, error } = await supabase.rpc(
-        'get_pending_claims',
-        { p_session_id: sessionId }
-      );
+      // Use the RPC function to get pending claims - updated to use direct query instead of RPC
+      const { data, error } = await supabase
+        .from('universal_game_logs')
+        .select('*')
+        .eq('session_id', sessionId)
+        .is('validated_at', null);
       
       if (error) {
         console.error('Error fetching pending claims:', error);
+        setConnectionState('error');
         return;
       }
       
@@ -77,6 +83,7 @@ export function useCallerHub(sessionId: string | undefined) {
       }
     } catch (err) {
       console.error('Exception in fetchPendingClaims:', err);
+      setConnectionState('error');
     }
   }, [sessionId, toast]);
   
@@ -161,12 +168,62 @@ export function useCallerHub(sessionId: string | undefined) {
     }
   }, [sessionId]);
 
+  // Start a new game (added method)
+  const startGame = useCallback(async () => {
+    if (!sessionId) return false;
+    
+    try {
+      logWithTimestamp(`Starting game for session ${sessionId}`);
+      
+      // Update the database to mark the game as active
+      const { error } = await supabase
+        .from('game_sessions')
+        .update({ 
+          status: 'active',
+          lifecycle_state: 'live'
+        })
+        .eq('id', sessionId);
+        
+      if (error) {
+        console.error('Error starting game:', error);
+        return false;
+      }
+      
+      // Broadcast the game start event
+      await supabase
+        .channel('game-updates')
+        .send({
+          type: 'broadcast',
+          event: 'game-start',
+          payload: { 
+            sessionId,
+            timestamp: new Date().toISOString()
+          }
+        });
+      
+      return true;
+    } catch (err) {
+      console.error('Error starting game:', err);
+      return false;
+    }
+  }, [sessionId]);
+
+  // Add reconnect method
+  const reconnect = useCallback(() => {
+    logWithTimestamp("Manually reconnecting caller hub");
+    setConnectionState('connecting');
+    fetchPendingClaims();
+  }, [fetchPendingClaims]);
+
   return {
     pendingClaims,
     isProcessing,
     isConnected,
+    connectionState,
     fetchPendingClaims,
     respondToClaim,
-    changePattern
+    changePattern,
+    startGame,
+    reconnect
   };
 }
