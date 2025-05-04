@@ -22,7 +22,6 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
   });
 
   // Use refs to track initialization status and prevent duplicate setup
-  const initRef = useRef<boolean>(false);
   const hookIdRef = useRef<string>(`bingoSync-${Math.random().toString(36).substring(2, 9)}`);
   
   // Memoize the submitBingoClaim function to prevent unnecessary re-renders
@@ -90,29 +89,20 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
       .onConnectionStatusChange(onConnectionStatusChange)
       .onError(onError);
     
-    // Connect if not already connected
-    if (!connectionManager.isConnected()) {
-      // Only initialize if not already done
-      // Note: We don't initialize here, but instead let usePlayerGame handle it
-      // This avoids multiple initialization attempts from different components
-      
-      // We can check connection status though
-      const currentState = connectionManager.getConnectionState();
-      
-      setState(prev => ({
-        ...prev,
-        isConnected: currentState === 'connected',
-        isLoading: currentState === 'connecting'
-      }));
-    }
+    // We don't initialize the connection here - that's now the sole responsibility
+    // of usePlayerGame. This fixes the multiple initialization problem.
     
-    // Cleanup function for the hook - but we don't disconnect
-    // as other components may still need the connection
-    return () => {
-      logWithTimestamp(`[${hookIdRef.current}] Cleaning up bingo sync listeners`, 'info');
-      // We don't need explicit cleanup since connectionManager maintains its own state
-      // and listeners list
-    };
+    // Check current connection state
+    const currentState = connectionManager.getConnectionState();
+    setState(prev => ({
+      ...prev,
+      isConnected: currentState === 'connected',
+      isLoading: currentState === 'connecting'
+    }));
+    
+    // No cleanup needed - we're not removing listeners since the connectionManager
+    // maintains its own state
+    
   }, [playerCode, sessionId]);
 
   return {

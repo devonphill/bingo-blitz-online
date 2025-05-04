@@ -33,7 +33,6 @@ export function usePlayerGame(playerCode: string | null) {
   
   // Connection state with more detailed monitoring
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
-  const connectionInitialized = useRef<boolean>(false);
   
   // Game type (default to mainstage/90-ball)
   const [gameType, setGameType] = useState<string>('mainstage');
@@ -369,13 +368,7 @@ export function usePlayerGame(playerCode: string | null) {
     logWithTimestamp(`[${instanceId.current}] Setting up player game connection for session ${currentSession.id}`, 'info');
     
     // This is the ONLY place where connection initialization should happen
-    // Do it only once per session ID
-    if (!connectionInitialized.current) {
-      logWithTimestamp(`[${instanceId.current}] Initializing connection for the first time`, 'info');
-      
-      connectionManager.initialize(currentSession.id);
-      connectionInitialized.current = true;
-    }
+    connectionManager.initialize(currentSession.id);
     
     // Track player presence to keep them visible in the player list
     // But only if we're connected
@@ -411,7 +404,7 @@ export function usePlayerGame(playerCode: string | null) {
       }
       
       // If disconnected and reconnection attempts are low, try to reconnect
-      if (currentState === 'disconnected' && connectionManager.reconnectAttempts < 3) {
+      if (currentState === 'disconnected') {
         logWithTimestamp(`[${instanceId.current}] Detected disconnection, triggering reconnect`, 'info');
         connectionManager.reconnect();
       }
@@ -427,9 +420,6 @@ export function usePlayerGame(playerCode: string | null) {
     return () => {
       clearInterval(presenceInterval);
       clearInterval(connectionMonitorInterval);
-      
-      // Don't disconnect or clean up the connection manager
-      // as other components may need it
     };
   }, [playerCode, playerId, playerName, currentSession?.id, tickets, connectionState]);
   

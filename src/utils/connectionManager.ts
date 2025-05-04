@@ -18,6 +18,8 @@ export const connectionManager = {
   maxReconnectAttempts: 10,
   reconnectBackoff: 1000, // Starting at 1 second
   reconnectTimer: null as any,
+  
+  // Global initialization tracking - prevent multiple initializations
   initializationComplete: false,
   
   // Presence tracking data
@@ -245,11 +247,17 @@ export const connectionManager = {
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       
-      // First cleanup any existing channel
-      this.cleanupExistingChannel();
-      
-      // Then reinitialize
-      this.initialize(this.sessionId as string);
+      // Instead of reinitializing, just attempt to reconnect to existing channel
+      if (this.supabaseChannel) {
+        logWithTimestamp('Attempting to reconnect to existing channel', 'info');
+        this.supabaseChannel.subscribe((status) => {
+          this.handleSubscriptionStatus(status);
+        });
+      } else {
+        // Only re-initialize if we don't have a channel
+        logWithTimestamp('No channel available, reinitializing connection', 'info');
+        this.initialize(this.sessionId as string);
+      }
       
       // Mark reconnection as complete
       this.isReconnecting = false;
@@ -475,7 +483,7 @@ export const connectionManager = {
     return this; // Return self for method chaining
   },
   
-  // Event handlers section - keep most of the existing code
+  // Event handlers section
   handlePresenceSync() {
     // Get all connected players
     const presenceState = this.supabaseChannel.presenceState();
@@ -634,7 +642,7 @@ export const connectionManager = {
     }, backoffTime);
   },
   
-  // Claims related functionality - keep existing code
+  // Claims related functionality
   async fetchClaims(sessionId: string) {
     try {
       logWithTimestamp(`Fetching claims for session ${sessionId}`, 'info');
