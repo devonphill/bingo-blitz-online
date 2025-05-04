@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
-import BingoWinProgress from "./BingoWinProgress";
 import GameTypePlayspace from "./GameTypePlayspace";
 import { toast } from "@/hooks/use-toast";
 import { connectionManager } from "@/utils/connectionManager";
@@ -235,7 +234,6 @@ export default function PlayerGameContent({
     }
   }
 
-  // For BingoWinProgress we can use the original claimStatus type
   // For GameTypePlayspace we must use the mapped claim status
   const gameTypePlayspaceClaimStatus = mapClaimStatus(claimStatus);
 
@@ -265,19 +263,6 @@ export default function PlayerGameContent({
           <CurrentNumberDisplay 
             number={mergedCurrentNumber} 
             className="animate-bounce-subtle"
-          />
-        </div>
-        
-        <div className="mb-4">
-          <BingoWinProgress
-            tickets={tickets}
-            calledNumbers={mergedCalledNumbers}
-            activeWinPatterns={[currentWinPattern].filter(Boolean) as string[]}
-            currentWinPattern={currentWinPattern}
-            handleClaimBingo={handleClaimBingoWithErrorHandling}
-            isClaiming={isClaiming}
-            claimStatus={claimStatus}
-            gameType={gameType}
           />
         </div>
         
