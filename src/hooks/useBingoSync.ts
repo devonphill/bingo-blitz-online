@@ -89,8 +89,8 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
       .onConnectionStatusChange(onConnectionStatusChange)
       .onError(onError);
     
-    // We don't initialize the connection here - that's now the sole responsibility
-    // of usePlayerGame. This fixes the multiple initialization problem.
+    // IMPORTANT: This hook no longer tries to initialize the connection
+    // That's now the sole responsibility of usePlayerGame
     
     // Check current connection state
     const currentState = connectionManager.getConnectionState();

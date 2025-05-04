@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useBingoSync } from '@/hooks/useBingoSync';
@@ -42,6 +43,9 @@ export function usePlayerGame(playerCode: string | null) {
   
   // Track if component is mounted
   const isMounted = useRef(true);
+  
+  // Connection initialization flag to prevent multiple init
+  const connectionInitialized = useRef<boolean>(false);
   
   // Generate a unique ID for this hook instance for better debug logging
   const instanceId = useRef(`playerGame-${Math.random().toString(36).substring(2, 9)}`);
@@ -365,33 +369,48 @@ export function usePlayerGame(playerCode: string | null) {
       return;
     }
     
+    // Prevent multiple initializations
+    if (connectionInitialized.current) {
+      logWithTimestamp(`[${instanceId.current}] Connection already initialized, skipping`, 'info');
+      return;
+    }
+    
     logWithTimestamp(`[${instanceId.current}] Setting up player game connection for session ${currentSession.id}`, 'info');
+    
+    // Mark as initialized - this flag prevents multiple initialization
+    connectionInitialized.current = true;
     
     // This is the ONLY place where connection initialization should happen
     connectionManager.initialize(currentSession.id);
     
-    // Track player presence to keep them visible in the player list
-    // But only if we're connected
-    const trackPresence = () => {
+    // Setup delayed presence tracking with retries
+    const attemptPresenceTracking = () => {
       if (connectionManager.isConnected()) {
         logWithTimestamp(`[${instanceId.current}] Tracking player presence`, 'info');
         
-        connectionManager.trackPlayerPresence({
+        const presenceData = {
           player_id: playerId,
           player_code: playerCode,
           nickname: playerName || playerCode,
           tickets: tickets,
-          // Add a timestamp to help with presence state debugging
           last_presence_update: new Date().toISOString()
-        });
+        };
+        
+        // Try to track presence
+        const success = connectionManager.trackPlayerPresence(presenceData);
+        
+        // If failed, retry after a delay
+        if (!success) {
+          setTimeout(attemptPresenceTracking, 3000); // Retry after 3 seconds
+        }
+      } else {
+        // Not connected yet, try again later
+        setTimeout(attemptPresenceTracking, 2000); // Retry after 2 seconds
       }
     };
     
-    // Track initial presence
-    trackPresence();
-    
-    // Setup a presence refresh interval - more conservative than before
-    const presenceInterval = setInterval(trackPresence, 30000);
+    // Start presence tracking after a delay to ensure connection is established
+    setTimeout(attemptPresenceTracking, 1000);
     
     // Setup connection state monitoring via the connection manager's status
     const monitorConnection = () => {
@@ -403,7 +422,7 @@ export function usePlayerGame(playerCode: string | null) {
         setConnectionState(currentState);
       }
       
-      // If disconnected and reconnection attempts are low, try to reconnect
+      // If disconnected, try to reconnect (but don't reinitialize)
       if (currentState === 'disconnected') {
         logWithTimestamp(`[${instanceId.current}] Detected disconnection, triggering reconnect`, 'info');
         connectionManager.reconnect();
@@ -418,8 +437,8 @@ export function usePlayerGame(playerCode: string | null) {
     
     // Clean up on unmount
     return () => {
-      clearInterval(presenceInterval);
       clearInterval(connectionMonitorInterval);
+      connectionInitialized.current = false;
     };
   }, [playerCode, playerId, playerName, currentSession?.id, tickets, connectionState]);
   

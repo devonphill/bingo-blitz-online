@@ -162,9 +162,19 @@ export const connectionManager = {
     // If we have a channel already, try to resubscribe
     if (this.supabaseChannel) {
       logWithTimestamp('Attempting to resubscribe to existing channel', 'info');
-      this.supabaseChannel.subscribe((status) => {
-        this.handleSubscriptionStatus(status);
-      });
+      // Important: We don't subscribe here again if the channel exists,
+      // as this would cause the "tried to subscribe multiple times" error
+      // Check the channel state first
+      if (this.supabaseChannel.state !== 'SUBSCRIBED') {
+        this.supabaseChannel.subscribe((status) => {
+          this.handleSubscriptionStatus(status);
+        });
+      } else {
+        logWithTimestamp('Channel already subscribed, skipping subscription', 'info');
+        // If it's already subscribed, update the connection state
+        this.connectionState = 'connected';
+        this.notifyConnectionStatusChange('connected');
+      }
     } else {
       // Otherwise initialize (this should be rare)
       this.initialize(this.sessionId);
@@ -247,12 +257,28 @@ export const connectionManager = {
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       
-      // Instead of reinitializing, just attempt to reconnect to existing channel
+      // FIX FOR MULTIPLE SUBSCRIPTIONS: Check if the channel exists and its state
       if (this.supabaseChannel) {
-        logWithTimestamp('Attempting to reconnect to existing channel', 'info');
-        this.supabaseChannel.subscribe((status) => {
-          this.handleSubscriptionStatus(status);
-        });
+        if (this.supabaseChannel.state === 'SUBSCRIBED') {
+          // Channel already subscribed, just update connection state
+          logWithTimestamp('Channel already subscribed during reconnect, updating state', 'info');
+          this.connectionState = 'connected';
+          this.notifyConnectionStatusChange('connected');
+        }
+        else if (this.supabaseChannel.state === 'TIMED_OUT' || this.supabaseChannel.state === 'CLOSED') {
+          // Channel needs to be recreated
+          logWithTimestamp('Channel in bad state, recreating during reconnect', 'info');
+          this.cleanupExistingChannel();
+          this.supabaseChannel = supabase.channel(`game-${this.sessionId}`);
+          this.setupChannelListeners();
+        }
+        else {
+          // Channel exists but not subscribed, just resubscribe
+          logWithTimestamp('Resubscribing to existing channel during reconnect', 'info');
+          this.supabaseChannel.subscribe((status) => {
+            this.handleSubscriptionStatus(status);
+          });
+        }
       } else {
         // Only re-initialize if we don't have a channel
         logWithTimestamp('No channel available, reinitializing connection', 'info');
@@ -333,7 +359,7 @@ export const connectionManager = {
     });
   },
   
-  // Game state methods - keep existing functionality
+  // Helper methods and game state methods
   async callNumber(number: number, sessionId: string) {
     try {
       logWithTimestamp(`Calling number ${number} for session ${sessionId}`, 'info');
@@ -396,6 +422,17 @@ export const connectionManager = {
     // Only track if we're connected
     if (!this.isConnected()) {
       logWithTimestamp('Cannot track player presence: Not connected', 'warn');
+      
+      // Schedule a retry after a short delay if we're trying to connect
+      if (this.connectionState === 'connecting') {
+        setTimeout(() => {
+          if (this.isConnected() && this.presenceData) {
+            logWithTimestamp('Retrying player presence tracking after delay', 'info');
+            this.trackPlayerPresence(this.presenceData);
+          }
+        }, 2000);
+      }
+      
       return false;
     }
     
@@ -406,7 +443,15 @@ export const connectionManager = {
     
     try {
       logWithTimestamp(`Tracking presence for player ${playerData.player_code || playerData.playerCode}`, 'debug');
+      // Test if player data is valid before tracking
+      if (!playerData.player_id && !playerData.playerCode) {
+        logWithTimestamp('Invalid player data for presence tracking', 'error');
+        return false;
+      }
+      
+      // Track player presence
       this.supabaseChannel.track(playerData);
+      logWithTimestamp(`Successfully tracked presence for player ${playerData.player_code || playerData.playerCode}`, 'info');
       return true;
     } catch (err) {
       logWithTimestamp(`Error tracking player presence: ${err}`, 'error');
@@ -603,7 +648,10 @@ export const connectionManager = {
       
       // Re-track presence data if we have it
       if (this.presenceData) {
-        this.trackPlayerPresence(this.presenceData);
+        setTimeout(() => {
+          logWithTimestamp('Tracking presence after connection established', 'info');
+          this.trackPlayerPresence(this.presenceData);
+        }, 500); // Short delay to ensure connection is stable
       }
       
       // Clear any reconnect timer
