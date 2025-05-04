@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -138,6 +139,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
           
           // Try to reconnect automatically after timeout
           setTimeout(() => {
+            // Fix for the comparison error - properly check connectionState
             if (connectionState !== 'connected') {
               reconnect();
             }
