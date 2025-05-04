@@ -235,12 +235,8 @@ export default function PlayerGameContent({
     }
   }
 
-  // Map the claimStatus to the proper format expected by the components
-  // BingoWinProgress expects 'none' | 'pending' | 'valid' | 'invalid'
-  const layoutClaimStatus = claimStatus;
-                          
-  // Convert the claimStatus to the type required by GameTypePlayspace using our mapping function
-  // GameTypePlayspace expects 'pending' | 'rejected' | 'validated'
+  // For BingoWinProgress we can use the original claimStatus type
+  // For GameTypePlayspace we must use the mapped claim status
   const gameTypePlayspaceClaimStatus = mapClaimStatus(claimStatus);
 
   return (
@@ -280,7 +276,7 @@ export default function PlayerGameContent({
             currentWinPattern={currentWinPattern}
             handleClaimBingo={handleClaimBingoWithErrorHandling}
             isClaiming={isClaiming}
-            claimStatus={layoutClaimStatus}
+            claimStatus={claimStatus}
             gameType={gameType}
           />
         </div>
