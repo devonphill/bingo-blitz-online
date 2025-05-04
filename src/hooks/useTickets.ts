@@ -26,7 +26,7 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
     
     setIsLoading(true);
     try {
-      // Log with proper LogLevel type
+      // Fix: Use separate message and level parameters for logWithTimestamp
       logWithTimestamp(`Loading tickets for player ${playerCode} in session ${sessionId}`, 'info');
       
       // Try to get tickets from cache first

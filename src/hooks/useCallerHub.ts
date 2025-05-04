@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { logWithTimestamp } from '@/utils/logUtils';
+import { logWithTimestamp, ensureLogLevel } from '@/utils/logUtils';
 
 export function useCallerHub(sessionId: string | undefined) {
   const [pendingClaims, setPendingClaims] = useState<any[]>([]);
@@ -235,7 +235,7 @@ const sendBroadcast = async (event: string, payload: any) => {
 
   try {
     // Log with proper LogLevel type
-    logWithTimestamp(`Sending broadcast: ${event}`, 'info');
+    logWithTimestamp('Message about broadcast', 'info');
     
     await channel.send({
       type: 'broadcast',

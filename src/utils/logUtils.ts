@@ -75,3 +75,20 @@ export function ensureLogLevel(level: string | LogLevel): LogLevel {
   const validLevels: LogLevel[] = ['debug', 'info', 'warn', 'error'];
   return validLevels.includes(level as LogLevel) ? level as LogLevel : 'info';
 }
+
+/**
+ * Log with parameters - safely handle objects that should not be used as the message
+ */
+export function logWithParams(message: string, params: any, level: LogLevel = 'info', component?: string): void {
+  // Ensure we're using a string message and not an object
+  if (typeof message !== 'string') {
+    try {
+      message = JSON.stringify(message);
+    } catch (e) {
+      message = '[Object cannot be stringified]';
+    }
+  }
+  
+  // Log with the parameters
+  logWithTimestamp(`${message} ${params ? JSON.stringify(params) : ''}`, level, component);
+}
