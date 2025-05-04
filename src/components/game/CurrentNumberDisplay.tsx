@@ -56,7 +56,8 @@ export default function CurrentNumberDisplay({
       
       <AnimatePresence mode="wait">
         <motion.div
-          key={`number-${number}-${Date.now()}`} {/* Add timestamp to force re-render */}
+          // Add timestamp to force re-render on each number change
+          key={`number-${number}-${Date.now()}`}
           initial={isNew ? { scale: 0.8, opacity: 0 } : { scale: 1, opacity: 1 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.8, opacity: 0 }}
