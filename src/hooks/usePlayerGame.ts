@@ -31,6 +31,9 @@ export function usePlayerGame(playerCode: string | null) {
   const [claimStatus, setClaimStatus] = useState<'none' | 'pending' | 'valid' | 'invalid'>('none');
   const [isSubmittingClaim, setIsSubmittingClaim] = useState<boolean>(false);
   
+  // Connection state
+  const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('connecting');
+  
   // Game type (default to mainstage/90-ball)
   const [gameType, setGameType] = useState<string>('mainstage');
   
@@ -42,16 +45,14 @@ export function usePlayerGame(playerCode: string | null) {
   
   // Initialize bingo sync hook for real-time updates
   const {
+    isLoading: bingoSyncLoading,
     isConnected,
-    connectionState,
-    connectionError,
+    error: bingoSyncError,
     gameState,
-    reconnect,
-    claimBingo
+    submitBingoClaim: claimBingo
   } = useBingoSync(
-    currentSession?.id || '',
-    playerCode || '',
-    playerName || ''
+    playerCode,
+    currentSession?.id
   );
   
   // Track if component is mounted
@@ -102,10 +103,15 @@ export function usePlayerGame(playerCode: string | null) {
   
   // Handle connection errors
   useEffect(() => {
-    if (connectionError) {
-      setErrorMessage(`Connection error: ${connectionError}`);
+    if (bingoSyncError) {
+      setErrorMessage(`Connection error: ${bingoSyncError}`);
     }
-  }, [connectionError]);
+  }, [bingoSyncError]);
+  
+  // Update connection state based on isConnected from useBingoSync
+  useEffect(() => {
+    setConnectionState(isConnected ? 'connected' : 'disconnected');
+  }, [isConnected]);
   
   // Load player data
   useEffect(() => {
@@ -268,7 +274,7 @@ export function usePlayerGame(playerCode: string | null) {
   const resetClaimStatus = useCallback(() => {
     setClaimStatus('none');
   }, []);
-  
+
   // Handle bingo claims
   const handleClaimBingo = useCallback((ticketToSubmit?: any) => {
     if (!playerCode || !currentSession?.id) {
@@ -310,6 +316,14 @@ export function usePlayerGame(playerCode: string | null) {
       console.log("Submitting claim with ticket:", preparedTicket);
       
       // Use the bingo sync hook to submit the claim with the ticket data
+      if (!claimBingo) {
+        console.error('claimBingo function not available');
+        setErrorMessage('Claim function not available');
+        setIsSubmittingClaim(false);
+        setClaimStatus('none');
+        return Promise.resolve(false);
+      }
+      
       const claimSubmitted = claimBingo(preparedTicket);
       
       if (claimSubmitted) {
