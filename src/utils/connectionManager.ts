@@ -1,6 +1,3 @@
-
-// Complete implementation of the connectionManager with all required methods
-
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
@@ -99,7 +96,7 @@ export const connectionManager = {
       const { error } = await supabase
         .from('sessions_progress')
         .update({
-          called_numbers: `called_numbers || ARRAY[${number}]::integer[]`,
+          called_numbers: supabase.sql`array_append(called_numbers, ${number})`,
           last_called: number,
           updated_at: new Date().toISOString()
         })
