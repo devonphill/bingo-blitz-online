@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useCallback } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -340,7 +339,7 @@ export default function PlayerGameContent({
             setIsConnected(true);
           }
         })
-        .catch(error => {
+        .then(undefined, (error) => { // Use this pattern instead of .catch()
           console.error("Error during manual reconnect:", error);
           setConnectionStatus('error');
         });

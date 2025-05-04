@@ -1,13 +1,15 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Bell } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { Bell, RefreshCw, AlertCircle, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
-import { connectionManager } from '@/utils/connectionManager';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { useCallerHub } from '@/hooks/useCallerHub';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { GoLiveButton } from '@/components/ui/go-live-button';
+import { connectionManager } from '@/utils/connectionManager';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -16,13 +18,14 @@ interface CallerControlsProps {
   remainingNumbers: number[];
   sessionId: string;
   winPatterns: string[];
-  onCheckClaims?: () => void;
   claimCount?: number;
   openClaimSheet: () => void;
   gameType?: string;
   sessionStatus?: string;
-  gameConfigs?: any[];
-  onForceClose?: () => Promise<void>;
+  onCloseGame?: () => void;
+  numberOfGames?: number;
+  currentGameNumber?: number;
+  onForceClose?: () => void; // New prop for forced game close
 }
 
 export default function CallerControls({ 
@@ -36,12 +39,23 @@ export default function CallerControls({
   openClaimSheet,
   gameType,
   sessionStatus = 'pending',
-  gameConfigs = [],
-  onForceClose
+  onCloseGame,
+  numberOfGames = 1,
+  currentGameNumber = 1,
+  onForceClose // New prop handling
 }: CallerControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
+  const [isClosingConfirmOpen, setIsClosingConfirmOpen] = useState(false);
+  const [isForceCloseConfirmOpen, setIsForceCloseConfirmOpen] = useState(false);
   const { toast } = useToast();
+  
+  // Connect to the WebSocket hub as a caller
+  const callerHub = useCallerHub(sessionId);
+
+  useEffect(() => {
+    logWithTimestamp(`CallControls connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}`);
+  }, [callerHub.connectionState, callerHub.isConnected]);
 
   const handleCallNumber = () => {
     if (remainingNumbers.length === 0) {
@@ -59,137 +73,69 @@ export default function CallerControls({
       const randomIndex = Math.floor(Math.random() * remainingNumbers.length);
       const number = remainingNumbers[randomIndex];
       
-      logWithTimestamp(`Caller is calling number ${number}`);
-      
-      // First create a new array of remaining numbers after removing the called number
-      const updatedRemainingNumbers = remainingNumbers.filter(n => n !== number);
-      
-      // Calculate the called numbers by determining what's not in the remaining numbers
-      const allPossibleNumbers = Array.from({ length: gameType === '75-ball' ? 75 : 90 }, (_, i) => i + 1);
-      const calledNumbers = allPossibleNumbers.filter(n => !updatedRemainingNumbers.includes(n));
-      
-      // Broadcast the number call to all players - ensure this happens FIRST and RELIABLY
+      // IMPORTANT: First broadcast the number to all clients immediately
       try {
-        logWithTimestamp(`Broadcasting number ${number} via realtime channel`);
+        logWithTimestamp(`Broadcasting number ${number} via realtime channels`);
         
-        // Make multiple attempts to ensure the broadcast succeeds
-        const broadcastChannel = supabase.channel('number-broadcast');
-        
-        // Use a more unique channel name with the session ID included
-        const uniqueChannel = supabase.channel(`number-broadcast-${sessionId}`);
-        
-        // Attempt broadcasts on multiple channels for redundancy
-        const broadcasts = [
-          broadcastChannel.send({
-            type: 'broadcast', 
-            event: 'number-called',
-            payload: {
-              sessionId: sessionId,
-              lastCalledNumber: number,
-              calledNumbers: calledNumbers,
-              timestamp: new Date().getTime()
-            }
-          }),
-          
-          uniqueChannel.send({
-            type: 'broadcast', 
-            event: 'number-called',
-            payload: {
-              sessionId: sessionId,
-              lastCalledNumber: number,
-              calledNumbers: calledNumbers,
-              timestamp: new Date().getTime()
-            }
-          }),
-          
-          // Also broadcast on the general game-updates channel
-          supabase.channel('game-updates').send({
-            type: 'broadcast', 
-            event: 'number-called',
-            payload: {
-              sessionId: sessionId,
-              lastCalledNumber: number,
-              calledNumbers: calledNumbers,
-              timestamp: new Date().getTime()
-            }
-          })
-        ];
-        
-        // Use Promise.all and handle rejection properly with then/catch
-        Promise.all(broadcasts)
-          .then(() => {
-            logWithTimestamp("Number broadcast sent successfully on all channels");
-            
-            // Also update the database for persistence
-            supabase
-              .from('sessions_progress')
-              .update({
-                called_numbers: calledNumbers,
-                current_game_number: 1 // Ensure we're on game 1
-              })
-              .eq('session_id', sessionId)
-              .then(() => {
-                logWithTimestamp("Database updated with called numbers");
-              })
-              .catch(error => {
-                console.error("Error updating database:", error);
-              });
-          })
-          .catch(error => {
-            console.error("Error broadcasting number:", error);
-            
-            // Fallback to connection manager if broadcast fails
-            connectionManager.callNumber(number, sessionId);
-          });
+        // Use a dedicated broadcast channel
+        supabase.channel('number-broadcast').send({
+          type: 'broadcast',
+          event: 'number-called',
+          payload: {
+            sessionId: sessionId,
+            lastCalledNumber: number,
+            // We need to calculate the called numbers since we don't have direct access to the full list
+            // We infer it from the remaining numbers
+            calledNumbers: getCalledNumbersFromRemaining(number, remainingNumbers),
+            timestamp: new Date().toISOString()
+          }
+        }).then(() => {
+          logWithTimestamp("Number broadcast sent successfully");
+        }, (error) => {
+          // Handle error with a second parameter to .then() instead of using .catch()
+          console.error("Error broadcasting number:", error);
+        });
       } catch (err) {
         console.error("Error sending broadcast:", err);
-        
-        // Fallback to connection manager
+      }
+      
+      // Also use the connection manager for database persistence
+      if (connectionManager) {
         connectionManager.callNumber(number, sessionId);
       }
       
-      // Always call the regular onCallNumber function for backwards compatibility
       onCallNumber(number);
-      
       setIsCallingNumber(false);
     }, 1000);
   };
 
-  // Handle the go live button click
+  // Helper function to calculate the called numbers based on the remaining numbers
+  // and the currently called number
+  const getCalledNumbersFromRemaining = (calledNumber: number, remaining: number[]): number[] => {
+    // Create a full range of numbers based on game type (75-ball or 90-ball)
+    const maxNumber = gameType === '75-ball' ? 75 : 90;
+    const allNumbers = Array.from({ length: maxNumber }, (_, i) => i + 1);
+    
+    // Filter out the remaining numbers to get previously called numbers
+    const previouslyCalled = allNumbers.filter(n => !remaining.includes(n));
+    
+    // Add the current called number if it's not already in the list
+    if (!previouslyCalled.includes(calledNumber)) {
+      return [...previouslyCalled, calledNumber];
+    }
+    
+    return previouslyCalled;
+  };
+
   const handleGoLiveClick = async () => {
     setIsGoingLive(true);
     try {
-      // Initialize sessions_progress with Game 1's active pattern and prize info
-      await initializeSessionProgress();
-      
-      // Then also use the regular method (updates database directly)
-      await onGoLive();
-      
-      // Also broadcast that the game is now live
-      try {
-        const broadcastChannel = supabase.channel('game-events');
-        broadcastChannel.send({
-          type: 'broadcast',
-          event: 'game-live',
-          payload: {
-            sessionId: sessionId,
-            timestamp: new Date().getTime(),
-            message: "Game is now live"
-          }
-        }).then(() => {
-          logWithTimestamp("Game live broadcast sent successfully");
-        }).catch(error => {
-          console.error("Error broadcasting game live status:", error);
-        });
-      } catch (err) {
-        console.error("Error sending game live broadcast:", err);
+      if (callerHub.isConnected) {
+        logWithTimestamp("Broadcasting game start via realtime");
+        callerHub.startGame();
       }
       
-      toast({
-        title: "Game is now live",
-        description: "Players can now join and play.",
-        duration: 3000
-      });
+      await onGoLive();
     } catch (error) {
       console.error('Error going live:', error);
       toast({
@@ -202,161 +148,239 @@ export default function CallerControls({
     }
   };
 
-  const initializeSessionProgress = async () => {
-    if (!sessionId || !gameConfigs || gameConfigs.length === 0) {
-      console.error("Missing session ID or game configs for initialization");
-      return;
-    }
-    
-    try {
-      // Get Game 1 configuration
-      const game1Config = gameConfigs.find(config => config.gameNumber === 1) || gameConfigs[0];
-      
-      if (!game1Config || !game1Config.patterns) {
-        console.error("Game 1 configuration or patterns not found");
-        return;
-      }
-      
-      console.log("Initializing session progress with Game 1 config: " + JSON.stringify(game1Config));
-      
-      // Find the active pattern in Game 1
-      const activePatterns = Object.entries(game1Config.patterns)
-        .filter(([_, patternConfig]) => {
-          if (typeof patternConfig === 'object' && patternConfig !== null) {
-            return (patternConfig as any).active === true;
-          }
-          return false;
-        });
-      
-      if (activePatterns.length === 0) {
-        console.error("No active patterns found for Game 1");
-        return;
-      }
-      
-      const [patternId, patternConfig] = activePatterns[0];
-      const config = patternConfig as any;
-      
-      console.log("Using active pattern: " + patternId + ", " + JSON.stringify(config));
-      
-      // Update the database directly
-      await supabase
-        .from('sessions_progress')
-        .update({
-          current_win_pattern: patternId,
-          current_prize: config.prizeAmount || '0.00',
-          current_prize_description: config.description || '',
-          game_status: 'active'  // Set initial game status to active
-        })
-        .eq('session_id', sessionId);
-      
-    } catch (error) {
-      console.log("Error in initializeSessionProgress: " + error);
-      toast({
-        title: "Initialization Error",
-        description: "Failed to initialize game settings. Please try again.",
-        variant: "destructive"
-      });
-      throw error;
-    }
-  };
-
-  const handleForceClose = async () => {
-    if (onForceClose) {
-      try {
-        toast({
-          title: "Force closing game...",
-          description: "Resetting the current game and proceeding to the next",
-          duration: 2000
-        });
-        
-        await onForceClose();
-      } catch (error) {
-        console.error("Error handling force close:", error);
-        toast({
-          title: "Error",
-          description: "Failed to force close the game",
-          variant: "destructive"
-        });
-      }
-    }
-  };
-
   const handleBellClick = () => {
     openClaimSheet();
   };
 
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-xl font-bold flex items-center justify-between">
+  const handleCloseGame = () => {
+    setIsClosingConfirmOpen(true);
+  };
+
+  const confirmCloseGame = () => {
+    if (onCloseGame) {
+      onCloseGame();
+    }
+    setIsClosingConfirmOpen(false);
+  };
+  
+  const handleForceClose = () => {
+    setIsForceCloseConfirmOpen(true);
+  };
+  
+  const confirmForceClose = () => {
+    if (onForceClose) {
+      onForceClose();
+    }
+    setIsForceCloseConfirmOpen(false);
+  };
+  
+  const handleReconnectClick = () => {
+    if (callerHub.reconnect) {
+      callerHub.reconnect();
+      toast({
+        title: "Reconnecting",
+        description: "Attempting to reconnect to the game server...",
+      });
+    }
+  };
+
+  const isLastGame = currentGameNumber >= numberOfGames;
+  
+  // CRITICAL: Remove ALL conditions that would disable the Go Live button
+  // We are setting this to false to ensure it's always enabled
+  const isGoLiveDisabled = false;
+
+  // Connection status indicator                        
+  const renderConnectionStatus = () => {
+    if (callerHub.connectionState !== 'connected') {
+      return (
+        <div className="bg-amber-50 border border-amber-200 rounded-md p-2 mt-2">
           <div className="flex items-center">
-            <span>Caller Controls</span>
-            <Badge className="ml-2" variant={sessionStatus === 'active' ? 'default' : 'outline'}>
-              {sessionStatus === 'active' ? 'Live' : 'Pending'}
-            </Badge>
+            <AlertCircle className="h-4 w-4 text-amber-500 mr-2" />
+            <div className="text-xs text-amber-700">
+              {callerHub.connectionState === 'connecting' 
+                ? 'Connecting to game server...' 
+                : callerHub.connectionState === 'error' 
+                  ? 'Failed to connect to game server' 
+                  : 'Disconnected from game server'}
+            </div>
           </div>
-          <div>
-            <Button 
-              size="sm" 
-              variant="outline" 
-              className="relative"
-              onClick={handleBellClick}
-            >
-              <Bell className={`h-4 w-4 ${claimCount > 0 ? 'text-amber-500' : 'text-gray-500'}`} />
-              {claimCount > 0 && (
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="mt-2 w-full text-xs flex items-center gap-1"
+            onClick={handleReconnectClick}
+          >
+            <RefreshCw className="h-3 w-3" />
+            Reconnect
+          </Button>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  return (
+    <>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-xl font-bold flex items-center justify-between">
+            <div className="flex items-center">
+              <span>Caller Controls</span>
+              <Badge className="ml-2" variant={sessionStatus === 'active' ? 'default' : 'outline'}>
+                {sessionStatus === 'active' ? 'Live' : 'Pending'}
+              </Badge>
+              {currentGameNumber && numberOfGames && (
+                <Badge className="ml-2" variant="outline">
+                  Game {currentGameNumber} of {numberOfGames}
+                </Badge>
+              )}
+              {callerHub.isConnected && (
+                <Badge className="ml-2 bg-green-500 text-white">
+                  Connected
+                </Badge>
+              )}
+            </div>
+            {claimCount > 0 && (
+              <Button 
+                size="sm" 
+                variant="outline" 
+                className="relative"
+                onClick={handleBellClick}
+              >
+                <Bell className="h-4 w-4 text-amber-500" />
                 <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center bg-amber-500">
                   {claimCount}
                 </Badge>
-              )}
-            </Button>
+              </Button>
+            )}
+            {claimCount === 0 && (
+              <Button 
+                size="sm" 
+                variant="outline" 
+                className="relative"
+                onClick={handleBellClick}
+              >
+                <Bell className="h-4 w-4 text-gray-500" />
+              </Button>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="bg-gray-100 p-3 rounded-md text-center">
+            <div className="text-sm text-gray-500 mb-1">Remaining Numbers</div>
+            <div className="text-2xl font-bold">{remainingNumbers.length}</div>
           </div>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="bg-gray-100 p-3 rounded-md text-center">
-          <div className="text-sm text-gray-500 mb-1">Remaining Numbers</div>
-          <div className="text-2xl font-bold">{remainingNumbers.length}</div>
-        </div>
-        
-        <div className="grid grid-cols-1 gap-3">
-          <Button
-            className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-            disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active'}
-            onClick={handleCallNumber}
-          >
-            {isCallingNumber ? 'Calling...' : 'Call Next Number'}
-          </Button>
           
-          <Button 
-            variant="destructive"
-            onClick={onEndGame}
-          >
-            End Game
-          </Button>
-          
-          {onForceClose && (
+          <div className="grid grid-cols-1 gap-3">
             <Button
-              className="bg-amber-600 hover:bg-amber-700 text-white"
-              onClick={handleForceClose}
+              className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
+              disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active' || !callerHub.isConnected}
+              onClick={handleCallNumber}
             >
-              FORCE Close Game
+              {isCallingNumber ? 'Calling...' : 'Call Next Number'}
             </Button>
-          )}
+            
+            {onCloseGame && (
+              <Button
+                variant="secondary"
+                onClick={handleCloseGame}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {isLastGame ? 'Complete Session' : 'Close Game'}
+              </Button>
+            )}
+            
+            {/* Add FORCE close button */}
+            {onForceClose && (
+              <Button
+                variant="outline"
+                onClick={handleForceClose}
+                className="bg-amber-600 hover:bg-amber-700 text-white flex items-center gap-2"
+              >
+                <AlertTriangle className="h-4 w-4" />
+                {isLastGame ? 'FORCE Complete Session' : 'FORCE Close Game'}
+              </Button>
+            )}
+            
+            <Button 
+              variant="destructive"
+              onClick={onEndGame}
+            >
+              End Game
+            </Button>
+            
+            <GoLiveButton
+              sessionId={sessionId}
+              disabled={false}
+              className="w-full"
+              onSuccess={() => {
+                handleGoLiveClick();
+              }}
+            >
+              Go Live
+            </GoLiveButton>
+          </div>
           
-          <Button
-            className="bg-green-600 hover:bg-green-700 text-white"
-            disabled={isGoingLive}
-            onClick={handleGoLiveClick}
-          >
-            {isGoingLive ? 'Going Live...' : 'Go Live'}
-          </Button>
-        </div>
-        
-        <div className="text-xs text-green-600 flex items-center justify-center mt-2">
-          <span className="h-2 w-2 bg-green-500 rounded-full mr-2"></span>
-          Real-time updates enabled
-        </div>
-      </CardContent>
-    </Card>
+          {renderConnectionStatus()}
+        </CardContent>
+      </Card>
+
+      <AlertDialog 
+        open={isClosingConfirmOpen} 
+        onOpenChange={setIsClosingConfirmOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {isLastGame ? 'Complete Session?' : 'Close Game?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {isLastGame 
+                ? 'This will mark the session as completed. This action cannot be undone.' 
+                : 'This will close the current game and advance to the next one. This action cannot be undone.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmCloseGame}
+              className={isLastGame ? "bg-purple-600 hover:bg-purple-700" : "bg-blue-600 hover:bg-blue-700"}
+            >
+              {isLastGame ? 'Complete Session' : 'Close Game'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      
+      {/* Force Close Confirmation Dialog */}
+      <AlertDialog 
+        open={isForceCloseConfirmOpen} 
+        onOpenChange={setIsForceCloseConfirmOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle className="h-5 w-5" />
+              {isLastGame ? 'FORCE Complete Session?' : 'FORCE Close Game?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {isLastGame 
+                ? 'This will FORCE complete the session, resetting all game data. This action cannot be undone and may disrupt active players.' 
+                : 'This will FORCE close the current game, reset all numbers, and advance to the next one. This action cannot be undone and may disrupt active players.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmForceClose}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              {isLastGame ? 'FORCE Complete' : 'FORCE Close'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

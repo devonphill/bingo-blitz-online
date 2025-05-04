@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -232,8 +231,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
         setTimeout(() => {
           supabase.removeChannel(resultChannel);
         }, 60000); // 1 minute timeout
-      })
-      .catch(error => {
+      }, (error) => { // Using this pattern instead of .catch()
         console.error('Error broadcasting claim:', error);
         setClaimStatus('none');
         setIsSubmittingClaim(false);
