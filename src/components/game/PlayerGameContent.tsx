@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useCallback } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -387,9 +386,10 @@ export default function PlayerGameContent({
 
   // Convert the claimStatus to the type required by GameTypePlayspace
   // Fix: Map 'none' to 'pending' since GameTypePlayspace doesn't accept 'none'
-  const gameTypePlayspaceClaimStatus = claimStatus === 'validated' ? 'validated' :
-                                     claimStatus === 'rejected' ? 'rejected' :
-                                     'pending'; // Both 'pending' and 'none' map to 'pending'
+  const gameTypePlayspaceClaimStatus: 'validated' | 'rejected' | 'pending' = 
+    claimStatus === 'validated' ? 'validated' :
+    claimStatus === 'rejected' ? 'rejected' :
+    'pending'; // Both 'pending' and 'none' map to 'pending'
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">

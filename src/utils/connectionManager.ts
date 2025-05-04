@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from './logUtils';
 
@@ -273,7 +272,7 @@ class ConnectionManager {
   }
   
   // Broadcast a number call to all channels with improved error handling
-  private broadcastNumberCall(lastCalledNumber: number, calledNumbers: number[], sessionId: string) {
+  private async broadcastNumberCall(lastCalledNumber: number, calledNumbers: number[], sessionId: string) {
     logWithTimestamp(`Broadcasting number call: ${lastCalledNumber}, total numbers: ${calledNumbers.length}`);
     
     const payload = {
@@ -283,27 +282,20 @@ class ConnectionManager {
       timestamp: new Date().toISOString()
     };
     
-    // Fix the Promise chain by using a proper async/await pattern
     try {
       const channel = supabase.channel(`game-channel-${sessionId}`);
       
-      // Convert the send operation into a proper Promise using an async function
-      const sendBroadcast = async () => {
-        try {
-          await channel.send({
-            type: 'broadcast',
-            event: 'number-called',
-            payload
-          });
-          logWithTimestamp('Number call broadcast successful');
-        } catch (error) {
-          console.error('Error broadcasting number call:', error);
-          logWithTimestamp(`Error broadcasting number call: ${error}`);
-        }
-      };
-      
-      // Execute the async function
-      sendBroadcast();
+      try {
+        await channel.send({
+          type: 'broadcast',
+          event: 'number-called',
+          payload
+        });
+        logWithTimestamp('Number call broadcast successful');
+      } catch (error) {
+        console.error('Error broadcasting number call:', error);
+        logWithTimestamp(`Error broadcasting number call: ${error}`);
+      }
       
       // Also notify local callbacks
       this.notifyNumberCalled(lastCalledNumber, calledNumbers);
@@ -418,7 +410,7 @@ class ConnectionManager {
   }
   
   // Validate a claim from a player
-  validateClaim(claim: any, isValid: boolean) {
+  async validateClaim(claim: any, isValid: boolean) {
     if (!this.sessionId) {
       logWithTimestamp('Cannot validate claim: no session ID');
       return;
@@ -427,51 +419,40 @@ class ConnectionManager {
     logWithTimestamp(`Validating claim for player ${claim.playerName || claim.player_name}, isValid: ${isValid}`);
     
     try {
-      // Update the claim in the database using async/await pattern
-      const processClaim = async () => {
-        try {
-          // First update the database
-          const { error } = await supabase
-            .from('universal_game_logs')
-            .update({
-              validated_at: new Date().toISOString(),
-              prize_shared: isValid
-            })
-            .eq('id', claim.id);
-            
-          if (error) {
-            console.error('Error validating claim:', error);
-            return;
-          }
-          
-          // Then broadcast the result
-          const broadcastChannel = supabase.channel(`game-channel-${this.sessionId}`);
-          
-          try {
-            await broadcastChannel.send({
-              type: 'broadcast',
-              event: 'claim-result',
-              payload: {
-                playerId: claim.player_id || claim.playerId,
-                sessionId: this.sessionId,
-                result: isValid ? 'valid' : 'rejected',
-                timestamp: new Date().toISOString()
-              }
-            });
-            
-            logWithTimestamp(`Claim result broadcast successful: ${isValid ? 'valid' : 'rejected'}`);
-          } catch (err) {
-            console.error('Error broadcasting claim result:', err);
-            logWithTimestamp(`Error broadcasting claim result: ${err}`);
-          }
-        } catch (err) {
-          console.error('Error in validateClaim:', err);
-          logWithTimestamp(`Error in validateClaim: ${err}`);
-        }
-      };
+      // First update the database
+      const { error } = await supabase
+        .from('universal_game_logs')
+        .update({
+          validated_at: new Date().toISOString(),
+          prize_shared: isValid
+        })
+        .eq('id', claim.id);
+        
+      if (error) {
+        console.error('Error validating claim:', error);
+        return;
+      }
       
-      // Execute the async function
-      processClaim();
+      // Then broadcast the result
+      const broadcastChannel = supabase.channel(`game-channel-${this.sessionId}`);
+      
+      try {
+        await broadcastChannel.send({
+          type: 'broadcast',
+          event: 'claim-result',
+          payload: {
+            playerId: claim.player_id || claim.playerId,
+            sessionId: this.sessionId,
+            result: isValid ? 'valid' : 'rejected',
+            timestamp: new Date().toISOString()
+          }
+        });
+        
+        logWithTimestamp(`Claim result broadcast successful: ${isValid ? 'valid' : 'rejected'}`);
+      } catch (err) {
+        console.error('Error broadcasting claim result:', err);
+        logWithTimestamp(`Error broadcasting claim result: ${err}`);
+      }
     } catch (error) {
       console.error('Error in validateClaim:', error);
       logWithTimestamp(`Error in validateClaim: ${error}`);
