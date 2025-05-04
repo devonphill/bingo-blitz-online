@@ -258,6 +258,11 @@ export default function PlayerGameContent({
     <div className="flex flex-col min-h-screen bg-gray-50">
       <div className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
         <GameHeader
+          playerName={playerName}
+          playerCode={playerCode}
+          currentGameNumber={currentSession?.current_game || 1}
+          numberOfGames={currentSession?.number_of_games || 1}
+          gameType={gameType}
           sessionName={currentSession?.name || "Bingo Game"}
           accessCode={playerCode}
           activeWinPattern={currentWinPattern}

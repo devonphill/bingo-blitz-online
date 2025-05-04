@@ -356,10 +356,12 @@ export default function PlayerGame() {
   console.log("- Player name:", playerName);
   console.log("- Connection state:", connectionState);
   
-  // Map the claimStatus to the expected format
-  const mappedClaimStatus = claimStatus === 'valid' ? 'validated' : 
-                           claimStatus === 'invalid' ? 'rejected' : 
-                           claimStatus === 'pending' ? 'pending' : undefined;
+  // Map the claimStatus to the expected format for PlayerGameLayout
+  // This fixes the inconsistent claim status types between components
+  const mappedClaimStatus = claimStatus === 'valid' ? 'valid' : 
+                           claimStatus === 'invalid' ? 'invalid' : 
+                           claimStatus === 'pending' ? 'pending' : 
+                           'none';
 
   return (
     <React.Fragment>
@@ -394,7 +396,7 @@ export default function PlayerGame() {
           setAutoMarking={setAutoMarking}
           handleClaimBingo={handleClaimBingo}
           isClaiming={isSubmittingClaim}
-          claimStatus={claimStatus}
+          claimStatus={mappedClaimStatus}
         />
       </PlayerGameLayout>
     </React.Fragment>
