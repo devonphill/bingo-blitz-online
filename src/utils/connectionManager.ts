@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
@@ -19,6 +20,9 @@ export const connectionManager = {
   reconnectBackoff: 1000, // Starting at 1 second
   reconnectTimer: null as any,
   
+  // Lock to prevent concurrent connection attempts
+  connectionLock: false,
+  
   // Global initialization tracking - prevent multiple initializations
   initializationComplete: false,
   
@@ -38,40 +42,68 @@ export const connectionManager = {
   
   // Connection Management
   initialize(sessionId: string) {
+    // If already locked, don't start another initialization
+    if (this.connectionLock) {
+      logWithTimestamp('Connection operation in progress, deferring initialization', 'info');
+      return this; // Return self for method chaining
+    }
+    
     // Global flag to prevent multiple initializations
-    if (this.initializationComplete && this.sessionId === sessionId && this.connectionState === 'connected') {
+    if (this.initializationComplete && this.sessionId === sessionId && 
+        this.connectionState === 'connected' && this.supabaseChannel?.state === 'SUBSCRIBED') {
       logWithTimestamp(`ConnectionManager already fully initialized and connected for session ${sessionId}`, 'info');
       return this; // Return self for method chaining
     }
     
-    // If already initializing, don't start another initialization
-    if (this.isInitializing) {
-      logWithTimestamp('ConnectionManager initialization already in progress', 'info');
-      return this; // Return self for method chaining
-    }
-    
-    this.isInitializing = true;
-    this.connectionState = 'connecting';
-    this.sessionId = sessionId;
-    this.reconnectAttempts = 0; // Reset reconnect attempts on fresh init
-    logWithTimestamp(`Initializing connection for session ${sessionId}`, 'info');
-    
-    // Notify all listeners of the connecting state
-    this.notifyConnectionStatusChange('connecting');
+    // Set connection lock
+    this.connectionLock = true;
     
     try {
-      // Clean up existing channel if any
-      this.cleanupExistingChannel();
+      // If already initializing, don't start another initialization
+      if (this.isInitializing) {
+        logWithTimestamp('ConnectionManager initialization already in progress', 'info');
+        this.connectionLock = false;
+        return this; // Return self for method chaining
+      }
+      
+      this.isInitializing = true;
+      this.connectionState = 'connecting';
+      this.sessionId = sessionId;
+      this.reconnectAttempts = 0; // Reset reconnect attempts on fresh init
+      logWithTimestamp(`Initializing connection for session ${sessionId}`, 'info');
+      
+      // Notify all listeners of the connecting state
+      this.notifyConnectionStatusChange('connecting');
       
       // Create a new channel for this session
-      this.supabaseChannel = supabase.channel(`game-${sessionId}`);
+      // Only clean up if we're changing session or if channel is in error state
+      if (this.supabaseChannel && 
+          (this.supabaseChannel.state === 'CLOSED' || 
+           this.supabaseChannel.state === 'TIMED_OUT' || 
+           this.supabaseChannel.state === 'CHANNEL_ERROR')) {
+        logWithTimestamp('Cleaning up existing channel before creating a new one', 'info');
+        this.cleanupExistingChannel();
+      } else if (this.supabaseChannel && this.supabaseChannel.state === 'SUBSCRIBED') {
+        logWithTimestamp('Channel already subscribed, skipping initialization', 'info');
+        this.connectionState = 'connected';
+        this.notifyConnectionStatusChange('connected');
+        this.isInitializing = false;
+        this.connectionLock = false;
+        return this;
+      }
       
-      // Set up channel listeners
-      this.setupChannelListeners();
-      
-      // Add to active channels
-      if (!this.activeChannels.includes(this.supabaseChannel)) {
-        this.activeChannels.push(this.supabaseChannel);
+      // Create a new channel if we don't have one or if we cleaned up
+      if (!this.supabaseChannel) {
+        logWithTimestamp(`Creating new channel for session ${sessionId}`, 'info');
+        this.supabaseChannel = supabase.channel(`game-${sessionId}`);
+        
+        // Set up channel listeners
+        this.setupChannelListeners();
+        
+        // Add to active channels
+        if (!this.activeChannels.includes(this.supabaseChannel)) {
+          this.activeChannels.push(this.supabaseChannel);
+        }
       }
       
       // Update last ping time
@@ -82,9 +114,10 @@ export const connectionManager = {
       
     } catch (error) {
       this.handleInitializationError(error);
+    } finally {
+      // Always release the lock when done
+      this.connectionLock = false;
     }
-    
-    // We don't call subscribe here anymore - defer to separate method
     
     return this; // Return self for method chaining
   },
@@ -93,8 +126,18 @@ export const connectionManager = {
   cleanupExistingChannel() {
     if (this.supabaseChannel) {
       try {
-        logWithTimestamp('Cleaning up existing channel before creating a new one', 'info');
-        this.supabaseChannel.unsubscribe();
+        const channelState = this.supabaseChannel.state;
+        logWithTimestamp(`Cleaning up channel in state: ${channelState}`, 'info');
+        
+        if (channelState !== 'CLOSED') {
+          this.supabaseChannel.unsubscribe();
+        }
+        
+        // Remove from active channels
+        this.activeChannels = this.activeChannels.filter(channel => channel !== this.supabaseChannel);
+        
+        // Clear the reference
+        this.supabaseChannel = null;
       } catch (err) {
         logWithTimestamp(`Error unsubscribing from existing channel: ${err}`, 'error');
       }
@@ -109,6 +152,11 @@ export const connectionManager = {
   
   // Set up all channel event listeners
   setupChannelListeners() {
+    if (!this.supabaseChannel) {
+      logWithTimestamp('Cannot set up listeners: No channel available', 'error');
+      return;
+    }
+    
     this.supabaseChannel
       .on('presence', { event: 'sync' }, () => {
         this.handlePresenceSync();
@@ -131,8 +179,6 @@ export const connectionManager = {
       .on('broadcast', { event: 'bingo-claim' }, (payload) => {
         this.handleBingoClaim(payload);
       });
-    
-    // We don't subscribe yet - that's deferred to the connect method
   },
   
   // Handle initialization errors
@@ -143,56 +189,90 @@ export const connectionManager = {
     
     // Call error listeners
     this.notifyError(`Error initializing connection: ${error}`);
+    
+    // Release the lock if it was set
+    this.connectionLock = false;
   },
   
   // Connect to the channel (now requires explicit call after initialization)
   connect() {
-    if (!this.sessionId) {
-      logWithTimestamp('Cannot connect: No session ID available', 'error');
-      this.notifyError('No session ID available');
+    // Check if we're already in a connection operation
+    if (this.connectionLock) {
+      logWithTimestamp('Connection operation in progress, deferring connect', 'info');
       return this;
     }
     
-    if (this.connectionState === 'connected') {
-      logWithTimestamp('Already connected', 'info');
-      return this;
-    }
+    // Set the lock
+    this.connectionLock = true;
     
-    if (this.isReconnecting) {
-      logWithTimestamp('Connection already in progress (reconnecting)', 'info');
-      return this;
-    }
-    
-    // Set to connecting state
-    this.connectionState = 'connecting';
-    this.notifyConnectionStatusChange('connecting');
-    
-    // If we have a channel already, check if it's subscribed
-    if (this.supabaseChannel) {
-      // Check the channel's current state before trying to subscribe
-      if (this.supabaseChannel.state === 'SUBSCRIBED') {
-        logWithTimestamp('Channel already subscribed, updating connection state', 'info');
-        this.connectionState = 'connected';
-        this.notifyConnectionStatusChange('connected');
-        return this;
-      } 
-      else if (this.supabaseChannel.state === 'SUBSCRIBING') {
-        logWithTimestamp('Channel currently subscribing, waiting for completion', 'info');
+    try {
+      if (!this.sessionId) {
+        logWithTimestamp('Cannot connect: No session ID available', 'error');
+        this.notifyError('No session ID available');
         return this;
       }
       
-      // Now it's safe to try subscribing
-      logWithTimestamp('Subscribing to channel', 'info');
-      this.supabaseChannel.subscribe(this.handleSubscriptionStatus.bind(this));
-    } else {
-      // Initialize first if we don't have a channel
-      if (this.sessionId) {
-        this.initialize(this.sessionId);
-        // And then subscribe
-        if (this.supabaseChannel) {
-          this.supabaseChannel.subscribe(this.handleSubscriptionStatus.bind(this));
+      if (this.isConnected()) {
+        logWithTimestamp('Already connected', 'info');
+        return this;
+      }
+      
+      if (this.isReconnecting) {
+        logWithTimestamp('Connection already in progress (reconnecting)', 'info');
+        return this;
+      }
+      
+      // Set to connecting state
+      this.connectionState = 'connecting';
+      this.notifyConnectionStatusChange('connecting');
+      
+      // If we have a channel already, check if it's subscribed
+      if (this.supabaseChannel) {
+        // Check the channel's current state before trying to subscribe
+        if (this.supabaseChannel.state === 'SUBSCRIBED') {
+          logWithTimestamp('Channel already subscribed, updating connection state', 'info');
+          this.connectionState = 'connected';
+          this.notifyConnectionStatusChange('connected');
+          return this;
+        } 
+        else if (this.supabaseChannel.state === 'SUBSCRIBING') {
+          logWithTimestamp('Channel currently subscribing, waiting for completion', 'info');
+          return this;
+        }
+        else if (this.supabaseChannel.state === 'CLOSED' || 
+                this.supabaseChannel.state === 'TIMED_OUT' || 
+                this.supabaseChannel.state === 'CHANNEL_ERROR') {
+          // Channel is in error state, need to reinitialize
+          logWithTimestamp('Channel in error state, reinitializing', 'info');
+          
+          // Clean up and create new channel
+          this.cleanupExistingChannel();
+          this.supabaseChannel = supabase.channel(`game-${this.sessionId}`);
+          this.setupChannelListeners();
+        }
+        
+        // Now it's safe to try subscribing
+        logWithTimestamp(`Subscribing to channel in state: ${this.supabaseChannel.state}`, 'info');
+        this.supabaseChannel.subscribe(this.handleSubscriptionStatus.bind(this));
+      } else {
+        // Initialize first if we don't have a channel
+        if (this.sessionId) {
+          this.initialize(this.sessionId);
+          // And then subscribe
+          if (this.supabaseChannel) {
+            logWithTimestamp('Subscribing to newly created channel', 'info');
+            this.supabaseChannel.subscribe(this.handleSubscriptionStatus.bind(this));
+          }
         }
       }
+    } catch (error) {
+      logWithTimestamp(`Error in connect: ${error}`, 'error');
+      this.connectionState = 'error';
+      this.notifyConnectionStatusChange('error');
+      this.notifyError(`Connection error: ${error}`);
+    } finally {
+      // Always release the lock when done
+      this.connectionLock = false;
     }
     
     return this;
@@ -225,103 +305,138 @@ export const connectionManager = {
   
   // Smart reconnect method with exponential backoff
   reconnect() {
-    // Clear any pending reconnect timer
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    
-    // Don't try to reconnect if we're already connecting or we've reached max attempts
-    if (this.isReconnecting || this.connectionState === 'connecting' || this.isInitializing) {
-      logWithTimestamp('Reconnection already in progress', 'info');
+    // If lock is active, defer reconnect
+    if (this.connectionLock) {
+      logWithTimestamp('Connection operation in progress, deferring reconnect', 'info');
       return this;
     }
     
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      logWithTimestamp('Maximum reconnect attempts reached', 'error');
-      this.connectionState = 'error';
-      this.notifyConnectionStatusChange('error');
-      this.notifyError('Maximum reconnect attempts reached');
-      return this;
-    }
+    // Set the lock
+    this.connectionLock = true;
     
-    // If we don't have a session ID, we can't reconnect
-    if (!this.sessionId) {
-      logWithTimestamp('Cannot reconnect: No session ID available', 'error');
-      this.connectionState = 'error';
-      this.notifyConnectionStatusChange('error');
-      return this;
-    }
-    
-    // Mark as reconnecting and increment attempts
-    this.isReconnecting = true;
-    
-    // Increment backoff with exponential delay
-    const backoffTime = Math.min(
-      this.reconnectBackoff * Math.pow(1.5, this.reconnectAttempts),
-      30000 // Max 30 seconds
-    );
-    
-    this.reconnectAttempts++;
-    logWithTimestamp(`Reconnect attempt ${this.reconnectAttempts} with ${backoffTime}ms backoff`, 'info');
-    
-    this.connectionState = 'connecting';
-    this.notifyConnectionStatusChange('connecting');
-    
-    // Schedule reconnect after backoff
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
+    try {
+      // Clear any pending reconnect timer
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
       
-      // NEW APPROACH: For reconnect, we properly handle different channel states
-      if (this.supabaseChannel) {
-        const channelState = this.supabaseChannel.state;
-        logWithTimestamp(`Current channel state during reconnect: ${channelState}`, 'info');
+      // Don't try to reconnect if we're already connected
+      if (this.isConnected()) {
+        logWithTimestamp('Already connected, no need to reconnect', 'info');
+        return this;
+      }
+      
+      // Don't try to reconnect if we're already connecting or we've reached max attempts
+      if (this.isReconnecting) {
+        logWithTimestamp('Reconnection already in progress', 'info');
+        return this;
+      }
+      
+      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+        logWithTimestamp('Maximum reconnect attempts reached', 'error');
+        this.connectionState = 'error';
+        this.notifyConnectionStatusChange('error');
+        this.notifyError('Maximum reconnect attempts reached');
+        return this;
+      }
+      
+      // If we don't have a session ID, we can't reconnect
+      if (!this.sessionId) {
+        logWithTimestamp('Cannot reconnect: No session ID available', 'error');
+        this.connectionState = 'error';
+        this.notifyConnectionStatusChange('error');
+        return this;
+      }
+      
+      // Mark as reconnecting and increment attempts
+      this.isReconnecting = true;
+      
+      // Increment backoff with exponential delay
+      const backoffTime = Math.min(
+        this.reconnectBackoff * Math.pow(1.5, this.reconnectAttempts),
+        30000 // Max 30 seconds
+      );
+      
+      this.reconnectAttempts++;
+      logWithTimestamp(`Reconnect attempt ${this.reconnectAttempts} with ${backoffTime}ms backoff`, 'info');
+      
+      this.connectionState = 'connecting';
+      this.notifyConnectionStatusChange('connecting');
+      
+      // Schedule reconnect after backoff
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
         
-        if (channelState === 'SUBSCRIBED') {
-          // Channel already subscribed, just update connection state
-          logWithTimestamp('Channel already subscribed during reconnect, updating state', 'info');
-          this.connectionState = 'connected';
-          this.notifyConnectionStatusChange('connected');
+        if (this.isConnected()) {
+          logWithTimestamp('Already connected, aborting reconnect', 'info');
           this.isReconnecting = false;
+          return;
+        }
+        
+        try {
+          // Check channel state to determine appropriate action
+          if (this.supabaseChannel) {
+            const channelState = this.supabaseChannel.state;
+            logWithTimestamp(`Reconnecting with channel state: ${channelState}`, 'info');
+            
+            if (channelState === 'SUBSCRIBED') {
+              // Channel already subscribed, just update connection state
+              logWithTimestamp('Channel already subscribed during reconnect, updating state', 'info');
+              this.connectionState = 'connected';
+              this.notifyConnectionStatusChange('connected');
+              this.isReconnecting = false;
+              
+              // Try to track presence again if we have data
+              this.retryPresenceTracking();
+            }
+            else if (channelState === 'TIMED_OUT' || channelState === 'CLOSED' || channelState === 'CHANNEL_ERROR') {
+              // Channel needs to be recreated
+              logWithTimestamp('Channel in error state, recreating during reconnect', 'info');
+              this.cleanupExistingChannel();
+              this.supabaseChannel = supabase.channel(`game-${this.sessionId}`);
+              this.setupChannelListeners();
+              
+              // Now subscribe to the new channel
+              this.supabaseChannel.subscribe(this.handleSubscriptionStatus.bind(this));
+            }
+            else if (channelState === 'SUBSCRIBING') {
+              // Already subscribing, just wait
+              logWithTimestamp('Channel is already subscribing, waiting for completion', 'info');
+              // Don't do anything, the subscription callback will handle state changes
+            }
+            else {
+              // Not subscribed and not subscribing, safe to subscribe
+              logWithTimestamp('Attempting to resubscribe to existing channel during reconnect', 'info');
+              this.supabaseChannel.subscribe(this.handleSubscriptionStatus.bind(this));
+            }
+          } else {
+            // Only re-initialize if we don't have a channel
+            logWithTimestamp('No channel available, reinitializing connection', 'info');
+            this.initialize(this.sessionId as string);
+            // And then subscribe
+            if (this.supabaseChannel) {
+              this.supabaseChannel.subscribe(this.handleSubscriptionStatus.bind(this));
+            }
+          }
+        } catch (error) {
+          logWithTimestamp(`Error during reconnect: ${error}`, 'error');
+          this.notifyError(`Reconnect error: ${error}`);
           
-          // Try to track presence again if we have data
-          this.retryPresenceTracking();
+          // If this isn't our last attempt, schedule another
+          if (this.reconnectAttempts < this.maxReconnectAttempts) {
+            this.scheduleReconnect();
+          } else {
+            this.connectionState = 'error';
+            this.notifyConnectionStatusChange('error');
+            this.isReconnecting = false;
+          }
         }
-        else if (channelState === 'TIMED_OUT' || channelState === 'CLOSED' || channelState === 'CHANNEL_ERROR') {
-          // Channel needs to be recreated
-          logWithTimestamp('Channel in error state, recreating during reconnect', 'info');
-          this.cleanupExistingChannel();
-          this.supabaseChannel = supabase.channel(`game-${this.sessionId}`);
-          this.setupChannelListeners();
-          
-          // Now subscribe to the new channel
-          this.supabaseChannel.subscribe(this.handleSubscriptionStatus.bind(this));
-        }
-        else if (channelState === 'SUBSCRIBING') {
-          // Already subscribing, just wait
-          logWithTimestamp('Channel is already subscribing, waiting for completion', 'info');
-          // Don't do anything, the subscription callback will handle state changes
-        }
-        else {
-          // Not subscribed and not subscribing, safe to subscribe
-          logWithTimestamp('Channel exists but not subscribed, subscribing during reconnect', 'info');
-          this.supabaseChannel.subscribe(this.handleSubscriptionStatus.bind(this));
-        }
-      } else {
-        // Only re-initialize if we don't have a channel
-        logWithTimestamp('No channel available, reinitializing connection', 'info');
-        this.initialize(this.sessionId as string);
-        // And then subscribe
-        if (this.supabaseChannel) {
-          this.supabaseChannel.subscribe(this.handleSubscriptionStatus.bind(this));
-        }
-      }
-      
-      // Mark reconnection as complete unless subscribing
-      if (this.supabaseChannel && this.supabaseChannel.state !== 'SUBSCRIBING') {
-        this.isReconnecting = false;
-      }
-    }, backoffTime);
+      }, backoffTime);
+    } finally {
+      // Always release the lock when timer is set
+      this.connectionLock = false;
+    }
     
     return this;
   },
@@ -393,10 +508,10 @@ export const connectionManager = {
       this.presenceTrackingTimer = null;
     }
     
-    // Schedule a retry after short delay to ensure connection is stable
+    // Make sure there's a delay between connection and tracking
     this.presenceTrackingTimer = setTimeout(() => {
       if (this.isConnected() && this.presenceData) {
-        logWithTimestamp('Retrying player presence tracking after reconnect', 'info');
+        logWithTimestamp('Tracking presence after connection established', 'info');
         this.trackPlayerPresence(this.presenceData);
       }
     }, 500);
@@ -538,7 +653,8 @@ export const connectionManager = {
       sessionId: this.sessionId,
       channelState: this.supabaseChannel?.state || 'NO_CHANNEL',
       lastPing: this.getLastPing(),
-      initializationComplete: this.initializationComplete
+      initializationComplete: this.initializationComplete,
+      connectionLock: this.connectionLock
     };
   },
   
@@ -710,8 +826,10 @@ export const connectionManager = {
       this.resetReconnectAttempts();  // Reset the counter on successful connection
       this.notifyConnectionStatusChange('connected');
       
-      // Re-track presence data if we have it
-      this.retryPresenceTracking();
+      // Re-track presence data if we have it, but with a delay
+      setTimeout(() => {
+        this.retryPresenceTracking();
+      }, 500);
       
       // Clear any reconnect timer
       if (this.reconnectTimer) {

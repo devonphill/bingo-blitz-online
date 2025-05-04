@@ -43,7 +43,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
     }
   }, [playerCode, sessionId]);
 
-  // Set up game state updates, connection status monitoring, but NOT connection initialization
+  // Set up game state updates and connection status monitoring
   useEffect(() => {
     // Skip if we don't have necessary data
     if (!playerCode || !sessionId) {
@@ -89,9 +89,6 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
       .onConnectionStatusChange(onConnectionStatusChange)
       .onError(onError);
     
-    // IMPORTANT: This hook no longer tries to initialize the connection
-    // That's now the sole responsibility of usePlayerGame
-    
     // Check current connection state
     const currentState = connectionManager.getConnectionState();
     setState(prev => ({
@@ -100,8 +97,11 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
       isLoading: currentState === 'connecting'
     }));
     
-    // No cleanup needed - we're not removing listeners since the connectionManager
-    // maintains its own state
+    // Return cleanup function - but don't remove listeners since connectionManager
+    // maintains its own state and other components might be using these listeners
+    return () => {
+      // We could implement a listener removal system in connectionManager if needed
+    };
     
   }, [playerCode, sessionId]);
 

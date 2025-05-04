@@ -151,6 +151,13 @@ export default function PlayerGame() {
     const timer = setTimeout(() => {
       // Update the connection state but also check the direct connection status
       const isDirectlyConnected = connectionManager.isConnected();
+      
+      // Important: Don't override a connected state with a connecting state
+      if (hookConnectionState === 'connecting' && isDirectlyConnected) {
+        setEffectiveConnectionState('connected');
+        return;
+      }
+      
       const newState = isDirectlyConnected ? 'connected' : hookConnectionState;
       setEffectiveConnectionState(newState);
       
@@ -160,14 +167,11 @@ export default function PlayerGame() {
       // If we're still disconnected, try to reconnect
       if (newState !== 'connected' && currentSession?.id) {
         logWithTimestamp('PlayerGame: Still disconnected, attempting reconnect');
-        // IMPORTANT CHANGE: Call connect() instead of reconnect() to avoid multiple subscriptions
-        if (hookConnectionState === 'connecting') {
-          // We're already connecting, let it complete
-          return;
-        }
         
-        // This will not attempt to subscribe again if already subscribed
-        connectionManager.connect();
+        // Only call connect() if we're not already connecting or connected
+        if (hookConnectionState !== 'connecting' && !isDirectlyConnected) {
+          connectionManager.connect();
+        }
       }
     }, 1000); // Wait 1 second before updating connection state to prevent flickering
     
