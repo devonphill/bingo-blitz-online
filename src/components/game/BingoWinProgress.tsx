@@ -112,15 +112,21 @@ export default function BingoWinProgress({
   });
 
   // We'll prioritize the current win pattern if provided, otherwise use activeWinPatterns
-  const actualWinPattern = currentWinPattern || (activeWinPatterns.length > 0 ? activeWinPatterns[0] : "oneLine");
+  let actualWinPattern = currentWinPattern || (activeWinPatterns.length > 0 ? activeWinPatterns[0] : "oneLine");
+  
+  // Ensure we're using the proper pattern format for maintstage
+  if (gameType === 'mainstage' && !actualWinPattern.startsWith('MAINSTAGE_')) {
+    actualWinPattern = `MAINSTAGE_${actualWinPattern}`;
+  }
   
   // Debug log the pattern being used
   console.log(`Using win pattern for check: ${actualWinPattern}`);
   
+  // Use the properly formatted pattern for win checking
   const result = checkMainstageWinPattern(
     card,
     calledNumbers,
-    actualWinPattern as 'oneLine' | 'twoLines' | 'fullHouse'
+    actualWinPattern as 'oneLine' | 'twoLines' | 'fullHouse' | 'MAINSTAGE_oneLine' | 'MAINSTAGE_twoLines' | 'MAINSTAGE_fullHouse'
   );
   
   const canClaim = result.isWinner;
@@ -129,7 +135,7 @@ export default function BingoWinProgress({
   return (
     <div className="flex items-center justify-between px-4 py-3 bg-white rounded-lg shadow-sm border border-gray-200">
       <div className="flex flex-col">
-        <span className="text-sm text-gray-600">Current Pattern: <span className="font-semibold">{actualWinPattern}</span></span>
+        <span className="text-sm text-gray-600">Current Pattern: <span className="font-semibold">{actualWinPattern.replace('MAINSTAGE_', '')}</span></span>
         <span className={minTG <= 3 ? "font-bold text-green-600" : "font-medium text-gray-700"}>
           {minTG === 0 
             ? "Bingo!" 

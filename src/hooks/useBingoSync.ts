@@ -211,6 +211,7 @@ export function useBingoSync(sessionId: string, playerId: string, playerName: st
           player_id: playerId,
           player_name: playerName || playerId,
           game_type: 'mainstage',
+          game_number: gameState?.currentGameNumber || 1, // Add game number field - required
           win_pattern: gameState?.currentWinPattern || 'oneLine',
           ticket_serial: ticketData.serial,
           ticket_perm: ticketData.perm,

@@ -10,7 +10,7 @@ export function checkMainstageWinPattern(
   pattern: 'oneLine' | 'twoLines' | 'fullHouse' | 'MAINSTAGE_oneLine' | 'MAINSTAGE_twoLines' | 'MAINSTAGE_fullHouse'
 ): WinCheckResult {
   // Normalize pattern by removing MAINSTAGE_ prefix if present
-  const normalizedPattern = pattern.replace('MAINSTAGE_', '') as 'oneLine' | 'twoLines' | 'fullHouse';
+  const normalizedPattern = pattern.replace(/^MAINSTAGE_/, '') as 'oneLine' | 'twoLines' | 'fullHouse';
   
   // Debug log to verify pattern being checked
   console.log(`Checking win pattern: ${pattern} (normalized to: ${normalizedPattern})`);
