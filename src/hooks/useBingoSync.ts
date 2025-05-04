@@ -292,6 +292,8 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
     if (!sessionId) return;
     
     setConnectionState('connecting');
+    
+    // Using Promise.then() instead of await to avoid issues with Promise types
     connectionManager.reconnect();
     
     // Refresh data manually from Supabase
