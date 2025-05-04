@@ -1,333 +1,263 @@
 
 import React, { useState, useEffect } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { useClaimManagement } from '@/hooks/useClaimManagement';
-import ClaimVerificationModal from '@/components/game/ClaimVerificationModal';
+import ClaimVerificationModal from './ClaimVerificationModal';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { useClaimManagement } from '@/hooks/useClaimManagement';
 
 interface ClaimVerificationSheetProps {
   isOpen: boolean;
   onClose: () => void;
   sessionId?: string;
   gameNumber?: number;
-  currentCalledNumbers: number[];
-  gameType: string;
+  currentCalledNumbers?: number[];
+  gameType?: string;
   playerName?: string;
-  currentNumber: number | null;
-  currentWinPattern: string | null;
+  currentNumber?: number | null;
+  currentWinPattern?: string | null;
 }
 
 export default function ClaimVerificationSheet({
   isOpen,
   onClose,
   sessionId,
-  gameNumber,
-  currentCalledNumbers,
-  gameType,
-  playerName,
-  currentNumber,
-  currentWinPattern,
+  gameNumber = 1,
+  currentCalledNumbers = [],
+  gameType = 'mainstage',
+  playerName = '',
+  currentNumber = null,
+  currentWinPattern = null
 }: ClaimVerificationSheetProps) {
   const [claims, setClaims] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeClaimPlayerName, setActiveClaimPlayerName] = useState<string | null>(null);
-  const [activeClaimPlayerCode, setActiveClaimPlayerCode] = useState<string | null>(null);
-  const [activeClaimTickets, setActiveClaimTickets] = useState<any[]>([]);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedClaim, setSelectedClaim] = useState<any>(null);
+  const [isVerifyModalOpen, setIsVerifyModalOpen] = useState(false);
+  const { toast } = useToast();
+  const { validateClaim, rejectClaim } = useClaimManagement(sessionId, gameNumber);
   
-  const { validateClaim, rejectClaim, isProcessingClaim } = useClaimManagement(
-    sessionId, 
-    gameNumber
-  );
+  // Log key props for debugging
+  console.log("ClaimVerificationSheet rendered with isOpen:", isOpen, "sessionId:", sessionId);
 
-  // Fetch claims when the sheet is opened
-  useEffect(() => {
-    if (isOpen && sessionId) {
-      fetchClaims();
-    }
-  }, [isOpen, sessionId]);
-  
-  // When playerName prop changes, update state
-  useEffect(() => {
-    if (playerName) {
-      setActiveClaimPlayerName(playerName);
-      setActiveClaimPlayerCode(playerName); // Assuming playerName might be a code
-    }
-  }, [playerName]);
-
-  // Fetch pending claims from universal_game_logs
-  const fetchClaims = async () => {
+  const fetchClaims = React.useCallback(async () => {
     if (!sessionId) return;
     
     setIsLoading(true);
     try {
       logWithTimestamp(`Fetching claims for session ${sessionId}`);
       
-      // Get unvalidated claims for this session
-      const { data: realtimeClaims, error: realtimeError } = await supabase
+      // Query universal_game_logs table for unvalidated claims
+      const { data, error } = await supabase
         .from('universal_game_logs')
         .select('*')
         .eq('session_id', sessionId)
         .is('validated_at', null)
-        .not('claimed_at', 'is', null)
-        .order('claimed_at', { ascending: true });
-
-      if (realtimeError) {
-        console.error("Error fetching realtime claims:", realtimeError);
-      }
+        .not('claimed_at', 'is', null);  // Make sure we only get claims
       
-      // If there are claims, store them
-      if (realtimeClaims && realtimeClaims.length > 0) {
-        console.log("Found realtime claims:", realtimeClaims);
-        setClaims(realtimeClaims);
-        
-        // If there's an active claim, get the player's tickets
-        if (realtimeClaims[0]) {
-          const playerCode = realtimeClaims[0].player_id;
-          const playerName = realtimeClaims[0].player_name || playerCode;
-          
-          if (playerCode) {
-            setActiveClaimPlayerName(playerName);
-            setActiveClaimPlayerCode(playerCode);
-            
-            // If the claim already has ticket data, use it
-            if (realtimeClaims[0].ticket_serial && realtimeClaims[0].ticket_numbers) {
-              setActiveClaimTickets([{
-                serial: realtimeClaims[0].ticket_serial,
-                perm: realtimeClaims[0].ticket_perm,
-                position: realtimeClaims[0].ticket_position,
-                layout_mask: realtimeClaims[0].ticket_layout_mask,
-                numbers: realtimeClaims[0].ticket_numbers
-              }]);
-              setModalOpen(true);
-            } else {
-              // Otherwise fetch the player's tickets
-              fetchPlayerTickets(playerCode);
-            }
-          }
-          
-          setModalOpen(true);
-        }
-      } else {
-        // If no claims were found through the database, try an alternative approach
-        console.log("No pending claims found in database");
-        
-        // Check if we have a player name passed in props
-        if (playerName) {
-          setActiveClaimPlayerName(playerName);
-          setActiveClaimPlayerCode(playerName);
-          fetchPlayerTickets(playerName);
-          setModalOpen(true);
-        }
-      }
-    } catch (error) {
-      console.error("Error in fetchClaims:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Fetch a player's tickets
-  const fetchPlayerTickets = async (playerCodeOrId: string) => {
-    if (!sessionId) return;
-    
-    try {
-      logWithTimestamp(`Fetching tickets for player ${playerCodeOrId}`);
-      
-      // First determine if we have a player code or UUID
-      let queryPlayerId = playerCodeOrId;
-      let isPlayerCode = false;
-      
-      // Check if it looks like a player code rather than UUID
-      if (playerCodeOrId.length < 30 && /[A-Za-z]/.test(playerCodeOrId)) {
-        isPlayerCode = true;
-        console.log("Using player_code query approach");
-        
-        // First find the player's UUID from the player code
-        const { data: playerData, error: playerError } = await supabase
-          .from('players')
-          .select('id, nickname')
-          .eq('player_code', playerCodeOrId)
-          .single();
-          
-        if (playerError) {
-          console.error("Error finding player by code:", playerError);
-        } else if (playerData) {
-          console.log("Found player by code:", playerData);
-          queryPlayerId = playerData.id;
-          
-          // Update player name if we have a nickname
-          if (playerData.nickname) {
-            setActiveClaimPlayerName(playerData.nickname);
-          }
-        } else {
-          // Continue with original code as fallback
-          console.log("No player found by code, using original code as ID");
-        }
-      }
-      
-      // Get tickets assigned to this player for this session
-      const { data: tickets, error: ticketsError } = await supabase
-        .from('assigned_tickets')
-        .select('*')
-        .eq('session_id', sessionId)
-        .eq('player_id', queryPlayerId);
-      
-      if (ticketsError) {
-        console.error("Error fetching player tickets:", ticketsError);
-        
-        // Try an alternative approach if we're querying with a player code
-        if (isPlayerCode) {
-          console.log("Trying alternative approach with player_code directly");
-          
-          // This is a fallback in case player_id in assigned_tickets is storing player_code
-          const { data: altTickets, error: altError } = await supabase
-            .from('assigned_tickets')
-            .select('*')
-            .eq('session_id', sessionId)
-            .eq('player_id', playerCodeOrId); // Try with the original player code
-          
-          if (!altError && altTickets && altTickets.length > 0) {
-            console.log(`Found ${altTickets.length} tickets for player using direct player code:`, altTickets);
-            setActiveClaimTickets(altTickets);
-            setModalOpen(true);
-            return;
-          }
-        }
-        
+      if (error) {
+        console.error('Error fetching claims:', error);
         return;
       }
       
-      if (tickets && tickets.length > 0) {
-        console.log(`Found ${tickets.length} tickets for player:`, tickets);
-        setActiveClaimTickets(tickets);
-        setModalOpen(true);
-      } else {
-        console.log("No tickets found for player");
+      logWithTimestamp(`Found ${data?.length || 0} pending claims`);
+      if (data && data.length > 0) {
+        setClaims(data);
       }
-    } catch (error) {
-      console.error("Error fetching player tickets:", error);
+    } catch (err) {
+      console.error('Exception in fetchClaims:', err);
+    } finally {
+      setIsLoading(false);
     }
+  }, [sessionId]);
+  
+  // Fetch claims when the sheet is opened or sessionId changes
+  useEffect(() => {
+    if (isOpen && sessionId) {
+      fetchClaims();
+    }
+  }, [isOpen, sessionId, fetchClaims]);
+
+  // Listen for new claims
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    const channel = supabase
+      .channel('caller-claims-listener')
+      .on(
+        'broadcast',
+        { event: 'bingo-claim' },
+        async (payload) => {
+          console.log("Received bingo claim broadcast:", payload);
+          if (payload.payload && payload.payload.sessionId === sessionId) {
+            toast({
+              title: "New Bingo Claim!",
+              description: `${payload.payload.playerName} has claimed bingo! Check the claims panel to verify.`,
+              variant: "default",
+            });
+            
+            // Automatically fetch updated claims
+            fetchClaims();
+          }
+        }
+      )
+      .subscribe();
+      
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [sessionId, fetchClaims, toast]);
+
+  const handleOpenVerifyModal = (claim: any) => {
+    console.log("Opening verification modal for claim:", claim);
+    setSelectedClaim(claim);
+    setIsVerifyModalOpen(true);
   };
 
-  // Validate a claim
+  const handleCloseVerifyModal = () => {
+    setIsVerifyModalOpen(false);
+    setSelectedClaim(null);
+  };
+
   const handleValidClaim = async () => {
-    if (!activeClaimPlayerCode || !sessionId || !gameNumber || activeClaimTickets.length === 0) {
-      console.error("Missing data for claim validation");
-      return;
-    }
+    if (!selectedClaim) return;
     
-    // Use the first ticket for validation
-    const ticketData = {
-      serial: activeClaimTickets[0].serial,
-      perm: activeClaimTickets[0].perm,
-      position: activeClaimTickets[0].position,
-      layoutMask: activeClaimTickets[0].layoutMask || activeClaimTickets[0].layout_mask,
-      numbers: activeClaimTickets[0].numbers
-    };
-    
-    // Validate the claim
-    const success = await validateClaim(
-      activeClaimPlayerCode,
-      activeClaimPlayerName || activeClaimPlayerCode,
-      currentWinPattern || 'fullHouse',
-      currentCalledNumbers,
-      currentNumber,
-      ticketData
-    );
-    
-    if (success) {
-      // Clear claims and close modal
-      setModalOpen(false);
-      setClaims([]);
-      onClose();
+    try {
+      // Call the validateClaim function
+      const success = await validateClaim(
+        selectedClaim.player_id,
+        selectedClaim.player_name,
+        selectedClaim.win_pattern,
+        selectedClaim.called_numbers,
+        selectedClaim.last_called_number,
+        {
+          serial: selectedClaim.ticket_serial,
+          perm: selectedClaim.ticket_perm,
+          position: selectedClaim.ticket_position,
+          layoutMask: selectedClaim.ticket_layout_mask,
+          numbers: selectedClaim.ticket_numbers
+        }
+      );
+      
+      if (success) {
+        toast({
+          title: "Claim Validated",
+          description: "The claim has been validated successfully",
+        });
+        
+        // Refresh claims
+        await fetchClaims();
+        
+        // Close the verify modal
+        handleCloseVerifyModal();
+      }
+    } catch (err) {
+      console.error("Error validating claim:", err);
     }
   };
 
-  // Reject a claim
-  const handleFalseClaim = async () => {
-    if (!activeClaimPlayerCode || !sessionId || !gameNumber || activeClaimTickets.length === 0) {
-      console.error("Missing data for claim rejection");
-      return;
-    }
+  const handleRejectClaim = async () => {
+    if (!selectedClaim) return;
     
-    // Use the first ticket for rejection
-    const ticketData = {
-      serial: activeClaimTickets[0].serial,
-      perm: activeClaimTickets[0].perm,
-      position: activeClaimTickets[0].position,
-      layoutMask: activeClaimTickets[0].layoutMask || activeClaimTickets[0].layout_mask,
-      numbers: activeClaimTickets[0].numbers
-    };
-    
-    // Reject the claim
-    const success = await rejectClaim(
-      activeClaimPlayerCode,
-      activeClaimPlayerName || activeClaimPlayerCode,
-      currentWinPattern || 'fullHouse',
-      currentCalledNumbers,
-      currentNumber,
-      ticketData
-    );
-    
-    if (success) {
-      // Clear claims and close modal
-      setModalOpen(false);
-      setClaims([]);
-      onClose();
+    try {
+      // Call the rejectClaim function
+      const success = await rejectClaim(
+        selectedClaim.player_id,
+        selectedClaim.player_name,
+        selectedClaim.win_pattern,
+        selectedClaim.called_numbers,
+        selectedClaim.last_called_number,
+        {
+          serial: selectedClaim.ticket_serial,
+          perm: selectedClaim.ticket_perm,
+          position: selectedClaim.ticket_position,
+          layoutMask: selectedClaim.ticket_layout_mask,
+          numbers: selectedClaim.ticket_numbers
+        }
+      );
+      
+      if (success) {
+        toast({
+          title: "Claim Rejected",
+          description: "The claim has been rejected",
+        });
+        
+        // Refresh claims
+        await fetchClaims();
+        
+        // Close the verify modal
+        handleCloseVerifyModal();
+      }
+    } catch (err) {
+      console.error("Error rejecting claim:", err);
     }
   };
 
   return (
     <>
-      <Sheet open={isOpen} onOpenChange={onClose}>
-        <SheetContent side="right" className="w-full sm:max-w-xl">
+      <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
+        <SheetContent side="right" className="w-[400px] sm:w-[540px] overflow-y-auto">
           <SheetHeader>
-            <SheetTitle className="text-xl">Verify Bingo Claims</SheetTitle>
+            <SheetTitle>Pending Claims</SheetTitle>
           </SheetHeader>
           
-          <div className="mt-6">
+          <div className="py-4">
+            <Button onClick={() => fetchClaims()} variant="outline" className="mb-4 w-full">
+              Refresh Claims
+            </Button>
+            
             {isLoading ? (
-              <div className="flex items-center justify-center h-40">
+              <div className="flex items-center justify-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-800"></div>
               </div>
-            ) : claims.length === 0 && !activeClaimPlayerName ? (
-              <div className="text-center py-8">
-                <p className="text-gray-600">No pending claims to verify.</p>
+            ) : claims.length > 0 ? (
+              <div className="space-y-4">
+                {claims.map((claim) => (
+                  <div
+                    key={claim.id}
+                    className="border rounded-md p-4 hover:bg-gray-50 cursor-pointer"
+                    onClick={() => handleOpenVerifyModal(claim)}
+                  >
+                    <div className="font-medium">{claim.player_name || claim.player_id}</div>
+                    <div className="text-sm text-gray-500">
+                      Pattern: {claim.win_pattern || 'Unknown'}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      Ticket: {claim.ticket_serial}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      Claimed: {new Date(claim.claimed_at).toLocaleTimeString()}
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : (
-              <div>
-                <p className="font-medium text-lg mb-4">
-                  Bingo claimed by: {activeClaimPlayerName || "Unknown Player"}
-                </p>
-                
-                {activeClaimTickets.length > 0 ? (
-                  <div className="mb-4">
-                    <p className="text-sm text-gray-600 mb-2">
-                      Player has {activeClaimTickets.length} tickets. Showing the most promising:
-                    </p>
-                  </div>
-                ) : (
-                  <p className="text-amber-600">No tickets found for this player.</p>
-                )}
+              <div className="py-8 text-center text-gray-500">
+                No pending claims found
               </div>
             )}
           </div>
         </SheetContent>
       </Sheet>
-      
-      {modalOpen && activeClaimPlayerName && (
+
+      {selectedClaim && (
         <ClaimVerificationModal
-          isOpen={modalOpen}
-          onClose={() => setModalOpen(false)}
-          playerName={activeClaimPlayerName}
-          tickets={activeClaimTickets}
-          calledNumbers={currentCalledNumbers}
-          currentNumber={currentNumber}
+          isOpen={isVerifyModalOpen}
+          onClose={handleCloseVerifyModal}
+          playerName={selectedClaim.player_name || selectedClaim.player_id}
+          tickets={[
+            {
+              serial: selectedClaim.ticket_serial,
+              numbers: selectedClaim.ticket_numbers,
+              layoutMask: selectedClaim.ticket_layout_mask
+            }
+          ]}
+          calledNumbers={currentCalledNumbers || selectedClaim.called_numbers}
+          currentNumber={currentNumber || selectedClaim.last_called_number}
           onValidClaim={handleValidClaim}
-          onFalseClaim={handleFalseClaim}
-          currentWinPattern={currentWinPattern}
+          onFalseClaim={handleRejectClaim}
+          currentWinPattern={currentWinPattern || selectedClaim.win_pattern}
         />
       )}
     </>

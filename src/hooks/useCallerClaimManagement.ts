@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 export function useCallerClaimManagement(sessionId: string | undefined) {
   const [pendingClaims, setPendingClaims] = useState<any[]>([]);
@@ -12,7 +13,10 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
     if (!sessionId) return [];
     
     try {
+      logWithTimestamp(`Fetching pending claims for session ${sessionId}`);
+      
       // We store claims in universal_game_logs table with player_id and session_id
+      // IMPORTANT: We're looking for claims where validated_at is NULL (not validated yet)
       const { data, error } = await supabase
         .from('universal_game_logs')
         .select('*')
@@ -25,6 +29,7 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
         return [];
       }
       
+      logWithTimestamp(`Found ${data?.length || 0} pending claims`);
       return data || [];
     } catch (err) {
       console.error("Exception fetching pending claims:", err);
@@ -37,10 +42,15 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
     
     setIsProcessingClaim(true);
     try {
+      logWithTimestamp(`Validating claim for player ${playerId}`);
+      
       // Update the claim in universal_game_logs
       const { error } = await supabase
         .from('universal_game_logs')
-        .update({ validated_at: new Date().toISOString() })
+        .update({ 
+          validated_at: new Date().toISOString(), 
+          prize_shared: true 
+        })
         .eq('id', claimId);
         
       if (error) {
@@ -92,10 +102,15 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
     
     setIsProcessingClaim(true);
     try {
-      // Delete the claim from universal_game_logs (or mark as rejected)
+      logWithTimestamp(`Rejecting claim for player ${playerId}`);
+      
+      // Update the claim as rejected in universal_game_logs
       const { error } = await supabase
         .from('universal_game_logs')
-        .update({ validated_at: new Date().toISOString(), prize_shared: false })
+        .update({ 
+          validated_at: new Date().toISOString(), 
+          prize_shared: false 
+        })
         .eq('id', claimId);
         
       if (error) {
@@ -142,7 +157,7 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
     }
   }, [sessionId, fetchPendingClaims, toast]);
 
-  // Fetch pending claims on mount
+  // Fetch pending claims on mount and periodically
   useEffect(() => {
     const loadClaims = async () => {
       const claims = await fetchPendingClaims();
@@ -151,10 +166,15 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
     
     if (sessionId) {
       loadClaims();
+      
+      // Poll for new claims every 5 seconds
+      const interval = setInterval(loadClaims, 5000);
+      
+      return () => clearInterval(interval);
     }
   }, [sessionId, fetchPendingClaims]);
 
-  // Listen for new claims
+  // Listen for new claims via broadcast
   useEffect(() => {
     if (!sessionId) return;
     
@@ -164,11 +184,12 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
         'broadcast',
         { event: 'bingo-claim' },
         async (payload) => {
-          console.log("Received bingo claim broadcast:", payload);
+          logWithTimestamp("Received bingo claim broadcast:", payload);
+          
           if (payload.payload && payload.payload.sessionId === sessionId) {
             toast({
               title: "New Bingo Claim!",
-              description: `${payload.payload.playerName} has claimed bingo! Check the claims panel to verify.`,
+              description: `${payload.payload.playerName || payload.payload.playerId} has claimed bingo! Check the claims panel to verify.`,
               variant: "default",
             });
             
@@ -177,7 +198,9 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        logWithTimestamp(`Claim listener subscription status: ${status}`);
+      });
       
     return () => {
       supabase.removeChannel(channel);

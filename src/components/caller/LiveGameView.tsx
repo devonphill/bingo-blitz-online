@@ -118,13 +118,33 @@ export function LiveGameView({
     const pollClaims = async () => {
       if (sessionId) {
         try {
-          const fetchedClaims = await connectionManager.fetchClaims();
-          if (Array.isArray(fetchedClaims)) {
-            setClaims(fetchedClaims);
+          // Use a direct supabase query to get pending claims
+          const { data, error } = await supabase
+            .from('universal_game_logs')
+            .select('*')
+            .eq('session_id', sessionId)
+            .is('validated_at', null)
+            .not('claimed_at', 'is', null);
+          
+          if (error) {
+            console.error("Error fetching claims:", error);
+            return;
+          }
+          
+          if (Array.isArray(data)) {
+            setClaims(data);
             
             // Auto-open claims sheet if new claims arrive
-            if (fetchedClaims.length > 0 && fetchedClaims.length !== claims.length) {
-              setIsClaimSheetOpen(true);
+            if (data.length > 0 && data.length !== claims.length) {
+              logWithTimestamp(`Found ${data.length} pending claims, was ${claims.length} before`);
+              
+              if (data.length > claims.length) {
+                toast({
+                  title: "New Bingo Claim!",
+                  description: `A new bingo claim has been submitted. Check the claims panel to verify.`,
+                  variant: "default",
+                });
+              }
             }
           }
         } catch (error) {
@@ -139,7 +159,7 @@ export function LiveGameView({
     return () => {
       clearInterval(interval);
     };
-  }, [sessionId, claims.length]);
+  }, [sessionId, claims.length, toast]);
   
   const handleReconnect = () => {
     // Simple reconnect just re-fetches player data
