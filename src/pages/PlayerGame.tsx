@@ -1,4 +1,3 @@
-
 import React, { useEffect, useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -16,9 +15,6 @@ export default function PlayerGame() {
   const navigate = useNavigate();
   const { toast } = useToast();
   
-  // Initialize connection state
-  const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('connecting');
-  
   // Initialize playerCode state immediately
   const [playerCode, setPlayerCode] = useState<string | null>(null);
   const [loadingPlayerCode, setLoadingPlayerCode] = useState(true);
@@ -26,54 +22,61 @@ export default function PlayerGame() {
   // Handle player code initialization - only run once on mount
   useEffect(() => {
     const initializePlayerCode = () => {
-      console.log("PlayerGame initialized with playerCode from URL:", urlPlayerCode);
+      logWithTimestamp("PlayerGame initialized with playerCode from URL:", urlPlayerCode);
       
+      // Priority 1: Use URL parameter if available
       if (urlPlayerCode && urlPlayerCode.trim() !== '') {
-        console.log("Using player code from URL:", urlPlayerCode);
+        logWithTimestamp("Using player code from URL:", urlPlayerCode);
         localStorage.setItem('playerCode', urlPlayerCode);
         setPlayerCode(urlPlayerCode);
         setLoadingPlayerCode(false);
         return;
       } 
       
+      // Priority 2: Use stored player code if available
       const storedPlayerCode = localStorage.getItem('playerCode');
       
       if (storedPlayerCode && storedPlayerCode.trim() !== '') {
-        console.log("Using stored player code:", storedPlayerCode);
+        logWithTimestamp("Using stored player code:", storedPlayerCode);
         setPlayerCode(storedPlayerCode);
+        
         // Redirect to have the code in the URL for better bookmarking/sharing
-        if (!window.location.pathname.includes('/player/game/')) {
+        // But only if we're on the player/game route without a code
+        if (window.location.pathname === '/player/game' || window.location.pathname === '/player/game/') {
           navigate(`/player/game/${storedPlayerCode}`, { replace: true });
         }
+        
         setLoadingPlayerCode(false);
         return;
       }
       
-      // Home route handling - if we're on the home page, don't show error
+      // Home route handling - if we're on the home page, don't show error or redirect
       if (window.location.pathname === '/') {
-        console.log("On home page, not showing player code error");
+        logWithTimestamp("On home page, not showing player code error");
         setLoadingPlayerCode(false);
         setPlayerCode(null);
         return;
       }
       
-      console.log("No player code found, redirecting to join page");
-      localStorage.removeItem('playerCode'); // Clear any invalid codes
-      toast({
-        title: 'Player Code Missing',
-        description: 'Please enter your player code to join the game.',
-        variant: 'destructive'
-      });
-      navigate('/player/join');
+      // If we're on the player game path but no player code, redirect to join page
+      if (window.location.pathname.includes('/player/game')) {
+        logWithTimestamp("No player code found, redirecting to join page");
+        localStorage.removeItem('playerCode'); // Clear any invalid codes
+        toast({
+          title: 'Player Code Missing',
+          description: 'Please enter your player code to join the game.',
+          variant: 'destructive'
+        });
+        navigate('/player/join');
+        return;
+      }
+      
+      // Otherwise just finish loading with no player code
+      setLoadingPlayerCode(false);
     };
 
     initializePlayerCode();
   }, [urlPlayerCode, navigate, toast]);
-
-  // Local state for real-time called numbers
-  const [rtCalledItems, setRtCalledItems] = useState<number[]>([]);
-  const [rtLastCalledItem, setRtLastCalledItem] = useState<number | null>(null);
-  const [lastUpdateTime, setLastUpdateTime] = useState<number>(Date.now());
 
   // Always initialize hooks with the same ordering - even if some will not be used
   // This ensures React's hook rules are followed
@@ -95,7 +98,8 @@ export default function PlayerGame() {
     claimStatus,
     gameType,
     isSubmittingClaim,
-    handleClaimBingo: submitBingoClaim
+    handleClaimBingo: submitBingoClaim,
+    connectionState: hookConnectionState
   } = usePlayerGame(playerCode);
   
   // Initialize session progress hook - but only use it if we have a valid session
@@ -103,86 +107,15 @@ export default function PlayerGame() {
     currentSession?.id
   );
   
-  // Setup connection manager when we have a session ID
+  // Local state for connection and real-time data
+  const [effectiveConnectionState, setEffectiveConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>(
+    hookConnectionState || 'disconnected'
+  );
+  
+  // Update effective connection state from hook
   useEffect(() => {
-    if (!currentSession?.id) return;
-    
-    logWithTimestamp(`Setting up connection manager with session ID: ${currentSession.id}`);
-    
-    // Initialize the connection manager with the session ID
-    connectionManager.initialize(currentSession.id)
-      .onSessionProgressUpdate((progress) => {
-        logWithTimestamp(`Received session progress update: ${progress?.game_status || 'unknown status'}`);
-        setConnectionState('connected');
-        
-        // Also update numbers from progress if available
-        if (progress?.called_numbers && progress.called_numbers.length > 0) {
-          const lastNumIndex = progress.called_numbers.length - 1;
-          setRtCalledItems(progress.called_numbers);
-          setRtLastCalledItem(progress.called_numbers[lastNumIndex]);
-          setLastUpdateTime(Date.now());
-        }
-      })
-      .onNumberCalled((number, allNumbers) => {
-        logWithTimestamp(`Received real-time number call: ${number}, total called: ${allNumbers.length}`);
-        setRtLastCalledItem(number);
-        setRtCalledItems(allNumbers);
-        setLastUpdateTime(Date.now());
-        
-        // Show a toast when a new number is called
-        if (number !== null) {
-          toast({
-            title: `Number Called: ${number}`,
-            description: `New number just called!`,
-            duration: 3000
-          });
-        }
-        
-        // Update connection state
-        setConnectionState('connected');
-      });
-    
-    setConnectionState('connecting');
-    
-    // Set up polling to check connection status
-    const intervalId = setInterval(() => {
-      // If no updates in 30 seconds, try to reconnect
-      const now = Date.now();
-      if (now - lastUpdateTime > 30000) {
-        logWithTimestamp(`No updates in 30 seconds, attempting reconnect`);
-        connectionManager.reconnect();
-      }
-    }, 10000); // Check every 10 seconds
-    
-    return () => {
-      clearInterval(intervalId);
-      connectionManager.cleanup();
-    };
-  }, [currentSession?.id, toast]);
-  
-  // Initialize session state
-  const isSessionActive = currentSession?.status === 'active';
-  const isGameLive = currentSession?.lifecycle_state === 'live';
-  
-  // Get game status from sessionProgress
-  const gameStatus = sessionProgress?.game_status || 'pending';
-  const isGameActive = gameStatus === 'active';
-  
-  // Debug logging of game status with memoized stable values
-  const statusInfo = React.useMemo(() => ({
-    gameStatus,
-    isSessionActive,
-    isGameLive,
-    isGameActive
-  }), [gameStatus, isSessionActive, isGameLive, isGameActive]);
-
-  // Debug logging with stable dependencies
-  useEffect(() => {
-    if (statusInfo.gameStatus) {
-      logWithTimestamp(`Current game status from all sources: ${statusInfo.gameStatus}`);
-      logWithTimestamp(`Session active: ${statusInfo.isSessionActive}, Game live: ${statusInfo.isGameLive}, Game active: ${statusInfo.isGameActive}`);
-    }
-  }, [statusInfo]);
+    setEffectiveConnectionState(hookConnectionState);
+  }, [hookConnectionState]);
   
   // Always initialize tickets hook with the same parameters, even if it will not be used
   const { tickets } = useTickets(playerCode, currentSession?.id);
@@ -224,19 +157,6 @@ export default function PlayerGame() {
     return null;
   }
   
-  // Show error if player code is missing - this should not normally happen with our redirection logic
-  if (!playerCode && window.location.pathname.includes('/player/game')) {
-    return (
-      <PlayerGameLoader 
-        isLoading={false} 
-        errorMessage="Player code is required. Please join the game again." 
-        currentSession={null}
-        loadingStep="error"
-        sessionProgress={null}
-      />
-    );
-  }
-  
   const isInitialLoading = isLoading && loadingStep !== 'completed';
   const hasTickets = tickets && tickets.length > 0;
   const hasSession = !!currentSession;
@@ -245,22 +165,15 @@ export default function PlayerGame() {
   const shouldShowLoader = 
     isInitialLoading || 
     (!hasSession && !!effectiveErrorMessage) || // Only block on critical errors
-    !hasSession || 
-    (!isGameActive && !isGameLive && !isSessionActive);
+    !hasSession;
 
   if (shouldShowLoader) {
-    logWithTimestamp(`Showing PlayerGameLoader with game status: ${gameStatus}, session active: ${isSessionActive}, game live: ${isGameLive}`);
+    logWithTimestamp(`Showing PlayerGameLoader - isLoading: ${isLoading}, hasSession: ${hasSession}, effectiveErrorMessage: ${effectiveErrorMessage}`);
     
-    // Show connection issues as non-blocking warnings
-    const loaderErrorMessage = errorMessage?.toLowerCase().includes("connection") 
-      ? null  // Don't show connection errors in the loader, we handle them in the header
-      : effectiveErrorMessage;
-    
-    // Pass session progress to loader
     return (
       <PlayerGameLoader 
         isLoading={isLoading} 
-        errorMessage={loaderErrorMessage}
+        errorMessage={effectiveErrorMessage}
         currentSession={currentSession}
         loadingStep={loadingStep}
         sessionProgress={sessionProgress}
@@ -293,25 +206,24 @@ export default function PlayerGame() {
     );
   }
 
-  // Use real-time called numbers with fallback to database values
-  const finalCalledNumbers = rtCalledItems.length > 0 
-    ? rtCalledItems 
-    : sessionProgress?.called_numbers || calledItems || [];
+  // Use sessionProgress for most up-to-date data
+  const finalCalledNumbers = sessionProgress?.called_numbers || calledItems || [];
   
-  const finalLastCalledNumber = rtLastCalledItem !== null
-    ? rtLastCalledItem
-    : finalCalledNumbers.length > 0 
-      ? finalCalledNumbers[finalCalledNumbers.length - 1] 
-      : lastCalledItem;
+  const finalLastCalledNumber = finalCalledNumbers.length > 0 
+    ? finalCalledNumbers[finalCalledNumbers.length - 1] 
+    : lastCalledItem;
   
   const currentWinPattern = sessionProgress?.current_win_pattern || 
                            (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
 
   const currentGameNumber = sessionProgress?.current_game_number || 
                            currentGameState?.gameNumber || 
+                           currentSession?.current_game || 
                            1;
+                           
   const numberOfGames = sessionProgress?.max_game_number || 
                        currentSession?.numberOfGames || 
+                       currentSession?.number_of_games ||
                        1;
 
   let finalWinPrizes = winPrizes;
@@ -322,17 +234,14 @@ export default function PlayerGame() {
     };
   }
 
-  console.log("Rendering main player game interface with:");
-  console.log("- Called numbers:", finalCalledNumbers.length);
-  console.log("- Last called number:", finalLastCalledNumber);
-  console.log("- Current win pattern:", currentWinPattern);
-  console.log("- Prize info:", finalWinPrizes);
-  console.log("- Player name:", playerName);
-  console.log("- Connection state:", connectionState);
+  logWithTimestamp("Rendering main player game interface with:");
+  logWithTimestamp(`- Called numbers: ${finalCalledNumbers.length}`);
+  logWithTimestamp(`- Last called number: ${finalLastCalledNumber}`);
+  logWithTimestamp(`- Current win pattern: ${currentWinPattern}`);
+  logWithTimestamp(`- Player name: ${playerName}`);
+  logWithTimestamp(`- Connection state: ${effectiveConnectionState}`);
   
   // Map the claimStatus to the proper format expected by each component
-  // The PlayerGameLayout expects: 'none' | 'pending' | 'valid' | 'invalid'
-  // The GameTypePlayspace expects: 'pending' | 'validated' | 'rejected'
   const layoutClaimStatus = claimStatus === 'valid' ? 'valid' : 
                           claimStatus === 'invalid' ? 'invalid' : 
                           claimStatus === 'pending' ? 'pending' : 
@@ -365,7 +274,7 @@ export default function PlayerGame() {
         gameType={gameType}
         currentGameNumber={currentGameNumber}
         numberOfGames={numberOfGames}
-        connectionState={connectionState}
+        connectionState={effectiveConnectionState}
       >
         <GameTypePlayspace
           gameType={gameType as any}

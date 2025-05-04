@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 import { logWithTimestamp } from "@/utils/logUtils";
 
@@ -13,16 +12,34 @@ class ConnectionManager {
   private numberCalledCallback: NumberCallback | null = null;
   private playersUpdateCallback: PlayersCallback | null = null;
   private connectionState: 'disconnected' | 'connecting' | 'connected' | 'error' = 'disconnected';
+  private lastConnectionAttempt: number = 0;
+  private connectionAttempts: number = 0;
+  private reconnectTimer: any = null;
+  private keepAliveInterval: any = null;
+  private subscribedChannels: any[] = [];
 
   constructor() {
     logWithTimestamp("ConnectionManager created");
   }
 
   public initialize(sessionId: string) {
+    if (this.sessionId === sessionId && this.channel) {
+      logWithTimestamp(`Already initialized with session ID: ${sessionId}`);
+      return this;
+    }
+    
+    // Clean up existing connection if any
+    this.cleanup();
+    
     this.sessionId = sessionId;
     this.connectionState = 'connecting';
+    this.lastConnectionAttempt = Date.now();
+    this.connectionAttempts = 0;
+    
     logWithTimestamp(`Initializing connection manager with session ID: ${sessionId}`);
     this.setupListeners();
+    this.setupKeepAlive();
+    
     return this;
   }
 
@@ -42,6 +59,44 @@ class ConnectionManager {
     return this;
   }
 
+  private setupKeepAlive() {
+    // Clear any existing keep-alive timer
+    if (this.keepAliveInterval) {
+      clearInterval(this.keepAliveInterval);
+    }
+    
+    // Set up a keep-alive ping every 30 seconds
+    this.keepAliveInterval = setInterval(() => {
+      if (this.connectionState !== 'connected') {
+        logWithTimestamp("Keep-alive detected disconnected state, attempting to reconnect");
+        this.reconnect();
+        return;
+      }
+      
+      // Send a keep-alive presence status update
+      if (this.channel) {
+        try {
+          logWithTimestamp("Sending keep-alive ping");
+          this.channel.send({
+            type: 'broadcast',
+            event: 'keep-alive',
+            payload: {
+              timestamp: Date.now()
+            }
+          }).catch((error: any) => {
+            logWithTimestamp(`Keep-alive error: ${error}`);
+            this.connectionState = 'error';
+            this.reconnect();
+          });
+        } catch (error) {
+          logWithTimestamp(`Exception in keep-alive: ${error}`);
+          this.connectionState = 'error';
+          this.reconnect();
+        }
+      }
+    }, 30000);
+  }
+
   private setupListeners() {
     if (!this.sessionId) {
       logWithTimestamp("Cannot setup listeners: no session ID");
@@ -50,8 +105,12 @@ class ConnectionManager {
 
     this.cleanup(); // Clean up existing subscription before creating a new one
 
+    logWithTimestamp(`Setting up listeners for session: ${this.sessionId}`);
+    
+    const channelName = `session-updates-${this.sessionId}`;
+    
     this.channel = supabase
-      .channel(`session-updates-${this.sessionId}`)
+      .channel(channelName)
       .on(
         'broadcast',
         { event: 'number-called' },
@@ -83,19 +142,60 @@ class ConnectionManager {
           }
         }
       )
+      .on(
+        'presence', 
+        { event: 'sync' }, 
+        () => {
+          logWithTimestamp("Presence synchronized");
+          this.connectionState = 'connected';
+        }
+      )
       .subscribe((status, error) => {
         logWithTimestamp(`Channel subscription status: ${status}`);
         if (error) {
           logWithTimestamp(`Channel subscription error: ${JSON.stringify(error)}`);
           this.connectionState = 'error';
+          this.handleConnectionFailure();
         } else if (status === 'SUBSCRIBED') {
+          logWithTimestamp("Channel successfully subscribed");
           this.connectionState = 'connected';
+          this.connectionAttempts = 0; // Reset attempts on successful connection
+          
+          // Track presence to help with connection monitoring
+          this.channel.track({
+            online_at: new Date().toISOString(),
+            client_type: 'player'
+          }).catch((err: any) => {
+            logWithTimestamp(`Error tracking presence: ${err}`);
+          });
+          
         } else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR') {
+          logWithTimestamp(`Channel subscription failed with status: ${status}`);
           this.connectionState = 'error';
+          this.handleConnectionFailure();
         } else {
           this.connectionState = 'connecting';
         }
       });
+      
+    this.subscribedChannels.push(this.channel);
+  }
+  
+  private handleConnectionFailure() {
+    this.connectionAttempts += 1;
+    
+    // Implement exponential backoff for reconnection attempts
+    const backoffTime = Math.min(1000 * Math.pow(2, this.connectionAttempts), 30000); // Max 30 seconds
+    
+    logWithTimestamp(`Connection attempt ${this.connectionAttempts} failed. Retrying in ${backoffTime}ms`);
+    
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+    }
+    
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnect();
+    }, backoffTime);
   }
   
   private setupPlayerMonitoring() {
@@ -252,16 +352,45 @@ class ConnectionManager {
   public reconnect() {
     logWithTimestamp("Attempting to reconnect");
     this.connectionState = 'connecting';
-    this.setupListeners();
+    this.lastConnectionAttempt = Date.now();
+    
+    // Clean up existing connection
+    this.cleanup();
+    
+    // Set up new connection
+    if (this.sessionId) {
+      this.setupListeners();
+    }
   }
 
   public cleanup() {
-    if (this.channel) {
-      logWithTimestamp("Cleaning up connection manager");
-      supabase.removeChannel(this.channel);
-      this.channel = null;
-      this.connectionState = 'disconnected';
+    // Clean up all subscribed channels
+    this.subscribedChannels.forEach(channel => {
+      try {
+        logWithTimestamp(`Cleaning up channel`);
+        supabase.removeChannel(channel);
+      } catch (error) {
+        logWithTimestamp(`Error cleaning up channel: ${error}`);
+      }
+    });
+    
+    // Reset subscribed channels array
+    this.subscribedChannels = [];
+    
+    // Clear keep-alive interval
+    if (this.keepAliveInterval) {
+      clearInterval(this.keepAliveInterval);
+      this.keepAliveInterval = null;
     }
+    
+    // Clear reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    
+    this.channel = null;
+    this.connectionState = 'disconnected';
   }
   
   // Add method to get connection state

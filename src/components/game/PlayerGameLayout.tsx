@@ -171,12 +171,14 @@ export default function PlayerGameLayout({
           </div>
           
           <div className="container mx-auto px-4 py-8">
-            {errorMessage ? (
+            {/* Only show error message if it's not a connection-related error and we have a real error */}
+            {errorMessage && !errorMessage.toLowerCase().includes('connection') && 
+             !errorMessage.toLowerCase().includes('player code is required') && (
               <div className="bg-red-50 p-4 rounded-md text-red-800 mb-6">
                 <p className="font-medium">Error: {errorMessage}</p>
                 <p className="text-sm mt-1">Please try refreshing the page or re-join using your player code.</p>
               </div>
-            ) : null}
+            )}
             
             {/* Auto marking toggle */}
             <div className="bg-white rounded-lg shadow-sm p-4 mb-6 flex items-center justify-between">

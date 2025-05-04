@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { connectionManager } from '@/utils/connectionManager';
 
 export function usePlayerGame(playerCode: string | null) {
   const [playerId, setPlayerId] = useState<string | null>(null);
@@ -20,6 +21,7 @@ export function usePlayerGame(playerCode: string | null) {
   const [claimStatus, setClaimStatus] = useState<'none' | 'pending' | 'valid' | 'invalid'>('none');
   const [gameType, setGameType] = useState<string>('mainstage');
   const [isSubmittingClaim, setIsSubmittingClaim] = useState<boolean>(false);
+  const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const { toast } = useToast();
   
   // Clear error messages related to connection when they're set
@@ -34,6 +36,17 @@ export function usePlayerGame(playerCode: string | null) {
     }
   }, [errorMessage]);
 
+  // Set up connection state monitor that syncs with the connectionManager
+  useEffect(() => {
+    // Update connection state regularly from connectionManager
+    const interval = setInterval(() => {
+      const currentState = connectionManager.getConnectionState();
+      setConnectionState(currentState);
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
   // Step 1: Fetch player data and validate player code
   useEffect(() => {
     const getPlayerData = async () => {
@@ -44,14 +57,18 @@ export function usePlayerGame(playerCode: string | null) {
       }
       
       if (!playerCode) {
+        setIsLoading(false);
+        // Only set error message if we're on a page that requires player code
         if (window.location.pathname.includes('/player/game')) {
           setErrorMessage('Player code is required');
         }
-        setIsLoading(false);
         return;
       }
 
+      // Clear any previous error message when we have a valid player code
+      setErrorMessage(null);
       setLoadingStep('loading player data');
+      logWithTimestamp(`Fetching player data for: ${playerCode}`);
       
       try {
         const { data, error } = await supabase
@@ -69,6 +86,7 @@ export function usePlayerGame(playerCode: string | null) {
 
         setPlayerId(data.id);
         setPlayerName(data.nickname);
+        logWithTimestamp(`Player data loaded for: ${data.nickname}`);
         
         // Set auto marking state from local storage if available
         const storedAutoMarkingPref = localStorage.getItem('autoMarking');
@@ -96,6 +114,7 @@ export function usePlayerGame(playerCode: string | null) {
     }
 
     setLoadingStep('loading session data');
+    logWithTimestamp(`Loading session data for ID: ${sessionId}`);
     
     try {
       const { data, error } = await supabase
@@ -113,6 +132,11 @@ export function usePlayerGame(playerCode: string | null) {
 
       setCurrentSession(data);
       setGameType(data.game_type);
+      logWithTimestamp(`Session loaded: ${data.name}, game type: ${data.game_type}`);
+      
+      // Initialize connection manager with session ID
+      connectionManager.initialize(sessionId);
+      setConnectionState('connecting');
       
       // Get session progress
       getSessionProgress(sessionId, data.current_game);
@@ -127,6 +151,7 @@ export function usePlayerGame(playerCode: string | null) {
   // Step 3: Fetch session progress
   const getSessionProgress = useCallback(async (sessionId: string, gameNumber: number) => {
     setLoadingStep('loading game progress');
+    logWithTimestamp(`Loading game progress for session: ${sessionId}, game: ${gameNumber}`);
     
     try {
       // Get session progress
@@ -148,11 +173,13 @@ export function usePlayerGame(playerCode: string | null) {
         if (progressData.called_numbers && progressData.called_numbers.length > 0) {
           setCalledItems(progressData.called_numbers);
           setLastCalledItem(progressData.called_numbers[progressData.called_numbers.length - 1]);
+          logWithTimestamp(`Found ${progressData.called_numbers.length} called numbers`);
         }
         
         // Set active win pattern
         if (progressData.current_win_pattern) {
           setActiveWinPatterns([progressData.current_win_pattern]);
+          logWithTimestamp(`Current win pattern: ${progressData.current_win_pattern}`);
         }
         
         // Set win prize
@@ -166,6 +193,7 @@ export function usePlayerGame(playerCode: string | null) {
       // Game info is now ready
       setLoadingStep('completed');
       setIsLoading(false);
+      setConnectionState('connected'); // Connect on successful data load
       
       // Listen for game updates
       setupGameListener(sessionId);
@@ -174,6 +202,7 @@ export function usePlayerGame(playerCode: string | null) {
       console.error('Exception in getSessionProgress:', error);
       setErrorMessage('Error fetching game progress');
       setIsLoading(false);
+      setConnectionState('error');
     }
   }, []);
   
@@ -221,6 +250,9 @@ export function usePlayerGame(playerCode: string | null) {
             const { lastCalledNumber, calledNumbers } = payload.payload;
             setCalledItems(calledNumbers);
             setLastCalledItem(lastCalledNumber);
+            
+            // Update connection state on successful message
+            setConnectionState('connected');
           }
         }
       )
@@ -233,6 +265,9 @@ export function usePlayerGame(playerCode: string | null) {
             const { pattern } = payload.payload;
             setActiveWinPatterns([pattern]);
             
+            // Update connection state on successful message
+            setConnectionState('connected');
+            
             toast({
               title: "Win Pattern Changed",
               description: `The win pattern has been updated to ${pattern}`,
@@ -241,7 +276,15 @@ export function usePlayerGame(playerCode: string | null) {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          setConnectionState('connected');
+          logWithTimestamp('Game updates channel subscribed successfully');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          setConnectionState('error');
+          logWithTimestamp('Game updates channel subscription error');
+        }
+      });
       
     return () => {
       supabase.removeChannel(channel);
@@ -358,6 +401,7 @@ export function usePlayerGame(playerCode: string | null) {
     claimStatus,
     gameType,
     isSubmittingClaim,
-    handleClaimBingo
+    handleClaimBingo,
+    connectionState
   };
 }
