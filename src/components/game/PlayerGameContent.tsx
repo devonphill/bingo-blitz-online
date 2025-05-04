@@ -66,10 +66,122 @@ export default function PlayerGameContent({
     }
   }, [activeWinPatterns, activeWinPattern]);
   
-  // Set up connection manager for real-time number calls
-  React.useEffect(() => {
+  // Set up direct subscription to number calls and pattern changes
+  useEffect(() => {
     if (!currentSession?.id) {
-      logWithTimestamp(`PlayerGameContent (${instanceId.current}): No session ID, skipping connection setup`);
+      logWithTimestamp(`PlayerGameContent (${instanceId.current}): No session ID, skipping subscription setup`);
+      return;
+    }
+    
+    logWithTimestamp(`PlayerGameContent (${instanceId.current}): Setting up direct subscriptions for session ${currentSession.id}`);
+    
+    // Create multiple channels for redundancy
+    const channels = [
+      supabase.channel('number-broadcast'),
+      supabase.channel(`number-broadcast-${currentSession.id}`),
+      supabase.channel('game-updates')
+    ];
+    
+    // Listen on all channels
+    channels.forEach(channel => {
+      channel
+        .on('broadcast', { event: 'number-called' }, (payload) => {
+          if (payload.payload?.sessionId === currentSession.id) {
+            const number = payload.payload.lastCalledNumber;
+            const allNumbers = payload.payload.calledNumbers || [];
+            
+            logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received number call: ${number}, total: ${allNumbers.length}`);
+            
+            // Only update if we have new data
+            if (number !== rtLastCalledNumber || allNumbers.length !== rtCalledNumbers.length) {
+              setRtLastCalledNumber(number);
+              setRtCalledNumbers(allNumbers);
+              setIsConnected(true);
+              setConnectionStatus('connected');
+              
+              // Show toast notification for new number
+              toast({
+                title: `Number Called: ${number}`,
+                description: `New number has been called`,
+                duration: 3000
+              });
+            }
+          }
+        })
+        .on('broadcast', { event: 'pattern-change' }, (payload) => {
+          if (payload.payload?.sessionId === currentSession.id) {
+            logWithTimestamp(`PlayerGameContent (${instanceId.current}): Pattern change received: ${payload.payload.pattern}`);
+            
+            // Update active win pattern
+            setActiveWinPattern(payload.payload.pattern);
+            
+            toast({
+              title: "Win Pattern Changed",
+              description: `The new win pattern is: ${payload.payload.pattern}`,
+              duration: 3000
+            });
+          }
+        })
+        .subscribe((status) => {
+          console.log(`Channel subscription status (${channel.name}):`, status);
+          if (status === 'SUBSCRIBED') {
+            setConnectionStatus('connected');
+            setIsConnected(true);
+          }
+        });
+    });
+    
+    // Also set up a heartbeat check to monitor connection status and force refresh of data
+    const intervalId = setInterval(async () => {
+      if (!isConnected) {
+        // If we're not connected, try to get the data directly from the database
+        try {
+          const { data: progressData } = await supabase
+            .from('sessions_progress')
+            .select('called_numbers, current_win_pattern')
+            .eq('session_id', currentSession.id)
+            .single();
+          
+          if (progressData && progressData.called_numbers) {
+            // Only update if we have new data
+            if (progressData.called_numbers.length > rtCalledNumbers.length) {
+              logWithTimestamp(`PlayerGameContent (${instanceId.current}): Updated numbers from database: ${progressData.called_numbers.length} numbers`);
+              
+              setRtCalledNumbers(progressData.called_numbers);
+              
+              // Set the last called number as the newest one
+              if (progressData.called_numbers.length > 0) {
+                const lastNumber = progressData.called_numbers[progressData.called_numbers.length - 1];
+                setRtLastCalledNumber(lastNumber);
+              }
+            }
+            
+            if (progressData.current_win_pattern) {
+              setActiveWinPattern(progressData.current_win_pattern);
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching progress data:", error);
+        }
+      }
+    }, 7000); // Every 7 seconds
+    
+    // Clean up on unmount 
+    return () => {
+      logWithTimestamp(`PlayerGameContent (${instanceId.current}): Cleaning up subscriptions`);
+      clearInterval(intervalId);
+      
+      // Clean up all channels
+      channels.forEach(channel => {
+        supabase.removeChannel(channel);
+      });
+    };
+  }, [currentSession?.id, rtCalledNumbers.length, rtLastCalledNumber, isConnected]);
+  
+  // Use the connectionManager as a fallback
+  useEffect(() => {
+    if (!currentSession?.id) {
+      logWithTimestamp(`PlayerGameContent (${instanceId.current}): No session ID, skipping connection manager setup`);
       return;
     }
     
@@ -86,22 +198,21 @@ export default function PlayerGameContent({
           return;
         }
         
-        logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received real-time number call: ${number}, total numbers: ${allNumbers.length}`);
-        setRtLastCalledNumber(number);
-        setRtCalledNumbers(allNumbers);
-        setIsConnected(true);
-        setConnectionStatus('connected');
+        logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received number call via connection manager: ${number}, total numbers: ${allNumbers.length}`);
         
-        // Show toast notification for new number
-        toast({
-          title: `Number Called: ${number}`,
-          description: `New number has been called`,
-          duration: 3000
-        });
+        // Only update if we have new data
+        if (number !== rtLastCalledNumber || allNumbers.length !== rtCalledNumbers.length) {
+          setRtLastCalledNumber(number);
+          setRtCalledNumbers(allNumbers);
+          setIsConnected(true);
+          setConnectionStatus('connected');
+        }
       })
       .onSessionProgressUpdate((progress) => {
         // This callback is required to avoid the error we were seeing
         logWithTimestamp(`PlayerGameContent (${instanceId.current}): Session progress update received`);
+        
+        // Update connection state
         setIsConnected(true);
         setConnectionStatus('connected');
         
@@ -126,94 +237,14 @@ export default function PlayerGameContent({
         }
       });
       
-    // Listen for FORCE close events and other game events
-    const eventsChannel = supabase.channel('game-events-listener');
-    eventsChannel
-      .on('broadcast', { event: 'game-force-closed' }, (payload) => {
-        if (payload.payload?.sessionId === currentSession.id) {
-          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Game force closed event received`);
-          
-          // Show notice to player
-          toast({
-            title: "Game Has Been Force Closed",
-            description: "The caller has force closed this game. The game will reset.",
-            variant: "destructive",
-            duration: 5000
-          });
-          
-          // Reset local state
-          setRtCalledNumbers([]);
-          setRtLastCalledNumber(null);
-        }
-      })
-      .on('broadcast', { event: 'game-reset' }, (payload) => {
-        if (payload.payload?.sessionId === currentSession.id) {
-          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Game reset event received`);
-          
-          // Reset local state
-          setRtCalledNumbers([]);
-          setRtLastCalledNumber(null);
-        }
-      })
-      .on('broadcast', { event: 'number-called' }, (payload) => {
-        if (payload.payload?.sessionId === currentSession.id) {
-          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Number called event received: ${payload.payload.lastCalledNumber}`);
-          
-          // Update our local state with the new number
-          setRtLastCalledNumber(payload.payload.lastCalledNumber);
-          setRtCalledNumbers(payload.payload.calledNumbers || []);
-          setConnectionStatus('connected');
-          setIsConnected(true);
-          
-          // Show toast notification for new number
-          toast({
-            title: `Number Called: ${payload.payload.lastCalledNumber}`,
-            description: `New number has been called`,
-            duration: 3000
-          });
-        }
-      })
-      .on('broadcast', { event: 'pattern-change' }, (payload) => {
-        if (payload.payload?.sessionId === currentSession.id) {
-          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Pattern change received: ${payload.payload.pattern}`);
-          
-          // Update active win pattern
-          setActiveWinPattern(payload.payload.pattern);
-          
-          toast({
-            title: "Win Pattern Changed",
-            description: `The new win pattern is: ${payload.payload.pattern}`,
-            duration: 3000
-          });
-        }
-      })
-      .subscribe();
-      
-    // Set up a heartbeat check to monitor connection status
-    const intervalId = setInterval(() => {
-      // Check connection state from manager
-      const currentState = connectionManager.getConnectionState();
-      setConnectionStatus(currentState);
-      setIsConnected(currentState === 'connected');
-      
-      // If we're not connected, try to reconnect
-      if (currentState !== 'connected') {
-        logWithTimestamp(`PlayerGameContent (${instanceId.current}): Connection heartbeat check - attempting reconnect`);
-        connectionManager.reconnect();
-      }
-    }, 5000); // Every 5 seconds
-    
-    // Clean up on unmount 
+    // Clean up on unmount
     return () => {
-      logWithTimestamp(`PlayerGameContent (${instanceId.current}): Cleaning up, clearing heartbeat interval`);
-      clearInterval(intervalId);
-      // Clean up the event channels
-      supabase.removeChannel(eventsChannel);
+      logWithTimestamp(`PlayerGameContent (${instanceId.current}): Cleaning up connection manager`);
       // We DON'T call connectionManager.cleanup() here to avoid interrupting other components
       // The parent component should handle that
     };
-  }, [currentSession?.id]);
-
+  }, [currentSession?.id, rtCalledNumbers.length, rtLastCalledNumber]);
+  
   // Log state for debugging
   useEffect(() => {
     logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Session ID: ${currentSession?.id}, Player: ${playerName || playerCode}, Connection: ${isConnected ? 'connected' : 'disconnected'}`);
@@ -278,7 +309,41 @@ export default function PlayerGameContent({
   // Function to manually trigger reconnection
   const handleManualReconnect = () => {
     logWithTimestamp(`Manual reconnection requested by user`);
+    
+    // Reset connection state
+    setConnectionStatus('connecting');
+    setIsConnected(false);
+    
+    // Attempt to re-establish connection through multiple methods
     connectionManager.reconnect();
+    
+    // Force a direct database query to immediately refresh data
+    if (currentSession?.id) {
+      supabase
+        .from('sessions_progress')
+        .select('called_numbers, current_win_pattern')
+        .eq('session_id', currentSession.id)
+        .single()
+        .then(({ data }) => {
+          if (data?.called_numbers) {
+            setRtCalledNumbers(data.called_numbers);
+            if (data.called_numbers.length > 0) {
+              setRtLastCalledNumber(data.called_numbers[data.called_numbers.length - 1]);
+            }
+            
+            if (data.current_win_pattern) {
+              setActiveWinPattern(data.current_win_pattern);
+            }
+            
+            setConnectionStatus('connected');
+            setIsConnected(true);
+          }
+        })
+        .catch(error => {
+          console.error("Error during manual reconnect:", error);
+          setConnectionStatus('error');
+        });
+    }
     
     toast({
       title: "Reconnecting...",

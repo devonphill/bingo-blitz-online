@@ -37,7 +37,7 @@ export default function ClaimVerificationSheet({
   const [isVerifyModalOpen, setIsVerifyModalOpen] = useState(false);
   const { toast } = useToast();
   
-  // Get claim management hooks - use both for compatibility
+  // Get claim management hooks
   const { validateClaim, rejectClaim } = useClaimManagement(sessionId, gameNumber);
   const { 
     pendingClaims: broadcastClaims, 
@@ -48,6 +48,51 @@ export default function ClaimVerificationSheet({
   // Log key props for debugging
   console.log("ClaimVerificationSheet rendered with isOpen:", isOpen, "sessionId:", sessionId);
   console.log("Current pending claims:", broadcastClaims?.length || 0);
+  
+  // Listen for broadcast claims - this is in addition to the hook's built-in listener
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    // Create a direct listener for the bingo-broadcast channel
+    const channel = supabase
+      .channel('direct-claim-listener')
+      .on(
+        'broadcast',
+        { event: 'bingo-claim' },
+        (payload) => {
+          console.log("Direct claim listener received payload:", payload);
+          if (payload.payload?.sessionId === sessionId) {
+            // Acknowledge receipt to player (optional)
+            try {
+              const ackChannel = supabase.channel('claim-ack');
+              ackChannel.send({
+                type: 'broadcast',
+                event: 'claim-received',
+                payload: {
+                  claimId: payload.payload.id,
+                  playerId: payload.payload.playerId,
+                  status: 'received'
+                }
+              });
+            } catch (err) {
+              console.error("Error sending claim acknowledgement:", err);
+            }
+            
+            // The useCallerClaimManagement hook will handle adding this to state
+            toast({
+              title: "New Bingo Claim Received",
+              description: `${payload.payload.playerName || payload.payload.playerId} has claimed bingo!`,
+              duration: 5000,
+            });
+          }
+        }
+      )
+      .subscribe();
+      
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [sessionId, toast]);
 
   const handleOpenVerifyModal = (claim: any) => {
     console.log("Opening verification modal for claim:", claim);
@@ -58,6 +103,24 @@ export default function ClaimVerificationSheet({
   const handleCloseVerifyModal = () => {
     setIsVerifyModalOpen(false);
     setSelectedClaim(null);
+  };
+
+  // Handle refreshing claims manually
+  const refreshClaims = () => {
+    setIsLoading(true);
+    
+    // Wait briefly to simulate loading
+    setTimeout(() => {
+      setIsLoading(false);
+      
+      // The hook should already have the latest claims,
+      // but we'll show a toast to acknowledge the refresh
+      toast({
+        title: "Claims Refreshed",
+        description: `${broadcastClaims.length} pending claims found`,
+        duration: 3000
+      });
+    }, 1000);
   };
 
   const handleValidClaim = async () => {
@@ -75,6 +138,7 @@ export default function ClaimVerificationSheet({
       
       // Use broadcast validate if it's a broadcast claim
       if (selectedClaim.playerId) {
+        console.log("Validating broadcast claim:", selectedClaim);
         const success = await validateBroadcastClaim(
           selectedClaim.playerId,
           selectedClaim.playerName,
@@ -117,6 +181,11 @@ export default function ClaimVerificationSheet({
       }
     } catch (err) {
       console.error("Error validating claim:", err);
+      toast({
+        title: "Error",
+        description: "Failed to validate claim",
+        variant: "destructive"
+      });
     }
   };
 
@@ -177,6 +246,11 @@ export default function ClaimVerificationSheet({
       }
     } catch (err) {
       console.error("Error rejecting claim:", err);
+      toast({
+        title: "Error",
+        description: "Failed to reject claim",
+        variant: "destructive"
+      });
     }
   };
 

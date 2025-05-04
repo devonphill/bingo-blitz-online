@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -17,6 +18,23 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
   const channelRef = useRef<any>(null);
   const claimChannelRef = useRef<any>(null);
   
+  // For reconnection purposes
+  const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('connecting');
+  const reconnect = useCallback(() => {
+    logWithTimestamp(`Manual reconnection requested for player ${playerCode}`);
+    setConnectionState('connecting');
+    
+    // Re-initialize channel subscriptions
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+    }
+    
+    // Setup will happen in the useEffect that depends on connectionState
+    setTimeout(() => {
+      setConnectionState('disconnected');
+    }, 100);
+  }, [playerCode]);
+  
   const resetClaimStatus = useCallback(() => {
     setClaimStatus('none');
   }, []);
@@ -31,6 +49,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
     // Try to connect to the session
     setIsLoading(true);
     setIsConnected(false);
+    setConnectionState('connecting');
     setError('');
 
     logWithTimestamp(`Setting up connection for player ${playerCode} to session ${sessionId}`);
@@ -46,6 +65,8 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
             calledNumbers: payload.payload.calledNumbers || [],
             lastCalledNumber: payload.payload.lastCalledNumber
           }));
+          setIsConnected(true);
+          setConnectionState('connected');
         }
       })
       .on('broadcast', { event: 'pattern-change' }, payload => {
@@ -76,9 +97,11 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
         console.log('Game updates channel status:', status);
         if (status === 'SUBSCRIBED') {
           setIsConnected(true);
+          setConnectionState('connected');
           setIsLoading(false);
         } else if (status === 'CHANNEL_ERROR') {
           setError('Error connecting to game updates');
+          setConnectionState('error');
           setIsConnected(false);
           setIsLoading(false);
         }
@@ -136,12 +159,14 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
     // Cleanup on unmount
     return () => {
       console.log('Cleaning up useBingoSync');
-      supabase.removeChannel(channel);
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+      }
       if (claimChannelRef.current) {
         supabase.removeChannel(claimChannelRef.current);
       }
     };
-  }, [playerCode, sessionId]);
+  }, [playerCode, sessionId, connectionState]);
 
   // Function to submit a bingo claim
   // This no longer writes to the database directly but broadcasts to the caller
@@ -153,23 +178,57 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
 
     try {
       logWithTimestamp(`Player ${playerCode} submitting bingo claim`);
+      console.log('Submitting claim with ticket data:', ticketData);
+      
       setIsSubmittingClaim(true);
       setClaimStatus('pending');
 
-      // Broadcast the claim to the caller
+      // Broadcast the claim to the caller using a unique channel name to avoid conflicts
       const broadcastChannel = supabase.channel('bingo-broadcast');
+      
+      // Add a timestamp to the payload for uniqueness
+      const timestamp = new Date().toISOString();
+      const uniqueId = `claim-${playerCode}-${timestamp}`;
+      
       broadcastChannel.send({
         type: 'broadcast',
         event: 'bingo-claim',
         payload: {
+          id: uniqueId,
           sessionId,
           playerId: playerId || playerCode,
           playerName: playerName || playerCode,
           ticketData,
-          timestamp: new Date().toISOString()
+          timestamp
         }
       }).then(() => {
         logWithTimestamp('Claim broadcast sent successfully');
+        
+        // Subscribe to get the result back - this is crucial to hear about validation
+        const resultChannel = supabase
+          .channel(`claim-result-${uniqueId}`)
+          .on('broadcast', { event: 'claim-result' }, payload => {
+            console.log('Received direct claim result:', payload);
+            if (payload.payload?.playerId === playerCode || payload.payload?.playerId === playerId) {
+              const result = payload.payload.result;
+              console.log(`Direct claim result received: ${result}`);
+              
+              if (result === 'valid') {
+                setClaimStatus('valid');
+              } else if (result === 'rejected' || result === 'invalid') {
+                setClaimStatus('invalid');
+              }
+              
+              setIsSubmittingClaim(false);
+            }
+          })
+          .subscribe();
+        
+        // Clean up this channel after some time
+        setTimeout(() => {
+          supabase.removeChannel(resultChannel);
+        }, 60000); // 1 minute timeout
+        
       }).catch(error => {
         console.error('Error broadcasting claim:', error);
         setClaimStatus('none');
@@ -188,6 +247,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
   return {
     isLoading,
     isConnected,
+    connectionState,
     error,
     playerId,
     playerName,
@@ -196,6 +256,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
     submitBingoClaim,
     isSubmittingClaim,
     claimStatus,
-    resetClaimStatus
+    resetClaimStatus,
+    reconnect
   };
 }

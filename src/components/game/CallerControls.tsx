@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -68,32 +67,86 @@ export default function CallerControls({
       const allPossibleNumbers = Array.from({ length: gameType === '75-ball' ? 75 : 90 }, (_, i) => i + 1);
       const calledNumbers = allPossibleNumbers.filter(n => !updatedRemainingNumbers.includes(n));
       
-      // FIRST - Send real-time broadcast for immediate feedback
+      // Broadcast the number call to all players - ensure this happens FIRST and RELIABLY
       try {
         logWithTimestamp(`Broadcasting number ${number} via realtime channel`);
         
-        supabase.channel('number-broadcast').send({
-          type: 'broadcast', 
-          event: 'number-called',
-          payload: {
-            sessionId: sessionId,
-            lastCalledNumber: number,
-            calledNumbers: calledNumbers, // Send the full list of called numbers
-            timestamp: new Date().getTime()
-          }
-        }).then(() => {
-          logWithTimestamp("Number broadcast sent successfully");
-        }).catch(error => {
-          console.error("Error broadcasting number:", error);
-        });
+        // Make multiple attempts to ensure the broadcast succeeds
+        const broadcastChannel = supabase.channel('number-broadcast');
+        
+        // Use a more unique channel name with the session ID included
+        const uniqueChannel = supabase.channel(`number-broadcast-${sessionId}`);
+        
+        // Attempt broadcasts on multiple channels for redundancy
+        const broadcasts = [
+          broadcastChannel.send({
+            type: 'broadcast', 
+            event: 'number-called',
+            payload: {
+              sessionId: sessionId,
+              lastCalledNumber: number,
+              calledNumbers: calledNumbers,
+              timestamp: new Date().getTime()
+            }
+          }),
+          
+          uniqueChannel.send({
+            type: 'broadcast', 
+            event: 'number-called',
+            payload: {
+              sessionId: sessionId,
+              lastCalledNumber: number,
+              calledNumbers: calledNumbers,
+              timestamp: new Date().getTime()
+            }
+          }),
+          
+          // Also broadcast on the general game-updates channel
+          supabase.channel('game-updates').send({
+            type: 'broadcast', 
+            event: 'number-called',
+            payload: {
+              sessionId: sessionId,
+              lastCalledNumber: number,
+              calledNumbers: calledNumbers,
+              timestamp: new Date().getTime()
+            }
+          })
+        ];
+        
+        Promise.all(broadcasts)
+          .then(() => {
+            logWithTimestamp("Number broadcast sent successfully on all channels");
+            
+            // Also update the database for persistence
+            supabase
+              .from('sessions_progress')
+              .update({
+                called_numbers: calledNumbers,
+                current_game_number: 1 // Ensure we're on game 1
+              })
+              .eq('session_id', sessionId)
+              .then(() => {
+                logWithTimestamp("Database updated with called numbers");
+              })
+              .catch(error => {
+                console.error("Error updating database:", error);
+              });
+          })
+          .catch(error => {
+            console.error("Error broadcasting number:", error);
+            
+            // Fallback to connection manager if broadcast fails
+            connectionManager.callNumber(number, sessionId);
+          });
       } catch (err) {
         console.error("Error sending broadcast:", err);
+        
+        // Fallback to connection manager
+        connectionManager.callNumber(number, sessionId);
       }
       
-      // THEN - Use the connection manager for database persistence
-      connectionManager.callNumber(number);
-      
-      // Also call the regular onCallNumber function for backwards compatibility
+      // Always call the regular onCallNumber function for backwards compatibility
       onCallNumber(number);
       
       setIsCallingNumber(false);
@@ -109,6 +162,26 @@ export default function CallerControls({
       
       // Then also use the regular method (updates database directly)
       await onGoLive();
+      
+      // Also broadcast that the game is now live
+      try {
+        const broadcastChannel = supabase.channel('game-events');
+        broadcastChannel.send({
+          type: 'broadcast',
+          event: 'game-live',
+          payload: {
+            sessionId: sessionId,
+            timestamp: new Date().getTime(),
+            message: "Game is now live"
+          }
+        }).then(() => {
+          logWithTimestamp("Game live broadcast sent successfully");
+        }).catch(error => {
+          console.error("Error broadcasting game live status:", error);
+        });
+      } catch (err) {
+        console.error("Error sending game live broadcast:", err);
+      }
       
       toast({
         title: "Game is now live",

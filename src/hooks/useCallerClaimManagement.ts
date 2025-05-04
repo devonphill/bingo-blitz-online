@@ -93,10 +93,8 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
 
       // Broadcast the result to the player - try with both player ID formats
       try {
-        // If we have both UUID and player code versions, send to both
+        // Send via general channel
         const broadcastChannel = supabase.channel('game-updates');
-        
-        // Send to UUID
         await broadcastChannel.send({
           type: 'broadcast',
           event: 'claim-result',
@@ -113,6 +111,23 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
             event: 'claim-result',
             payload: {
               playerId: playerId, // Original player code
+              result: 'valid'
+            }
+          });
+        }
+        
+        // Also send to the original claim's unique channel if we have a claim ID
+        const claim = pendingClaims.find(c => 
+          c.playerId === playerId || c.playerId === actualPlayerId
+        );
+        
+        if (claim && claim.id) {
+          const resultChannel = supabase.channel(`claim-result-${claim.id}`);
+          await resultChannel.send({
+            type: 'broadcast',
+            event: 'claim-result',
+            payload: {
+              playerId: claim.playerId,
               result: 'valid'
             }
           });
@@ -143,7 +158,7 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
     } finally {
       setIsProcessingClaim(false);
     }
-  }, [sessionId, toast]);
+  }, [sessionId, toast, pendingClaims]);
 
   // Reject a bingo claim - This is where we write to the database for rejected claims
   const rejectClaim = useCallback(async (
@@ -208,7 +223,7 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
           last_called_number: lastCalledNumber,
           total_calls: calledNumbers.length,
           claimed_at: new Date().toISOString(),
-          validated_at: new Date().toISOString(), // Set by the caller
+          validated_at: null, // Mark as rejected by setting to null
           prize_shared: false // Mark as rejected
         });
 
@@ -224,7 +239,7 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
 
       // Broadcast the result to the player - try with both player ID formats
       try {
-        // If we have both UUID and player code versions, send to both
+        // Send via general channel
         const broadcastChannel = supabase.channel('game-updates');
         
         // Send to UUID
@@ -244,6 +259,23 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
             event: 'claim-result',
             payload: {
               playerId: playerId, // Original player code
+              result: 'rejected'
+            }
+          });
+        }
+        
+        // Also send to the original claim's unique channel if we have a claim ID
+        const claim = pendingClaims.find(c => 
+          c.playerId === playerId || c.playerId === actualPlayerId
+        );
+        
+        if (claim && claim.id) {
+          const resultChannel = supabase.channel(`claim-result-${claim.id}`);
+          await resultChannel.send({
+            type: 'broadcast',
+            event: 'claim-result',
+            payload: {
+              playerId: claim.playerId,
               result: 'rejected'
             }
           });
@@ -274,7 +306,7 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
     } finally {
       setIsProcessingClaim(false);
     }
-  }, [sessionId, toast]);
+  }, [sessionId, toast, pendingClaims]);
 
   // Listen for new claims via broadcast instead of querying the database
   useEffect(() => {
@@ -298,13 +330,15 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
             );
             
             if (!claimExists) {
+              console.log("New claim received:", claimData);
+              
               // Add the new claim to our state
               setPendingClaims(prev => [...prev, {
-                id: `claim-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                id: claimData.id || `claim-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                 playerId: claimData.playerId,
                 playerName: claimData.playerName,
                 ticketData: claimData.ticketData,
-                timestamp: claimData.timestamp,
+                timestamp: claimData.timestamp || new Date().toISOString(),
                 sessionId: sessionId
               }]);
               
@@ -317,9 +351,12 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log("Claims listener subscription status:", status);
+      });
       
     return () => {
+      console.log("Cleaning up claims listener");
       supabase.removeChannel(channel);
     };
   }, [sessionId, pendingClaims, toast]);
