@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from './logUtils';
 
@@ -17,6 +18,7 @@ class ConnectionManager {
   private initialized = false;
   private lastNumberBroadcast = Date.now();
   private pollingInterval: ReturnType<typeof setInterval> | null = null;
+  private reconnecting = false;
   
   // Initialize with a session ID
   initialize(sessionId: string) {
@@ -32,6 +34,7 @@ class ConnectionManager {
     
     this.sessionId = sessionId;
     this.initialized = true;
+    this.reconnecting = false;
     
     // Set up channels for number calls, player updates, and session progress
     this.setupChannels();
@@ -78,13 +81,15 @@ class ConnectionManager {
           logWithTimestamp(`Game channel status: ${status}`);
           this.isConnected = status === 'SUBSCRIBED';
           
-          // If connection failed, schedule a single retry
-          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          // Only attempt to reconnect if we're not already reconnecting
+          if ((status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') && !this.reconnecting) {
+            this.reconnecting = true;
             setTimeout(() => {
               logWithTimestamp(`Attempting to reconnect game channel after error`);
               // Only attempt to reconnect if we're still initialized
               if (this.initialized) {
-                this.reconnect();
+                this.reconnecting = false;
+                this.refreshData();
               }
             }, 5000);
           }
@@ -171,10 +176,14 @@ class ConnectionManager {
       try {
         this.channels.forEach(channel => {
           if (channel) {
-            if (typeof channel.unsubscribe === 'function') {
-              channel.unsubscribe();
-            } else {
-              supabase.removeChannel(channel);
+            try {
+              if (typeof channel.unsubscribe === 'function') {
+                channel.unsubscribe();
+              } else {
+                supabase.removeChannel(channel);
+              }
+            } catch (err) {
+              console.error('Error removing channel:', err);
             }
           }
         });
@@ -187,6 +196,7 @@ class ConnectionManager {
     this.isConnected = false;
     this.initialized = false;
     this.sessionId = null;
+    this.reconnecting = false;
   }
   
   // Register a callback for number calls
@@ -224,7 +234,7 @@ class ConnectionManager {
   }
   
   // Manually call a number with improved error handling
-  callNumber(number: number, sessionId?: string) {
+  async callNumber(number: number, sessionId?: string) {
     if (!this.sessionId && !sessionId) {
       logWithTimestamp('Cannot call number: no session ID');
       return;
@@ -233,42 +243,44 @@ class ConnectionManager {
     const targetSessionId = sessionId || this.sessionId;
     logWithTimestamp(`Calling number ${number} for session ${targetSessionId}`);
     
-    // Get current called numbers from database
-    supabase
-      .from('sessions_progress')
-      .select('called_numbers')
-      .eq('session_id', targetSessionId)
-      .single()
-      .then(({ data, error }) => {
-        if (error) {
-          console.error('Error fetching current called numbers:', error);
-          return;
-        }
+    try {
+      // Get current called numbers from database
+      const { data, error } = await supabase
+        .from('sessions_progress')
+        .select('called_numbers')
+        .eq('session_id', targetSessionId)
+        .single();
         
-        // Add new number to the array
-        const calledNumbers = data?.called_numbers || [];
-        if (!calledNumbers.includes(number)) {
-          calledNumbers.push(number);
-        }
+      if (error) {
+        console.error('Error fetching current called numbers:', error);
+        return;
+      }
+      
+      // Add new number to the array
+      const calledNumbers = data?.called_numbers || [];
+      if (!calledNumbers.includes(number)) {
+        calledNumbers.push(number);
+      }
+      
+      // Update the database
+      const { error: updateError } = await supabase
+        .from('sessions_progress')
+        .update({ 
+          called_numbers: calledNumbers,
+          updated_at: new Date().toISOString()
+        })
+        .eq('session_id', targetSessionId);
         
-        // Update the database
-        supabase
-          .from('sessions_progress')
-          .update({ 
-            called_numbers: calledNumbers,
-            updated_at: new Date().toISOString()
-          })
-          .eq('session_id', targetSessionId)
-          .then(({ error: updateError }) => {
-            if (updateError) {
-              console.error('Error updating called numbers:', updateError);
-              return;
-            }
-            
-            // Broadcast the number call
-            this.broadcastNumberCall(number, calledNumbers, targetSessionId);
-          });
-      });
+      if (updateError) {
+        console.error('Error updating called numbers:', updateError);
+        return;
+      }
+      
+      // Broadcast the number call
+      await this.broadcastNumberCall(number, calledNumbers, targetSessionId);
+    } catch (error) {
+      console.error('Error calling number:', error);
+    }
   }
   
   // Broadcast a number call to all channels with improved error handling
@@ -295,6 +307,9 @@ class ConnectionManager {
       } catch (error) {
         console.error('Error broadcasting number call:', error);
         logWithTimestamp(`Error broadcasting number call: ${error}`);
+      } finally {
+        // Clean up the temporary channel
+        supabase.removeChannel(channel);
       }
       
       // Also notify local callbacks
@@ -335,81 +350,72 @@ class ConnectionManager {
     }
   }
   
-  // Reconnect all channels with improved error handling
+  // Forces a refresh of session data without reconnecting
+  async refreshData() {
+    if (!this.sessionId) {
+      logWithTimestamp('Cannot refresh data: no session ID');
+      return;
+    }
+    
+    logWithTimestamp(`Refreshing data for session ${this.sessionId}`);
+    
+    try {
+      // Fetch the latest session data
+      const { data, error } = await supabase
+        .from('sessions_progress')
+        .select('*')
+        .eq('session_id', this.sessionId)
+        .single();
+        
+      if (error) {
+        console.error('Error fetching session progress:', error);
+        return;
+      }
+      
+      if (data) {
+        // Update all subscribers with the latest data
+        this.notifySessionProgressUpdate(data);
+        
+        // If there are called numbers, notify about them
+        if (data.called_numbers && data.called_numbers.length > 0) {
+          const lastCalledNumber = data.called_numbers[data.called_numbers.length - 1];
+          this.notifyNumberCalled(lastCalledNumber, data.called_numbers);
+        }
+      }
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    }
+  }
+  
+  // Simplified reconnection method - just refresh data, don't recreate channels
   reconnect() {
     if (!this.sessionId) {
       logWithTimestamp('Cannot reconnect: no session ID');
       return;
     }
     
-    logWithTimestamp(`Reconnecting ConnectionManager for session ${this.sessionId}`);
-    
-    try {
-      // Clean up existing channels but keep session ID
-      const sessionIdToReconnect = this.sessionId;
-      
-      // Remove channels but don't reset session/initialized state
-      if (this.channels.length > 0) {
-        this.channels.forEach(channel => {
-          if (channel) {
-            try {
-              if (typeof channel.unsubscribe === 'function') {
-                channel.unsubscribe();
-              } else {
-                supabase.removeChannel(channel);
-              }
-            } catch (err) {
-              console.error('Error removing channel during reconnect:', err);
-            }
-          }
-        });
-      }
-      
-      this.channels = [];
-      
-      // Clear polling interval if it exists
-      if (this.pollingInterval) {
-        clearInterval(this.pollingInterval);
-        this.pollingInterval = null;
-      }
-      
-      // Re-setup channels and polling
-      this.setupChannels();
-      this.setupPolling();
-      
-      // Force a database refresh using proper async/await pattern
-      const refreshData = async () => {
-        try {
-          const { data } = await supabase
-            .from('sessions_progress')
-            .select('*')
-            .eq('session_id', sessionIdToReconnect)
-            .single();
-            
-          if (data) {
-            this.notifySessionProgressUpdate(data);
-            
-            if (data.called_numbers && data.called_numbers.length > 0) {
-              const lastCalledNumber = data.called_numbers[data.called_numbers.length - 1];
-              this.notifyNumberCalled(lastCalledNumber, data.called_numbers);
-            }
-          }
-        } catch (error) {
-          console.error('Error during reconnection data fetch:', error);
-          logWithTimestamp(`Error during reconnection data fetch: ${error}`);
-        }
-      };
-      
-      // Execute the async function
-      refreshData();
-        
-    } catch (error) {
-      console.error('Error during reconnect:', error);
-      logWithTimestamp(`Error during reconnect: ${error}`);
+    if (this.reconnecting) {
+      logWithTimestamp('Already reconnecting, skipping duplicate reconnect request');
+      return;
     }
+    
+    this.reconnecting = true;
+    logWithTimestamp(`Reconnecting data for session ${this.sessionId}`);
+    
+    // Simply refresh the data without recreating channels
+    this.refreshData()
+      .then(() => {
+        logWithTimestamp('Data refresh complete');
+        this.reconnecting = false;
+      })
+      .catch(error => {
+        console.error('Error during reconnect:', error);
+        logWithTimestamp(`Error during reconnect: ${error}`);
+        this.reconnecting = false;
+      });
   }
   
-  // Validate a claim from a player
+  // Validate a claim from a player - now properly uses async/await
   async validateClaim(claim: any, isValid: boolean) {
     if (!this.sessionId) {
       logWithTimestamp('Cannot validate claim: no session ID');
@@ -452,6 +458,13 @@ class ConnectionManager {
       } catch (err) {
         console.error('Error broadcasting claim result:', err);
         logWithTimestamp(`Error broadcasting claim result: ${err}`);
+      } finally {
+        // Clean up the temporary channel
+        try {
+          supabase.removeChannel(broadcastChannel);
+        } catch (err) {
+          console.error('Error removing broadcast channel:', err);
+        }
       }
     } catch (error) {
       console.error('Error in validateClaim:', error);

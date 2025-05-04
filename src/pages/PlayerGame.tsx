@@ -21,7 +21,6 @@ export default function PlayerGame() {
   const [loadingPlayerCode, setLoadingPlayerCode] = useState(true);
   const [finalCalledNumbers, setFinalCalledNumbers] = useState<number[]>([]);
   const [finalLastCalledNumber, setFinalLastCalledNumber] = useState<number | null>(null);
-  const [connectionReconnectAttempts, setConnectionReconnectAttempts] = useState(0);
   
   // Handle player code initialization - only run once on mount
   useEffect(() => {
@@ -121,92 +120,50 @@ export default function PlayerGame() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setEffectiveConnectionState(hookConnectionState);
-      
-      // If we're disconnected for too long, try to reconnect
-      if (hookConnectionState === 'disconnected' && currentSession?.id) {
-        setConnectionReconnectAttempts(prev => prev + 1);
-        
-        // Implement exponential backoff for reconnect attempts
-        const reconnectDelay = Math.min(1000 * Math.pow(2, connectionReconnectAttempts), 30000); // Max 30 seconds
-        
-        setTimeout(() => {
-          // Only reconnect if we're still disconnected
-          if (effectiveConnectionState === 'disconnected') {
-            logWithTimestamp(`Auto-reconnecting after ${reconnectDelay}ms (attempt ${connectionReconnectAttempts + 1})`);
-            connectionManager.reconnect();
-            
-            // Also try other connection methods
-            if (supabase) {
-              try {
-                // Force a refresh of data from the database
-                supabase
-                  .from('sessions_progress')
-                  .select('*')
-                  .eq('session_id', currentSession.id)
-                  .single()
-                  .then(({ data }) => {
-                    if (data) {
-                      logWithTimestamp("Reconnection: Successfully fetched session data");
-                    }
-                  });
-              } catch (err) {
-                console.error("Error during reconnection data fetch:", err);
-              }
-            }
-          }
-        }, reconnectDelay);
-      } else if (hookConnectionState === 'connected') {
-        // Reset reconnect attempts when connected
-        setConnectionReconnectAttempts(0);
-      }
     }, 1000); // Wait 1 second before updating connection state to prevent flickering
     
     return () => clearTimeout(timer);
-  }, [hookConnectionState, currentSession?.id, connectionReconnectAttempts, effectiveConnectionState]);
-  
-  // Reset connection attempts when session changes
-  useEffect(() => {
-    setConnectionReconnectAttempts(0);
-  }, [currentSession?.id]);
+  }, [hookConnectionState]);
   
   // Always initialize tickets hook with the same parameters, even if it will not be used
   const { tickets } = useTickets(playerCode, currentSession?.id);
 
-  // Set up a real-time listener for number-called events
+  // Set up a SINGLE real-time connection using the connection manager
   useEffect(() => {
-    if (!currentSession?.id) return;
+    if (!currentSession?.id) {
+      logWithTimestamp("No session ID available, skipping connection setup");
+      return;
+    }
     
-    logWithTimestamp(`Setting up additional real-time listener for number calls on session ${currentSession.id}`);
+    logWithTimestamp(`Setting up unified connection management for session ${currentSession.id}`);
     
-    // Create a dedicated channel just for number calls
-    const channel = supabase.channel(`live-calls-${currentSession.id}`);
-    
-    channel
-      .on('broadcast', { event: 'number-called' }, payload => {
-        if (payload.payload?.sessionId === currentSession.id) {
-          logWithTimestamp(`LIVE: Number called event received: ${JSON.stringify(payload.payload)}`);
+    // Connect using the connectionManager
+    connectionManager.initialize(currentSession.id)
+      .onNumberCalled((lastCalledNumber, calledNumbers) => {
+        if (lastCalledNumber && calledNumbers.length > 0) {
+          logWithTimestamp(`Received number call update: ${lastCalledNumber}, total: ${calledNumbers.length}`);
+          setFinalCalledNumbers(calledNumbers);
+          setFinalLastCalledNumber(lastCalledNumber);
           
-          const calledNumbers = payload.payload.calledNumbers || [];
-          const lastCalledNumber = payload.payload.lastCalledNumber;
-          
-          if (calledNumbers.length > 0) {
-            setFinalCalledNumbers(calledNumbers);
-            setFinalLastCalledNumber(lastCalledNumber);
-            
-            // Show toast notification for new number
-            toast({
-              title: `Number Called: ${lastCalledNumber}`,
-              description: `New number has been called`,
-              duration: 3000
-            });
-          }
+          // Show toast for new number
+          toast({
+            title: `Number Called: ${lastCalledNumber}`,
+            description: "New number has been called",
+            duration: 3000
+          });
         }
       })
-      .subscribe();
-      
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      .onSessionProgressUpdate((progress) => {
+        if (progress?.called_numbers && progress.called_numbers.length > 0) {
+          const lastCalledNumber = progress.called_numbers[progress.called_numbers.length - 1];
+          logWithTimestamp(`Received session progress with ${progress.called_numbers.length} numbers, last: ${lastCalledNumber}`);
+          
+          setFinalCalledNumbers(progress.called_numbers);
+          setFinalLastCalledNumber(lastCalledNumber);
+        }
+      });
+    
+    // No cleanup needed as the connectionManager handles its own lifecycle
   }, [currentSession?.id, toast]);
 
   // Update the finalCalledNumbers whenever our data sources change
@@ -367,10 +324,12 @@ export default function PlayerGame() {
                           claimStatus === 'pending' ? 'pending' : 
                           'none';
                           
-  const gameTypePlayspaceClaimStatus = claimStatus === 'valid' ? 'validated' : 
-                                     claimStatus === 'invalid' ? 'rejected' : 
-                                     claimStatus === 'pending' ? 'pending' : 
-                                     'pending'; // Default to pending instead of 'none'
+  // Convert the claimStatus to the type required by GameTypePlayspace
+  // Always use 'pending' if the value is 'none' since GameTypePlayspace doesn't accept 'none'
+  const gameTypePlayspaceClaimStatus: 'validated' | 'rejected' | 'pending' = 
+    claimStatus === 'valid' ? 'validated' : 
+    claimStatus === 'invalid' ? 'rejected' : 
+    'pending'; // Default to pending instead of 'none'
 
   return (
     <React.Fragment>

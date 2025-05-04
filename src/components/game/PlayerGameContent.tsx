@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useCallback } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -45,7 +46,7 @@ export default function PlayerGameContent({
   errorMessage,
   isLoading,
   isClaiming,
-  claimStatus = 'pending', // Default to 'pending' if not provided
+  claimStatus = 'none',
   gameType = '90-ball'
 }: PlayerGameContentProps) {
   // Track local state for real-time number calls
@@ -65,158 +66,17 @@ export default function PlayerGameContent({
     }
   }, [activeWinPatterns, activeWinPattern]);
   
-  // Set up direct subscription to number calls and pattern changes with improved stability
+  // Use CONNECTION MANAGER ONLY for all real-time updates
   useEffect(() => {
     if (!currentSession?.id) {
-      logWithTimestamp(`PlayerGameContent (${instanceId.current}): No session ID, skipping subscription setup`);
-      return;
-    }
-    
-    logWithTimestamp(`PlayerGameContent (${instanceId.current}): Setting up direct subscriptions for session ${currentSession.id}`);
-    
-    // Create a single channel for all game events
-    const gameChannel = supabase.channel(`game-channel-${currentSession.id}`);
-    
-    gameChannel
-      .on('broadcast', { event: 'number-called' }, (payload) => {
-        if (payload.payload?.sessionId === currentSession.id) {
-          const number = payload.payload.lastCalledNumber;
-          const allNumbers = payload.payload.calledNumbers || [];
-          
-          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received number call: ${number}, total: ${allNumbers.length}`);
-          
-          // Only update if we have new data
-          if (number !== rtLastCalledNumber || allNumbers.length !== rtCalledNumbers.length) {
-            setRtLastCalledNumber(number);
-            setRtCalledNumbers(allNumbers);
-            setIsConnected(true);
-            setConnectionStatus('connected');
-            
-            // Show toast notification for new number
-            toast({
-              title: `Number Called: ${number}`,
-              description: `New number has been called`,
-              duration: 3000
-            });
-          }
-        }
-      })
-      .on('broadcast', { event: 'pattern-change' }, (payload) => {
-        if (payload.payload?.sessionId === currentSession.id) {
-          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Pattern change received: ${payload.payload.pattern}`);
-          
-          // Update active win pattern
-          setActiveWinPattern(payload.payload.pattern);
-          
-          toast({
-            title: "Win Pattern Changed",
-            description: `The new win pattern is: ${payload.payload.pattern}`,
-            duration: 3000
-          });
-        }
-      })
-      .on('broadcast', { event: 'claim-result' }, (payload) => {
-        if (payload.payload?.sessionId === currentSession.id) {
-          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Claim result received: ${payload.payload.result}`);
-          
-          // Display notification about claim result
-          toast({
-            title: payload.payload.result === 'valid' ? 'Bingo Verified!' : 'Claim Rejected',
-            description: payload.payload.result === 'valid' 
-              ? 'A winning claim has been verified. Game advancing.' 
-              : 'A claim has been rejected.',
-            duration: 5000
-          });
-        }
-      })
-      .on('broadcast', { event: 'game-advanced' }, (payload) => {
-        if (payload.payload?.sessionId === currentSession.id) {
-          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Game advanced notification received`);
-          
-          // Display notification about game advancing
-          toast({
-            title: 'Game Advanced',
-            description: 'The game is progressing to the next stage.',
-            duration: 5000
-          });
-          
-          // Force a refresh of session progress data
-          setTimeout(() => {
-            window.location.reload();
-          }, 2000);
-        }
-      })
-      .subscribe((status) => {
-        console.log(`Channel subscription status:`, status);
-        if (status === 'SUBSCRIBED') {
-          setConnectionStatus('connected');
-          setIsConnected(true);
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          setConnectionStatus('disconnected');
-          setIsConnected(false);
-        }
-      });
-    
-    // Also set up a heartbeat check to monitor connection status and force refresh of data
-    const intervalId = setInterval(async () => {
-      if (!isConnected) {
-        // If we're not connected, try to get the data directly from the database
-        try {
-          const { data: progressData } = await supabase
-            .from('sessions_progress')
-            .select('called_numbers, current_win_pattern')
-            .eq('session_id', currentSession.id)
-            .single();
-          
-          if (progressData && progressData.called_numbers) {
-            // Only update if we have new data
-            if (progressData.called_numbers.length > rtCalledNumbers.length) {
-              logWithTimestamp(`PlayerGameContent (${instanceId.current}): Updated numbers from database: ${progressData.called_numbers.length} numbers`);
-              
-              setRtCalledNumbers(progressData.called_numbers);
-              
-              // Set the last called number as the newest one
-              if (progressData.called_numbers.length > 0) {
-                const lastNumber = progressData.called_numbers[progressData.called_numbers.length - 1];
-                setRtLastCalledNumber(lastNumber);
-              }
-            }
-            
-            if (progressData.current_win_pattern) {
-              setActiveWinPattern(progressData.current_win_pattern);
-            }
-          }
-        } catch (error) {
-          console.error("Error fetching progress data:", error);
-        }
-      }
-    }, 7000); // Every 7 seconds
-    
-    // Clean up on unmount 
-    return () => {
-      logWithTimestamp(`PlayerGameContent (${instanceId.current}): Cleaning up subscriptions`);
-      clearInterval(intervalId);
-      
-      // Clean up channel
-      try {
-        supabase.removeChannel(gameChannel);
-      } catch (err) {
-        console.error("Error removing channel:", err);
-      }
-    };
-  }, [currentSession?.id, rtCalledNumbers.length, rtLastCalledNumber, isConnected]);
-  
-  // Use the connectionManager as a fallback
-  useEffect(() => {
-    if (!currentSession?.id) {
-      logWithTimestamp(`PlayerGameContent (${instanceId.current}): No session ID, skipping connection manager setup`);
+      logWithTimestamp(`PlayerGameContent (${instanceId.current}): No session ID, skipping connection setup`);
       return;
     }
     
     logWithTimestamp(`PlayerGameContent (${instanceId.current}): Setting up connection manager for session ${currentSession.id}`);
     
     try {
-      // Initialize connection
+      // Initialize connection without creating new channels internally
       connectionManager.initialize(currentSession.id)
         .onNumberCalled((number, allNumbers) => {
           // Handle null case from reset events
@@ -235,6 +95,13 @@ export default function PlayerGameContent({
             setRtCalledNumbers(allNumbers);
             setIsConnected(true);
             setConnectionStatus('connected');
+            
+            // Show toast notification for new number
+            toast({
+              title: `Number Called: ${number}`,
+              description: `New number has been called`,
+              duration: 3000
+            });
           }
         })
         .onSessionProgressUpdate((progress) => {
@@ -344,39 +211,8 @@ export default function PlayerGameContent({
     setConnectionStatus('connecting');
     setIsConnected(false);
     
-    // Attempt to re-establish connection through multiple methods
+    // Attempt to re-establish connection
     connectionManager.reconnect();
-    
-    // Force a direct database query to immediately refresh data
-    if (currentSession?.id) {
-      // Use Promise.resolve() to ensure we have a full Promise with catch method
-      Promise.resolve(
-        supabase
-          .from('sessions_progress')
-          .select('called_numbers, current_win_pattern')
-          .eq('session_id', currentSession.id)
-          .single()
-      )
-        .then(({ data }) => {
-          if (data?.called_numbers) {
-            setRtCalledNumbers(data.called_numbers);
-            if (data.called_numbers.length > 0) {
-              setRtLastCalledNumber(data.called_numbers[data.called_numbers.length - 1]);
-            }
-            
-            if (data.current_win_pattern) {
-              setActiveWinPattern(data.current_win_pattern);
-            }
-            
-            setConnectionStatus('connected');
-            setIsConnected(true);
-          }
-        })
-        .catch((error) => { 
-          console.error("Error during manual reconnect:", error);
-          setConnectionStatus('error');
-        });
-    }
     
     toast({
       title: "Reconnecting...",
@@ -385,7 +221,7 @@ export default function PlayerGameContent({
   };
 
   // Convert the claimStatus to the type required by GameTypePlayspace
-  // Fix: Map 'none' to 'pending' since GameTypePlayspace doesn't accept 'none'
+  // Map 'none' to 'pending' since GameTypePlayspace doesn't accept 'none'
   const gameTypePlayspaceClaimStatus: 'validated' | 'rejected' | 'pending' = 
     claimStatus === 'validated' ? 'validated' :
     claimStatus === 'rejected' ? 'rejected' :
