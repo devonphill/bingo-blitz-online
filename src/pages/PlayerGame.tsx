@@ -25,22 +25,22 @@ export default function PlayerGame() {
   // Handle player code initialization - only run once on mount
   useEffect(() => {
     const initializePlayerCode = () => {
-      logWithTimestamp("PlayerGame initialized with playerCode from URL:", urlPlayerCode);
+      logWithTimestamp(`PlayerGame initialized with playerCode from URL: ${urlPlayerCode}`, 'info');
       
       // Priority 1: Use URL parameter if available
       if (urlPlayerCode && urlPlayerCode.trim() !== '') {
-        logWithTimestamp("Using player code from URL:", urlPlayerCode);
+        logWithTimestamp(`Using player code from URL: ${urlPlayerCode}`, 'info');
         localStorage.setItem('playerCode', urlPlayerCode);
         setPlayerCode(urlPlayerCode);
         setLoadingPlayerCode(false);
         return;
       } 
-      
+    
       // Priority 2: Use stored player code if available
       const storedPlayerCode = localStorage.getItem('playerCode');
       
       if (storedPlayerCode && storedPlayerCode.trim() !== '') {
-        logWithTimestamp("Using stored player code:", storedPlayerCode);
+        logWithTimestamp(`Using stored player code: ${storedPlayerCode}`, 'info');
         setPlayerCode(storedPlayerCode);
         
         // Redirect to have the code in the URL for better bookmarking/sharing
@@ -55,7 +55,7 @@ export default function PlayerGame() {
       
       // Home route handling - if we're on the home page, don't show error or redirect
       if (window.location.pathname === '/') {
-        logWithTimestamp("On home page, not showing player code error");
+        logWithTimestamp("On home page, not showing player code error", 'info');
         setLoadingPlayerCode(false);
         setPlayerCode(null);
         return;
@@ -63,7 +63,7 @@ export default function PlayerGame() {
       
       // If we're on the player game path but no player code, redirect to join page
       if (window.location.pathname.includes('/player/game')) {
-        logWithTimestamp("No player code found, redirecting to join page");
+        logWithTimestamp("No player code found, redirecting to join page", 'info');
         localStorage.removeItem('playerCode'); // Clear any invalid codes
         toast({
           title: 'Player Code Missing',

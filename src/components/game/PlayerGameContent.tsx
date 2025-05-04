@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useCallback } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -221,7 +220,7 @@ export default function PlayerGameContent({
   };
 
   // Convert the claimStatus prop to the type required by GameTypePlayspace
-  // FIX: Map claim status values properly for GameTypePlayspace
+  // Fix: Map claim status values properly for GameTypePlayspace
   const mapClaimStatus = (status: 'none' | 'pending' | 'valid' | 'invalid'): 'pending' | 'rejected' | 'validated' => {
     switch (status) {
       case 'valid':

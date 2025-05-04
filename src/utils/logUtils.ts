@@ -68,8 +68,10 @@ export function debugObject(label: string, obj: any, level: LogLevel = 'debug'):
   }
 }
 
-// For backward compatibility, cast string messages to LogLevel automatically
-export function ensureLogLevel(level: string): LogLevel {
+/**
+ * Convert string to LogLevel safely
+ */
+export function ensureLogLevel(level: string | LogLevel): LogLevel {
   const validLevels: LogLevel[] = ['debug', 'info', 'warn', 'error'];
   return validLevels.includes(level as LogLevel) ? level as LogLevel : 'info';
 }

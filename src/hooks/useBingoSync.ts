@@ -1,4 +1,3 @@
-
 // Fix for the specific line with the Promise catch error
 // Focus on just fixing this issue - around line 336
 
@@ -234,7 +233,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
           await channel.subscribe();
           
           // Send the claim broadcast with proper Promise handling
-          await channel.send({
+          return channel.send({
             type: 'broadcast',
             event: 'bingo-claim',
             payload: claimData
@@ -264,15 +263,14 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
                 });
               }
             }, 10000);
+            
+            return true;
           }, (error) => {
-            // Fixed: Use .then with second error handler instead of .catch
             console.error('Error sending claim broadcast:', error);
             setClaimStatus('none');
             setIsSubmittingClaim(false);
             return false;
           });
-          
-          return true;
         } catch (error) {
           console.error('Error sending claim broadcast:', error);
           setClaimStatus('none');

@@ -21,6 +21,14 @@ interface TicketsAssignedCallback {
   (playerCode: string, tickets: any[]): void;
 }
 
+// Add a Channel interface to define the expected structure
+interface Channel {
+  topic: string;
+  state?: string;
+  presence?: any;
+  send?: any;
+}
+
 class ConnectionManager {
   private static instance: ConnectionManager;
   private sessionId: string | null = null;
@@ -57,6 +65,49 @@ class ConnectionManager {
       ConnectionManager.instance = new ConnectionManager();
     }
     return ConnectionManager.instance;
+  }
+  
+  /**
+   * Get last ping time in milliseconds
+   */
+  public getLastPing(): number | null {
+    return this._lastHeartbeat > 0 ? (Date.now() - this._lastHeartbeat) : null;
+  }
+  
+  /**
+   * Get all active channels
+   */
+  public getChannels(): Channel[] {
+    const channels: Channel[] = [];
+    
+    if (this.gameUpdatesChannel) {
+      channels.push({
+        topic: this.gameUpdatesChannel.topic || 'game-updates',
+        state: this.gameUpdatesChannel.state || 'unknown'
+      });
+    }
+    
+    if (this.presenceChannel) {
+      channels.push({
+        topic: this.presenceChannel.topic || 'presence',
+        state: this.presenceChannel.state || 'unknown'
+      });
+    }
+    
+    return channels;
+  }
+  
+  /**
+   * Get connection status details
+   */
+  public getStatus(): Record<string, any> {
+    return {
+      connected: this.connectedState,
+      sessionId: this.sessionId,
+      lastPing: this._lastHeartbeat > 0 ? (Date.now() - this._lastHeartbeat) : null,
+      reconnections: this._connectionAttempts,
+      clientId: this._uniqueClientId
+    };
   }
   
   /**
@@ -243,9 +294,7 @@ class ConnectionManager {
       config: {
         // Add broadcast persistence to improve delivery reliability
         broadcast: { self: true },
-        // Add channel specific options for more reliable connections
-        // Remove retryIntervalMs from options
-        maxReconnectAttempts: 10
+        // Remove maxReconnectAttempts since it's not supported in the type
       }
     });
     
@@ -392,8 +441,7 @@ class ConnectionManager {
         presence: {
           key: presenceKey
         },
-        // Add channel specific options for more reliable connections
-        maxReconnectAttempts: 10
+        // Remove maxReconnectAttempts since it's not supported in the type
       }
     });
     

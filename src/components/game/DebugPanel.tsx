@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -34,9 +33,8 @@ export default function DebugPanel({ initiallyExpanded = false }: DebugPanelProp
       const isConnected = connectionManager.isConnected?.() || false;
       setConnectionStatus(isConnected ? 'connected' : 'disconnected');
       
-      if (connectionManager.getLastPing) {
-        setLastPing(connectionManager.getLastPing());
-      }
+      // Use the new getLastPing method
+      setLastPing(connectionManager.getLastPing());
     };
     
     // Check connection immediately

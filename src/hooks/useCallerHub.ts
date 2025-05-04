@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -116,16 +115,10 @@ export function useCallerHub(sessionId: string | undefined) {
       }
       
       // Broadcast the result to the player
-      await supabase
-        .channel('game-updates')
-        .send({
-          type: 'broadcast',
-          event: 'claim-result',
-          payload: { 
-            playerId: playerId,
-            result: isValid ? 'valid' : 'rejected'
-          }
-        });
+      await sendBroadcast('claim-result', { 
+        playerId: playerId,
+        result: isValid ? 'valid' : 'rejected'
+      });
       
       toast({
         title: isValid ? "Claim Validated" : "Claim Rejected",
@@ -170,16 +163,10 @@ export function useCallerHub(sessionId: string | undefined) {
       }
       
       // Broadcast the pattern change
-      await supabase
-        .channel('game-updates')
-        .send({
-          type: 'broadcast',
-          event: 'pattern-change',
-          payload: { 
-            sessionId,
-            pattern: patternId
-          }
-        });
+      await sendBroadcast('pattern-change', { 
+        sessionId,
+        pattern: patternId
+      });
       
       return true;
     } catch (err) {
@@ -210,16 +197,10 @@ export function useCallerHub(sessionId: string | undefined) {
       }
       
       // Broadcast the game start event
-      await supabase
-        .channel('game-updates')
-        .send({
-          type: 'broadcast',
-          event: 'game-start',
-          payload: { 
-            sessionId,
-            timestamp: new Date().toISOString()
-          }
-        });
+      await sendBroadcast('game-start', { 
+        sessionId,
+        timestamp: new Date().toISOString()
+      });
       
       return true;
     } catch (err) {
@@ -247,3 +228,23 @@ export function useCallerHub(sessionId: string | undefined) {
     reconnect
   };
 }
+
+// Add proper typing for the event
+const sendBroadcast = async (event: string, payload: any) => {
+  if (!channel) return false;
+
+  try {
+    // Log with proper LogLevel type
+    logWithTimestamp(`Sending broadcast: ${event}`, 'info');
+    
+    await channel.send({
+      type: 'broadcast',
+      event: event,
+      payload: payload
+    });
+    return true;
+  } catch (err) {
+    console.error(`Error sending broadcast ${event}:`, err);
+    return false;
+  }
+};

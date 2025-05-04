@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { connectionManager } from '@/utils/connectionManager';
@@ -23,14 +22,12 @@ export default function ConnectionStatus({
   
   useEffect(() => {
     const updateConnectionDetails = () => {
-      if (connectionManager.getStatus) {
-        const status = connectionManager.getStatus();
-        setStatusDetails(status);
-        
-        if (status.lastPing) {
-          setLastPing(Date.now() - status.lastPing);
-        }
-      }
+      // Use the new getStatus method of connectionManager
+      const status = connectionManager.getStatus();
+      setStatusDetails(status);
+      
+      // Use the new getLastPing method
+      setLastPing(connectionManager.getLastPing());
     };
     
     // Update immediate and set interval

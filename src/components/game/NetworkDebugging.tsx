@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,17 +18,15 @@ export default function NetworkDebugging() {
       const isConnected = connectionManager.isConnected?.() || false;
       setConnectionStatus(isConnected ? 'connected' : 'disconnected');
       
-      // Get active channels if available
-      if (connectionManager.getChannels) {
-        try {
-          const channels = connectionManager.getChannels();
-          setConnections(channels.map((ch: any) => ({
-            id: ch.topic || 'unknown',
-            status: ch.state || 'unknown'
-          })));
-        } catch (err) {
-          console.error("Error getting channels:", err);
-        }
+      // Get active channels using the new getChannels method
+      try {
+        const channels = connectionManager.getChannels();
+        setConnections(channels.map((ch: any) => ({
+          id: ch.topic || 'unknown',
+          status: ch.state || 'unknown'
+        })));
+      } catch (err) {
+        console.error("Error getting channels:", err);
       }
     }, 2000);
     

@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { Ticket } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
@@ -19,18 +18,17 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const fetchTickets = useCallback(async () => {
+  const loadTickets = useCallback(async () => {
     if (!playerCode || !sessionId) {
-      console.log("Skipping ticket fetch: missing playerCode or sessionId", { playerCode, sessionId });
-      setTickets([]);
       setIsLoading(false);
       return;
     }
     
     setIsLoading(true);
-    setError(null);
-    
     try {
+      // Log with proper LogLevel type
+      logWithTimestamp(`Loading tickets for player ${playerCode} in session ${sessionId}`, 'info');
+      
       // Try to get tickets from cache first
       const cachedTickets = getCachedTickets(playerCode, sessionId);
       
@@ -119,7 +117,7 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
   useEffect(() => {
     if (playerCode && sessionId) {
       logWithTimestamp(`Fetching tickets for player ${playerCode} in session ${sessionId}`);
-      fetchTickets();
+      loadTickets();
       
       // Set up the real-time listener for ticket assignments via connection manager
       connectionManager.initialize(sessionId)
@@ -152,12 +150,12 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
       setTickets([]);
       setIsLoading(false);
     }
-  }, [fetchTickets, playerCode, sessionId]);
+  }, [loadTickets, playerCode, sessionId]);
   
   return {
     tickets,
     isLoading,
     error,
-    refreshTickets: fetchTickets
+    refreshTickets: loadTickets
   };
 }
