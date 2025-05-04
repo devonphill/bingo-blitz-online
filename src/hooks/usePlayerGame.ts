@@ -4,7 +4,7 @@ import { useBingoSync } from '@/hooks/useBingoSync';
 import { useTickets } from '@/hooks/useTickets';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { connectionManager } from '@/utils/connectionManager';
+import { connectionManager, ConnectionState } from '@/utils/connectionManager';
 
 export function usePlayerGame(playerCode: string | null) {
   // State for player data
@@ -32,8 +32,8 @@ export function usePlayerGame(playerCode: string | null) {
   const [isSubmittingClaim, setIsSubmittingClaim] = useState<boolean>(false);
   
   // Connection state with more detailed monitoring
-  const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('connecting');
-  const connectionCheckRef = useRef<number | null>(null);
+  const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
+  const connectionInitialized = useRef<boolean>(false);
   
   // Game type (default to mainstage/90-ball)
   const [gameType, setGameType] = useState<string>('mainstage');
@@ -41,23 +41,11 @@ export function usePlayerGame(playerCode: string | null) {
   // Get toast for notifications
   const { toast } = useToast();
   
-  // Get tickets for this player
-  const { tickets } = useTickets(playerCode, currentSession?.id);
-  
-  // Initialize bingo sync hook for real-time updates
-  const {
-    isLoading: bingoSyncLoading,
-    isConnected,
-    error: bingoSyncError,
-    gameState,
-    submitBingoClaim: claimBingo
-  } = useBingoSync(
-    playerCode,
-    currentSession?.id
-  );
-  
   // Track if component is mounted
   const isMounted = useRef(true);
+  
+  // Generate a unique ID for this hook instance for better debug logging
+  const instanceId = useRef(`playerGame-${Math.random().toString(36).substring(2, 9)}`);
   
   // Cleanup on unmount
   useEffect(() => {
@@ -73,6 +61,21 @@ export function usePlayerGame(playerCode: string | null) {
       setAutoMarking(savedAutoMarking === 'true');
     }
   }, []);
+  
+  // Get tickets for this player
+  const { tickets } = useTickets(playerCode, currentSession?.id);
+  
+  // Initialize bingo sync hook for real-time updates AFTER connection is established
+  const {
+    isLoading: bingoSyncLoading,
+    isConnected,
+    error: bingoSyncError,
+    gameState,
+    submitBingoClaim: claimBingo
+  } = useBingoSync(
+    playerCode,
+    currentSession?.id
+  );
   
   // Update game state from real-time updates
   useEffect(() => {
@@ -111,6 +114,7 @@ export function usePlayerGame(playerCode: string | null) {
   
   // Update connection state based on isConnected from useBingoSync
   useEffect(() => {
+    logWithTimestamp(`[${instanceId.current}] Connection status from useBingoSync: ${isConnected ? 'connected' : 'disconnected'}`, 'info');
     setConnectionState(isConnected ? 'connected' : 'disconnected');
   }, [isConnected]);
   
@@ -258,8 +262,6 @@ export function usePlayerGame(playerCode: string | null) {
         }
       }
       
-      // Skip game config loading as it uses a non-existent table
-      // We'll manually set sensible defaults instead
       setLoadingStep('completed');
       setIsLoading(false);
       setErrorMessage(null);
@@ -357,61 +359,79 @@ export function usePlayerGame(playerCode: string | null) {
     }
   }, [playerCode, currentSession?.id, isSubmittingClaim, claimStatus, claimBingo, tickets]);
   
-  // Track player presence and maintain connection when we have all required data
+  // THIS IS THE KEY CHANGE: This hook is now the single place where connection is initialized
   useEffect(() => {
+    // Don't do anything until we have all required data
     if (!playerCode || !playerId || !currentSession?.id) {
       return;
     }
     
-    logWithTimestamp(`usePlayerGame: Setting up player presence tracking for ${playerName || playerCode}`);
+    logWithTimestamp(`[${instanceId.current}] Setting up player game connection for session ${currentSession.id}`, 'info');
     
-    // Track player presence to keep them visible in the player list
-    connectionManager.trackPlayerPresence({
-      player_id: playerId,
-      player_code: playerCode,
-      nickname: playerName || playerCode,
-      tickets: tickets
-    });
-    
-    // Set up connection state monitoring
-    if (connectionCheckRef.current) {
-      window.clearInterval(connectionCheckRef.current);
+    // This is the ONLY place where connection initialization should happen
+    // Do it only once per session ID
+    if (!connectionInitialized.current) {
+      logWithTimestamp(`[${instanceId.current}] Initializing connection for the first time`, 'info');
+      
+      connectionManager.initialize(currentSession.id);
+      connectionInitialized.current = true;
     }
     
-    // Check connection status every 3 seconds and update state accordingly
-    connectionCheckRef.current = window.setInterval(() => {
-      const isConnected = connectionManager.isConnected();
-      setConnectionState(isConnected ? 'connected' : 'disconnected');
+    // Track player presence to keep them visible in the player list
+    // But only if we're connected
+    const trackPresence = () => {
+      if (connectionManager.isConnected()) {
+        logWithTimestamp(`[${instanceId.current}] Tracking player presence`, 'info');
+        
+        connectionManager.trackPlayerPresence({
+          player_id: playerId,
+          player_code: playerCode,
+          nickname: playerName || playerCode,
+          tickets: tickets,
+          // Add a timestamp to help with presence state debugging
+          last_presence_update: new Date().toISOString()
+        });
+      }
+    };
+    
+    // Track initial presence
+    trackPresence();
+    
+    // Setup a presence refresh interval - more conservative than before
+    const presenceInterval = setInterval(trackPresence, 30000);
+    
+    // Setup connection state monitoring via the connection manager's status
+    const monitorConnection = () => {
+      const currentState = connectionManager.getConnectionState();
       
-      // If we're disconnected, try to reconnect
-      if (!isConnected) {
-        logWithTimestamp(`usePlayerGame: Connection check found disconnected state, attempting reconnect`);
+      // Only update state if it's different to prevent UI flashing
+      if (currentState !== connectionState) {
+        logWithTimestamp(`[${instanceId.current}] Connection state changed to ${currentState}`, 'info');
+        setConnectionState(currentState);
+      }
+      
+      // If disconnected and reconnection attempts are low, try to reconnect
+      if (currentState === 'disconnected' && connectionManager.reconnectAttempts < 3) {
+        logWithTimestamp(`[${instanceId.current}] Detected disconnection, triggering reconnect`, 'info');
         connectionManager.reconnect();
       }
-    }, 3000);
+    };
     
-    // Re-track player presence every 30 seconds as an additional safeguard
-    const presenceInterval = setInterval(() => {
-      logWithTimestamp(`usePlayerGame: Refreshing player presence for ${playerName || playerCode}`);
-      
-      connectionManager.trackPlayerPresence({
-        player_id: playerId,
-        player_code: playerCode,
-        nickname: playerName || playerCode,
-        tickets: tickets
-      });
-    }, 30000);
+    // Do an initial connection check
+    monitorConnection();
+    
+    // Set up periodic connection monitoring - less aggressive than before
+    const connectionMonitorInterval = setInterval(monitorConnection, 10000);
     
     // Clean up on unmount
     return () => {
-      if (connectionCheckRef.current) {
-        window.clearInterval(connectionCheckRef.current);
-        connectionCheckRef.current = null;
-      }
       clearInterval(presenceInterval);
+      clearInterval(connectionMonitorInterval);
+      
+      // Don't disconnect or clean up the connection manager
+      // as other components may need it
     };
-    
-  }, [playerCode, playerId, playerName, currentSession?.id, tickets]);
+  }, [playerCode, playerId, playerName, currentSession?.id, tickets, connectionState]);
   
   return {
     playerName,

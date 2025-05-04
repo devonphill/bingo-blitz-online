@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { connectionManager, ConnectionState } from '@/utils/connectionManager';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { RefreshCw } from 'lucide-react';
 
 interface ConnectionStatusProps {
   state: ConnectionState;
@@ -20,27 +21,35 @@ export default function ConnectionStatus({
   const [expanded, setExpanded] = useState(false);
   const [statusDetails, setStatusDetails] = useState<Record<string, any>>({});
   const [lastPing, setLastPing] = useState<number | null>(null);
+  const [isReconnecting, setIsReconnecting] = useState(false);
   
   // Use a callback to update connection details to prevent frequent re-renders
   const updateConnectionDetails = useCallback(() => {
-    // Use the getStatus method of connectionManager
+    // Get detailed status from the connection manager
     const status = connectionManager.getStatus();
-    // Make sure we're setting an object to match the Record<string, any> type
-    setStatusDetails({ status });
+    setStatusDetails(status);
     
-    // Use the getLastPing method
+    // Also get ping time
     setLastPing(connectionManager.getLastPing());
+    
+    // Track reconnection state
+    setIsReconnecting(
+      status.isReconnecting || 
+      (status.reconnectAttempts > 0 && status.connectionState === 'connecting')
+    );
   }, []);
   
   useEffect(() => {
-    // Update immediate and set interval
+    // Update immediately and set interval
     updateConnectionDetails();
-    const interval = setInterval(updateConnectionDetails, 5000);
+    const interval = setInterval(updateConnectionDetails, 2000);
     
     return () => clearInterval(interval);
   }, [updateConnectionDetails]);
   
   const getStatusColor = useCallback(() => {
+    if (isReconnecting) return 'bg-amber-500 animate-pulse';
+    
     switch (state) {
       case 'connected': return 'bg-green-500';
       case 'connecting': return 'bg-amber-500';
@@ -48,9 +57,11 @@ export default function ConnectionStatus({
       case 'error': return 'bg-red-700';
       default: return 'bg-gray-500';
     }
-  }, [state]);
+  }, [state, isReconnecting]);
   
   const getStatusText = useCallback(() => {
+    if (isReconnecting) return `Reconnecting (${statusDetails.reconnectAttempts})...`;
+    
     switch (state) {
       case 'connected': return 'Connected';
       case 'connecting': return 'Connecting...';
@@ -58,16 +69,22 @@ export default function ConnectionStatus({
       case 'error': return 'Connection Error';
       default: return 'Unknown';
     }
-  }, [state]);
+  }, [state, isReconnecting, statusDetails.reconnectAttempts]);
   
   const handleReconnectClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    setIsReconnecting(true);
     logWithTimestamp('User requested manual reconnection', 'info');
+    
     if (onReconnect) {
       onReconnect();
     } else if (connectionManager.reconnect) {
+      connectionManager.resetReconnectAttempts(); // Reset attempts on manual reconnect
       connectionManager.reconnect();
     }
+    
+    // Reset reconnecting UI after a delay
+    setTimeout(() => setIsReconnecting(false), 3000);
   };
   
   return (
@@ -83,10 +100,12 @@ export default function ConnectionStatus({
         
         {(state === 'disconnected' || state === 'error') && (
           <button 
-            className="ml-2 text-xs bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded"
+            className="ml-2 text-xs bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded flex items-center gap-1"
             onClick={handleReconnectClick}
+            disabled={isReconnecting}
           >
-            Reconnect
+            <RefreshCw className={`h-3 w-3 ${isReconnecting ? 'animate-spin' : ''}`} />
+            {isReconnecting ? 'Reconnecting...' : 'Reconnect'}
           </button>
         )}
       </div>
@@ -97,34 +116,40 @@ export default function ConnectionStatus({
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="absolute top-full right-0 mt-2 bg-white shadow-lg rounded-md p-3 z-50 w-64"
+            className="absolute top-full right-0 mt-2 bg-white shadow-lg rounded-md p-3 z-50 w-80"
           >
             <h4 className="font-bold mb-2">Connection Details</h4>
             <div className="text-xs space-y-1">
               <div>Status: <span className="font-semibold">{getStatusText()}</span></div>
+              
+              {/* Enhanced status details */}
+              <div>Channel State: <span className="font-mono">{statusDetails.channelState || 'Unknown'}</span></div>
               {lastPing !== null && (
                 <div>
                   Last ping: <span className="font-mono">{lastPing}ms ago</span>
                 </div>
               )}
               
-              {Object.entries(statusDetails).map(([key, value]) => {
-                if (key !== 'lastPing' && value !== undefined) {
-                  return (
-                    <div key={key}>
-                      {key}: <span className="font-mono">{JSON.stringify(value)}</span>
-                    </div>
-                  );
-                }
-                return null;
-              })}
+              {statusDetails.reconnectAttempts > 0 && (
+                <div>
+                  Reconnect attempts: <span className="font-mono">{statusDetails.reconnectAttempts}</span>
+                </div>
+              )}
+              
+              {statusDetails.sessionId && (
+                <div>
+                  Session ID: <span className="font-mono text-xs">{statusDetails.sessionId.substring(0, 8)}...</span>
+                </div>
+              )}
               
               <div className="pt-2">
                 <button 
-                  className="w-full bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs"
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs flex items-center justify-center gap-1"
                   onClick={handleReconnectClick}
+                  disabled={isReconnecting}
                 >
-                  Force Reconnect
+                  <RefreshCw className={`h-3 w-3 ${isReconnecting ? 'animate-spin' : ''}`} />
+                  {isReconnecting ? 'Reconnecting...' : 'Force Reconnect'}
                 </button>
               </div>
             </div>

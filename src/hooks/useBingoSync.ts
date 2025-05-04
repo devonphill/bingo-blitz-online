@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { connectionManager, ConnectionState } from '@/utils/connectionManager';
@@ -21,6 +21,10 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
     gameState: null
   });
 
+  // Use refs to track initialization status and prevent duplicate setup
+  const initRef = useRef<boolean>(false);
+  const hookIdRef = useRef<string>(`bingoSync-${Math.random().toString(36).substring(2, 9)}`);
+  
   // Memoize the submitBingoClaim function to prevent unnecessary re-renders
   const submitBingoClaim = useCallback((ticket: any) => {
     if (!playerCode || !sessionId) {
@@ -42,6 +46,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
 
   // Set up connection and game state updates, with debouncing and proper cleanup
   useEffect(() => {
+    // Skip if we don't have necessary data
     if (!playerCode || !sessionId) {
       setState(prev => ({ ...prev, isLoading: false }));
       return;
@@ -49,83 +54,64 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
 
     setState(prev => ({ ...prev, isLoading: true }));
     
-    // Create a unique ID for this hook instance for better logging
-    const hookId = `bingoSync-${Math.random().toString(36).substring(2, 9)}`;
-    logWithTimestamp(`[${hookId}] Initializing bingo sync for player ${playerCode} in session ${sessionId}`, 'info');
+    logWithTimestamp(`[${hookIdRef.current}] Setting up bingo sync for player ${playerCode} in session ${sessionId}`, 'info');
 
-    // Only add connection state updates here, don't initialize the connection
-    // This avoids multiple initialization attempts from different components
+    // Set up event handlers for game state updates, connection status, and errors
+    const onGameStateUpdate = (gameState: any) => {
+      logWithTimestamp(`[${hookIdRef.current}] Received game state update`, 'debug');
+      setState(prev => ({
+        ...prev,
+        gameState,
+        isLoading: false
+      }));
+    };
     
-    // Track the last connection state to avoid unnecessary re-renders
-    let lastConnState = false;
-    let lastError = null;
+    const onConnectionStatusChange = (isConnected: boolean) => {
+      logWithTimestamp(`[${hookIdRef.current}] Connection status from manager: ${isConnected ? 'connected' : 'disconnected'}`, 'info');
+      setState(prev => ({
+        ...prev,
+        isConnected,
+        isLoading: false
+      }));
+    };
     
-    // Initialize connection using the connection manager
+    const onError = (error: string) => {
+      logWithTimestamp(`[${hookIdRef.current}] Connection error: ${error}`, 'error');
+      setState(prev => ({
+        ...prev,
+        error,
+        isLoading: false
+      }));
+    };
+    
+    // Add listeners to connection manager
     connectionManager
-      .onGameStateUpdate((gameState) => {
-        logWithTimestamp(`[${hookId}] Received game state update`, 'debug');
-        setState(prev => ({
-          ...prev,
-          gameState,
-          isLoading: false
-        }));
-      })
-      .onConnectionStatusChange((isConnected) => {
-        // Only update state if connection status actually changed
-        if (lastConnState !== isConnected) {
-          logWithTimestamp(`[${hookId}] Connection status changed: ${isConnected ? 'connected' : 'disconnected'}`, 'info');
-          lastConnState = isConnected;
-          setState(prev => ({
-            ...prev,
-            isConnected,
-            isLoading: false
-          }));
-        }
-      })
-      .onError((error) => {
-        // Only update state if error message changed
-        if (lastError !== error) {
-          logWithTimestamp(`[${hookId}] Connection error: ${error}`, 'error');
-          lastError = error;
-          setState(prev => ({
-            ...prev,
-            error,
-            isLoading: false
-          }));
-        }
-      });
-
-    // Track player presence for this session
-    if (playerCode) {
-      connectionManager.trackPlayerPresence({
-        player_code: playerCode,
-        session_id: sessionId
-      });
-    }
-
-    // Initialization happens elsewhere (in ConnectionManager or PlayerGame),
-    // this hook just attaches listeners but doesn't call initialize directly
-
-    // Regular status check to ensure our hook state matches the real connection state
-    const intervalId = setInterval(() => {
-      const currentConnectionState = connectionManager.getConnectionState();
-      const isCurrentlyConnected = currentConnectionState === 'connected';
+      .onGameStateUpdate(onGameStateUpdate)
+      .onConnectionStatusChange(onConnectionStatusChange)
+      .onError(onError);
+    
+    // Connect if not already connected
+    if (!connectionManager.isConnected()) {
+      // Only initialize if not already done
+      // Note: We don't initialize here, but instead let usePlayerGame handle it
+      // This avoids multiple initialization attempts from different components
       
-      if (lastConnState !== isCurrentlyConnected) {
-        logWithTimestamp(`[${hookId}] Detected connection state change during interval check to ${isCurrentlyConnected ? 'connected' : 'disconnected'}`, 'info');
-        lastConnState = isCurrentlyConnected;
-        setState(prev => ({
-          ...prev,
-          isConnected: isCurrentlyConnected,
-          isLoading: false
-        }));
-      }
-    }, 5000);
-
-    // Cleanup function to handle component unmount
+      // We can check connection status though
+      const currentState = connectionManager.getConnectionState();
+      
+      setState(prev => ({
+        ...prev,
+        isConnected: currentState === 'connected',
+        isLoading: currentState === 'connecting'
+      }));
+    }
+    
+    // Cleanup function for the hook - but we don't disconnect
+    // as other components may still need the connection
     return () => {
-      logWithTimestamp(`[${hookId}] Cleaning up bingo sync connection monitoring`, 'info');
-      clearInterval(intervalId);
+      logWithTimestamp(`[${hookIdRef.current}] Cleaning up bingo sync listeners`, 'info');
+      // We don't need explicit cleanup since connectionManager maintains its own state
+      // and listeners list
     };
   }, [playerCode, sessionId]);
 
