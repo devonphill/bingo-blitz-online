@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useCallback } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -236,11 +235,12 @@ export default function PlayerGameContent({
     }
   }
 
-  // Map the claimStatus to the proper format expected by each component
-  // This is where the type conversion happens to fix the error
-  const layoutClaimStatus = claimStatus; // This is a direct assignment - no mapping needed for BingoWinProgress
+  // Map the claimStatus to the proper format expected by the components
+  // BingoWinProgress expects 'none' | 'pending' | 'valid' | 'invalid'
+  const layoutClaimStatus = claimStatus;
                           
   // Convert the claimStatus to the type required by GameTypePlayspace using our mapping function
+  // GameTypePlayspace expects 'pending' | 'rejected' | 'validated'
   const gameTypePlayspaceClaimStatus = mapClaimStatus(claimStatus);
 
   return (
@@ -254,7 +254,7 @@ export default function PlayerGameContent({
           gameType={gameType}
           sessionName={currentSession?.name || "Bingo Game"}
           accessCode={playerCode}
-          activeWinPattern={currentWinPattern}
+          activeWinPattern={activeWinPattern}
           autoMarking={autoMarking}
           setAutoMarking={setAutoMarking}
           isConnected={isConnected}
