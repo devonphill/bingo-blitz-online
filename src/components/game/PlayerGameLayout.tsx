@@ -1,4 +1,3 @@
-
 import React from 'react';
 import CurrentNumberDisplay from '@/components/game/CurrentNumberDisplay';
 import GameHeader from '@/components/game/GameHeader';

@@ -1,157 +1,212 @@
-
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useBingoSync } from '@/hooks/useBingoSync';
+import { useTickets } from '@/hooks/useTickets';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { connectionManager } from '@/utils/connectionManager';
 
 export function usePlayerGame(playerCode: string | null) {
-  const [playerId, setPlayerId] = useState<string | null>(null);
+  // State for player data
   const [playerName, setPlayerName] = useState<string | null>(null);
-  const [currentSession, setCurrentSession] = useState<any>(null);
-  const [currentGameState, setCurrentGameState] = useState<any>(null);
+  const [playerId, setPlayerId] = useState<string | null>(null);
+  
+  // State for session and game data
+  const [currentSession, setCurrentSession] = useState<any | null>(null);
+  const [currentGameState, setCurrentGameState] = useState<any | null>(null);
+  
+  // State for game mechanics
   const [calledItems, setCalledItems] = useState<number[]>([]);
   const [lastCalledItem, setLastCalledItem] = useState<number | null>(null);
   const [activeWinPatterns, setActiveWinPatterns] = useState<string[]>([]);
   const [winPrizes, setWinPrizes] = useState<Record<string, string>>({});
+  
+  // State for UI and user preferences
   const [autoMarking, setAutoMarking] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loadingStep, setLoadingStep] = useState<string>('initializing');
+  
+  // State for bingo claims
   const [claimStatus, setClaimStatus] = useState<'none' | 'pending' | 'valid' | 'invalid'>('none');
-  const [gameType, setGameType] = useState<string>('mainstage');
   const [isSubmittingClaim, setIsSubmittingClaim] = useState<boolean>(false);
-  const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+  
+  // Game type (default to mainstage/90-ball)
+  const [gameType, setGameType] = useState<string>('mainstage');
+  
+  // Get toast for notifications
   const { toast } = useToast();
   
-  // Clear error messages related to connection when they're set
+  // Get tickets for this player
+  const { tickets } = useTickets(playerCode, currentSession?.id);
+  
+  // Initialize bingo sync hook for real-time updates
+  const {
+    isConnected,
+    connectionState,
+    connectionError,
+    gameState,
+    reconnect,
+    claimBingo
+  } = useBingoSync(
+    currentSession?.id || '',
+    playerCode || '',
+    playerName || ''
+  );
+  
+  // Track if component is mounted
+  const isMounted = useRef(true);
+  
+  // Cleanup on unmount
   useEffect(() => {
-    if (errorMessage && (errorMessage.toLowerCase().includes('connection') || errorMessage.toLowerCase().includes('websocket'))) {
-      // Auto-clear connection errors after 5 seconds
-      const timer = setTimeout(() => {
-        setErrorMessage(null);
-      }, 5000);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [errorMessage]);
-
-  // Set up connection state monitor that syncs with the connectionManager
-  useEffect(() => {
-    // Update connection state regularly from connectionManager
-    const interval = setInterval(() => {
-      const currentState = connectionManager.getConnectionState();
-      setConnectionState(currentState);
-    }, 1000);
-    
-    return () => clearInterval(interval);
+    return () => {
+      isMounted.current = false;
+    };
   }, []);
-
-  // Step 1: Fetch player data and validate player code
+  
+  // Load auto-marking preference from localStorage
   useEffect(() => {
-    const getPlayerData = async () => {
-      // Skip if we're on homepage
-      if (window.location.pathname === '/') {
+    const savedAutoMarking = localStorage.getItem('autoMarking');
+    if (savedAutoMarking !== null) {
+      setAutoMarking(savedAutoMarking === 'true');
+    }
+  }, []);
+  
+  // Update game state from real-time updates
+  useEffect(() => {
+    if (gameState) {
+      // Update called numbers if they've changed
+      if (gameState.calledNumbers && gameState.calledNumbers.length > 0) {
+        setCalledItems(gameState.calledNumbers);
+      }
+      
+      // Update last called number if it's changed
+      if (gameState.lastCalledNumber !== null) {
+        setLastCalledItem(gameState.lastCalledNumber);
+      }
+      
+      // Update win pattern if it's changed
+      if (gameState.currentWinPattern) {
+        setActiveWinPatterns([gameState.currentWinPattern]);
+      }
+      
+      // Update prizes if they've changed
+      if (gameState.currentPrize && gameState.currentWinPattern) {
+        setWinPrizes(prev => ({
+          ...prev,
+          [gameState.currentWinPattern]: gameState.currentPrize
+        }));
+      }
+    }
+  }, [gameState]);
+  
+  // Handle connection errors
+  useEffect(() => {
+    if (connectionError) {
+      setErrorMessage(`Connection error: ${connectionError}`);
+    }
+  }, [connectionError]);
+  
+  // Load player data
+  useEffect(() => {
+    const loadPlayerData = async () => {
+      if (!playerCode) {
+        setErrorMessage('Player code is required');
         setIsLoading(false);
         return;
       }
       
-      if (!playerCode) {
-        setIsLoading(false);
-        // Only set error message if we're on a page that requires player code
-        if (window.location.pathname.includes('/player/game')) {
-          setErrorMessage('Player code is required');
-        }
-        return;
-      }
-
-      // Clear any previous error message when we have a valid player code
-      setErrorMessage(null);
-      setLoadingStep('loading player data');
-      logWithTimestamp(`Fetching player data for: ${playerCode}`);
+      setLoadingStep('loading_player');
       
       try {
-        const { data, error } = await supabase
+        // Get player data
+        const { data: playerData, error: playerError } = await supabase
           .from('players')
           .select('*')
           .eq('player_code', playerCode)
           .single();
-
-        if (error) {
-          console.error('Error fetching player data:', error);
-          setErrorMessage('Invalid player code or player not found');
+        
+        if (playerError) {
+          console.error('Error loading player:', playerError);
+          setErrorMessage(`Error loading player: ${playerError.message}`);
           setIsLoading(false);
           return;
         }
-
-        setPlayerId(data.id);
-        setPlayerName(data.nickname);
-        logWithTimestamp(`Player data loaded for: ${data.nickname}`);
         
-        // Set auto marking state from local storage if available
-        const storedAutoMarkingPref = localStorage.getItem('autoMarking');
-        if (storedAutoMarkingPref !== null) {
-          setAutoMarking(storedAutoMarkingPref === 'true');
+        if (!playerData) {
+          setErrorMessage('Player not found');
+          setIsLoading(false);
+          return;
         }
         
-        getSessionData(data.session_id);
-      } catch (error) {
-        console.error('Exception fetching player data:', error);
-        setErrorMessage('Error fetching player data');
+        // Set player data
+        setPlayerName(playerData.name || playerData.player_code);
+        setPlayerId(playerData.id);
+        
+        // Load session data
+        await loadSessionData(playerData.id);
+      } catch (error: any) {
+        console.error('Error in loadPlayerData:', error);
+        setErrorMessage(`Error loading player data: ${error.message}`);
         setIsLoading(false);
       }
     };
-
-    getPlayerData();
-  }, [playerCode]);
-
-  // Step 2: Fetch session data based on player's session ID
-  const getSessionData = useCallback(async (sessionId: string) => {
-    if (!sessionId) {
-      setErrorMessage('Session ID is required');
+    
+    if (playerCode) {
+      loadPlayerData();
+    } else {
       setIsLoading(false);
-      return;
     }
-
-    setLoadingStep('loading session data');
-    logWithTimestamp(`Loading session data for ID: ${sessionId}`);
+  }, [playerCode]);
+  
+  // Load session data
+  const loadSessionData = async (playerId: string) => {
+    setLoadingStep('loading_session');
     
     try {
-      const { data, error } = await supabase
-        .from('game_sessions')
+      // Get active session for this player
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('sessions')
         .select('*')
-        .eq('id', sessionId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
         .single();
-
-      if (error) {
-        console.error('Error fetching session data:', error);
-        setErrorMessage('Invalid session or session not found');
+      
+      if (sessionError) {
+        if (sessionError.code === 'PGRST116') {
+          setErrorMessage('No active session found');
+        } else {
+          console.error('Error loading session:', sessionError);
+          setErrorMessage(`Error loading session: ${sessionError.message}`);
+        }
         setIsLoading(false);
         return;
       }
-
-      setCurrentSession(data);
-      setGameType(data.game_type);
-      logWithTimestamp(`Session loaded: ${data.name}, game type: ${data.game_type}`);
       
-      // Initialize connection manager with session ID
-      connectionManager.initialize(sessionId);
-      setConnectionState('connecting');
+      if (!sessionData) {
+        setErrorMessage('No active session found');
+        setIsLoading(false);
+        return;
+      }
       
-      // Get session progress
-      getSessionProgress(sessionId, data.current_game);
+      // Set session data
+      setCurrentSession(sessionData);
       
-    } catch (error) {
-      console.error('Exception fetching session data:', error);
-      setErrorMessage('Error fetching session data');
+      // Set game type
+      setGameType(sessionData.game_type || 'mainstage');
+      
+      // Load game state
+      await loadGameState(sessionData.id);
+    } catch (error: any) {
+      console.error('Error in loadSessionData:', error);
+      setErrorMessage(`Error loading session data: ${error.message}`);
       setIsLoading(false);
     }
-  }, []);
-
-  // Step 3: Fetch session progress
-  const getSessionProgress = useCallback(async (sessionId: string, gameNumber: number) => {
-    setLoadingStep('loading game progress');
-    logWithTimestamp(`Loading game progress for session: ${sessionId}, game: ${gameNumber}`);
+  };
+  
+  // Load game state
+  const loadGameState = async (sessionId: string) => {
+    setLoadingStep('loading_game_state');
     
     try {
       // Get session progress
@@ -160,229 +215,178 @@ export function usePlayerGame(playerCode: string | null) {
         .select('*')
         .eq('session_id', sessionId)
         .single();
-
+      
       if (progressError) {
-        console.error('Error fetching session progress:', progressError);
-        setErrorMessage('Error fetching game progress');
+        console.error('Error loading session progress:', progressError);
+        setErrorMessage(`Error loading game state: ${progressError.message}`);
         setIsLoading(false);
         return;
       }
-
-      if (progressData) {
-        // Set called numbers
-        if (progressData.called_numbers && progressData.called_numbers.length > 0) {
-          setCalledItems(progressData.called_numbers);
-          setLastCalledItem(progressData.called_numbers[progressData.called_numbers.length - 1]);
-          logWithTimestamp(`Found ${progressData.called_numbers.length} called numbers`);
-        }
+      
+      if (!progressData) {
+        setErrorMessage('No game state found');
+        setIsLoading(false);
+        return;
+      }
+      
+      // Set game state
+      setCurrentGameState(progressData);
+      
+      // Set called numbers
+      if (progressData.called_numbers && progressData.called_numbers.length > 0) {
+        setCalledItems(progressData.called_numbers);
+        setLastCalledItem(progressData.called_numbers[progressData.called_numbers.length - 1]);
+      }
+      
+      // Set win patterns
+      if (progressData.current_win_pattern) {
+        setActiveWinPatterns([progressData.current_win_pattern]);
         
-        // Set active win pattern
-        if (progressData.current_win_pattern) {
-          setActiveWinPatterns([progressData.current_win_pattern]);
-          logWithTimestamp(`Current win pattern: ${progressData.current_win_pattern}`);
-        }
-        
-        // Set win prize
-        if (progressData.current_win_pattern && progressData.current_prize) {
+        // Set prize for this pattern
+        if (progressData.current_prize) {
           setWinPrizes({
             [progressData.current_win_pattern]: progressData.current_prize
           });
         }
       }
-
-      // Game info is now ready
-      setLoadingStep('completed');
-      setIsLoading(false);
-      setConnectionState('connected'); // Connect on successful data load
       
-      // Listen for game updates
-      setupGameListener(sessionId);
-      
-    } catch (error) {
-      console.error('Exception in getSessionProgress:', error);
-      setErrorMessage('Error fetching game progress');
+      // Load game config
+      await loadGameConfig(sessionId);
+    } catch (error: any) {
+      console.error('Error in loadGameState:', error);
+      setErrorMessage(`Error loading game state: ${error.message}`);
       setIsLoading(false);
-      setConnectionState('error');
     }
-  }, []);
+  };
   
-  // Set up listener for claim results
-  useEffect(() => {
-    if (!playerCode) return;
+  // Load game configuration
+  const loadGameConfig = async (sessionId: string) => {
+    setLoadingStep('loading_game_config');
     
-    const channel = supabase
-      .channel('player-claim-results')
-      .on('broadcast', { event: 'claim-result' }, payload => {
-        logWithTimestamp('Received claim result broadcast:', payload);
-        
-        // Check if this claim result is for this player
-        if (payload.payload && payload.payload.playerId === playerCode) {
-          const result = payload.payload.result;
-          
-          setClaimStatus(result === 'valid' ? 'valid' : 'invalid');
-          toast({
-            title: result === 'valid' ? "Bingo Confirmed!" : "Invalid Claim",
-            description: result === 'valid' 
-              ? "Your bingo claim has been verified and accepted!" 
-              : "Your bingo claim was not verified. Please check your card.",
-            variant: result === 'valid' ? "default" : "destructive"
-          });
-        }
-      })
-      .subscribe();
+    try {
+      // Get game config
+      const { data: configData, error: configError } = await supabase
+        .from('game_configs')
+        .select('*')
+        .eq('session_id', sessionId);
       
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [playerCode, toast]);
-
-  // Setup game listener for real-time updates
-  const setupGameListener = useCallback((sessionId: string) => {
-    // Listen for number calls
-    const channel = supabase
-      .channel('game-updates-listener')
-      .on(
-        'broadcast',
-        { event: 'number-called' },
-        payload => {
-          if (payload.payload && payload.payload.sessionId === sessionId) {
-            console.log('Received number call broadcast:', payload.payload);
-            const { lastCalledNumber, calledNumbers } = payload.payload;
-            setCalledItems(calledNumbers);
-            setLastCalledItem(lastCalledNumber);
-            
-            // Update connection state on successful message
-            setConnectionState('connected');
-          }
-        }
-      )
-      .on(
-        'broadcast',
-        { event: 'pattern-change' },
-        payload => {
-          if (payload.payload && payload.payload.sessionId === sessionId) {
-            console.log('Received pattern change broadcast:', payload.payload);
-            const { pattern } = payload.payload;
-            setActiveWinPatterns([pattern]);
-            
-            // Update connection state on successful message
-            setConnectionState('connected');
-            
-            toast({
-              title: "Win Pattern Changed",
-              description: `The win pattern has been updated to ${pattern}`,
-              duration: 5000
+      if (configError) {
+        console.error('Error loading game config:', configError);
+        setErrorMessage(`Error loading game configuration: ${configError.message}`);
+        setIsLoading(false);
+        return;
+      }
+      
+      if (!configData || configData.length === 0) {
+        // Not a critical error, just log it
+        console.warn('No game configuration found');
+      } else {
+        // Process game config to extract win patterns and prizes
+        const patterns: string[] = [];
+        const prizes: Record<string, string> = {};
+        
+        configData.forEach(config => {
+          if (config.patterns) {
+            Object.entries(config.patterns).forEach(([patternId, patternConfig]: [string, any]) => {
+              if (patternConfig.active) {
+                patterns.push(patternId);
+                
+                if (patternConfig.prizeAmount) {
+                  prizes[patternId] = patternConfig.prizeAmount;
+                }
+              }
             });
           }
+        });
+        
+        // Update state with patterns and prizes
+        if (patterns.length > 0) {
+          setActiveWinPatterns(patterns);
         }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          setConnectionState('connected');
-          logWithTimestamp('Game updates channel subscribed successfully');
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          setConnectionState('error');
-          logWithTimestamp('Game updates channel subscription error');
+        
+        if (Object.keys(prizes).length > 0) {
+          setWinPrizes(prizes);
         }
-      });
+      }
       
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [toast]);
+      // Finished loading
+      setLoadingStep('completed');
+      setIsLoading(false);
+      setErrorMessage(null);
+    } catch (error: any) {
+      console.error('Error in loadGameConfig:', error);
+      setErrorMessage(`Error loading game configuration: ${error.message}`);
+      setIsLoading(false);
+    }
+  };
   
-  // Handle claim reset
+  // Reset claim status
   const resetClaimStatus = useCallback(() => {
     setClaimStatus('none');
   }, []);
   
-  // Handle bingo claim
-  const handleClaimBingo = useCallback(async () => {
-    if (!currentSession?.id || !playerId || !playerName) {
-      console.error("Cannot claim bingo: missing session, player ID, or player name");
-      return false;
+  // Handle bingo claims
+  const handleClaimBingo = useCallback((ticketToSubmit?: any) => {
+    if (!playerCode || !currentSession?.id) {
+      console.error('Cannot submit bingo claim: missing player code or session');
+      setErrorMessage('Missing player code or active session');
+      return Promise.resolve(false);
     }
     
     if (isSubmittingClaim) {
-      console.log("Already submitting claim, please wait");
-      return false;
+      return Promise.resolve(false);
     }
-    
-    logWithTimestamp(`Player ${playerName} (${playerCode}) claiming bingo`);
+
     setIsSubmittingClaim(true);
     setClaimStatus('pending');
     
     try {
-      // Insert claim record in game logs
-      const { error: logError } = await supabase.from('universal_game_logs').insert({
-        session_id: currentSession.id,
-        game_number: currentSession.current_game,
-        game_type: gameType,
-        win_pattern: activeWinPatterns[0] || 'fullHouse',
-        player_id: playerCode,
-        player_name: playerName,
-        claimed_at: new Date().toISOString(),
-        validated_at: null,
-        // Add missing required fields
-        called_numbers: calledItems || [],
-        ticket_numbers: [],
-        ticket_layout_mask: 0,
-        ticket_perm: 0,
-        total_calls: calledItems ? calledItems.length : 0,
-        ticket_serial: 'player-claim-' + Date.now() // Better unique identifier
-      });
+      console.log(`Player ${playerCode} claiming bingo in session ${currentSession.id}`);
       
-      if (logError) {
-        console.error('Error logging claim:', logError);
-        setClaimStatus('none');
+      // If a ticket was provided, use it - otherwise, we'll let the backend handle finding a valid ticket
+      const useTicket = ticketToSubmit || (tickets && tickets.length > 0 ? tickets[0] : null);
+      
+      if (!useTicket) {
+        console.error('No ticket available to claim bingo');
+        setErrorMessage('No ticket available');
         setIsSubmittingClaim(false);
-        return false;
+        setClaimStatus('none');
+        return Promise.resolve(false);
       }
       
-      // Broadcast the claim for real-time notification
-      await supabase
-        .channel('bingo-claims')
-        .send({
-          type: 'broadcast',
-          event: 'bingo-claim',
-          payload: {
-            sessionId: currentSession.id,
-            playerId: playerId,
-            playerCode: playerCode,
-            playerName: playerName,
-            timestamp: new Date().getTime()
+      // Use the bingo sync hook to submit the claim with the ticket data
+      const claimSubmitted = claimBingo(useTicket);
+      
+      if (claimSubmitted) {
+        // Keep status as pending until we get a response
+        console.log('Bingo claim submitted successfully');
+        
+        // We'll leave the claim status as pending and let the caller handle further UI feedback
+        // In a real app, we might want to set a timeout to reset if we don't hear back
+        setTimeout(() => {
+          if (claimStatus === 'pending') {
+            setClaimStatus('none');
+            setIsSubmittingClaim(false);
           }
-        });
-      
-      logWithTimestamp("Claim broadcast sent");
-      
-      toast({
-        title: "Bingo Claim Submitted",
-        description: "Your claim has been sent to the caller for verification",
-        duration: 5000
-      });
-      
-      // Keep status as pending until we get a response from caller
-      setTimeout(() => {
-        if (claimStatus === 'pending') {
-          toast({
-            title: "Claim Pending",
-            description: "Your claim is still being verified by the caller",
-            duration: 5000
-          });
-        }
-      }, 10000);
-      
-      return true;
+        }, 10000); // Reset after 10 seconds if no response
+        
+        return Promise.resolve(true);
+      } else {
+        console.error('Failed to submit bingo claim');
+        setErrorMessage('Failed to submit claim');
+        setIsSubmittingClaim(false);
+        setClaimStatus('none');
+        return Promise.resolve(false);
+      }
     } catch (error) {
-      console.error('Exception in handleClaimBingo:', error);
-      setClaimStatus('none');
-      return false;
-    } finally {
+      console.error('Error claiming bingo:', error);
+      setErrorMessage(`Error claiming bingo: ${error}`);
       setIsSubmittingClaim(false);
+      setClaimStatus('none');
+      return Promise.resolve(false);
     }
-  }, [currentSession, playerId, playerName, playerCode, gameType, activeWinPatterns, calledItems, claimStatus, toast, isSubmittingClaim]);
-
+  }, [playerCode, currentSession?.id, isSubmittingClaim, claimStatus, claimBingo, tickets]);
+  
   return {
     playerName,
     playerId,

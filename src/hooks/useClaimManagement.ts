@@ -45,14 +45,19 @@ export function useClaimManagement(sessionId: string | undefined, gameNumber: nu
     });
     
     try {
+      // Check if playerId looks like a UUID or a player code
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(playerId);
+
       // Save the validation record directly to universal_game_logs
       const { error: logError } = await supabase
         .from('universal_game_logs')
         .insert({
           session_id: sessionId,
           game_number: gameNumber,
-          player_id: playerId,
-          player_name: playerName,
+          // Store the playerId as is - don't try to convert it to UUID if it's not
+          player_id: isUuid ? playerId : null, 
+          // Always store the player code in player_name field if it's not a UUID
+          player_name: isUuid ? playerName : playerId,
           ticket_serial: ticketData.serial,
           ticket_perm: ticketData.perm,
           ticket_position: ticketData.position,
@@ -125,14 +130,19 @@ export function useClaimManagement(sessionId: string | undefined, gameNumber: nu
         ticketSerial: ticketData.serial
       });
       
+      // Check if playerId looks like a UUID or a player code
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(playerId);
+      
       // Log the rejected claim in universal_game_logs
       const { error: logError } = await supabase
         .from('universal_game_logs')
         .insert({
           session_id: sessionId,
           game_number: gameNumber,
-          player_id: playerId,
-          player_name: playerName,
+          // Store the playerId as is - don't try to convert it to UUID if it's not
+          player_id: isUuid ? playerId : null,
+          // Always store the player code in player_name field if it's not a UUID
+          player_name: isUuid ? playerName : playerId,
           ticket_serial: ticketData.serial,
           ticket_perm: ticketData.perm,
           ticket_position: ticketData.position,

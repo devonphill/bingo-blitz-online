@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { GameType } from '@/types';
@@ -255,6 +254,7 @@ export function useBingoSync(sessionId: string, playerCode: string, playerName: 
     try {
       logWithTimestamp(`Sending bingo claim for player: ${playerCode}`);
       
+      // Include the ticket data for verification
       channelRef.current.send({
         type: 'broadcast',
         event: 'bingo_claimed',

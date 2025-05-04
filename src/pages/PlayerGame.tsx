@@ -126,11 +126,28 @@ export default function PlayerGame() {
       console.log("Cannot claim bingo: no tickets available");
       return Promise.resolve(false);
     }
-    console.log("Claiming bingo with ticket:", tickets[0]);
+    
+    // Sort tickets to find the best one to submit for claiming
+    const ticketsWithScore = tickets.map(ticket => {
+      const matchedNumbers = ticket.numbers.filter(num => finalCalledNumbers.includes(num));
+      return { 
+        ...ticket, 
+        score: matchedNumbers.length,
+        percentMatched: Math.round((matchedNumbers.length / ticket.numbers.length) * 100),
+      };
+    });
+    
+    // Sort tickets by score (highest first)
+    const sortedTickets = [...ticketsWithScore].sort((a, b) => b.score - a.score);
+    
+    // Use the best ticket for the claim
+    const bestTicket = sortedTickets[0];
+    
+    console.log("Claiming bingo with ticket:", bestTicket);
     
     // Try to claim bingo
-    return submitBingoClaim();
-  }, [submitBingoClaim, tickets]);
+    return submitBingoClaim(bestTicket);
+  }, [submitBingoClaim, tickets, finalCalledNumbers]);
   
   // Only consider connection issues as non-critical errors
   const effectiveErrorMessage = !playerCode && window.location.pathname.includes('/player/game')
