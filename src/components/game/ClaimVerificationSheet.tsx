@@ -1,12 +1,23 @@
-
-import React, { useState, useEffect } from 'react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
-import ClaimVerificationModal from './ClaimVerificationModal';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetFooter,
+  SheetClose,
+  SheetTrigger,
+} from "@/components/ui/sheet"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { useToast } from "@/hooks/use-toast"
+import { CheckCircle, XCircle } from 'lucide-react';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { useClaimManagement } from '@/hooks/useClaimManagement';
+
+// Add import for the useCallerClaimManagement hook
 import { useCallerClaimManagement } from '@/hooks/useCallerClaimManagement';
 
 interface ClaimVerificationSheetProps {
@@ -25,304 +36,92 @@ export default function ClaimVerificationSheet({
   isOpen,
   onClose,
   sessionId,
-  gameNumber = 1,
+  gameNumber,
   currentCalledNumbers = [],
   gameType = 'mainstage',
-  playerName = '',
-  currentNumber = null,
-  currentWinPattern = null
+  playerName,
+  currentNumber,
+  currentWinPattern
 }: ClaimVerificationSheetProps) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [selectedClaim, setSelectedClaim] = useState<any>(null);
-  const [isVerifyModalOpen, setIsVerifyModalOpen] = useState(false);
-  const { toast } = useToast();
-  
-  // Get claim management hooks
-  const { validateClaim, rejectClaim } = useClaimManagement(sessionId, gameNumber);
+  // Use the claim management hook
   const { 
-    pendingClaims: broadcastClaims, 
-    validateClaim: validateBroadcastClaim, 
-    rejectClaim: rejectBroadcastClaim 
-  } = useCallerClaimManagement(sessionId);
+    claims, 
+    validateClaim, 
+    isProcessingClaim 
+  } = useCallerClaimManagement(sessionId || null);
   
-  // Log key props for debugging
-  console.log("ClaimVerificationSheet rendered with isOpen:", isOpen, "sessionId:", sessionId);
-  console.log("Current pending claims:", broadcastClaims?.length || 0);
+  const { toast } = useToast()
+  const [notes, setNotes] = useState("")
+  const [selectedClaim, setSelectedClaim] = useState<any>(null);
   
-  // Listen for broadcast claims - this is in addition to the hook's built-in listener
+  // Log claims when they change
   useEffect(() => {
-    if (!sessionId) return;
+    logWithTimestamp(`ClaimVerificationSheet has ${claims.length} claims`);
+    console.log('Claims:', claims);
+  }, [claims]);
+
+  // Enhance the verify/reject handlers to use the new hook
+  const handleVerify = useCallback((claim: any) => {
+    if (!claim) return;
     
-    // Create a direct listener for the bingo-broadcast channel
-    const channel = supabase
-      .channel('direct-claim-listener')
-      .on(
-        'broadcast',
-        { event: 'bingo-claim' },
-        (payload) => {
-          console.log("Direct claim listener received payload:", payload);
-          if (payload.payload?.sessionId === sessionId) {
-            // Acknowledge receipt to player (optional)
-            try {
-              const ackChannel = supabase.channel('claim-ack');
-              ackChannel.send({
-                type: 'broadcast',
-                event: 'claim-received',
-                payload: {
-                  claimId: payload.payload.id,
-                  playerId: payload.payload.playerId,
-                  status: 'received'
-                }
-              });
-            } catch (err) {
-              console.error("Error sending claim acknowledgement:", err);
-            }
-            
-            // The useCallerClaimManagement hook will handle adding this to state
-            toast({
-              title: "New Bingo Claim Received",
-              description: `${payload.payload.playerName || payload.payload.playerId} has claimed bingo!`,
-              duration: 5000,
-            });
-          }
-        }
-      )
-      .subscribe();
-      
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [sessionId, toast]);
-
-  const handleOpenVerifyModal = (claim: any) => {
-    console.log("Opening verification modal for claim:", claim);
-    setSelectedClaim(claim);
-    setIsVerifyModalOpen(true);
-  };
-
-  const handleCloseVerifyModal = () => {
-    setIsVerifyModalOpen(false);
-    setSelectedClaim(null);
-  };
-
-  // Handle refreshing claims manually
-  const refreshClaims = () => {
-    setIsLoading(true);
+    logWithTimestamp(`Verifying claim: ${JSON.stringify(claim)}`);
+    validateClaim(claim, true);
     
-    // Wait briefly to simulate loading
-    setTimeout(() => {
-      setIsLoading(false);
-      
-      // The hook should already have the latest claims,
-      // but we'll show a toast to acknowledge the refresh
-      toast({
-        title: "Claims Refreshed",
-        description: `${broadcastClaims.length} pending claims found`,
-        duration: 3000
-      });
-    }, 1000);
-  };
-
-  const handleValidClaim = async () => {
-    if (!selectedClaim) return;
+  }, [validateClaim]);
+  
+  const handleReject = useCallback((claim: any) => {
+    if (!claim) return;
     
-    try {
-      // Call the validateClaim function - this writes to the database
-      const ticketData = selectedClaim.ticketData || {
-        serial: selectedClaim.ticket_serial,
-        perm: selectedClaim.ticket_perm,
-        position: selectedClaim.ticket_position,
-        layoutMask: selectedClaim.ticket_layout_mask,
-        numbers: selectedClaim.ticket_numbers
-      };
-      
-      // Use broadcast validate if it's a broadcast claim
-      if (selectedClaim.playerId) {
-        console.log("Validating broadcast claim:", selectedClaim);
-        const success = await validateBroadcastClaim(
-          selectedClaim.playerId,
-          selectedClaim.playerName,
-          currentWinPattern || selectedClaim.win_pattern || 'fullHouse',
-          currentCalledNumbers || selectedClaim.called_numbers || [],
-          currentNumber || selectedClaim.last_called_number,
-          ticketData
-        );
-        
-        if (success) {
-          toast({
-            title: "Claim Validated",
-            description: "The claim has been validated successfully",
-          });
-          
-          // Close the verify modal
-          handleCloseVerifyModal();
-        }
-      } 
-      // Use traditional validate for database claims
-      else {
-        const success = await validateClaim(
-          selectedClaim.player_id,
-          selectedClaim.player_name,
-          selectedClaim.win_pattern,
-          selectedClaim.called_numbers,
-          selectedClaim.last_called_number,
-          ticketData
-        );
-        
-        if (success) {
-          toast({
-            title: "Claim Validated",
-            description: "The claim has been validated successfully",
-          });
-          
-          // Close the verify modal
-          handleCloseVerifyModal();
-        }
-      }
-    } catch (err) {
-      console.error("Error validating claim:", err);
-      toast({
-        title: "Error",
-        description: "Failed to validate claim",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleRejectClaim = async () => {
-    if (!selectedClaim) return;
+    logWithTimestamp(`Rejecting claim: ${JSON.stringify(claim)}`);
+    validateClaim(claim, false);
     
-    try {
-      // Call the rejectClaim function - this writes to the database
-      const ticketData = selectedClaim.ticketData || {
-        serial: selectedClaim.ticket_serial,
-        perm: selectedClaim.ticket_perm,
-        position: selectedClaim.ticket_position,
-        layoutMask: selectedClaim.ticket_layout_mask,
-        numbers: selectedClaim.ticket_numbers
-      };
-      
-      // Use broadcast reject if it's a broadcast claim
-      if (selectedClaim.playerId) {
-        const success = await rejectBroadcastClaim(
-          selectedClaim.playerId,
-          selectedClaim.playerName,
-          currentWinPattern || selectedClaim.win_pattern || 'fullHouse',
-          currentCalledNumbers || selectedClaim.called_numbers || [],
-          currentNumber || selectedClaim.last_called_number,
-          ticketData
-        );
-        
-        if (success) {
-          toast({
-            title: "Claim Rejected",
-            description: "The claim has been rejected",
-          });
-          
-          // Close the verify modal
-          handleCloseVerifyModal();
-        }
-      }
-      // Use traditional reject for database claims
-      else {
-        const success = await rejectClaim(
-          selectedClaim.player_id,
-          selectedClaim.player_name,
-          selectedClaim.win_pattern,
-          selectedClaim.called_numbers,
-          selectedClaim.last_called_number,
-          ticketData
-        );
-        
-        if (success) {
-          toast({
-            title: "Claim Rejected",
-            description: "The claim has been rejected",
-          });
-          
-          // Close the verify modal
-          handleCloseVerifyModal();
-        }
-      }
-    } catch (err) {
-      console.error("Error rejecting claim:", err);
-      toast({
-        title: "Error",
-        description: "Failed to reject claim",
-        variant: "destructive"
-      });
-    }
-  };
-
-  // Get claims from different sources - prefer broadcast claims (in-memory) over database claims
-  const effectiveClaims = broadcastClaims.length > 0 ? broadcastClaims : [];
+  }, [validateClaim]);
 
   return (
-    <>
-      <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-        <SheetContent side="right" className="w-[400px] sm:w-[540px] overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>Pending Claims</SheetTitle>
-          </SheetHeader>
-          
-          <div className="py-4">
-            <Button onClick={() => setIsLoading(false)} variant="outline" className="mb-4 w-full">
-              Refresh Claims
-            </Button>
-            
-            {isLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-800"></div>
-              </div>
-            ) : effectiveClaims.length > 0 ? (
-              <div className="space-y-4">
-                {effectiveClaims.map((claim) => (
-                  <div
-                    key={claim.id}
-                    className="border rounded-md p-4 hover:bg-gray-50 cursor-pointer"
-                    onClick={() => handleOpenVerifyModal(claim)}
+    <Sheet open={isOpen} onOpenChange={onClose}>
+      <SheetContent className="sm:max-w-lg">
+        <SheetHeader>
+          <SheetTitle>Claim Verification</SheetTitle>
+          <SheetDescription>
+            Review and validate bingo claims.
+          </SheetDescription>
+        </SheetHeader>
+        <div className="grid gap-4 py-4">
+          {claims.length === 0 ? (
+            <div className="text-center text-gray-500">
+              No claims to review at this time.
+            </div>
+          ) : (
+            claims.map((claim, index) => (
+              <div key={index} className="border rounded-md p-4">
+                <div className="font-bold">Claim Details</div>
+                <div>Player: {claim.playerName}</div>
+                <div>Session: {claim.sessionId}</div>
+                <div>Game: {gameNumber}</div>
+                <div>Claimed at: {claim.timestamp}</div>
+                <div className="flex justify-end gap-2 mt-4">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => handleVerify(claim)}
+                    disabled={isProcessingClaim}
                   >
-                    <div className="font-medium">{claim.playerName || claim.player_name || claim.playerId || claim.player_id}</div>
-                    <div className="text-sm text-gray-500">
-                      Pattern: {claim.win_pattern || currentWinPattern || 'Unknown'}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      Ticket: {claim.ticketData?.serial || claim.ticket_serial}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      Claimed: {new Date(claim.timestamp || claim.claimed_at).toLocaleTimeString()}
-                    </div>
-                  </div>
-                ))}
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Verify
+                  </Button>
+                  <Button 
+                    variant="destructive" 
+                    onClick={() => handleReject(claim)}
+                    disabled={isProcessingClaim}
+                  >
+                    <XCircle className="h-4 w-4 mr-2" />
+                    Reject
+                  </Button>
+                </div>
               </div>
-            ) : (
-              <div className="py-8 text-center text-gray-500">
-                No pending claims found
-              </div>
-            )}
-          </div>
-        </SheetContent>
-      </Sheet>
-
-      {selectedClaim && (
-        <ClaimVerificationModal
-          isOpen={isVerifyModalOpen}
-          onClose={handleCloseVerifyModal}
-          playerName={selectedClaim.playerName || selectedClaim.player_name || selectedClaim.playerId || selectedClaim.player_id}
-          tickets={[
-            {
-              serial: selectedClaim.ticketData?.serial || selectedClaim.ticket_serial,
-              numbers: selectedClaim.ticketData?.numbers || selectedClaim.ticket_numbers,
-              layoutMask: selectedClaim.ticketData?.layoutMask || selectedClaim.ticket_layout_mask
-            }
-          ]}
-          calledNumbers={currentCalledNumbers || selectedClaim.called_numbers}
-          currentNumber={currentNumber || selectedClaim.last_called_number}
-          onValidClaim={handleValidClaim}
-          onFalseClaim={handleRejectClaim}
-          currentWinPattern={currentWinPattern || selectedClaim.win_pattern}
-        />
-      )}
-    </>
+            ))
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }

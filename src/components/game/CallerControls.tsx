@@ -75,26 +75,42 @@ export default function CallerControls({
       const randomIndex = Math.floor(Math.random() * remainingNumbers.length);
       const number = remainingNumbers[randomIndex];
       
-      // IMPORTANT: First broadcast the number to all clients immediately
+      // IMPROVED BROADCASTING: Use separate channels for different purposes
       try {
         logWithTimestamp(`Broadcasting number ${number} via realtime channels`);
         
-        // Use a dedicated broadcast channel
-        supabase.channel('number-broadcast').send({
+        // Create dedicated channel name for number broadcasts based on session id
+        const broadcastChannel = supabase.channel(`numbers-${sessionId}`);
+        
+        // Calculate the called numbers
+        const calledNumbers = getCalledNumbersFromRemaining(number, remainingNumbers);
+        
+        // Prepare payload with essential data
+        const payload = {
+          sessionId: sessionId,
+          lastCalledNumber: number,
+          calledNumbers: calledNumbers,
+          timestamp: new Date().toISOString()
+        };
+        
+        logWithTimestamp(`Broadcasting number called payload: ${JSON.stringify(payload)}`);
+        
+        // Send the broadcast
+        broadcastChannel.send({
           type: 'broadcast',
           event: 'number-called',
-          payload: {
-            sessionId: sessionId,
-            lastCalledNumber: number,
-            // We need to calculate the called numbers since we don't have direct access to the full list
-            // We infer it from the remaining numbers
-            calledNumbers: getCalledNumbersFromRemaining(number, remainingNumbers),
-            timestamp: new Date().toISOString()
-          }
+          payload: payload
         }).then(() => {
           logWithTimestamp("Number broadcast sent successfully");
+          
+          // Also broadcast to the general channel for legacy support
+          supabase.channel('number-broadcast').send({
+            type: 'broadcast',
+            event: 'number-called',
+            payload: payload
+          });
+          
         }, (error) => {
-          // Handle error with a second parameter to .then() instead of using .catch()
           console.error("Error broadcasting number:", error);
         });
       } catch (err) {
