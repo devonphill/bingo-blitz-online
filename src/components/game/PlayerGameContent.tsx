@@ -1,14 +1,12 @@
-
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
 import GameTypePlayspace from "./GameTypePlayspace";
 import { toast } from "@/hooks/use-toast";
-import { connectionManager } from "@/utils/connectionManager";
+import { connectionManager, ConnectionState } from "@/utils/connectionManager";
 import { logWithTimestamp } from "@/utils/logUtils";
 import CalledNumbers from "./CalledNumbers";
 import CurrentNumberDisplay from "./CurrentNumberDisplay";
-import { supabase } from "@/integrations/supabase/client";
 import { GoLiveButton } from "@/components/ui/go-live-button";
 
 interface PlayerGameContentProps {
@@ -29,6 +27,9 @@ interface PlayerGameContentProps {
   claimStatus?: 'none' | 'pending' | 'valid' | 'invalid';
   gameType?: string;
 }
+
+// Define a mapping type for GameTypePlayspace claim status
+type GameTypePlayspaceClaimStatus = 'pending' | 'rejected' | 'validated';
 
 export default function PlayerGameContent({
   tickets,
@@ -51,8 +52,7 @@ export default function PlayerGameContent({
   // Track local state for real-time number calls
   const [rtCalledNumbers, setRtCalledNumbers] = useState<number[]>([]);
   const [rtLastCalledNumber, setRtLastCalledNumber] = useState<number | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('connecting');
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionState>('connecting');
   const [activeWinPattern, setActiveWinPattern] = useState<string | null>(null);
   
   // Generate a unique ID for this component instance for better debug logging
@@ -65,7 +65,26 @@ export default function PlayerGameContent({
     }
   }, [activeWinPatterns, activeWinPattern]);
   
-  // Use CONNECTION MANAGER ONLY for all real-time updates
+  // Custom, debounced connection status check to avoid UI flashing
+  const debouncedSetConnectionStatus = useCallback((status: ConnectionState) => {
+    // Only update if there's a significant change to prevent UI flashing 
+    setConnectionStatus(prevStatus => {
+      // Don't rapidly toggle between connecting/disconnected
+      if (status === 'connecting' && prevStatus === 'disconnected') {
+        return prevStatus;
+      }
+      
+      // Always show connected status immediately
+      if (status === 'connected') {
+        return status;
+      }
+      
+      // Otherwise update normally
+      return status;
+    });
+  }, []);
+  
+  // Setup single connection handling
   useEffect(() => {
     if (!currentSession?.id) {
       logWithTimestamp(`PlayerGameContent (${instanceId.current}): No session ID, skipping connection setup`, 'info');
@@ -75,112 +94,107 @@ export default function PlayerGameContent({
     logWithTimestamp(`PlayerGameContent (${instanceId.current}): Setting up connection manager for session ${currentSession.id}`, 'info');
     
     try {
-      // Initialize connection without creating new channels internally
-      const manager = connectionManager.initialize(currentSession.id);
-      
-      // Attach event handlers
-      manager.onNumberCalled((number, allNumbers) => {
-        // Handle null case from reset events
-        if (number === null) {
-          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received reset event, clearing numbers`, 'info');
-          setRtCalledNumbers([]);
-          setRtLastCalledNumber(null);
-          return;
-        }
-        
-        logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received number call via connection manager: ${number}, total numbers: ${allNumbers.length}`, 'info');
-        
-        // Only update if we have new data
-        if (number !== rtLastCalledNumber || allNumbers.length !== rtCalledNumbers.length) {
-          setRtLastCalledNumber(number);
-          setRtCalledNumbers(allNumbers);
-          setIsConnected(true);
-          setConnectionStatus('connected');
-          
-          // Show toast notification for new number
-          toast({
-            title: `Number Called: ${number}`,
-            description: `New number has been called`,
-            duration: 3000
-          });
-        }
-      });
-      
-      manager.onSessionProgressUpdate((progress) => {
-        // This callback is required to avoid the error we were seeing
-        logWithTimestamp(`PlayerGameContent (${instanceId.current}): Session progress update received`, 'info');
-        
-        // Update connection state
-        setIsConnected(true);
-        setConnectionStatus('connected');
-        
-        // Update numbers from progress if available
-        if (progress?.called_numbers?.length > 0) {
-          const lastNumberIndex = progress.called_numbers.length - 1;
-          const lastNumber = progress.called_numbers[lastNumberIndex];
-          
-          // Only update if we have new data
-          if (!rtCalledNumbers.length || 
-              rtCalledNumbers.length !== progress.called_numbers.length ||
-              rtLastCalledNumber !== lastNumber) {
-            logWithTimestamp(`PlayerGameContent (${instanceId.current}): Updating called numbers from progress`, 'info');
-            setRtCalledNumbers(progress.called_numbers);
-            setRtLastCalledNumber(lastNumber);
+      // Initialize connection once
+      const session = connectionManager
+        .initialize(currentSession.id)
+        .onNumberCalled((number, allNumbers) => {
+          if (number === null) {
+            // Handle reset event
+            logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received reset event, clearing numbers`, 'info');
+            setRtCalledNumbers([]);
+            setRtLastCalledNumber(null);
+            return;
           }
-        }
-        
-        // Update win pattern if available
-        if (progress?.current_win_pattern) {
-          setActiveWinPattern(progress.current_win_pattern);
-        }
-      });
-      
-      manager.onConnectionStatusChange((isConnected) => {
-        setIsConnected(isConnected);
-        setConnectionStatus(isConnected ? 'connected' : 'disconnected');
-      });
-      
-      manager.onError((error) => {
-        logWithTimestamp(`PlayerGameContent (${instanceId.current}): Connection error: ${error}`, 'error');
-        setConnectionStatus('error');
-      });
+          
+          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received number call: ${number}, total: ${allNumbers.length}`, 'info');
+          
+          // Only update state if we have new data to prevent unnecessary renders
+          if (number !== rtLastCalledNumber || 
+              !rtCalledNumbers.length || 
+              allNumbers.length !== rtCalledNumbers.length) {
+            setRtLastCalledNumber(number);
+            setRtCalledNumbers(allNumbers);
+            
+            // Show toast notification for new number
+            toast({
+              title: `Number Called: ${number}`,
+              description: `New number has been called`,
+              duration: 3000
+            });
+          }
+        })
+        .onSessionProgressUpdate((progress) => {
+          // This callback is required to avoid the error we were seeing
+          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Session progress update received`, 'info');
+          
+          // Update numbers from progress if available
+          if (progress?.called_numbers?.length > 0) {
+            const lastNumberIndex = progress.called_numbers.length - 1;
+            const lastNumber = progress.called_numbers[lastNumberIndex];
+            
+            // Only update if we have new data
+            if (!rtCalledNumbers.length || 
+                rtCalledNumbers.length !== progress.called_numbers.length ||
+                rtLastCalledNumber !== lastNumber) {
+              logWithTimestamp(`PlayerGameContent (${instanceId.current}): Updating called numbers from progress`, 'info');
+              setRtCalledNumbers(progress.called_numbers);
+              setRtLastCalledNumber(lastNumber);
+            }
+          }
+          
+          // Update win pattern if available
+          if (progress?.current_win_pattern) {
+            setActiveWinPattern(progress.current_win_pattern);
+          }
+        })
+        .onConnectionStatusChange((isConnected) => {
+          const status: ConnectionState = isConnected ? 'connected' : 'disconnected'; 
+          debouncedSetConnectionStatus(status);
+        })
+        .onError((error) => {
+          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Connection error: ${error}`, 'error');
+          debouncedSetConnectionStatus('error');
+        });
       
     } catch (err) {
       console.error("Error setting up connection manager:", err);
-      setConnectionStatus('error');
+      debouncedSetConnectionStatus('error');
     }
-      
-    // Clean up on unmount - but don't call cleanup() directly to avoid interrupting other components
+    
+    // Check connection status periodically but don't reconnect here
+    const checkInterval = setInterval(() => {
+      const currentStatus = connectionManager.getConnectionState();
+      debouncedSetConnectionStatus(currentStatus);
+    }, 5000);
+    
+    // Clean up on unmount
     return () => {
-      logWithTimestamp(`PlayerGameContent (${instanceId.current}): Unregistering callbacks from connection manager`, 'info');
+      logWithTimestamp(`PlayerGameContent (${instanceId.current}): Cleaning up connection check interval`, 'info');
+      clearInterval(checkInterval);
     };
-  }, [currentSession?.id, rtCalledNumbers.length, rtLastCalledNumber]);
+  }, [currentSession?.id, debouncedSetConnectionStatus]);
   
-  // Log state for debugging
+  // Log state for debugging but with reduced frequency using dependencies
   useEffect(() => {
-    logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Session ID: ${currentSession?.id}, Player: ${playerName || playerCode}, Connection: ${isConnected ? 'connected' : 'disconnected'}`, 'info');
+    logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Connection: ${connectionStatus}, Session: ${currentSession?.id}`, 'info');
     
     if (rtCalledNumbers.length > 0) {
-      logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Real-time called numbers: ${rtCalledNumbers.length}, last: ${rtLastCalledNumber}`, 'info');
+      logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Called numbers: ${rtCalledNumbers.length}, last: ${rtLastCalledNumber}`, 'info');
     }
-    
-    if (activeWinPattern) {
-      logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Active win pattern: ${activeWinPattern}`, 'info');
-    }
-  }, [currentSession?.id, playerName, playerCode, rtCalledNumbers, rtLastCalledNumber, isConnected, activeWinPattern]);
+  }, [connectionStatus, currentSession?.id, rtLastCalledNumber]);
 
   // Use the local state for win pattern if available, otherwise fall back to props
   const currentWinPattern = activeWinPattern || (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
 
   // Merge real-time called numbers with prop values, giving priority to real-time
-  const mergedCalledNumbers = rtCalledNumbers.length > 0 
-    ? rtCalledNumbers 
-    : calledNumbers;
+  const mergedCalledNumbers = useMemo(() => {
+    return rtCalledNumbers.length > 0 ? rtCalledNumbers : calledNumbers;
+  }, [rtCalledNumbers, calledNumbers]);
 
   // Use real-time last called number or fall back to props
-  const mergedCurrentNumber = rtLastCalledNumber !== null
-    ? rtLastCalledNumber
-    : currentNumber;
+  const mergedCurrentNumber = useMemo(() => {
+    return rtLastCalledNumber !== null ? rtLastCalledNumber : currentNumber;
+  }, [rtLastCalledNumber, currentNumber]);
 
   // Force auto-marking for Mainstage games
   React.useEffect(() => {
@@ -189,7 +203,7 @@ export default function PlayerGameContent({
     }
   }, [gameType, autoMarking, setAutoMarking]);
 
-  // Handle bingo claim with better error handling
+  // Handle bingo claim with error handling
   const handleClaimBingoWithErrorHandling = async () => {
     if (!onClaimBingo) {
       console.error("No claim handler available");
@@ -218,12 +232,11 @@ export default function PlayerGameContent({
   };
 
   // Function to manually trigger reconnection with improved error handling
-  const handleManualReconnect = () => {
+  const handleManualReconnect = useCallback(() => {
     logWithTimestamp(`Manual reconnection requested by user`, 'info');
     
     // Reset connection state
     setConnectionStatus('connecting');
-    setIsConnected(false);
     
     // Attempt to re-establish connection
     connectionManager.reconnect();
@@ -232,10 +245,10 @@ export default function PlayerGameContent({
       title: "Reconnecting...",
       description: "Attempting to reconnect to the game server",
     });
-  };
+  }, []);
 
   // Define a proper mapping function to convert between the different claim status types
-  function mapClaimStatus(status: 'none' | 'pending' | 'valid' | 'invalid'): 'pending' | 'rejected' | 'validated' {
+  const mapClaimStatus = useCallback((status: 'none' | 'pending' | 'valid' | 'invalid'): GameTypePlayspaceClaimStatus => {
     switch(status) {
       case 'none':
         return 'pending';
@@ -248,10 +261,15 @@ export default function PlayerGameContent({
       default:
         return 'pending';
     }
-  }
+  }, []);
 
   // For GameTypePlayspace we must use the mapped claim status
-  const gameTypePlayspaceClaimStatus = mapClaimStatus(claimStatus);
+  const gameTypePlayspaceClaimStatus = useMemo(() => 
+    mapClaimStatus(claimStatus), 
+  [claimStatus, mapClaimStatus]);
+
+  // Determine if we're connected based on connection status
+  const isConnected = connectionStatus === 'connected';
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">

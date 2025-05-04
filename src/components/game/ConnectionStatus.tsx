@@ -1,11 +1,11 @@
 
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { connectionManager } from '@/utils/connectionManager';
+import React, { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { connectionManager, ConnectionState } from '@/utils/connectionManager';
 import { logWithTimestamp } from '@/utils/logUtils';
 
 interface ConnectionStatusProps {
-  state: 'disconnected' | 'connecting' | 'connected' | 'error';
+  state: ConnectionState;
   onReconnect?: () => void;
   showFull?: boolean;
   className?: string;
@@ -21,25 +21,26 @@ export default function ConnectionStatus({
   const [statusDetails, setStatusDetails] = useState<Record<string, any>>({});
   const [lastPing, setLastPing] = useState<number | null>(null);
   
-  useEffect(() => {
-    const updateConnectionDetails = () => {
-      // Use the getStatus method of connectionManager
-      const status = connectionManager.getStatus();
-      // Make sure we're setting an object to match the Record<string, any> type
-      setStatusDetails({ status });
-      
-      // Use the getLastPing method
-      setLastPing(connectionManager.getLastPing());
-    };
+  // Use a callback to update connection details to prevent frequent re-renders
+  const updateConnectionDetails = useCallback(() => {
+    // Use the getStatus method of connectionManager
+    const status = connectionManager.getStatus();
+    // Make sure we're setting an object to match the Record<string, any> type
+    setStatusDetails({ status });
     
+    // Use the getLastPing method
+    setLastPing(connectionManager.getLastPing());
+  }, []);
+  
+  useEffect(() => {
     // Update immediate and set interval
     updateConnectionDetails();
     const interval = setInterval(updateConnectionDetails, 5000);
     
     return () => clearInterval(interval);
-  }, []);
+  }, [updateConnectionDetails]);
   
-  const getStatusColor = () => {
+  const getStatusColor = useCallback(() => {
     switch (state) {
       case 'connected': return 'bg-green-500';
       case 'connecting': return 'bg-amber-500';
@@ -47,9 +48,9 @@ export default function ConnectionStatus({
       case 'error': return 'bg-red-700';
       default: return 'bg-gray-500';
     }
-  };
+  }, [state]);
   
-  const getStatusText = () => {
+  const getStatusText = useCallback(() => {
     switch (state) {
       case 'connected': return 'Connected';
       case 'connecting': return 'Connecting...';
@@ -57,7 +58,7 @@ export default function ConnectionStatus({
       case 'error': return 'Connection Error';
       default: return 'Unknown';
     }
-  };
+  }, [state]);
   
   const handleReconnectClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -90,43 +91,46 @@ export default function ConnectionStatus({
         )}
       </div>
       
-      {expanded && (
-        <motion.div 
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="absolute top-full right-0 mt-2 bg-white shadow-lg rounded-md p-3 z-50 w-64"
-        >
-          <h4 className="font-bold mb-2">Connection Details</h4>
-          <div className="text-xs space-y-1">
-            <div>Status: <span className="font-semibold">{getStatusText()}</span></div>
-            {lastPing !== null && (
-              <div>
-                Last ping: <span className="font-mono">{lastPing}ms ago</span>
+      <AnimatePresence>
+        {expanded && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="absolute top-full right-0 mt-2 bg-white shadow-lg rounded-md p-3 z-50 w-64"
+          >
+            <h4 className="font-bold mb-2">Connection Details</h4>
+            <div className="text-xs space-y-1">
+              <div>Status: <span className="font-semibold">{getStatusText()}</span></div>
+              {lastPing !== null && (
+                <div>
+                  Last ping: <span className="font-mono">{lastPing}ms ago</span>
+                </div>
+              )}
+              
+              {Object.entries(statusDetails).map(([key, value]) => {
+                if (key !== 'lastPing' && value !== undefined) {
+                  return (
+                    <div key={key}>
+                      {key}: <span className="font-mono">{JSON.stringify(value)}</span>
+                    </div>
+                  );
+                }
+                return null;
+              })}
+              
+              <div className="pt-2">
+                <button 
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs"
+                  onClick={handleReconnectClick}
+                >
+                  Force Reconnect
+                </button>
               </div>
-            )}
-            
-            {Object.entries(statusDetails).map(([key, value]) => {
-              if (key !== 'lastPing' && value !== undefined) {
-                return (
-                  <div key={key}>
-                    {key}: <span className="font-mono">{JSON.stringify(value)}</span>
-                  </div>
-                );
-              }
-              return null;
-            })}
-            
-            <div className="pt-2">
-              <button 
-                className="w-full bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs"
-                onClick={handleReconnectClick}
-              >
-                Force Reconnect
-              </button>
             </div>
-          </div>
-        </motion.div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

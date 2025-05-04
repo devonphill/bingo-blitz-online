@@ -1,6 +1,8 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
+
+// Define connection states for better type safety
+export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 export const connectionManager = {
   // Private fields (used internally)
@@ -8,6 +10,14 @@ export const connectionManager = {
   activeChannels: [] as any[],
   lastPingTimestamp: 0,
   sessionId: null as string | null,
+  connectionState: 'disconnected' as ConnectionState,
+  isInitializing: false,
+  reconnectAttempts: 0,
+  maxReconnectAttempts: 10,
+  reconnectBackoff: 1000, // Starting at 1 second
+  reconnectTimer: null as any,
+  
+  // Event listeners
   listeners: {
     numberCalled: [] as Function[],
     gameStateUpdate: [] as Function[],
@@ -19,15 +29,35 @@ export const connectionManager = {
   
   // Connection Management
   initialize(sessionId: string) {
-    if (this.sessionId === sessionId && this.supabaseChannel) {
-      logWithTimestamp(`ConnectionManager already initialized for session ${sessionId}`, 'info');
+    if (this.isInitializing) {
+      logWithTimestamp('ConnectionManager initialization already in progress', 'info');
       return this; // Return self for method chaining
     }
     
+    if (this.sessionId === sessionId && this.supabaseChannel && this.connectionState === 'connected') {
+      logWithTimestamp(`ConnectionManager already initialized and connected for session ${sessionId}`, 'info');
+      return this; // Return self for method chaining
+    }
+    
+    this.isInitializing = true;
+    this.connectionState = 'connecting';
     this.sessionId = sessionId;
     logWithTimestamp(`Initializing connection for session ${sessionId}`, 'info');
     
+    // Notify all listeners of the connecting state
+    this.notifyConnectionStatusChange('connecting');
+    
     try {
+      // Clean up existing channel if any
+      if (this.supabaseChannel) {
+        try {
+          logWithTimestamp('Cleaning up existing channel before creating a new one', 'info');
+          this.supabaseChannel.unsubscribe();
+        } catch (err) {
+          logWithTimestamp(`Error unsubscribing from existing channel: ${err}`, 'error');
+        }
+      }
+      
       // Create a new channel for this session
       this.supabaseChannel = supabase.channel(`game-${sessionId}`);
       
@@ -56,6 +86,7 @@ export const connectionManager = {
         })
         .subscribe((status) => {
           this.handleSubscriptionStatus(status);
+          this.isInitializing = false; // Initialization complete
         });
       
       // Add to active channels
@@ -67,15 +98,12 @@ export const connectionManager = {
       this.lastPingTimestamp = Date.now();
       
     } catch (error) {
+      this.isInitializing = false;
+      this.connectionState = 'error';
       logWithTimestamp(`Error initializing connection manager: ${error}`, 'error');
+      
       // Call error listeners
-      this.listeners.error.forEach(callback => {
-        try {
-          callback(`Error initializing connection: ${error}`);
-        } catch (err) {
-          logWithTimestamp(`Error in error callback: ${err}`, 'error');
-        }
-      });
+      this.notifyError(`Error initializing connection: ${error}`);
     }
     
     return this; // Return self for method chaining
@@ -84,17 +112,104 @@ export const connectionManager = {
   reconnect() {
     logWithTimestamp('Reconnecting to game server...', 'info');
     
+    // Clear any pending reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    
+    // Don't try to reconnect if we're already connecting or we've reached max attempts
+    if (this.connectionState === 'connecting' || this.isInitializing) {
+      logWithTimestamp('Reconnection already in progress', 'info');
+      return this;
+    }
+    
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      logWithTimestamp('Maximum reconnect attempts reached', 'error');
+      this.connectionState = 'error';
+      this.notifyConnectionStatusChange('error');
+      this.notifyError('Maximum reconnect attempts reached');
+      return this;
+    }
+    
     if (this.sessionId) {
+      // Increment backoff with exponential delay
+      const backoffTime = Math.min(
+        this.reconnectBackoff * Math.pow(1.5, this.reconnectAttempts),
+        30000 // Max 30 seconds
+      );
+      
+      this.reconnectAttempts++;
+      logWithTimestamp(`Reconnect attempt ${this.reconnectAttempts} with ${backoffTime}ms backoff`, 'info');
+      
+      this.connectionState = 'connecting';
+      this.notifyConnectionStatusChange('connecting');
+      
       // Create a new channel with the same session ID
       return this.initialize(this.sessionId);
     } else {
       logWithTimestamp('Cannot reconnect: No session ID available', 'error');
+      this.connectionState = 'error';
+      this.notifyConnectionStatusChange('error');
       return this;
     }
   },
   
+  scheduleReconnect() {
+    if (this.reconnectTimer) return; // Already scheduled
+    
+    // Calculate backoff time 
+    const backoffTime = Math.min(
+      this.reconnectBackoff * Math.pow(1.5, this.reconnectAttempts),
+      30000 // Max 30 seconds
+    );
+    
+    logWithTimestamp(`Scheduling reconnect in ${backoffTime}ms`, 'info');
+    
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.reconnect();
+    }, backoffTime);
+  },
+  
+  resetReconnectAttempts() {
+    this.reconnectAttempts = 0;
+  },
+  
+  // Helper method to check real connection status
   isConnected() {
     return this.supabaseChannel && this.supabaseChannel.state === 'SUBSCRIBED';
+  },
+  
+  // Get current connection status
+  getConnectionState(): ConnectionState {
+    return this.connectionState;
+  },
+  
+  // Notify connection status change listeners
+  notifyConnectionStatusChange(status: ConnectionState) {
+    // Update internal state
+    this.connectionState = status;
+    
+    // Call all connection status change listeners
+    this.listeners.connectionStatusChange.forEach(callback => {
+      try {
+        callback(status === 'connected');
+      } catch (err) {
+        logWithTimestamp(`Error in connectionStatusChange callback: ${err}`, 'error');
+      }
+    });
+  },
+  
+  // Notify error listeners
+  notifyError(error: string) {
+    this.listeners.error.forEach(callback => {
+      try {
+        callback(error);
+      } catch (err) {
+        logWithTimestamp(`Error in error callback: ${err}`, 'error');
+      }
+    });
   },
   
   // Game state methods
@@ -227,6 +342,14 @@ export const connectionManager = {
   
   onConnectionStatusChange(callback: Function) {
     this.listeners.connectionStatusChange.push(callback);
+    
+    // Immediately call with current status to initialize state
+    try {
+      callback(this.connectionState === 'connected');
+    } catch (err) {
+      logWithTimestamp(`Error in initial connectionStatusChange callback: ${err}`, 'error');
+    }
+    
     return this; // Return self for method chaining
   },
   
@@ -371,42 +494,33 @@ export const connectionManager = {
   handleSubscriptionStatus(status: string) {
     logWithTimestamp(`Channel subscription status: ${status}`, 'info');
     
-    const isConnected = status === 'SUBSCRIBED';
-    
-    // Call all connection status change listeners
-    this.listeners.connectionStatusChange.forEach(callback => {
-      try {
-        callback(isConnected);
-      } catch (err) {
-        logWithTimestamp(`Error in connectionStatusChange callback: ${err}`, 'error');
+    if (status === 'SUBSCRIBED') {
+      this.connectionState = 'connected';
+      this.resetReconnectAttempts();  // Reset the counter on successful connection
+      this.notifyConnectionStatusChange('connected');
+      
+      // Clear any reconnect timer
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
       }
-    });
-    
-    if (!isConnected) {
-      // Call all error listeners with a generic error message
-      this.listeners.error.forEach(callback => {
-        try {
-          callback('Connection lost or failed');
-        } catch (err) {
-          logWithTimestamp(`Error in error callback: ${err}`, 'error');
-        }
-      });
+    } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+      this.connectionState = 'disconnected';
+      this.notifyConnectionStatusChange('disconnected');
+      this.notifyError(`Connection ${status.toLowerCase()}`);
+      
+      // Schedule a reconnection attempt
+      this.scheduleReconnect();
     }
   },
   
   // Methods added from the previous implementation
   getStatus() {
-    if (this.supabaseChannel && this.supabaseChannel.state === 'SUBSCRIBED') {
-      return 'connected';
-    }
-    if (this.supabaseChannel && this.supabaseChannel.state === 'JOINING') {
-      return 'connecting';
-    }
-    return 'disconnected';
+    return this.connectionState;
   },
 
   getLastPing() {
-    return this.lastPingTimestamp || 0;
+    return this.lastPingTimestamp ? Date.now() - this.lastPingTimestamp : 0;
   },
 
   getChannels() {
