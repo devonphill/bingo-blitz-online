@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -11,7 +12,7 @@ export default function DebugPanel({ initiallyExpanded = false }: DebugPanelProp
   const [isExpanded, setIsExpanded] = useState(initiallyExpanded);
   const [isEnabled, setIsEnabled] = useState(!!localStorage.getItem('debug-panel-enabled'));
   const [debugEvents, setDebugEvents] = useState<Array<{time: Date; message: string; level: string}>>([]);
-  const [connectionStatus, setConnectionStatus<'connected' | 'disconnected'>>('disconnected');
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected'>('disconnected');
   const [lastPing, setLastPing] = useState<number | null>(null);
   
   // Toggle debug panel visibility
