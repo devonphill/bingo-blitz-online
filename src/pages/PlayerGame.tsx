@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useState } from 'react';
+import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { usePlayerGame } from '@/hooks/usePlayerGame';
@@ -115,15 +115,57 @@ export default function PlayerGame() {
     hookConnectionState || 'disconnected'
   );
   
+  // Connection monitoring ref
+  const connectionMonitorRef = useRef<number | null>(null);
+  
+  // Manual connection check function
+  const checkConnectionStatus = useCallback(() => {
+    const isConnected = connectionManager.isConnected();
+    // Only update if it's different to prevent unnecessary renders
+    if ((isConnected && effectiveConnectionState !== 'connected') || 
+        (!isConnected && effectiveConnectionState === 'connected')) {
+      setEffectiveConnectionState(isConnected ? 'connected' : 'disconnected');
+    }
+  }, [effectiveConnectionState]);
+  
+  // Set up a direct connection status check that runs every 2 seconds
+  useEffect(() => {
+    if (connectionMonitorRef.current) {
+      window.clearInterval(connectionMonitorRef.current);
+    }
+    
+    connectionMonitorRef.current = window.setInterval(() => {
+      checkConnectionStatus();
+    }, 2000);
+    
+    return () => {
+      if (connectionMonitorRef.current) {
+        window.clearInterval(connectionMonitorRef.current);
+        connectionMonitorRef.current = null;
+      }
+    };
+  }, [checkConnectionStatus]);
+  
   // Update effective connection state from hook with debouncing
-  // This prevents rapid flickering between connected/disconnected states
   useEffect(() => {
     const timer = setTimeout(() => {
-      setEffectiveConnectionState(hookConnectionState);
+      // Update the connection state but also check the direct connection status
+      const isDirectlyConnected = connectionManager.isConnected();
+      const newState = isDirectlyConnected ? 'connected' : hookConnectionState;
+      setEffectiveConnectionState(newState);
+      
+      // Log the connection state for debugging
+      logWithTimestamp(`PlayerGame: Connection state from hook: ${hookConnectionState}, direct check: ${isDirectlyConnected ? 'connected' : 'disconnected'}, effective: ${newState}`);
+      
+      // If we're still disconnected, try to reconnect
+      if (newState !== 'connected' && currentSession?.id) {
+        logWithTimestamp('PlayerGame: Still disconnected, attempting reconnect');
+        connectionManager.reconnect();
+      }
     }, 1000); // Wait 1 second before updating connection state to prevent flickering
     
     return () => clearTimeout(timer);
-  }, [hookConnectionState]);
+  }, [hookConnectionState, currentSession?.id]);
   
   // Always initialize tickets hook with the same parameters, even if it will not be used
   const { tickets, refreshTickets } = useTickets(playerCode, currentSession?.id);

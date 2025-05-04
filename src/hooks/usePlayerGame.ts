@@ -31,8 +31,9 @@ export function usePlayerGame(playerCode: string | null) {
   const [claimStatus, setClaimStatus] = useState<'none' | 'pending' | 'valid' | 'invalid'>('none');
   const [isSubmittingClaim, setIsSubmittingClaim] = useState<boolean>(false);
   
-  // Connection state
+  // Connection state with more detailed monitoring
   const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('connecting');
+  const connectionCheckRef = useRef<number | null>(null);
   
   // Game type (default to mainstage/90-ball)
   const [gameType, setGameType] = useState<string>('mainstage');
@@ -356,7 +357,7 @@ export function usePlayerGame(playerCode: string | null) {
     }
   }, [playerCode, currentSession?.id, isSubmittingClaim, claimStatus, claimBingo, tickets]);
   
-  // Track player presence when we have all required data - fix this implementation
+  // Track player presence and maintain connection when we have all required data
   useEffect(() => {
     if (!playerCode || !playerId || !currentSession?.id) {
       return;
@@ -365,7 +366,6 @@ export function usePlayerGame(playerCode: string | null) {
     logWithTimestamp(`usePlayerGame: Setting up player presence tracking for ${playerName || playerCode}`);
     
     // Track player presence to keep them visible in the player list
-    // This is the critical part that ensures the player stays connected
     connectionManager.trackPlayerPresence({
       player_id: playerId,
       player_code: playerCode,
@@ -373,7 +373,24 @@ export function usePlayerGame(playerCode: string | null) {
       tickets: tickets
     });
     
-    // Re-track player presence every 60 seconds as an additional safeguard
+    // Set up connection state monitoring
+    if (connectionCheckRef.current) {
+      window.clearInterval(connectionCheckRef.current);
+    }
+    
+    // Check connection status every 3 seconds and update state accordingly
+    connectionCheckRef.current = window.setInterval(() => {
+      const isConnected = connectionManager.isConnected();
+      setConnectionState(isConnected ? 'connected' : 'disconnected');
+      
+      // If we're disconnected, try to reconnect
+      if (!isConnected) {
+        logWithTimestamp(`usePlayerGame: Connection check found disconnected state, attempting reconnect`);
+        connectionManager.reconnect();
+      }
+    }, 3000);
+    
+    // Re-track player presence every 30 seconds as an additional safeguard
     const presenceInterval = setInterval(() => {
       logWithTimestamp(`usePlayerGame: Refreshing player presence for ${playerName || playerCode}`);
       
@@ -383,10 +400,14 @@ export function usePlayerGame(playerCode: string | null) {
         nickname: playerName || playerCode,
         tickets: tickets
       });
-    }, 60000);
+    }, 30000);
     
     // Clean up on unmount
     return () => {
+      if (connectionCheckRef.current) {
+        window.clearInterval(connectionCheckRef.current);
+        connectionCheckRef.current = null;
+      }
       clearInterval(presenceInterval);
     };
     

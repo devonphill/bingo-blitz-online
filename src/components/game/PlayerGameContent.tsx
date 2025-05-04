@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useCallback } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -279,7 +278,7 @@ export default function PlayerGameContent({
         
         <GameTypePlayspace
           gameType={gameType as any}
-          tickets={tickets}
+          tickets={tickets || []}
           calledNumbers={mergedCalledNumbers}
           lastCalledNumber={mergedCurrentNumber}
           autoMarking={autoMarking}

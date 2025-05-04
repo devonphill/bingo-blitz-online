@@ -24,6 +24,7 @@ interface TicketsAssignedCallback {
 class ConnectionManager {
   private static instance: ConnectionManager;
   private sessionId: string | null = null;
+  private channelId: string | null = null; // Store a unique identifier for this connection
   private gameUpdatesChannel: any = null;
   private presenceChannel: any = null;
   private numberCallCallbacks: NumberCalledCallback[] = [];
@@ -33,9 +34,15 @@ class ConnectionManager {
   private connectedState: boolean = false;
   private _heartbeatIntervals: number[] = [];
   private _playerInfo: any = null;
+  private _lastHeartbeat: number = 0;
+  private _connectionAttempts: number = 0;
   
   // Private constructor to enforce singleton
-  private constructor() {}
+  private constructor() {
+    // Generate a unique ID for this connection instance
+    this.channelId = `conn-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    logWithTimestamp(`ConnectionManager: Created with ID ${this.channelId}`);
+  }
   
   // Get the single instance
   public static getInstance(): ConnectionManager {
@@ -55,7 +62,7 @@ class ConnectionManager {
     }
     
     // If we're already connected to this session, just return
-    if (this.sessionId === sessionId && this.gameUpdatesChannel) {
+    if (this.sessionId === sessionId && this.gameUpdatesChannel && this.connectedState) {
       logWithTimestamp(`ConnectionManager: Already connected to session ${sessionId}`);
       return this;
     }
@@ -65,6 +72,7 @@ class ConnectionManager {
     
     // Set the new session
     this.sessionId = sessionId;
+    this._connectionAttempts = 0;
     logWithTimestamp(`ConnectionManager: Initializing connection for session ${sessionId}`);
     
     // Set up the game updates channel
@@ -107,8 +115,7 @@ class ConnectionManager {
     }
     
     this.connectedState = false;
-    this._playerInfo = null;
-    this.sessionId = null;
+    this._lastHeartbeat = 0;
   }
   
   /**
@@ -124,6 +131,9 @@ class ConnectionManager {
     // Store player info for re-tracking
     const playerInfo = this._playerInfo;
     
+    // Increment connection attempts
+    this._connectionAttempts++;
+    
     // Clean up existing connections and set up new ones
     const sessionId = this.sessionId;
     this.cleanup();
@@ -133,6 +143,25 @@ class ConnectionManager {
     if (playerInfo) {
       this.trackPlayerPresence(playerInfo);
     }
+    
+    // Log the reconnection attempt
+    logWithTimestamp(`ConnectionManager: Reconnection attempt #${this._connectionAttempts} initiated`);
+    
+    // Show a toast notification after multiple reconnection attempts
+    if (this._connectionAttempts > 2) {
+      toast.info(`Reconnecting to game server (attempt #${this._connectionAttempts})`, {
+        duration: 3000,
+        position: "bottom-center"
+      });
+    }
+    
+    // If we've tried too many times, alert the user
+    if (this._connectionAttempts > 5) {
+      toast.error("Having trouble connecting to the game server. Please check your internet connection.", {
+        duration: 5000,
+        position: "bottom-center"
+      });
+    }
   }
   
   /**
@@ -141,10 +170,12 @@ class ConnectionManager {
   private setupGameChannel(): void {
     if (!this.sessionId) return;
     
-    logWithTimestamp(`ConnectionManager: Setting up game updates channel for session ${this.sessionId}`);
+    // Generate a unique channel name that includes our connection ID
+    const channelName = `game-updates-${this.sessionId}-${this.channelId}`;
+    logWithTimestamp(`ConnectionManager: Setting up game updates channel: ${channelName}`);
     
-    // Create the channel
-    this.gameUpdatesChannel = supabase.channel(`game-updates-${this.sessionId}`);
+    // Create the channel with our unique name
+    this.gameUpdatesChannel = supabase.channel(channelName);
     
     // Subscribe to number calls
     this.gameUpdatesChannel
@@ -156,6 +187,7 @@ class ConnectionManager {
         
         // Update connected state
         this.connectedState = true;
+        this._lastHeartbeat = Date.now();
         
         // Notify all callbacks
         this.numberCallCallbacks.forEach(callback => {
@@ -173,6 +205,7 @@ class ConnectionManager {
         
         // Update connected state
         this.connectedState = true;
+        this._lastHeartbeat = Date.now();
         
         // Notify all callbacks
         this.sessionProgressCallbacks.forEach(callback => {
@@ -200,15 +233,43 @@ class ConnectionManager {
           });
         }
       })
+      .on('broadcast', { event: 'heartbeat' }, () => {
+        // Update the heartbeat timestamp when we get any heartbeat event
+        this._lastHeartbeat = Date.now();
+        this.connectedState = true;
+      })
       .subscribe(status => {
         logWithTimestamp(`ConnectionManager: Game updates channel status: ${status}`);
         
         if (status === 'SUBSCRIBED') {
           // We're connected
           this.connectedState = true;
+          this._lastHeartbeat = Date.now();
+          
+          // Send an initial heartbeat
+          setTimeout(() => {
+            try {
+              this.gameUpdatesChannel.send({
+                type: 'broadcast',
+                event: 'heartbeat',
+                payload: {
+                  clientId: this.channelId,
+                  timestamp: new Date().toISOString()
+                }
+              }).catch((err: any) => {
+                console.error("Initial heartbeat error:", err);
+              });
+            } catch (e) {
+              console.error("Error sending initial heartbeat:", e);
+            }
+          }, 500);
+          
         } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
           // We're disconnected
           this.connectedState = false;
+          
+          // Try to reconnect automatically after a short delay
+          setTimeout(() => this.reconnect(), 2000);
         }
       });
   }
@@ -219,13 +280,15 @@ class ConnectionManager {
   private setupPresenceChannel(): void {
     if (!this.sessionId) return;
     
-    logWithTimestamp(`ConnectionManager: Setting up presence channel for session ${this.sessionId}`);
+    // Use a consistent presence key that doesn't change on reconnect
+    const presenceKey = this.channelId;
+    logWithTimestamp(`ConnectionManager: Setting up presence channel for session ${this.sessionId} with key ${presenceKey}`);
     
     // Create the channel
     this.presenceChannel = supabase.channel(`presence-${this.sessionId}`, {
       config: {
         presence: {
-          key: `player-presence-${Date.now()}`  // Make sure each presence is uniquely keyed
+          key: presenceKey
         }
       }
     });
@@ -285,8 +348,22 @@ class ConnectionManager {
           // We're connected to the presence channel
           if (this._playerInfo) {
             // Re-track player presence if we have info
-            this.presenceChannel.track(this._playerInfo);
+            this.presenceChannel.track(this._playerInfo)
+              .then(() => {
+                logWithTimestamp(`ConnectionManager: Successfully tracked player presence on subscribe`);
+                this.connectedState = true;
+                this._lastHeartbeat = Date.now();
+              })
+              .catch((err: any) => {
+                console.error("Error tracking player presence on subscribe:", err);
+                
+                // Try to reconnect if tracking fails
+                setTimeout(() => this.reconnect(), 2000);
+              });
           }
+        } else if (status === 'CHANNEL_ERROR') {
+          // Try to reconnect if we get an error
+          setTimeout(() => this.reconnect(), 2000);
         }
       });
   }
@@ -346,40 +423,107 @@ class ConnectionManager {
       player_code: playerInfo.player_code,
       nickname: playerInfo.nickname,
       tickets: playerInfo.tickets || [],
-      joined_at: new Date().toISOString()
+      joined_at: new Date().toISOString(),
+      client_id: this.channelId
     };
     
-    // Send presence heartbeat every 20 seconds to keep connection alive
+    // Send presence heartbeat every 10 seconds to keep connection alive
     const heartbeatInterval = window.setInterval(() => {
-      if (this.presenceChannel && this.connectedState) {
+      if (this.presenceChannel && this.gameUpdatesChannel) {
         try {
-          this.presenceChannel.send({
-            type: 'broadcast',
-            event: 'heartbeat',
-            payload: {
-              player_code: playerInfo.player_code,
-              timestamp: new Date().toISOString()
-            }
-          }).catch((err: any) => {
+          // Send a heartbeat to both channels
+          logWithTimestamp(`ConnectionManager: Sending heartbeat for player ${playerInfo.player_code}`);
+          
+          // Use Promise.all to send heartbeats to both channels
+          Promise.all([
+            this.presenceChannel.send({
+              type: 'broadcast',
+              event: 'heartbeat',
+              payload: {
+                player_code: playerInfo.player_code,
+                client_id: this.channelId,
+                timestamp: new Date().toISOString()
+              }
+            }),
+            this.gameUpdatesChannel.send({
+              type: 'broadcast',
+              event: 'heartbeat',
+              payload: {
+                player_code: playerInfo.player_code,
+                client_id: this.channelId,
+                timestamp: new Date().toISOString()
+              }
+            })
+          ]).then(() => {
+            // Update heartbeat timestamp
+            this._lastHeartbeat = Date.now();
+            this.connectedState = true;
+          }).catch(err => {
             console.error("Heartbeat error:", err);
+            
+            // If we've lost connection, try to reconnect
+            const timeSinceLastHeartbeat = Date.now() - this._lastHeartbeat;
+            if (timeSinceLastHeartbeat > 15000) { // 15 seconds
+              logWithTimestamp(`ConnectionManager: No heartbeat for ${timeSinceLastHeartbeat}ms, reconnecting`);
+              this.reconnect();
+            }
           });
         } catch (err) {
           console.error("Error sending heartbeat:", err);
         }
       }
-    }, 20000);
+    }, 10000); // Heartbeat every 10 seconds
+    
+    // Also track connection health every 5 seconds
+    const healthCheckInterval = window.setInterval(() => {
+      const timeSinceLastHeartbeat = Date.now() - this._lastHeartbeat;
+      if (this._lastHeartbeat > 0 && timeSinceLastHeartbeat > 15000) { // 15 seconds
+        logWithTimestamp(`ConnectionManager: No heartbeat for ${timeSinceLastHeartbeat}ms, reconnecting`);
+        this.reconnect();
+      }
+    }, 5000);
     
     // Track the player's presence with all relevant info
     try {
-      this.presenceChannel.track(this._playerInfo);
+      this.presenceChannel.track(this._playerInfo)
+        .then(() => {
+          logWithTimestamp(`ConnectionManager: Successfully tracked player presence`);
+          this.connectedState = true;
+          this._lastHeartbeat = Date.now();
+          
+          // Initial heartbeat
+          try {
+            this.presenceChannel.send({
+              type: 'broadcast',
+              event: 'heartbeat',
+              payload: {
+                player_code: playerInfo.player_code,
+                client_id: this.channelId,
+                timestamp: new Date().toISOString()
+              }
+            }).then(() => {
+              logWithTimestamp(`Initial heartbeat sent successfully`);
+            }).catch((err: any) => {
+              console.error("Initial heartbeat error:", err);
+            });
+          } catch (err) {
+            console.error("Error sending initial heartbeat:", err);
+          }
+        })
+        .catch((err: any) => {
+          console.error("Error tracking player presence:", err);
+          // Try to reconnect
+          setTimeout(() => this.reconnect(), 1000);
+        });
     } catch (err) {
       console.error("Error tracking player presence:", err);
       // Try to reconnect
       setTimeout(() => this.reconnect(), 1000);
     }
     
-    // Store the heartbeat interval for cleanup
+    // Store the heartbeat intervals for cleanup
     this._heartbeatIntervals.push(heartbeatInterval);
+    this._heartbeatIntervals.push(healthCheckInterval);
   }
   
   /**
