@@ -1,51 +1,58 @@
 
-// Simple logging utility with timestamps
-export function logWithTimestamp(message: string, ...optionalParams: any[]) {
-  const timestamp = new Date().toISOString();
-  if (optionalParams.length > 0) {
-    console.log(`[${timestamp}] ${message}`, ...optionalParams);
-  } else {
-    console.log(`[${timestamp}] ${message}`);
+/**
+ * Improved logging utility with timestamp and debug level support
+ */
+
+// Configure debug levels
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+const LOG_LEVEL: LogLevel = 'info'; // Set to 'debug' to see all logs
+
+/**
+ * Log a message with a timestamp and component name
+ */
+export function logWithTimestamp(message: string, level: LogLevel = 'info', component?: string): void {
+  // Skip debug logs if not in debug mode
+  if (level === 'debug' && LOG_LEVEL !== 'debug') return;
+  
+  const now = new Date();
+  const timestamp = now.toISOString();
+  const componentPrefix = component ? `[${component}] ` : '';
+  
+  const logMessage = `[${timestamp}] ${componentPrefix}${message}`;
+  
+  switch (level) {
+    case 'debug':
+      console.debug(logMessage);
+      break;
+    case 'info':
+      console.log(logMessage);
+      break;
+    case 'warn':
+      console.warn(logMessage);
+      break;
+    case 'error':
+      console.error(logMessage);
+      break;
+    default:
+      console.log(logMessage);
   }
-  return message;
 }
 
-// Legacy function (kept for backward compatibility)
-export function cleanupAllConnections() {
-  logWithTimestamp("Global connection cleanup: Resetting all connection states");
-  logWithTimestamp("All connection states have been reset");
+/**
+ * Create a logger for a specific component
+ */
+export function createLogger(componentName: string) {
+  return {
+    debug: (message: string) => logWithTimestamp(message, 'debug', componentName),
+    info: (message: string) => logWithTimestamp(message, 'info', componentName),
+    warn: (message: string) => logWithTimestamp(message, 'warn', componentName),
+    error: (message: string) => logWithTimestamp(message, 'error', componentName)
+  };
 }
 
-// Legacy class (kept for backward compatibility)
-export class ConnectionManagerClass {
-  isConnecting = false;
-  isInCooldown = false;
-  cooldownUntil = 0;
-  
-  startConnection() {
-    this.isConnecting = true;
-    return this;
-  }
-  
-  endConnection(success: boolean) {
-    this.isConnecting = false;
-    return this;
-  }
-  
-  scheduleReconnect(callback: () => void) {
-    setTimeout(callback, 4000);
-    return this;
-  }
-  
-  forceReconnect() {
-    this.isConnecting = false;
-    this.isInCooldown = false;
-    return this;
-  }
-  
-  reset() {
-    this.isConnecting = false;
-    this.isInCooldown = false;
-    return this;
-  }
+/**
+ * Log connection events for debugging
+ */
+export function logConnectionEvent(event: string, details?: any): void {
+  logWithTimestamp(`Connection Event: ${event}${details ? ` - ${JSON.stringify(details)}` : ''}`, 'info', 'Connection');
 }

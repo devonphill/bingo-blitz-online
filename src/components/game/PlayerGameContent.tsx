@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useCallback } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -109,7 +110,7 @@ export default function PlayerGameContent({
           
           // Update connection state
           setIsConnected(true);
-          setConnectionStatus('connected'); // Fix: use setConnectionStatus instead of setConnectionState
+          setConnectionStatus('connected');
           
           // Update numbers from progress if available
           if (progress?.called_numbers?.length > 0) {

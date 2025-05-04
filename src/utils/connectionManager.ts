@@ -39,6 +39,9 @@ class ConnectionManager {
   private _uniqueClientId: string = '';
   private _isSyncProcessing: boolean = false;
   private _syncDebounceTimer: any = null;
+  private _isReconnecting: boolean = false;
+  private _reconnectTimer: any = null;
+  private _channelSetupInProgress: boolean = false;
   
   // Private constructor to enforce singleton
   private constructor() {
@@ -71,6 +74,14 @@ class ConnectionManager {
       return this;
     }
     
+    // If already setting up a channel, don't do it again
+    if (this._channelSetupInProgress) {
+      logWithTimestamp(`ConnectionManager: Channel setup already in progress, avoiding duplicate setup`);
+      return this;
+    }
+    
+    this._channelSetupInProgress = true;
+    
     // Clean up any existing connections
     this.cleanup();
     
@@ -79,11 +90,21 @@ class ConnectionManager {
     this._connectionAttempts = 0;
     logWithTimestamp(`ConnectionManager: Initializing connection for session ${sessionId}`);
     
-    // Set up the game updates channel
-    this.setupGameChannel();
+    try {
+      // Set up the game updates channel
+      this.setupGameChannel();
+      
+      // Set up the presence channel for player tracking
+      this.setupPresenceChannel();
+    } catch (err) {
+      console.error("Error during connection setup:", err);
+      this._channelSetupInProgress = false;
+    }
     
-    // Set up the presence channel for player tracking
-    this.setupPresenceChannel();
+    // Reset the setup flag after a delay
+    setTimeout(() => {
+      this._channelSetupInProgress = false;
+    }, 1000);
     
     return this;
   }
@@ -92,6 +113,15 @@ class ConnectionManager {
    * Clean up all connections and intervals
    */
   public cleanup(): void {
+    // Clear any reconnect timer
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+    
+    // Set flag to avoid callbacks during cleanup
+    this._isReconnecting = true;
+    
     if (this.gameUpdatesChannel) {
       logWithTimestamp(`ConnectionManager: Cleaning up game channel for session ${this.sessionId}`);
       try {
@@ -127,17 +157,30 @@ class ConnectionManager {
     this.connectedState = false;
     this._lastHeartbeat = 0;
     this._isSyncProcessing = false;
+    
+    // Reset reconnection flag after cleanup
+    setTimeout(() => {
+      this._isReconnecting = false;
+    }, 500);
   }
   
   /**
    * Reconnect to the current session
    */
   public reconnect(): void {
+    // Prevent multiple simultaneous reconnection attempts
+    if (this._isReconnecting) {
+      logWithTimestamp(`ConnectionManager: Reconnection already in progress, ignoring duplicate request`);
+      return;
+    }
+    
     logWithTimestamp(`ConnectionManager: Attempting to reconnect to session ${this.sessionId}`);
     if (!this.sessionId) {
       logWithTimestamp("ConnectionManager: Cannot reconnect - no session ID");
       return;
     }
+    
+    this._isReconnecting = true;
     
     // Store player info for re-tracking
     const playerInfo = this._playerInfo;
@@ -148,15 +191,24 @@ class ConnectionManager {
     // Clean up existing connections and set up new ones
     const sessionId = this.sessionId;
     this.cleanup();
-    this.initialize(sessionId);
     
-    // Re-track player presence if we had player info
-    if (playerInfo) {
-      this.trackPlayerPresence(playerInfo);
-    }
-    
-    // Log the reconnection attempt
-    logWithTimestamp(`ConnectionManager: Reconnection attempt #${this._connectionAttempts} initiated`);
+    // Add a small delay to ensure cleanup completes before reconnecting
+    this._reconnectTimer = setTimeout(() => {
+      this.initialize(sessionId);
+      
+      // Re-track player presence if we had player info
+      if (playerInfo) {
+        setTimeout(() => {
+          this.trackPlayerPresence(playerInfo);
+        }, 1000); // Delay presence tracking to ensure channels are set up
+      }
+      
+      // Reset reconnection flag
+      this._isReconnecting = false;
+      
+      // Log the reconnection attempt
+      logWithTimestamp(`ConnectionManager: Reconnection attempt #${this._connectionAttempts} completed`);
+    }, 1000);
     
     // Show a toast notification after multiple reconnection attempts
     if (this._connectionAttempts > 2) {
@@ -187,7 +239,15 @@ class ConnectionManager {
     logWithTimestamp(`ConnectionManager: Setting up game updates channel: ${channelName}`);
     
     // Create the channel with our standard name, removing the client-specific ID
-    this.gameUpdatesChannel = supabase.channel(channelName);
+    this.gameUpdatesChannel = supabase.channel(channelName, {
+      config: {
+        // Add broadcast persistence to improve delivery reliability
+        broadcast: { self: true },
+        // Add channel specific options for more reliable connections
+        retryIntervalMs: 3000,
+        maxReconnectAttempts: 10
+      }
+    });
     
     // Subscribe to number calls
     this.gameUpdatesChannel
@@ -201,14 +261,17 @@ class ConnectionManager {
         this.connectedState = true;
         this._lastHeartbeat = Date.now();
         
-        // Notify all callbacks
-        this.numberCallCallbacks.forEach(callback => {
-          try {
-            callback(number, allNumbers);
-          } catch (err) {
-            console.error("Error in number call callback:", err);
-          }
-        });
+        // Only notify callbacks if we're not in the middle of reconnecting
+        if (!this._isReconnecting) {
+          // Notify all callbacks
+          this.numberCallCallbacks.forEach(callback => {
+            try {
+              callback(number, allNumbers);
+            } catch (err) {
+              console.error("Error in number call callback:", err);
+            }
+          });
+        }
       })
       .on('broadcast', { event: 'session-progress' }, (payload: any) => {
         const progress = payload.payload ?? null;
@@ -219,14 +282,17 @@ class ConnectionManager {
         this.connectedState = true;
         this._lastHeartbeat = Date.now();
         
-        // Notify all callbacks
-        this.sessionProgressCallbacks.forEach(callback => {
-          try {
-            callback(progress);
-          } catch (err) {
-            console.error("Error in session progress callback:", err);
-          }
-        });
+        // Only notify callbacks if we're not in the middle of reconnecting
+        if (!this._isReconnecting) {
+          // Notify all callbacks
+          this.sessionProgressCallbacks.forEach(callback => {
+            try {
+              callback(progress);
+            } catch (err) {
+              console.error("Error in session progress callback:", err);
+            }
+          });
+        }
       })
       .on('broadcast', { event: 'tickets-assigned' }, (payload: any) => {
         const playerCode = payload.payload?.playerCode;
@@ -235,14 +301,17 @@ class ConnectionManager {
         if (playerCode && tickets) {
           logWithTimestamp(`ConnectionManager: Received tickets assigned to player ${playerCode}: ${tickets.length} tickets`);
           
-          // Notify all callbacks
-          this.ticketsAssignedCallbacks.forEach(callback => {
-            try {
-              callback(playerCode, tickets);
-            } catch (err) {
-              console.error("Error in tickets assigned callback:", err);
-            }
-          });
+          // Only notify callbacks if we're not in the middle of reconnecting
+          if (!this._isReconnecting) {
+            // Notify all callbacks
+            this.ticketsAssignedCallbacks.forEach(callback => {
+              try {
+                callback(playerCode, tickets);
+              } catch (err) {
+                console.error("Error in tickets assigned callback:", err);
+              }
+            });
+          }
         }
       })
       .on('broadcast', { event: 'heartbeat' }, () => {
@@ -283,9 +352,16 @@ class ConnectionManager {
           this.connectedState = false;
           
           // Avoid multiple rapid reconnection attempts
-          // Use exponential backoff for reconnection
-          const backoffDelay = Math.min(2000 * Math.pow(1.5, this._connectionAttempts), 10000);
-          setTimeout(() => this.reconnect(), backoffDelay);
+          // Use exponential backoff for reconnection if not already reconnecting
+          if (!this._isReconnecting && !this._reconnectTimer) {
+            const backoffDelay = Math.min(2000 * Math.pow(1.5, this._connectionAttempts), 10000);
+            logWithTimestamp(`ConnectionManager: Channel closed/error, scheduling reconnect in ${backoffDelay}ms`);
+            
+            this._reconnectTimer = setTimeout(() => {
+              this._reconnectTimer = null;
+              this.reconnect();
+            }, backoffDelay);
+          }
         }
       });
   }
@@ -315,7 +391,10 @@ class ConnectionManager {
       config: {
         presence: {
           key: presenceKey
-        }
+        },
+        // Add channel specific options for more reliable connections
+        retryIntervalMs: 3000,
+        maxReconnectAttempts: 10
       }
     });
     
@@ -351,14 +430,17 @@ class ConnectionManager {
           
           logWithTimestamp(`ConnectionManager: Presence sync, ${players.length} players online`);
           
-          // Notify all callbacks
-          this.playersUpdateCallbacks.forEach(callback => {
-            try {
-              callback(players);
-            } catch (err) {
-              console.error("Error in players update callback:", err);
-            }
-          });
+          // Only notify callbacks if we're not in the middle of reconnecting
+          if (!this._isReconnecting) {
+            // Notify all callbacks
+            this.playersUpdateCallbacks.forEach(callback => {
+              try {
+                callback(players);
+              } catch (err) {
+                console.error("Error in players update callback:", err);
+              }
+            });
+          }
           
           // Reset processing flag
           this._isSyncProcessing = false;
@@ -401,8 +483,9 @@ class ConnectionManager {
             this.trackPlayerPresenceInternal();
           }
         } else if (status === 'CHANNEL_ERROR') {
-          // Try to reconnect if we get an error
-          setTimeout(() => this.reconnect(), 2000);
+          // Don't try to reconnect immediately from here
+          // The game updates channel will handle reconnection
+          logWithTimestamp(`ConnectionManager: Presence channel error, will be handled by reconnect logic`);
         }
       });
   }
@@ -490,11 +573,22 @@ class ConnectionManager {
         .catch((err: any) => {
           console.error("Error tracking player presence:", err);
           // Try to reconnect but not immediately to avoid loops
-          setTimeout(() => this.reconnect(), 2000);
+          if (!this._isReconnecting && !this._reconnectTimer) {
+            this._reconnectTimer = setTimeout(() => {
+              this._reconnectTimer = null;
+              this.reconnect();
+            }, 5000); // Longer delay for presence issues
+          }
         });
     } catch (err) {
       console.error("Error tracking player presence:", err);
-      setTimeout(() => this.reconnect(), 2000);
+      // Try to reconnect but not immediately to avoid loops
+      if (!this._isReconnecting && !this._reconnectTimer) {
+        this._reconnectTimer = setTimeout(() => {
+          this._reconnectTimer = null;
+          this.reconnect();
+        }, 5000); // Longer delay for presence issues
+      }
     }
   }
   
@@ -514,6 +608,9 @@ class ConnectionManager {
     
     // Send presence heartbeat every 15 seconds - increased from 10 to reduce traffic
     const heartbeatInterval = window.setInterval(() => {
+      // Skip during reconnection
+      if (this._isReconnecting) return;
+      
       if (this.presenceChannel) {
         try {
           // Send a heartbeat through the presence channel
@@ -536,25 +633,32 @@ class ConnectionManager {
             
             // Check if we need to reconnect
             const timeSinceLastHeartbeat = Date.now() - this._lastHeartbeat;
-            if (timeSinceLastHeartbeat > 20000) { // 20 seconds - increased from 15
+            if (timeSinceLastHeartbeat > 30000) { // 30 seconds - increased from 20
               logWithTimestamp(`ConnectionManager: No heartbeat for ${timeSinceLastHeartbeat}ms, reconnecting`);
-              this.reconnect();
+              if (!this._isReconnecting && !this._reconnectTimer) {
+                this.reconnect();
+              }
             }
           });
         } catch (err) {
           console.error("Error sending heartbeat:", err);
         }
       }
-    }, 15000); // Heartbeat every 15 seconds - increased from 10
+    }, 25000); // Heartbeat every 25 seconds - increased from 15 to reduce traffic
     
     // Track connection health
     const healthCheckInterval = window.setInterval(() => {
+      // Skip during reconnection
+      if (this._isReconnecting) return;
+      
       const timeSinceLastHeartbeat = Date.now() - this._lastHeartbeat;
-      if (this._lastHeartbeat > 0 && timeSinceLastHeartbeat > 20000) { // 20 seconds - increased from 15
+      if (this._lastHeartbeat > 0 && timeSinceLastHeartbeat > 40000) { // 40 seconds - increased from 20
         logWithTimestamp(`ConnectionManager: No heartbeat for ${timeSinceLastHeartbeat}ms, reconnecting`);
-        this.reconnect();
+        if (!this._isReconnecting && !this._reconnectTimer) {
+          this.reconnect();
+        }
       }
-    }, 10000); // Check every 10 seconds - increased from 5
+    }, 20000); // Check every 20 seconds - increased from 10
     
     // Store the heartbeat intervals for cleanup
     this._heartbeatIntervals.push(heartbeatInterval);
@@ -565,7 +669,7 @@ class ConnectionManager {
    * Check if we're currently connected
    */
   public isConnected(): boolean {
-    return this.connectedState;
+    return this.connectedState && !this._isReconnecting;
   }
   
   /**

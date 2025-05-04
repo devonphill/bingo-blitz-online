@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -234,33 +235,38 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
             type: 'broadcast',
             event: 'bingo-claim',
             payload: claimData
+          }).then(() => {
+            logWithTimestamp('Claim broadcast sent successfully');
+            
+            // Clean up the temporary channel
+            supabase.removeChannel(channel);
+            
+            toast({
+              title: "Bingo Claim Submitted",
+              description: "Your claim has been submitted and is pending verification.",
+              duration: 5000
+            });
+            
+            // Set a timeout to reset claim status if no response
+            setTimeout(() => {
+              if (claimStatus === 'pending') {
+                setClaimStatus('none');
+                setIsSubmittingClaim(false);
+                
+                toast({
+                  title: "Claim Verification Timeout",
+                  description: "No response received for your claim. Please try again.",
+                  variant: "destructive",
+                  duration: 5000
+                });
+              }
+            }, 10000);
+          }).catch((error) => {
+            console.error('Error sending claim broadcast:', error);
+            setClaimStatus('none');
+            setIsSubmittingClaim(false);
+            return false;
           });
-          
-          logWithTimestamp('Claim broadcast sent successfully');
-          
-          // Clean up the temporary channel
-          supabase.removeChannel(channel);
-          
-          toast({
-            title: "Bingo Claim Submitted",
-            description: "Your claim has been submitted and is pending verification.",
-            duration: 5000
-          });
-          
-          // Set a timeout to reset claim status if no response
-          setTimeout(() => {
-            if (claimStatus === 'pending') {
-              setClaimStatus('none');
-              setIsSubmittingClaim(false);
-              
-              toast({
-                title: "Claim Verification Timeout",
-                description: "No response received for your claim. Please try again.",
-                variant: "destructive",
-                duration: 5000
-              });
-            }
-          }, 10000);
           
           return true;
         } catch (error) {
