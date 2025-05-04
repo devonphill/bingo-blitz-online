@@ -27,43 +27,56 @@ export const connectionManager = {
     this.sessionId = sessionId;
     logWithTimestamp(`Initializing connection for session ${sessionId}`, 'info');
     
-    // Create a new channel for this session
-    this.supabaseChannel = supabase.channel(`game-${sessionId}`);
-    
-    // Set up channel listeners
-    this.supabaseChannel
-      .on('presence', { event: 'sync' }, () => {
-        this.handlePresenceSync();
-      })
-      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-        this.handlePresenceJoin(key, newPresences);
-      })
-      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-        this.handlePresenceLeave(key, leftPresences);
-      })
-      .on('broadcast', { event: 'game-state-update' }, (payload) => {
-        this.handleGameStateUpdate(payload);
-      })
-      .on('broadcast', { event: 'tickets-assigned' }, (payload) => {
-        this.handleTicketsAssigned(payload);
-      })
-      .on('broadcast', { event: 'number-called' }, (payload) => {
-        this.handleNumberCalled(payload);
-      })
-      .on('broadcast', { event: 'bingo-claim' }, (payload) => {
-        this.handleBingoClaim(payload);
-      })
-      .subscribe((status) => {
-        this.handleSubscriptionStatus(status);
+    try {
+      // Create a new channel for this session
+      this.supabaseChannel = supabase.channel(`game-${sessionId}`);
+      
+      // Set up channel listeners
+      this.supabaseChannel
+        .on('presence', { event: 'sync' }, () => {
+          this.handlePresenceSync();
+        })
+        .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+          this.handlePresenceJoin(key, newPresences);
+        })
+        .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+          this.handlePresenceLeave(key, leftPresences);
+        })
+        .on('broadcast', { event: 'game-state-update' }, (payload) => {
+          this.handleGameStateUpdate(payload);
+        })
+        .on('broadcast', { event: 'tickets-assigned' }, (payload) => {
+          this.handleTicketsAssigned(payload);
+        })
+        .on('broadcast', { event: 'number-called' }, (payload) => {
+          this.handleNumberCalled(payload);
+        })
+        .on('broadcast', { event: 'bingo-claim' }, (payload) => {
+          this.handleBingoClaim(payload);
+        })
+        .subscribe((status) => {
+          this.handleSubscriptionStatus(status);
+        });
+      
+      // Add to active channels
+      if (!this.activeChannels.includes(this.supabaseChannel)) {
+        this.activeChannels.push(this.supabaseChannel);
+      }
+      
+      // Update last ping time
+      this.lastPingTimestamp = Date.now();
+      
+    } catch (error) {
+      logWithTimestamp(`Error initializing connection manager: ${error}`, 'error');
+      // Call error listeners
+      this.listeners.error.forEach(callback => {
+        try {
+          callback(`Error initializing connection: ${error}`);
+        } catch (err) {
+          logWithTimestamp(`Error in error callback: ${err}`, 'error');
+        }
       });
-    
-    // Add to active channels
-    if (!this.activeChannels.includes(this.supabaseChannel)) {
-      this.activeChannels.push(this.supabaseChannel);
     }
-    
-    // Update last ping time
-    this.lastPingTimestamp = Date.now();
     
     return this; // Return self for method chaining
   },
@@ -204,38 +217,38 @@ export const connectionManager = {
   // Public event subscription methods (used for chaining)
   onNumberCalled(callback: Function) {
     this.listeners.numberCalled.push(callback);
-    return this;
+    return this; // Return self for method chaining
   },
   
   onGameStateUpdate(callback: Function) {
     this.listeners.gameStateUpdate.push(callback);
-    return this;
+    return this; // Return self for method chaining
   },
   
   onConnectionStatusChange(callback: Function) {
     this.listeners.connectionStatusChange.push(callback);
-    return this;
+    return this; // Return self for method chaining
   },
   
   onPlayersUpdate(callback: Function) {
     this.listeners.playersUpdate.push(callback);
-    return this;
+    return this; // Return self for method chaining
   },
   
   onTicketsAssigned(callback: Function) {
     this.listeners.ticketsAssigned.push(callback);
-    return this;
+    return this; // Return self for method chaining
   },
   
   onSessionProgressUpdate(callback: Function) {
     // Add to game state update listeners since that's what handles this data
     this.listeners.gameStateUpdate.push(callback);
-    return this;
+    return this; // Return self for method chaining
   },
   
   onError(callback: Function) {
     this.listeners.error.push(callback);
-    return this;
+    return this; // Return self for method chaining
   },
   
   // Player presence tracking

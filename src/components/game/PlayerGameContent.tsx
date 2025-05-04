@@ -76,63 +76,78 @@ export default function PlayerGameContent({
     
     try {
       // Initialize connection without creating new channels internally
-      connectionManager.initialize(currentSession.id)
-        .onNumberCalled((number, allNumbers) => {
-          // Handle null case from reset events
-          if (number === null) {
-            logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received reset event, clearing numbers`, 'info');
-            setRtCalledNumbers([]);
-            setRtLastCalledNumber(null);
-            return;
-          }
-          
-          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received number call via connection manager: ${number}, total numbers: ${allNumbers.length}`, 'info');
-          
-          // Only update if we have new data
-          if (number !== rtLastCalledNumber || allNumbers.length !== rtCalledNumbers.length) {
-            setRtLastCalledNumber(number);
-            setRtCalledNumbers(allNumbers);
-            setIsConnected(true);
-            setConnectionStatus('connected');
-            
-            // Show toast notification for new number
-            toast({
-              title: `Number Called: ${number}`,
-              description: `New number has been called`,
-              duration: 3000
-            });
-          }
-        })
-        .onSessionProgressUpdate((progress) => {
-          // This callback is required to avoid the error we were seeing
-          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Session progress update received`, 'info');
-          
-          // Update connection state
+      const manager = connectionManager.initialize(currentSession.id);
+      
+      // Attach event handlers
+      manager.onNumberCalled((number, allNumbers) => {
+        // Handle null case from reset events
+        if (number === null) {
+          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received reset event, clearing numbers`, 'info');
+          setRtCalledNumbers([]);
+          setRtLastCalledNumber(null);
+          return;
+        }
+        
+        logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received number call via connection manager: ${number}, total numbers: ${allNumbers.length}`, 'info');
+        
+        // Only update if we have new data
+        if (number !== rtLastCalledNumber || allNumbers.length !== rtCalledNumbers.length) {
+          setRtLastCalledNumber(number);
+          setRtCalledNumbers(allNumbers);
           setIsConnected(true);
           setConnectionStatus('connected');
           
-          // Update numbers from progress if available
-          if (progress?.called_numbers?.length > 0) {
-            const lastNumberIndex = progress.called_numbers.length - 1;
-            const lastNumber = progress.called_numbers[lastNumberIndex];
-            
-            // Only update if we have new data
-            if (!rtCalledNumbers.length || 
-                rtCalledNumbers.length !== progress.called_numbers.length ||
-                rtLastCalledNumber !== lastNumber) {
-              logWithTimestamp(`PlayerGameContent (${instanceId.current}): Updating called numbers from progress`, 'info');
-              setRtCalledNumbers(progress.called_numbers);
-              setRtLastCalledNumber(lastNumber);
-            }
-          }
+          // Show toast notification for new number
+          toast({
+            title: `Number Called: ${number}`,
+            description: `New number has been called`,
+            duration: 3000
+          });
+        }
+      });
+      
+      manager.onSessionProgressUpdate((progress) => {
+        // This callback is required to avoid the error we were seeing
+        logWithTimestamp(`PlayerGameContent (${instanceId.current}): Session progress update received`, 'info');
+        
+        // Update connection state
+        setIsConnected(true);
+        setConnectionStatus('connected');
+        
+        // Update numbers from progress if available
+        if (progress?.called_numbers?.length > 0) {
+          const lastNumberIndex = progress.called_numbers.length - 1;
+          const lastNumber = progress.called_numbers[lastNumberIndex];
           
-          // Update win pattern if available
-          if (progress?.current_win_pattern) {
-            setActiveWinPattern(progress.current_win_pattern);
+          // Only update if we have new data
+          if (!rtCalledNumbers.length || 
+              rtCalledNumbers.length !== progress.called_numbers.length ||
+              rtLastCalledNumber !== lastNumber) {
+            logWithTimestamp(`PlayerGameContent (${instanceId.current}): Updating called numbers from progress`, 'info');
+            setRtCalledNumbers(progress.called_numbers);
+            setRtLastCalledNumber(lastNumber);
           }
-        });
+        }
+        
+        // Update win pattern if available
+        if (progress?.current_win_pattern) {
+          setActiveWinPattern(progress.current_win_pattern);
+        }
+      });
+      
+      manager.onConnectionStatusChange((isConnected) => {
+        setIsConnected(isConnected);
+        setConnectionStatus(isConnected ? 'connected' : 'disconnected');
+      });
+      
+      manager.onError((error) => {
+        logWithTimestamp(`PlayerGameContent (${instanceId.current}): Connection error: ${error}`, 'error');
+        setConnectionStatus('error');
+      });
+      
     } catch (err) {
       console.error("Error setting up connection manager:", err);
+      setConnectionStatus('error');
     }
       
     // Clean up on unmount - but don't call cleanup() directly to avoid interrupting other components
