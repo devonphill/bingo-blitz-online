@@ -220,7 +220,7 @@ export default function PlayerGameContent({
     });
   };
 
-  // Add a helper function to map between the different claim status types
+  // Define a proper mapping function to convert between the different claim status types
   function mapClaimStatus(status: 'none' | 'pending' | 'valid' | 'invalid'): 'pending' | 'rejected' | 'validated' {
     switch(status) {
       case 'none':
@@ -237,11 +237,11 @@ export default function PlayerGameContent({
   }
 
   // Map the claimStatus to the proper format expected by each component
-  const layoutClaimStatus = claimStatus;
+  // This is where the type conversion happens to fix the error
+  const layoutClaimStatus = claimStatus; // This is a direct assignment - no mapping needed for BingoWinProgress
                           
-  // Convert the claimStatus to the type required by GameTypePlayspace
-  // Always use 'pending' if the value is 'none' since GameTypePlayspace doesn't accept 'none'
-  const gameTypePlayspaceClaimStatus: 'pending' | 'rejected' | 'validated' = mapClaimStatus(claimStatus);
+  // Convert the claimStatus to the type required by GameTypePlayspace using our mapping function
+  const gameTypePlayspaceClaimStatus = mapClaimStatus(claimStatus);
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
