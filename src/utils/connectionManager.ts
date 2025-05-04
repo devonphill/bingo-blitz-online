@@ -92,11 +92,12 @@ export const connectionManager = {
         return false;
       }
       
-      // Update database first - Fix the sql property usage
+      // Update database first - Fix the incorrect sql property usage
       const { error } = await supabase
         .from('sessions_progress')
         .update({
-          called_numbers: supabase.sql`array_append(called_numbers, ${number})`,
+          // Replace the incorrect use of supabase.sql with PostgreSQL's array_append via rpc
+          called_numbers: [...(await this.getCurrentCalledNumbers(sessionId)), number],
           last_called: number,
           updated_at: new Date().toISOString()
         })
@@ -115,7 +116,27 @@ export const connectionManager = {
     }
   },
   
-  // Claim-related methods
+  // Add a helper method to get current called numbers
+  async getCurrentCalledNumbers(sessionId: string): Promise<number[]> {
+    try {
+      const { data, error } = await supabase
+        .from('sessions_progress')
+        .select('called_numbers')
+        .eq('session_id', sessionId)
+        .single();
+        
+      if (error || !data) {
+        logWithTimestamp(`Error fetching current called numbers: ${error?.message}`, 'error');
+        return [];
+      }
+      
+      return data.called_numbers || [];
+    } catch (err) {
+      logWithTimestamp(`Exception fetching called numbers: ${err}`, 'error');
+      return [];
+    }
+  },
+  
   async fetchClaims(sessionId: string) {
     try {
       logWithTimestamp(`Fetching claims for session ${sessionId}`, 'info');
