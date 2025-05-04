@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useCallback } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -83,7 +84,7 @@ export default function PlayerGameContent({
     ];
     
     // Listen on all channels
-    channels.forEach(channel => {
+    channels.forEach((channel, index) => {
       channel
         .on('broadcast', { event: 'number-called' }, (payload) => {
           if (payload.payload?.sessionId === currentSession.id) {
@@ -123,7 +124,7 @@ export default function PlayerGameContent({
           }
         })
         .subscribe((status) => {
-          console.log(`Channel subscription status (${channel.name}):`, status);
+          console.log(`Channel subscription status (channel ${index}):`, status);
           if (status === 'SUBSCRIBED') {
             setConnectionStatus('connected');
             setIsConnected(true);

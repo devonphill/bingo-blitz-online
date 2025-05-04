@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -114,6 +115,7 @@ export default function CallerControls({
           })
         ];
         
+        // Use Promise.all and handle rejection properly with then/catch
         Promise.all(broadcasts)
           .then(() => {
             logWithTimestamp("Number broadcast sent successfully on all channels");

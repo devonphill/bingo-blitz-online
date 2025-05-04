@@ -190,18 +190,22 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
       const timestamp = new Date().toISOString();
       const uniqueId = `claim-${playerCode}-${timestamp}`;
       
-      broadcastChannel.send({
-        type: 'broadcast',
-        event: 'bingo-claim',
-        payload: {
-          id: uniqueId,
-          sessionId,
-          playerId: playerId || playerCode,
-          playerName: playerName || playerCode,
-          ticketData,
-          timestamp
-        }
-      }).then(() => {
+      // Use Promise pattern instead of chaining with .then() and .catch()
+      Promise.resolve(
+        broadcastChannel.send({
+          type: 'broadcast',
+          event: 'bingo-claim',
+          payload: {
+            id: uniqueId,
+            sessionId,
+            playerId: playerId || playerCode,
+            playerName: playerName || playerCode,
+            ticketData,
+            timestamp
+          }
+        })
+      )
+      .then(() => {
         logWithTimestamp('Claim broadcast sent successfully');
         
         // Subscribe to get the result back - this is crucial to hear about validation
@@ -228,8 +232,8 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
         setTimeout(() => {
           supabase.removeChannel(resultChannel);
         }, 60000); // 1 minute timeout
-        
-      }).catch(error => {
+      })
+      .catch(error => {
         console.error('Error broadcasting claim:', error);
         setClaimStatus('none');
         setIsSubmittingClaim(false);
