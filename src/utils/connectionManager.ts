@@ -95,11 +95,11 @@ export const connectionManager = {
         return false;
       }
       
-      // Update database first
+      // Update database first - Fix the sql property usage
       const { error } = await supabase
         .from('sessions_progress')
         .update({
-          called_numbers: supabase.sql`called_numbers || ARRAY[${number}]::integer[]`,
+          called_numbers: `called_numbers || ARRAY[${number}]::integer[]`,
           last_called: number,
           updated_at: new Date().toISOString()
         })
@@ -337,7 +337,7 @@ export const connectionManager = {
   },
   
   // Methods added from the previous implementation
-  getStatus(): 'connected' | 'disconnected' | 'connecting' {
+  getStatus() {
     if (this.supabaseChannel && this.supabaseChannel.state === 'SUBSCRIBED') {
       return 'connected';
     }
@@ -347,15 +347,15 @@ export const connectionManager = {
     return 'disconnected';
   },
 
-  getLastPing(): number {
+  getLastPing() {
     return this.lastPingTimestamp || 0;
   },
 
-  getChannels(): any[] {
+  getChannels() {
     return this.activeChannels || [];
   },
 
-  submitBingoClaim(ticket: any, playerCode: string, sessionId: string): boolean {
+  submitBingoClaim(ticket: any, playerCode: string, sessionId: string) {
     try {
       if (!this.supabaseChannel || !sessionId || !playerCode) {
         console.error('Cannot submit claim: not connected or missing data');

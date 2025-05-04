@@ -235,7 +235,11 @@ export default function PlayerGameContent({
     }
   }
 
-  // Use the mapping function to get the correct type
+  // Map the claimStatus to the proper format expected by each component
+  const layoutClaimStatus = claimStatus;
+                          
+  // Convert the claimStatus to the type required by GameTypePlayspace
+  // Always use 'pending' if the value is 'none' since GameTypePlayspace doesn't accept 'none'
   const gameTypePlayspaceClaimStatus = mapClaimStatus(claimStatus);
 
   return (
