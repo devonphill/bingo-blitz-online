@@ -203,13 +203,44 @@ export function useBingoSync(sessionId: string, playerId: string, playerName: st
     try {
       logWithTimestamp(`[useBingoSync] Claiming bingo for sessionId ${sessionId}, playerId ${playerId}`);
       
+      // Check if playerId is a UUID or a player code
+      let actualPlayerId = playerId;
+      let actualPlayerName = playerName || playerId;
+      
+      // If playerId doesn't look like a UUID (contains letters and is short), assume it's a player code
+      // and try to find the actual UUID
+      if (playerId.length < 30 && /[A-Za-z]/.test(playerId)) {
+        // Query for the player by player_code
+        const { data: playerData, error: playerError } = await supabase
+          .from('players')
+          .select('id, nickname')
+          .eq('player_code', playerId)
+          .single();
+          
+        if (playerError) {
+          console.error("Error finding player by player code:", playerError);
+          toast({
+            title: "Claim Error",
+            description: `Could not verify player identity: ${playerError.message}`,
+            variant: "destructive"
+          });
+          return false;
+        }
+        
+        if (playerData) {
+          logWithTimestamp(`[useBingoSync] Found player UUID ${playerData.id} for player code ${playerId}`);
+          actualPlayerId = playerData.id;
+          actualPlayerName = playerData.nickname || playerName || playerId;
+        }
+      }
+      
       // First add the claim to the universal_game_logs table
       const { data, error } = await supabase
         .from('universal_game_logs')
         .insert({
           session_id: sessionId,
-          player_id: playerId,
-          player_name: playerName || playerId,
+          player_id: actualPlayerId,
+          player_name: actualPlayerName,
           game_type: 'mainstage',
           game_number: gameState?.currentGameNumber || 1, // Add game number field - required
           win_pattern: gameState?.currentWinPattern || 'oneLine',
@@ -242,8 +273,8 @@ export function useBingoSync(sessionId: string, playerId: string, playerName: st
           event: 'bingo-claim',
           payload: {
             sessionId,
-            playerId,
-            playerName: playerName || playerId,
+            playerId: actualPlayerId,
+            playerName: actualPlayerName,
             ticketData: {
               serial: ticketData.serial,
               perm: ticketData.perm,

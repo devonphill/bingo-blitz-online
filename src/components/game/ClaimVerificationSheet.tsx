@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { supabase } from '@/integrations/supabase/client';
@@ -128,31 +129,38 @@ export default function ClaimVerificationSheet({
   };
 
   // Fetch a player's tickets
-  const fetchPlayerTickets = async (playerCode: string) => {
+  const fetchPlayerTickets = async (playerCodeOrId: string) => {
     if (!sessionId) return;
     
     try {
-      logWithTimestamp(`Fetching tickets for player ${playerCode}`);
+      logWithTimestamp(`Fetching tickets for player ${playerCodeOrId}`);
       
-      // Different approach for UUIDs vs. player codes
-      let queryBy = 'player_id';
+      // First determine if we have a player code or UUID
+      let queryPlayerId = playerCodeOrId;
+      let isPlayerCode = false;
       
       // Check if it looks like a player code rather than UUID
-      if (playerCode.length < 30 && !playerCode.includes('-')) {
+      if (playerCodeOrId.length < 30 && /[A-Za-z]/.test(playerCodeOrId)) {
+        isPlayerCode = true;
         console.log("Using player_code query approach");
         
         // First find the player's UUID from the player code
         const { data: playerData, error: playerError } = await supabase
           .from('players')
-          .select('id')
-          .eq('player_code', playerCode)
+          .select('id, nickname')
+          .eq('player_code', playerCodeOrId)
           .single();
           
         if (playerError) {
           console.error("Error finding player by code:", playerError);
         } else if (playerData) {
           console.log("Found player by code:", playerData);
-          playerCode = playerData.id;
+          queryPlayerId = playerData.id;
+          
+          // Update player name if we have a nickname
+          if (playerData.nickname) {
+            setActiveClaimPlayerName(playerData.nickname);
+          }
         } else {
           // Continue with original code as fallback
           console.log("No player found by code, using original code as ID");
@@ -164,10 +172,30 @@ export default function ClaimVerificationSheet({
         .from('assigned_tickets')
         .select('*')
         .eq('session_id', sessionId)
-        .eq('player_id', playerCode);
+        .eq('player_id', queryPlayerId);
       
       if (ticketsError) {
         console.error("Error fetching player tickets:", ticketsError);
+        
+        // Try an alternative approach if we're querying with a player code
+        if (isPlayerCode) {
+          console.log("Trying alternative approach with player_code directly");
+          
+          // This is a fallback in case player_id in assigned_tickets is storing player_code
+          const { data: altTickets, error: altError } = await supabase
+            .from('assigned_tickets')
+            .select('*')
+            .eq('session_id', sessionId)
+            .eq('player_id', playerCodeOrId); // Try with the original player code
+          
+          if (!altError && altTickets && altTickets.length > 0) {
+            console.log(`Found ${altTickets.length} tickets for player using direct player code:`, altTickets);
+            setActiveClaimTickets(altTickets);
+            setModalOpen(true);
+            return;
+          }
+        }
+        
         return;
       }
       

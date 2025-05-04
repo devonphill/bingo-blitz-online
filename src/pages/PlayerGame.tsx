@@ -1,3 +1,4 @@
+
 import React, { useEffect, useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -124,15 +125,24 @@ export default function PlayerGame() {
 
   // Update the finalCalledNumbers whenever our data sources change
   useEffect(() => {
-    // Use sessionProgress for most up-to-date data
-    const updatedCalledNumbers = sessionProgress?.called_numbers || calledItems || [];
-    setFinalCalledNumbers(updatedCalledNumbers);
-    
-    const updatedLastCalledNumber = updatedCalledNumbers.length > 0 
-      ? updatedCalledNumbers[updatedCalledNumbers.length - 1] 
-      : lastCalledItem;
-    setFinalLastCalledNumber(updatedLastCalledNumber);
-  }, [sessionProgress, calledItems, lastCalledItem]);
+    // Use the latest data from any source
+    const latestCalledNumbers = sessionProgress?.called_numbers || 
+                               gameState?.calledNumbers || 
+                               calledItems || [];
+                               
+    if (latestCalledNumbers && latestCalledNumbers.length > 0) {
+      setFinalCalledNumbers(latestCalledNumbers);
+      
+      const latestLastCalledNumber = latestCalledNumbers.length > 0 
+        ? latestCalledNumbers[latestCalledNumbers.length - 1] 
+        : lastCalledItem;
+        
+      setFinalLastCalledNumber(latestLastCalledNumber);
+      
+      // Log for debugging
+      logWithTimestamp(`Updated called numbers: ${latestCalledNumbers.length} numbers, last: ${latestLastCalledNumber}`);
+    }
+  }, [sessionProgress, calledItems, lastCalledItem, gameState]);
   
   // Handle bingo claims - select the best ticket for claiming
   const handleClaimBingo = useCallback(() => {

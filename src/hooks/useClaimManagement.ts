@@ -7,6 +7,11 @@ export function useClaimManagement(sessionId?: string, gameNumber?: number) {
   const [isProcessingClaim, setIsProcessingClaim] = useState(false);
   const { toast } = useToast();
 
+  // Helper function to check if a string is likely to be a player code rather than UUID
+  const isPlayerCode = (id: string) => {
+    return id.length < 30 && /[A-Za-z]/.test(id);
+  };
+
   // Validate a bingo claim
   const validateClaim = useCallback(async (
     playerId: string,
@@ -29,12 +34,34 @@ export function useClaimManagement(sessionId?: string, gameNumber?: number) {
     try {
       logWithTimestamp(`Validating claim for player ${playerName || playerId}, pattern: ${winPattern}`);
       
+      // Check if we need to resolve a player code to UUID
+      let actualPlayerId = playerId;
+      
+      if (isPlayerCode(playerId)) {
+        const { data: playerData, error: playerError } = await supabase
+          .from('players')
+          .select('id, nickname')
+          .eq('player_code', playerId)
+          .single();
+          
+        if (playerError) {
+          console.error("Error finding player by code:", playerError);
+        } else if (playerData) {
+          console.log("Found player by code:", playerData);
+          actualPlayerId = playerData.id;
+          // Update player name if available
+          if (playerData.nickname) {
+            playerName = playerData.nickname;
+          }
+        }
+      }
+      
       // First update the claim in the universal_game_logs table if it exists
       const { data: existingClaims, error: fetchError } = await supabase
         .from('universal_game_logs')
         .select('id')
         .eq('session_id', sessionId)
-        .eq('player_id', playerId)
+        .eq('player_id', actualPlayerId)
         .is('validated_at', null);
 
       if (fetchError) {
@@ -66,7 +93,7 @@ export function useClaimManagement(sessionId?: string, gameNumber?: number) {
           .from('universal_game_logs')
           .insert({
             session_id: sessionId,
-            player_id: playerId,
+            player_id: actualPlayerId,
             player_name: playerName,
             game_number: gameNumber || 1,
             game_type: 'mainstage',
@@ -95,17 +122,35 @@ export function useClaimManagement(sessionId?: string, gameNumber?: number) {
         }
       }
 
-      // Broadcast the result to the player
-      await supabase
-        .channel('game-updates')
-        .send({
+      // Broadcast the result to the player - try with both player ID formats
+      try {
+        // If we have both UUID and player code versions, send to both
+        const broadcastChannel = supabase.channel('game-updates');
+        
+        // Send to UUID
+        await broadcastChannel.send({
           type: 'broadcast',
           event: 'claim-result',
           payload: {
-            playerId: playerId,
+            playerId: actualPlayerId,
             result: 'valid'
           }
         });
+        
+        // If we originally had a player code, also send to that
+        if (actualPlayerId !== playerId) {
+          await broadcastChannel.send({
+            type: 'broadcast',
+            event: 'claim-result',
+            payload: {
+              playerId: playerId, // Original player code
+              result: 'valid'
+            }
+          });
+        }
+      } catch (err) {
+        console.error("Error broadcasting claim result:", err);
+      }
 
       toast({
         title: "Claim Validated",
@@ -148,12 +193,34 @@ export function useClaimManagement(sessionId?: string, gameNumber?: number) {
     try {
       logWithTimestamp(`Rejecting claim for player ${playerName || playerId}, pattern: ${winPattern}`);
 
+      // Check if we need to resolve a player code to UUID
+      let actualPlayerId = playerId;
+      
+      if (isPlayerCode(playerId)) {
+        const { data: playerData, error: playerError } = await supabase
+          .from('players')
+          .select('id, nickname')
+          .eq('player_code', playerId)
+          .single();
+          
+        if (playerError) {
+          console.error("Error finding player by code:", playerError);
+        } else if (playerData) {
+          console.log("Found player by code:", playerData);
+          actualPlayerId = playerData.id;
+          // Update player name if available
+          if (playerData.nickname) {
+            playerName = playerData.nickname;
+          }
+        }
+      }
+
       // First update the claim in the universal_game_logs table if it exists
       const { data: existingClaims, error: fetchError } = await supabase
         .from('universal_game_logs')
         .select('id')
         .eq('session_id', sessionId)
-        .eq('player_id', playerId)
+        .eq('player_id', actualPlayerId)
         .is('validated_at', null);
 
       if (fetchError) {
@@ -185,7 +252,7 @@ export function useClaimManagement(sessionId?: string, gameNumber?: number) {
           .from('universal_game_logs')
           .insert({
             session_id: sessionId,
-            player_id: playerId, 
+            player_id: actualPlayerId, 
             player_name: playerName,
             game_number: gameNumber || 1,
             game_type: 'mainstage',
@@ -214,17 +281,35 @@ export function useClaimManagement(sessionId?: string, gameNumber?: number) {
         }
       }
 
-      // Broadcast the result to the player
-      await supabase
-        .channel('game-updates')
-        .send({
+      // Broadcast the result to the player - try with both player ID formats
+      try {
+        // If we have both UUID and player code versions, send to both
+        const broadcastChannel = supabase.channel('game-updates');
+        
+        // Send to UUID
+        await broadcastChannel.send({
           type: 'broadcast',
           event: 'claim-result',
           payload: {
-            playerId: playerId,
+            playerId: actualPlayerId,
             result: 'rejected'
           }
         });
+        
+        // If we originally had a player code, also send to that
+        if (actualPlayerId !== playerId) {
+          await broadcastChannel.send({
+            type: 'broadcast',
+            event: 'claim-result',
+            payload: {
+              playerId: playerId, // Original player code
+              result: 'rejected'
+            }
+          });
+        }
+      } catch (err) {
+        console.error("Error broadcasting claim result:", err);
+      }
 
       toast({
         title: "Claim Rejected",
