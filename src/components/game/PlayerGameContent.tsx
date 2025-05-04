@@ -221,9 +221,18 @@ export default function PlayerGameContent({
 
   // Add a helper function to map between the different claim status types
   function mapClaimStatus(status: 'none' | 'pending' | 'valid' | 'invalid'): 'pending' | 'rejected' | 'validated' {
-    if (status === 'valid') return 'validated';
-    if (status === 'invalid') return 'rejected';
-    return 'pending'; // Default to 'pending' for both 'pending' and 'none'
+    switch(status) {
+      case 'none':
+        return 'pending';
+      case 'valid':
+        return 'validated';
+      case 'invalid':
+        return 'rejected';
+      case 'pending':
+        return 'pending';
+      default:
+        return 'pending';
+    }
   }
 
   // Use the mapping function to get the correct type
