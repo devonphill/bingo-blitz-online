@@ -333,7 +333,7 @@ export type Database = {
           ticket_position: number | null
           ticket_serial: string
           total_calls: number
-          validated_at: string
+          validated_at: string | null
           win_pattern: string
         }
         Insert: {
@@ -363,7 +363,7 @@ export type Database = {
           ticket_position?: number | null
           ticket_serial: string
           total_calls: number
-          validated_at?: string
+          validated_at?: string | null
           win_pattern: string
         }
         Update: {
@@ -393,7 +393,7 @@ export type Database = {
           ticket_position?: number | null
           ticket_serial?: string
           total_calls?: number
-          validated_at?: string
+          validated_at?: string | null
           win_pattern?: string
         }
         Relationships: [

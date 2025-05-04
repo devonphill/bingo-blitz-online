@@ -9,172 +9,274 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
   const [isProcessingClaim, setIsProcessingClaim] = useState(false);
   const { toast } = useToast();
 
-  const fetchPendingClaims = useCallback(async () => {
-    if (!sessionId) return [];
-    
-    try {
-      logWithTimestamp(`Fetching pending claims for session ${sessionId}`);
-      
-      // We store claims in universal_game_logs table with player_id and session_id
-      // IMPORTANT: We're looking for claims where validated_at is NULL (not validated yet)
-      const { data, error } = await supabase
-        .from('universal_game_logs')
-        .select('*')
-        .eq('session_id', sessionId)
-        .is('validated_at', null)
-        .not('claimed_at', 'is', null);
-        
-      if (error) {
-        console.error("Error fetching pending claims:", error);
-        return [];
-      }
-      
-      logWithTimestamp(`Found ${data?.length || 0} pending claims`);
-      return data || [];
-    } catch (err) {
-      console.error("Exception fetching pending claims:", err);
-      return [];
-    }
-  }, [sessionId]);
+  // Helper function to check if a string is likely to be a player code rather than UUID
+  const isPlayerCode = (id: string) => {
+    return id.length < 30 && /[A-Za-z]/.test(id);
+  };
 
-  const validateClaim = useCallback(async (claimId: string, playerId: string) => {
-    if (!sessionId) return false;
-    
+  // Validate a bingo claim - This is where we write to the database
+  const validateClaim = useCallback(async (
+    playerId: string,
+    playerName: string,
+    winPattern: string,
+    calledNumbers: number[],
+    lastCalledNumber: number | null,
+    ticketData: any
+  ) => {
+    if (!sessionId) {
+      toast({
+        title: "Error",
+        description: "No active session found",
+        variant: "destructive"
+      });
+      return false;
+    }
+
     setIsProcessingClaim(true);
     try {
-      logWithTimestamp(`Validating claim for player ${playerId}`);
+      logWithTimestamp(`Validating claim for player ${playerName || playerId}, pattern: ${winPattern}`);
       
-      // Update the claim in universal_game_logs
-      const { error } = await supabase
+      // Check if we need to resolve a player code to UUID
+      let actualPlayerId = playerId;
+      
+      if (isPlayerCode(playerId)) {
+        const { data: playerData, error: playerError } = await supabase
+          .from('players')
+          .select('id, nickname')
+          .eq('player_code', playerId)
+          .single();
+          
+        if (playerError) {
+          console.error("Error finding player by code:", playerError);
+        } else if (playerData) {
+          console.log("Found player by code:", playerData);
+          actualPlayerId = playerData.id;
+          // Update player name if available
+          if (playerData.nickname) {
+            playerName = playerData.nickname;
+          }
+        }
+      }
+      
+      // Insert a new validated entry - validated_at will be set by the caller
+      const { error: insertError } = await supabase
         .from('universal_game_logs')
-        .update({ 
-          validated_at: new Date().toISOString(), 
-          prize_shared: true 
-        })
-        .eq('id', claimId);
-        
-      if (error) {
-        console.error("Error validating claim:", error);
+        .insert({
+          session_id: sessionId,
+          player_id: actualPlayerId,
+          player_name: playerName,
+          game_number: 1, // Use game number from session if available
+          game_type: 'mainstage',
+          win_pattern: winPattern,
+          ticket_serial: ticketData.serial,
+          ticket_perm: ticketData.perm,
+          ticket_position: ticketData.position,
+          ticket_layout_mask: ticketData.layoutMask || ticketData.layout_mask,
+          ticket_numbers: ticketData.numbers,
+          called_numbers: calledNumbers,
+          last_called_number: lastCalledNumber,
+          total_calls: calledNumbers.length,
+          claimed_at: new Date().toISOString(),
+          validated_at: new Date().toISOString(), // Set by the caller
+          prize_shared: true
+        });
+
+      if (insertError) {
+        console.error("Error inserting claim:", insertError);
         toast({
           title: "Error",
-          description: "Failed to validate claim.",
+          description: "Failed to validate claim",
           variant: "destructive"
         });
         return false;
       }
-      
-      // Broadcast the result to the player
-      await supabase
-        .channel('game-updates')
-        .send({
+
+      // Broadcast the result to the player - try with both player ID formats
+      try {
+        // If we have both UUID and player code versions, send to both
+        const broadcastChannel = supabase.channel('game-updates');
+        
+        // Send to UUID
+        await broadcastChannel.send({
           type: 'broadcast',
           event: 'claim-result',
-          payload: { 
-            playerId,
+          payload: {
+            playerId: actualPlayerId,
             result: 'valid'
           }
         });
-      
+        
+        // If we originally had a player code, also send to that
+        if (actualPlayerId !== playerId) {
+          await broadcastChannel.send({
+            type: 'broadcast',
+            event: 'claim-result',
+            payload: {
+              playerId: playerId, // Original player code
+              result: 'valid'
+            }
+          });
+        }
+      } catch (err) {
+        console.error("Error broadcasting claim result:", err);
+      }
+
       toast({
         title: "Claim Validated",
-        description: "The claim has been validated successfully."
+        description: "The claim has been validated successfully"
       });
       
-      // Refresh the pending claims list
-      setPendingClaims(await fetchPendingClaims());
-      
+      // Remove the claim from pending claims
+      setPendingClaims(prev => prev.filter(claim => 
+        claim.playerId !== playerId && claim.playerId !== actualPlayerId
+      ));
+
       return true;
     } catch (err) {
-      console.error("Error during claim validation:", err);
+      console.error("Error validating claim:", err);
       toast({
         title: "Error",
-        description: "An unexpected error occurred during validation.",
+        description: "An unexpected error occurred during validation",
         variant: "destructive"
       });
       return false;
     } finally {
       setIsProcessingClaim(false);
     }
-  }, [sessionId, fetchPendingClaims, toast]);
+  }, [sessionId, toast]);
 
-  const rejectClaim = useCallback(async (claimId: string, playerId: string) => {
-    if (!sessionId) return false;
-    
+  // Reject a bingo claim - This is where we write to the database for rejected claims
+  const rejectClaim = useCallback(async (
+    playerId: string,
+    playerName: string,
+    winPattern: string,
+    calledNumbers: number[],
+    lastCalledNumber: number | null,
+    ticketData: any
+  ) => {
+    if (!sessionId) {
+      toast({
+        title: "Error",
+        description: "No active session found",
+        variant: "destructive"
+      });
+      return false;
+    }
+
     setIsProcessingClaim(true);
     try {
-      logWithTimestamp(`Rejecting claim for player ${playerId}`);
+      logWithTimestamp(`Rejecting claim for player ${playerName || playerId}, pattern: ${winPattern}`);
+
+      // Check if we need to resolve a player code to UUID
+      let actualPlayerId = playerId;
       
-      // Update the claim as rejected in universal_game_logs
-      const { error } = await supabase
+      if (isPlayerCode(playerId)) {
+        const { data: playerData, error: playerError } = await supabase
+          .from('players')
+          .select('id, nickname')
+          .eq('player_code', playerId)
+          .single();
+          
+        if (playerError) {
+          console.error("Error finding player by code:", playerError);
+        } else if (playerData) {
+          console.log("Found player by code:", playerData);
+          actualPlayerId = playerData.id;
+          // Update player name if available
+          if (playerData.nickname) {
+            playerName = playerData.nickname;
+          }
+        }
+      }
+
+      // Create a rejected entry in the database
+      const { error: insertError } = await supabase
         .from('universal_game_logs')
-        .update({ 
-          validated_at: new Date().toISOString(), 
-          prize_shared: false 
-        })
-        .eq('id', claimId);
-        
-      if (error) {
-        console.error("Error rejecting claim:", error);
+        .insert({
+          session_id: sessionId,
+          player_id: actualPlayerId, 
+          player_name: playerName,
+          game_number: 1, // Use game number from session if available
+          game_type: 'mainstage',
+          win_pattern: winPattern,
+          ticket_serial: ticketData.serial,
+          ticket_perm: ticketData.perm,
+          ticket_position: ticketData.position,
+          ticket_layout_mask: ticketData.layoutMask || ticketData.layout_mask,
+          ticket_numbers: ticketData.numbers,
+          called_numbers: calledNumbers,
+          last_called_number: lastCalledNumber,
+          total_calls: calledNumbers.length,
+          claimed_at: new Date().toISOString(),
+          validated_at: new Date().toISOString(), // Set by the caller
+          prize_shared: false // Mark as rejected
+        });
+
+      if (insertError) {
+        console.error("Error inserting claim:", insertError);
         toast({
           title: "Error",
-          description: "Failed to reject claim.",
+          description: "Failed to reject claim",
           variant: "destructive"
         });
         return false;
       }
-      
-      // Broadcast the result to the player
-      await supabase
-        .channel('game-updates')
-        .send({
+
+      // Broadcast the result to the player - try with both player ID formats
+      try {
+        // If we have both UUID and player code versions, send to both
+        const broadcastChannel = supabase.channel('game-updates');
+        
+        // Send to UUID
+        await broadcastChannel.send({
           type: 'broadcast',
           event: 'claim-result',
-          payload: { 
-            playerId,
+          payload: {
+            playerId: actualPlayerId,
             result: 'rejected'
           }
         });
-      
+        
+        // If we originally had a player code, also send to that
+        if (actualPlayerId !== playerId) {
+          await broadcastChannel.send({
+            type: 'broadcast',
+            event: 'claim-result',
+            payload: {
+              playerId: playerId, // Original player code
+              result: 'rejected'
+            }
+          });
+        }
+      } catch (err) {
+        console.error("Error broadcasting claim result:", err);
+      }
+
       toast({
         title: "Claim Rejected",
-        description: "The claim has been rejected."
+        description: "The claim has been rejected"
       });
       
-      // Refresh the pending claims list
-      setPendingClaims(await fetchPendingClaims());
-      
+      // Remove the claim from pending claims
+      setPendingClaims(prev => prev.filter(claim => 
+        claim.playerId !== playerId && claim.playerId !== actualPlayerId
+      ));
+
       return true;
     } catch (err) {
-      console.error("Error during claim rejection:", err);
+      console.error("Error rejecting claim:", err);
       toast({
         title: "Error",
-        description: "An unexpected error occurred during rejection.",
+        description: "An unexpected error occurred during rejection",
         variant: "destructive"
       });
       return false;
     } finally {
       setIsProcessingClaim(false);
     }
-  }, [sessionId, fetchPendingClaims, toast]);
+  }, [sessionId, toast]);
 
-  // Fetch pending claims on mount and periodically
-  useEffect(() => {
-    const loadClaims = async () => {
-      const claims = await fetchPendingClaims();
-      setPendingClaims(claims);
-    };
-    
-    if (sessionId) {
-      loadClaims();
-      
-      // Poll for new claims every 5 seconds
-      const interval = setInterval(loadClaims, 5000);
-      
-      return () => clearInterval(interval);
-    }
-  }, [sessionId, fetchPendingClaims]);
-
-  // Listen for new claims via broadcast
+  // Listen for new claims via broadcast instead of querying the database
   useEffect(() => {
     if (!sessionId) return;
     
@@ -183,35 +285,49 @@ export function useCallerClaimManagement(sessionId: string | undefined) {
       .on(
         'broadcast',
         { event: 'bingo-claim' },
-        async (payload) => {
+        (payload) => {
           logWithTimestamp("Received bingo claim broadcast:", payload);
           
-          if (payload.payload && payload.payload.sessionId === sessionId) {
-            toast({
-              title: "New Bingo Claim!",
-              description: `${payload.payload.playerName || payload.payload.playerId} has claimed bingo! Check the claims panel to verify.`,
-              variant: "default",
-            });
+          if (payload.payload?.sessionId === sessionId) {
+            const claimData = payload.payload;
             
-            const claims = await fetchPendingClaims();
-            setPendingClaims(claims);
+            // Check if we already have this claim
+            const claimExists = pendingClaims.some(
+              existing => existing.playerId === claimData.playerId && 
+                         existing.ticketData?.serial === claimData.ticketData?.serial
+            );
+            
+            if (!claimExists) {
+              // Add the new claim to our state
+              setPendingClaims(prev => [...prev, {
+                id: `claim-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                playerId: claimData.playerId,
+                playerName: claimData.playerName,
+                ticketData: claimData.ticketData,
+                timestamp: claimData.timestamp,
+                sessionId: sessionId
+              }]);
+              
+              toast({
+                title: "New Bingo Claim!",
+                description: `${claimData.playerName || claimData.playerId} has claimed bingo! Check the claims panel to verify.`,
+                variant: "default",
+              });
+            }
           }
         }
       )
-      .subscribe((status) => {
-        logWithTimestamp(`Claim listener subscription status: ${status}`);
-      });
+      .subscribe();
       
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [sessionId, fetchPendingClaims, toast]);
+  }, [sessionId, pendingClaims, toast]);
 
   return {
     pendingClaims,
     isProcessingClaim,
     validateClaim,
-    rejectClaim,
-    fetchPendingClaims
+    rejectClaim
   };
 }
