@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from './logUtils';
 
@@ -282,25 +283,27 @@ class ConnectionManager {
       timestamp: new Date().toISOString()
     };
     
-    // Create a proper Promise that supports catch
+    // Fix the Promise chain by using a proper async/await pattern
     try {
       const channel = supabase.channel(`game-channel-${sessionId}`);
       
-      // Use Promise.resolve to ensure we have a full Promise with catch
-      Promise.resolve(
-        channel.send({
-          type: 'broadcast',
-          event: 'number-called',
-          payload
-        })
-      )
-      .then(() => {
-        logWithTimestamp('Number call broadcast successful');
-      })
-      .catch(error => {
-        console.error('Error broadcasting number call:', error);
-        logWithTimestamp(`Error broadcasting number call: ${error}`);
-      });
+      // Convert the send operation into a proper Promise using an async function
+      const sendBroadcast = async () => {
+        try {
+          await channel.send({
+            type: 'broadcast',
+            event: 'number-called',
+            payload
+          });
+          logWithTimestamp('Number call broadcast successful');
+        } catch (error) {
+          console.error('Error broadcasting number call:', error);
+          logWithTimestamp(`Error broadcasting number call: ${error}`);
+        }
+      };
+      
+      // Execute the async function
+      sendBroadcast();
       
       // Also notify local callbacks
       this.notifyNumberCalled(lastCalledNumber, calledNumbers);
@@ -382,13 +385,15 @@ class ConnectionManager {
       this.setupChannels();
       this.setupPolling();
       
-      // Force a database refresh
-      supabase
-        .from('sessions_progress')
-        .select('*')
-        .eq('session_id', sessionIdToReconnect)
-        .single()
-        .then(({ data }) => {
+      // Force a database refresh using proper async/await pattern
+      const refreshData = async () => {
+        try {
+          const { data } = await supabase
+            .from('sessions_progress')
+            .select('*')
+            .eq('session_id', sessionIdToReconnect)
+            .single();
+            
           if (data) {
             this.notifySessionProgressUpdate(data);
             
@@ -397,11 +402,14 @@ class ConnectionManager {
               this.notifyNumberCalled(lastCalledNumber, data.called_numbers);
             }
           }
-        })
-        .catch(error => {
+        } catch (error) {
           console.error('Error during reconnection data fetch:', error);
           logWithTimestamp(`Error during reconnection data fetch: ${error}`);
-        });
+        }
+      };
+      
+      // Execute the async function
+      refreshData();
         
     } catch (error) {
       console.error('Error during reconnect:', error);
@@ -419,47 +427,51 @@ class ConnectionManager {
     logWithTimestamp(`Validating claim for player ${claim.playerName || claim.player_name}, isValid: ${isValid}`);
     
     try {
-      // Update the claim in the database
-      supabase
-        .from('universal_game_logs')
-        .update({
-          validated_at: new Date().toISOString(),
-          prize_shared: isValid
-        })
-        .eq('id', claim.id)
-        .then(({ error }) => {
+      // Update the claim in the database using async/await pattern
+      const processClaim = async () => {
+        try {
+          // First update the database
+          const { error } = await supabase
+            .from('universal_game_logs')
+            .update({
+              validated_at: new Date().toISOString(),
+              prize_shared: isValid
+            })
+            .eq('id', claim.id);
+            
           if (error) {
             console.error('Error validating claim:', error);
             return;
           }
           
-          // Broadcast the result to players
+          // Then broadcast the result
           const broadcastChannel = supabase.channel(`game-channel-${this.sessionId}`);
           
           try {
-            Promise.resolve(
-              broadcastChannel.send({
-                type: 'broadcast',
-                event: 'claim-result',
-                payload: {
-                  playerId: claim.player_id || claim.playerId,
-                  sessionId: this.sessionId,
-                  result: isValid ? 'valid' : 'rejected',
-                  timestamp: new Date().toISOString()
-                }
-              })
-            )
-            .then(() => {
-              logWithTimestamp(`Claim result broadcast successful: ${isValid ? 'valid' : 'rejected'}`);
-            })
-            .catch(err => {
-              console.error('Error broadcasting claim result:', err);
-              logWithTimestamp(`Error broadcasting claim result: ${err}`);
+            await broadcastChannel.send({
+              type: 'broadcast',
+              event: 'claim-result',
+              payload: {
+                playerId: claim.player_id || claim.playerId,
+                sessionId: this.sessionId,
+                result: isValid ? 'valid' : 'rejected',
+                timestamp: new Date().toISOString()
+              }
             });
+            
+            logWithTimestamp(`Claim result broadcast successful: ${isValid ? 'valid' : 'rejected'}`);
           } catch (err) {
-            console.error('Error in claim result broadcast:', err);
+            console.error('Error broadcasting claim result:', err);
+            logWithTimestamp(`Error broadcasting claim result: ${err}`);
           }
-        });
+        } catch (err) {
+          console.error('Error in validateClaim:', err);
+          logWithTimestamp(`Error in validateClaim: ${err}`);
+        }
+      };
+      
+      // Execute the async function
+      processClaim();
     } catch (error) {
       console.error('Error in validateClaim:', error);
       logWithTimestamp(`Error in validateClaim: ${error}`);

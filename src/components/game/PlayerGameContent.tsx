@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useCallback } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -45,7 +46,7 @@ export default function PlayerGameContent({
   errorMessage,
   isLoading,
   isClaiming,
-  claimStatus,
+  claimStatus = 'pending', // Default to 'pending' if not provided
   gameType = '90-ball'
 }: PlayerGameContentProps) {
   // Track local state for real-time number calls
@@ -384,6 +385,12 @@ export default function PlayerGameContent({
     });
   };
 
+  // Convert the claimStatus to the type required by GameTypePlayspace
+  // Fix: Map 'none' to 'pending' since GameTypePlayspace doesn't accept 'none'
+  const gameTypePlayspaceClaimStatus = claimStatus === 'validated' ? 'validated' :
+                                     claimStatus === 'rejected' ? 'rejected' :
+                                     'pending'; // Both 'pending' and 'none' map to 'pending'
+
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
       <div className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
@@ -443,7 +450,7 @@ export default function PlayerGameContent({
           setAutoMarking={setAutoMarking}
           handleClaimBingo={handleClaimBingoWithErrorHandling}
           isClaiming={isClaiming}
-          claimStatus={claimStatus}
+          claimStatus={gameTypePlayspaceClaimStatus}
         />
       </div>
     </div>
