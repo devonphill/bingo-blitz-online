@@ -387,7 +387,7 @@ export const connectionManager = {
     
     // Only track if we're connected
     if (!this.isConnected()) {
-      logWithTimestamp('Cannot track player presence: Not connected', 'warning');
+      logWithTimestamp('Cannot track player presence: Not connected', 'warn');
       return false;
     }
     
