@@ -1,4 +1,3 @@
-
 /**
  * Unified connection manager for all game-related real-time communication
  */
@@ -32,6 +31,7 @@ class ConnectionManager {
   private playersUpdateCallbacks: PlayersUpdateCallback[] = [];
   private ticketsAssignedCallbacks: TicketsAssignedCallback[] = [];
   private connectedState: boolean = false;
+  private _heartbeatIntervals: number[] = [];
   
   // Private constructor to enforce singleton
   private constructor() {}
@@ -76,7 +76,7 @@ class ConnectionManager {
   }
   
   /**
-   * Clean up all connections
+   * Clean up all connections and intervals
    */
   public cleanup(): void {
     if (this.gameUpdatesChannel) {
@@ -89,6 +89,12 @@ class ConnectionManager {
       logWithTimestamp(`ConnectionManager: Cleaning up presence channel for session ${this.sessionId}`);
       supabase.removeChannel(this.presenceChannel);
       this.presenceChannel = null;
+    }
+    
+    // Clear all heartbeat intervals
+    if (this._heartbeatIntervals) {
+      this._heartbeatIntervals.forEach(interval => clearInterval(interval));
+      this._heartbeatIntervals = [];
     }
     
     this.connectedState = false;
@@ -289,12 +295,13 @@ class ConnectionManager {
   
   /**
    * Track a player's presence in the current session
+   * This is key to keeping players online and visible to each other
    */
   public trackPlayerPresence(playerInfo: {
     player_id: string;
     player_code: string;
     nickname: string;
-    tickets?: number;
+    tickets?: any[];
   }): void {
     if (!this.sessionId || !this.presenceChannel) {
       logWithTimestamp("ConnectionManager: Cannot track presence - no active session");
@@ -303,14 +310,34 @@ class ConnectionManager {
     
     logWithTimestamp(`ConnectionManager: Tracking presence for player ${playerInfo.player_code}`);
     
-    // Track the player's presence
+    // Send presence heartbeat every 30 seconds to keep connection alive
+    const heartbeatInterval = setInterval(() => {
+      if (this.presenceChannel && this.connectedState) {
+        this.presenceChannel.send({
+          type: 'broadcast',
+          event: 'heartbeat',
+          payload: {
+            player_code: playerInfo.player_code,
+            timestamp: new Date().toISOString()
+          }
+        }).catch(err => {
+          console.error("Heartbeat error:", err);
+        });
+      }
+    }, 30000);
+    
+    // Track the player's presence with all relevant info
     this.presenceChannel.track({
       user_id: playerInfo.player_id,
       player_code: playerInfo.player_code,
       nickname: playerInfo.nickname,
-      tickets: playerInfo.tickets || 0,
+      tickets: playerInfo.tickets || [],
       joined_at: new Date().toISOString()
     });
+    
+    // Store the heartbeat interval for cleanup
+    this._heartbeatIntervals = this._heartbeatIntervals || [];
+    this._heartbeatIntervals.push(heartbeatInterval);
   }
   
   /**

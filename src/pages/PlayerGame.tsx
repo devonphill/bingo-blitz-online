@@ -130,8 +130,8 @@ export default function PlayerGame() {
 
   // Set up a SINGLE real-time connection using the connection manager
   useEffect(() => {
-    if (!currentSession?.id) {
-      logWithTimestamp("No session ID available, skipping connection setup");
+    if (!currentSession?.id || !playerCode || !playerId) {
+      logWithTimestamp("No session ID or player info available, skipping connection setup");
       return;
     }
     
@@ -163,9 +163,17 @@ export default function PlayerGame() {
         }
       });
     
+    // Track player presence to keep them online
+    connectionManager.trackPlayerPresence({
+      player_id: playerId,
+      player_code: playerCode,
+      nickname: playerName || playerCode,
+      tickets: tickets
+    });
+    
     // No cleanup needed as the connectionManager handles its own lifecycle
-  }, [currentSession?.id, toast]);
-
+  }, [currentSession?.id, playerCode, playerId, playerName, tickets, toast]);
+  
   // Update the finalCalledNumbers whenever our data sources change
   useEffect(() => {
     // Use the latest data from any source

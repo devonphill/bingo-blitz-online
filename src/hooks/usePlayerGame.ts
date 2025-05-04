@@ -1,10 +1,10 @@
-
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useBingoSync } from '@/hooks/useBingoSync';
 import { useTickets } from '@/hooks/useTickets';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { connectionManager } from '@/utils/connectionManager';
 
 export function usePlayerGame(playerCode: string | null) {
   // State for player data
@@ -355,6 +355,22 @@ export function usePlayerGame(playerCode: string | null) {
       return Promise.resolve(false);
     }
   }, [playerCode, currentSession?.id, isSubmittingClaim, claimStatus, claimBingo, tickets]);
+  
+  // Track player presence when we have all required data
+  useEffect(() => {
+    if (!playerCode || !playerId || !currentSession?.id) {
+      return;
+    }
+    
+    // Track player presence to keep them visible in the player list
+    connectionManager.trackPlayerPresence({
+      player_id: playerId,
+      player_code: playerCode,
+      nickname: playerName || playerCode,
+      tickets: tickets
+    });
+    
+  }, [playerCode, playerId, playerName, currentSession?.id, tickets]);
   
   return {
     playerName,

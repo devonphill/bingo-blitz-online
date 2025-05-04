@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -266,7 +265,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
           console.error('Error sending claim broadcast:', error);
           throw error;
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error broadcasting claim:', error);
         setClaimStatus('none');
         setIsSubmittingClaim(false);
@@ -279,7 +278,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
         
         return false;
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error submitting claim:', error);
       setClaimStatus('none');
       setIsSubmittingClaim(false);
