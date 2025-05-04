@@ -160,7 +160,14 @@ export default function PlayerGame() {
       // If we're still disconnected, try to reconnect
       if (newState !== 'connected' && currentSession?.id) {
         logWithTimestamp('PlayerGame: Still disconnected, attempting reconnect');
-        connectionManager.reconnect();
+        // IMPORTANT CHANGE: Call connect() instead of reconnect() to avoid multiple subscriptions
+        if (hookConnectionState === 'connecting') {
+          // We're already connecting, let it complete
+          return;
+        }
+        
+        // This will not attempt to subscribe again if already subscribed
+        connectionManager.connect();
       }
     }, 1000); // Wait 1 second before updating connection state to prevent flickering
     
@@ -179,8 +186,8 @@ export default function PlayerGame() {
     
     logWithTimestamp(`Setting up unified connection management for session ${currentSession.id}`);
     
-    // Connect using the connectionManager
-    connectionManager.initialize(currentSession.id)
+    // Set up event handlers first
+    connectionManager
       .onNumberCalled((lastCalledNumber, calledNumbers) => {
         if (lastCalledNumber && calledNumbers.length > 0) {
           logWithTimestamp(`Received number call update: ${lastCalledNumber}, total: ${calledNumbers.length}`);
@@ -205,16 +212,12 @@ export default function PlayerGame() {
         }
       });
     
-    // Track player presence to keep them online
-    connectionManager.trackPlayerPresence({
-      player_id: playerId,
-      player_code: playerCode,
-      nickname: playerName || playerCode,
-      tickets: tickets
-    });
+    // Now actively connect to the channel
+    // The initialization happens in usePlayerGame, we just need to ensure we're connected here
+    connectionManager.connect();
     
     // No cleanup needed as the connectionManager handles its own lifecycle
-  }, [currentSession?.id, playerCode, playerId, playerName, tickets, toast]);
+  }, [currentSession?.id, playerCode, playerId, toast]);
   
   // Update the finalCalledNumbers whenever our data sources change
   useEffect(() => {

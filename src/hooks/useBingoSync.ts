@@ -43,7 +43,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
     }
   }, [playerCode, sessionId]);
 
-  // Set up connection and game state updates, with debouncing and proper cleanup
+  // Set up game state updates, connection status monitoring, but NOT connection initialization
   useEffect(() => {
     // Skip if we don't have necessary data
     if (!playerCode || !sessionId) {
