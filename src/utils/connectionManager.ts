@@ -32,6 +32,7 @@ class ConnectionManager {
   private ticketsAssignedCallbacks: TicketsAssignedCallback[] = [];
   private connectedState: boolean = false;
   private _heartbeatIntervals: number[] = [];
+  private _playerInfo: any = null;
   
   // Private constructor to enforce singleton
   private constructor() {}
@@ -81,13 +82,21 @@ class ConnectionManager {
   public cleanup(): void {
     if (this.gameUpdatesChannel) {
       logWithTimestamp(`ConnectionManager: Cleaning up game channel for session ${this.sessionId}`);
-      supabase.removeChannel(this.gameUpdatesChannel);
+      try {
+        supabase.removeChannel(this.gameUpdatesChannel);
+      } catch (err) {
+        console.error("Error removing game updates channel:", err);
+      }
       this.gameUpdatesChannel = null;
     }
     
     if (this.presenceChannel) {
       logWithTimestamp(`ConnectionManager: Cleaning up presence channel for session ${this.sessionId}`);
-      supabase.removeChannel(this.presenceChannel);
+      try {
+        supabase.removeChannel(this.presenceChannel);
+      } catch (err) {
+        console.error("Error removing presence channel:", err);
+      }
       this.presenceChannel = null;
     }
     
@@ -98,6 +107,7 @@ class ConnectionManager {
     }
     
     this.connectedState = false;
+    this._playerInfo = null;
     this.sessionId = null;
   }
   
@@ -111,10 +121,18 @@ class ConnectionManager {
       return;
     }
     
+    // Store player info for re-tracking
+    const playerInfo = this._playerInfo;
+    
     // Clean up existing connections and set up new ones
     const sessionId = this.sessionId;
     this.cleanup();
     this.initialize(sessionId);
+    
+    // Re-track player presence if we had player info
+    if (playerInfo) {
+      this.trackPlayerPresence(playerInfo);
+    }
   }
   
   /**
@@ -204,7 +222,13 @@ class ConnectionManager {
     logWithTimestamp(`ConnectionManager: Setting up presence channel for session ${this.sessionId}`);
     
     // Create the channel
-    this.presenceChannel = supabase.channel(`presence-${this.sessionId}`);
+    this.presenceChannel = supabase.channel(`presence-${this.sessionId}`, {
+      config: {
+        presence: {
+          key: `player-presence-${Date.now()}`  // Make sure each presence is uniquely keyed
+        }
+      }
+    });
     
     // Set up presence sync
     this.presenceChannel
@@ -254,11 +278,17 @@ class ConnectionManager {
         // Someone left
         logWithTimestamp(`ConnectionManager: Player left: ${key}`);
       })
-      .subscribe();
-      
-    // Track our own presence if we have player info
-    // This is commented out as it would depend on player info which this class doesn't have
-    // If needed, we can add a method to track presence for a specific player
+      .subscribe((status) => {
+        logWithTimestamp(`ConnectionManager: Presence channel status: ${status}`);
+        
+        if (status === 'SUBSCRIBED') {
+          // We're connected to the presence channel
+          if (this._playerInfo) {
+            // Re-track player presence if we have info
+            this.presenceChannel.track(this._playerInfo);
+          }
+        }
+      });
   }
   
   /**
@@ -310,33 +340,45 @@ class ConnectionManager {
     
     logWithTimestamp(`ConnectionManager: Tracking presence for player ${playerInfo.player_code}`);
     
-    // Send presence heartbeat every 30 seconds to keep connection alive
-    const heartbeatInterval = setInterval(() => {
-      if (this.presenceChannel && this.connectedState) {
-        this.presenceChannel.send({
-          type: 'broadcast',
-          event: 'heartbeat',
-          payload: {
-            player_code: playerInfo.player_code,
-            timestamp: new Date().toISOString()
-          }
-        }).catch(err => {
-          console.error("Heartbeat error:", err);
-        });
-      }
-    }, 30000);
-    
-    // Track the player's presence with all relevant info
-    this.presenceChannel.track({
+    // Store player info for reconnection
+    this._playerInfo = {
       user_id: playerInfo.player_id,
       player_code: playerInfo.player_code,
       nickname: playerInfo.nickname,
       tickets: playerInfo.tickets || [],
       joined_at: new Date().toISOString()
-    });
+    };
+    
+    // Send presence heartbeat every 20 seconds to keep connection alive
+    const heartbeatInterval = window.setInterval(() => {
+      if (this.presenceChannel && this.connectedState) {
+        try {
+          this.presenceChannel.send({
+            type: 'broadcast',
+            event: 'heartbeat',
+            payload: {
+              player_code: playerInfo.player_code,
+              timestamp: new Date().toISOString()
+            }
+          }).catch((err: any) => {
+            console.error("Heartbeat error:", err);
+          });
+        } catch (err) {
+          console.error("Error sending heartbeat:", err);
+        }
+      }
+    }, 20000);
+    
+    // Track the player's presence with all relevant info
+    try {
+      this.presenceChannel.track(this._playerInfo);
+    } catch (err) {
+      console.error("Error tracking player presence:", err);
+      // Try to reconnect
+      setTimeout(() => this.reconnect(), 1000);
+    }
     
     // Store the heartbeat interval for cleanup
-    this._heartbeatIntervals = this._heartbeatIntervals || [];
     this._heartbeatIntervals.push(heartbeatInterval);
   }
   
@@ -402,22 +444,27 @@ class ConnectionManager {
       const channel = supabase.channel(`number-broadcast-${targetSessionId}`);
       await channel.subscribe();
       
-      // Send the broadcast
-      await channel.send({
-        type: 'broadcast',
-        event: 'number-called',
-        payload: {
-          number,
-          calledNumbers,
-          sessionId: targetSessionId,
-          timestamp: new Date().toISOString()
-        }
-      });
-      
-      // Clean up the channel
-      supabase.removeChannel(channel);
-      
-      return true;
+      try {
+        // Send the broadcast
+        await channel.send({
+          type: 'broadcast',
+          event: 'number-called',
+          payload: {
+            number,
+            calledNumbers,
+            sessionId: targetSessionId,
+            timestamp: new Date().toISOString()
+          }
+        });
+        
+        // Clean up the channel
+        supabase.removeChannel(channel);
+        
+        return true;
+      } catch (err) {
+        console.error("Error sending number call broadcast:", err);
+        return false;
+      }
     } catch (err) {
       console.error("Error calling number:", err);
       return false;
@@ -488,23 +535,28 @@ class ConnectionManager {
       const channel = supabase.channel(`claims-${claim.session_id}-${claim.player_id}`);
       await channel.subscribe();
       
-      // Send the broadcast
-      await channel.send({
-        type: 'broadcast',
-        event: 'claim-result',
-        payload: {
-          claimId: claim.id,
-          playerId: claim.player_id,
-          sessionId: claim.session_id,
-          result: isValid ? 'valid' : 'invalid',
-          timestamp: new Date().toISOString()
-        }
-      });
-      
-      // Clean up the channel
-      supabase.removeChannel(channel);
-      
-      return true;
+      try {
+        // Send the broadcast
+        await channel.send({
+          type: 'broadcast',
+          event: 'claim-result',
+          payload: {
+            claimId: claim.id,
+            playerId: claim.player_id,
+            sessionId: claim.session_id,
+            result: isValid ? 'valid' : 'invalid',
+            timestamp: new Date().toISOString()
+          }
+        });
+        
+        // Clean up the channel
+        supabase.removeChannel(channel);
+        
+        return true;
+      } catch (err) {
+        console.error("Error broadcasting claim validation:", err);
+        return false;
+      }
     } catch (err) {
       console.error("Error validating claim:", err);
       return false;

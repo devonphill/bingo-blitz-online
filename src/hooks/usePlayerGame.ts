@@ -356,19 +356,39 @@ export function usePlayerGame(playerCode: string | null) {
     }
   }, [playerCode, currentSession?.id, isSubmittingClaim, claimStatus, claimBingo, tickets]);
   
-  // Track player presence when we have all required data
+  // Track player presence when we have all required data - fix this implementation
   useEffect(() => {
     if (!playerCode || !playerId || !currentSession?.id) {
       return;
     }
     
+    logWithTimestamp(`usePlayerGame: Setting up player presence tracking for ${playerName || playerCode}`);
+    
     // Track player presence to keep them visible in the player list
+    // This is the critical part that ensures the player stays connected
     connectionManager.trackPlayerPresence({
       player_id: playerId,
       player_code: playerCode,
       nickname: playerName || playerCode,
       tickets: tickets
     });
+    
+    // Re-track player presence every 60 seconds as an additional safeguard
+    const presenceInterval = setInterval(() => {
+      logWithTimestamp(`usePlayerGame: Refreshing player presence for ${playerName || playerCode}`);
+      
+      connectionManager.trackPlayerPresence({
+        player_id: playerId,
+        player_code: playerCode,
+        nickname: playerName || playerCode,
+        tickets: tickets
+      });
+    }, 60000);
+    
+    // Clean up on unmount
+    return () => {
+      clearInterval(presenceInterval);
+    };
     
   }, [playerCode, playerId, playerName, currentSession?.id, tickets]);
   
