@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useCallback } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -30,8 +29,6 @@ interface PlayerGameContentProps {
   claimStatus?: 'none' | 'pending' | 'valid' | 'invalid';
   gameType?: string;
 }
-
-type GameTypePlayspaceClaimStatus = 'pending' | 'rejected' | 'validated';
 
 export default function PlayerGameContent({
   tickets,
@@ -112,7 +109,7 @@ export default function PlayerGameContent({
           
           // Update connection state
           setIsConnected(true);
-          setConnectionStatus('connected');
+          setConnectionStatus('connected'); // Fix: use setConnectionStatus instead of setConnectionState
           
           // Update numbers from progress if available
           if (progress?.called_numbers?.length > 0) {
@@ -223,8 +220,8 @@ export default function PlayerGameContent({
   };
 
   // Convert the claimStatus prop to the type required by GameTypePlayspace
-  // FIX: Map claim status values properly to avoid type errors
-  const mapClaimStatus = (status: 'none' | 'pending' | 'valid' | 'invalid'): GameTypePlayspaceClaimStatus => {
+  // FIX: Map claim status values properly for GameTypePlayspace
+  const mapClaimStatus = (status: 'none' | 'pending' | 'valid' | 'invalid'): 'pending' | 'rejected' | 'validated' => {
     switch (status) {
       case 'valid':
         return 'validated';

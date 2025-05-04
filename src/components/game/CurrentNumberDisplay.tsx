@@ -1,6 +1,7 @@
 
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { logWithTimestamp } from "@/utils/logUtils";
 
 interface CurrentNumberDisplayProps {
   number: number | null;
@@ -20,6 +21,9 @@ export default function CurrentNumberDisplay({
   const [prevNumber, setPrevNumber] = useState<number | null>(null);
   
   useEffect(() => {
+    // Log for debugging
+    logWithTimestamp(`CurrentNumberDisplay: Received number ${number}, prev was ${prevNumber}, isNew: ${isNew}`);
+    
     // Only animate when the number actually changes
     if (number !== null && number !== prevNumber) {
       setPrevNumber(number);
@@ -52,7 +56,7 @@ export default function CurrentNumberDisplay({
       
       <AnimatePresence mode="wait">
         <motion.div
-          key={`number-${number}`}
+          key={`number-${number}-${Date.now()}`} {/* Add timestamp to force re-render */}
           initial={isNew ? { scale: 0.8, opacity: 0 } : { scale: 1, opacity: 1 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.8, opacity: 0 }}

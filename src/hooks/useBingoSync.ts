@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -223,20 +222,18 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
           // Continue anyway to try the broadcast
         }
         
-        // CRITICAL FIX: Use the shared game channel name for claim broadcasts
+        // Use the shared game channel name for claim broadcasts
         const channel = supabase.channel(`game-updates-${sessionId}`);
-        await channel.subscribe();
         
         try {
-          // Send the claim broadcast
+          // Subscribe first, then send message
+          await channel.subscribe();
+          
+          // Send the claim broadcast with proper Promise handling
           await channel.send({
             type: 'broadcast',
             event: 'bingo-claim',
             payload: claimData
-          })
-          .catch((error) => {
-            console.error('Error sending claim broadcast:', error);
-            throw error;
           });
           
           logWithTimestamp('Claim broadcast sent successfully');
@@ -268,7 +265,9 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
           return true;
         } catch (error) {
           console.error('Error sending claim broadcast:', error);
-          throw error;
+          setClaimStatus('none');
+          setIsSubmittingClaim(false);
+          return false;
         }
       } catch (error: any) {
         console.error('Error broadcasting claim:', error);
