@@ -15,11 +15,9 @@ export default function PlayerGame() {
   const navigate = useNavigate();
   const { toast } = useToast();
   
-  // Initialize playerCode state immediately
+  // Initialize states early
   const [playerCode, setPlayerCode] = useState<string | null>(null);
   const [loadingPlayerCode, setLoadingPlayerCode] = useState(true);
-
-  // Define these variables early to avoid reference errors
   const [finalCalledNumbers, setFinalCalledNumbers] = useState<number[]>([]);
   const [finalLastCalledNumber, setFinalLastCalledNumber] = useState<number | null>(null);
   
@@ -136,7 +134,7 @@ export default function PlayerGame() {
     setFinalLastCalledNumber(updatedLastCalledNumber);
   }, [sessionProgress, calledItems, lastCalledItem]);
   
-  // Handle bingo claims
+  // Handle bingo claims - select the best ticket for claiming
   const handleClaimBingo = useCallback(() => {
     if (!tickets || tickets.length === 0) {
       console.log("Cannot claim bingo: no tickets available");
@@ -159,7 +157,7 @@ export default function PlayerGame() {
     // Use the best ticket for the claim
     const bestTicket = sortedTickets[0];
     
-    console.log("Claiming bingo with ticket:", bestTicket);
+    console.log("Claiming bingo with best ticket:", bestTicket);
     
     // Try to claim bingo
     return submitBingoClaim(bestTicket);

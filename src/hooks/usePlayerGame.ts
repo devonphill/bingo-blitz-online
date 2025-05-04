@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useBingoSync } from '@/hooks/useBingoSync';
@@ -297,8 +298,19 @@ export function usePlayerGame(playerCode: string | null) {
         return Promise.resolve(false);
       }
       
+      // Make sure the ticket has all required fields
+      const preparedTicket = {
+        serial: useTicket.serial,
+        perm: useTicket.perm,
+        position: useTicket.position,
+        layoutMask: useTicket.layoutMask || useTicket.layout_mask,
+        numbers: useTicket.numbers
+      };
+      
+      console.log("Submitting claim with ticket:", preparedTicket);
+      
       // Use the bingo sync hook to submit the claim with the ticket data
-      const claimSubmitted = claimBingo(useTicket);
+      const claimSubmitted = claimBingo(preparedTicket);
       
       if (claimSubmitted) {
         // Keep status as pending until we get a response
@@ -307,7 +319,7 @@ export function usePlayerGame(playerCode: string | null) {
         // We'll leave the claim status as pending and let the caller handle further UI feedback
         // In a real app, we might want to set a timeout to reset if we don't hear back
         setTimeout(() => {
-          if (claimStatus === 'pending') {
+          if (isMounted.current && claimStatus === 'pending') {
             setClaimStatus('none');
             setIsSubmittingClaim(false);
           }

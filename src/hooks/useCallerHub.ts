@@ -30,7 +30,7 @@ export function useCallerHub(sessionId: string | undefined) {
         if (payload.payload && payload.payload.sessionId === sessionId) {
           toast({
             title: "New Bingo Claim!",
-            description: `${payload.payload.playerName} has claimed bingo! Check the claims panel.`,
+            description: `${payload.payload.playerName || payload.payload.playerId} has claimed bingo! Check the claims panel.`,
           });
           fetchPendingClaims();
         }
@@ -55,12 +55,13 @@ export function useCallerHub(sessionId: string | undefined) {
     try {
       logWithTimestamp(`Fetching pending claims for session ${sessionId}`);
       
-      // Use the RPC function to get pending claims - updated to use direct query instead of RPC
+      // Query universal_game_logs table for unvalidated claims
       const { data, error } = await supabase
         .from('universal_game_logs')
         .select('*')
         .eq('session_id', sessionId)
-        .is('validated_at', null);
+        .is('validated_at', null)
+        .not('claimed_at', 'is', null);  // Make sure we only get claims
       
       if (error) {
         console.error('Error fetching pending claims:', error);
@@ -88,12 +89,31 @@ export function useCallerHub(sessionId: string | undefined) {
   }, [sessionId, toast]);
   
   // Respond to a claim (valid or rejected)
-  const respondToClaim = useCallback(async (playerCode: string, result: 'valid' | 'rejected') => {
-    if (!sessionId || !playerCode) return false;
+  const respondToClaim = useCallback(async (claimId: string, playerId: string, isValid: boolean) => {
+    if (!sessionId || !playerId) return false;
     
     setIsProcessing(true);
     try {
-      logWithTimestamp(`Responding to claim from player ${playerCode} with result: ${result}`);
+      logWithTimestamp(`Responding to claim from player ${playerId} with result: ${isValid ? 'valid' : 'rejected'}`);
+      
+      // Update the claim in the database
+      const { error } = await supabase
+        .from('universal_game_logs')
+        .update({ 
+          validated_at: new Date().toISOString(),
+          prize_shared: isValid ? true : false  // Only share prize if valid
+        })
+        .eq('id', claimId);
+      
+      if (error) {
+        console.error('Error updating claim:', error);
+        toast({
+          title: "Error",
+          description: `Failed to update claim: ${error.message}`,
+          variant: "destructive"
+        });
+        return false;
+      }
       
       // Broadcast the result to the player
       await supabase
@@ -102,20 +122,20 @@ export function useCallerHub(sessionId: string | undefined) {
           type: 'broadcast',
           event: 'claim-result',
           payload: { 
-            playerId: playerCode,
-            result
+            playerId: playerId,
+            result: isValid ? 'valid' : 'rejected'
           }
         });
       
-      // Remove the claim from pending claims
-      setPendingClaims(prev => prev.filter(claim => claim.player_id !== playerCode));
-      
       toast({
-        title: result === 'valid' ? "Claim Validated" : "Claim Rejected",
-        description: result === 'valid' 
+        title: isValid ? "Claim Validated" : "Claim Rejected",
+        description: isValid 
           ? "The claim has been validated successfully" 
           : "The claim has been rejected"
       });
+      
+      // Refresh the pending claims list
+      await fetchPendingClaims();
       
       return true;
     } catch (err) {
@@ -129,7 +149,7 @@ export function useCallerHub(sessionId: string | undefined) {
     } finally {
       setIsProcessing(false);
     }
-  }, [sessionId, toast]);
+  }, [sessionId, fetchPendingClaims, toast]);
   
   // Change the current active win pattern
   const changePattern = useCallback(async (patternId: string) => {

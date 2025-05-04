@@ -54,9 +54,17 @@ export default function PlayerGameContent({
   const [rtLastCalledNumber, setRtLastCalledNumber] = useState<number | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('connecting');
+  const [activeWinPattern, setActiveWinPattern] = useState<string | null>(null);
   
   // Generate a unique ID for this component instance for better debug logging
   const instanceId = React.useRef(`player-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
+  
+  // Update active win pattern when it changes from props
+  useEffect(() => {
+    if (activeWinPatterns && activeWinPatterns.length > 0 && activeWinPatterns[0] !== activeWinPattern) {
+      setActiveWinPattern(activeWinPatterns[0]);
+    }
+  }, [activeWinPatterns, activeWinPattern]);
   
   // Set up connection manager for real-time number calls
   React.useEffect(() => {
@@ -111,9 +119,14 @@ export default function PlayerGameContent({
             setRtLastCalledNumber(lastNumber);
           }
         }
+        
+        // Update win pattern if available
+        if (progress?.current_win_pattern) {
+          setActiveWinPattern(progress.current_win_pattern);
+        }
       });
       
-    // Listen for FORCE close events
+    // Listen for FORCE close events and other game events
     const eventsChannel = supabase.channel('game-events-listener');
     eventsChannel
       .on('broadcast', { event: 'game-force-closed' }, (payload) => {
@@ -160,6 +173,20 @@ export default function PlayerGameContent({
           });
         }
       })
+      .on('broadcast', { event: 'pattern-change' }, (payload) => {
+        if (payload.payload?.sessionId === currentSession.id) {
+          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Pattern change received: ${payload.payload.pattern}`);
+          
+          // Update active win pattern
+          setActiveWinPattern(payload.payload.pattern);
+          
+          toast({
+            title: "Win Pattern Changed",
+            description: `The new win pattern is: ${payload.payload.pattern}`,
+            duration: 3000
+          });
+        }
+      })
       .subscribe();
       
     // Set up a heartbeat check to monitor connection status
@@ -194,9 +221,14 @@ export default function PlayerGameContent({
     if (rtCalledNumbers.length > 0) {
       logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Real-time called numbers: ${rtCalledNumbers.length}, last: ${rtLastCalledNumber}`);
     }
-  }, [currentSession?.id, playerName, playerCode, rtCalledNumbers, rtLastCalledNumber, isConnected]);
+    
+    if (activeWinPattern) {
+      logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Active win pattern: ${activeWinPattern}`);
+    }
+  }, [currentSession?.id, playerName, playerCode, rtCalledNumbers, rtLastCalledNumber, isConnected, activeWinPattern]);
 
-  const currentWinPattern = activeWinPatterns.length > 0 ? activeWinPatterns[0] : null;
+  // Use the local state for win pattern if available, otherwise fall back to props
+  const currentWinPattern = activeWinPattern || (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
 
   // Merge real-time called numbers with prop values, giving priority to real-time
   const mergedCalledNumbers = rtCalledNumbers.length > 0 

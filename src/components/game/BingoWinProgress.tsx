@@ -40,9 +40,9 @@ export default function BingoWinProgress({
     // Use first ticket for checking win pattern
     const firstTicket = tickets[0];
     
-    if (firstTicket && firstTicket.numbers && firstTicket.layoutMask) {
+    if (firstTicket && firstTicket.numbers && (firstTicket.layoutMask || firstTicket.layout_mask)) {
       numbers = firstTicket.numbers;
-      layoutMask = firstTicket.layoutMask;
+      layoutMask = firstTicket.layoutMask || firstTicket.layout_mask;
     }
   }
   
@@ -60,7 +60,8 @@ export default function BingoWinProgress({
     calledNumbersCount: calledNumbers.length,
     currentWinPattern,
     isClaiming,
-    claimStatus
+    claimStatus,
+    activeWinPatterns
   });
   
   // If we still don't have ticket data, just show the claim button if provided
@@ -68,7 +69,7 @@ export default function BingoWinProgress({
     return (
       <div className="flex items-center justify-between px-4 py-3 bg-white rounded-lg shadow-sm border border-gray-200">
         <span className="font-medium text-gray-700">
-          Win Patterns: {activeWinPatterns.join(', ')}
+          Win Pattern: {currentWinPattern || (activeWinPatterns.length > 0 ? activeWinPatterns[0] : "None")}
         </span>
         
         {handleClaimBingo && (
@@ -110,43 +111,37 @@ export default function BingoWinProgress({
     autoMarking: true
   });
 
-  // We'll prioritize the current win pattern if provided
-  const patternsToCheck = currentWinPattern 
-    ? [currentWinPattern] 
-    : activeWinPatterns;
+  // We'll prioritize the current win pattern if provided, otherwise use activeWinPatterns
+  const actualWinPattern = currentWinPattern || (activeWinPatterns.length > 0 ? activeWinPatterns[0] : "oneLine");
   
-  let minTG = 15; // Default high value
-  let canClaim = false;
+  // Debug log the pattern being used
+  console.log(`Using win pattern for check: ${actualWinPattern}`);
   
-  // Check each pattern
-  patternsToCheck.forEach(pattern => {
-    const result = checkMainstageWinPattern(
-      card,
-      calledNumbers,
-      pattern as 'oneLine' | 'twoLines' | 'fullHouse'
-    );
-    
-    if (result.isWinner) {
-      minTG = 0;
-      canClaim = true;
-    } else if (result.tg < minTG) {
-      minTG = result.tg;
-    }
-  });
+  const result = checkMainstageWinPattern(
+    card,
+    calledNumbers,
+    actualWinPattern as 'oneLine' | 'twoLines' | 'fullHouse'
+  );
+  
+  const canClaim = result.isWinner;
+  const minTG = result.tg;
   
   return (
     <div className="flex items-center justify-between px-4 py-3 bg-white rounded-lg shadow-sm border border-gray-200">
-      <span className={minTG <= 3 ? "font-bold text-green-600" : "font-medium text-gray-700"}>
-        {minTG === 0 
-          ? "Bingo!" 
-          : minTG === 1 
-            ? "1TG" 
-            : minTG === 2 
-              ? "2TG" 
-              : minTG === 3 
-                ? "3TG" 
-                : `${minTG} to go`}
-      </span>
+      <div className="flex flex-col">
+        <span className="text-sm text-gray-600">Current Pattern: <span className="font-semibold">{actualWinPattern}</span></span>
+        <span className={minTG <= 3 ? "font-bold text-green-600" : "font-medium text-gray-700"}>
+          {minTG === 0 
+            ? "Bingo!" 
+            : minTG === 1 
+              ? "1TG" 
+              : minTG === 2 
+                ? "2TG" 
+                : minTG === 3 
+                  ? "3TG" 
+                  : `${minTG} to go`}
+        </span>
+      </div>
       
       {handleClaimBingo && (
         <button

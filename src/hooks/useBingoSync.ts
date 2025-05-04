@@ -1,278 +1,273 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { GameType } from '@/types';
-import { logWithTimestamp, ConnectionManagerClass } from '@/utils/logUtils';
+import { logWithTimestamp } from '@/utils/logUtils';
+import { useToast } from '@/hooks/use-toast';
 
-export interface GameState {
-  gameStatus: string;
-  lastCalledNumber: number | null;
-  calledNumbers: number[];
-  currentWinPattern: string | null;
-  currentPrize: string | null;
-  currentPrizeDescription: string | null;
-}
-
-// Global registry of active connections to prevent duplicates
-const activeConnections = new Map<string, string>();
-
-export function useBingoSync(sessionId: string, playerCode: string, playerName: string = '') {
+export function useBingoSync(sessionId: string, playerId: string, playerName: string) {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [gameState, setGameState] = useState<GameState>({
-    gameStatus: 'pending',
-    lastCalledNumber: null,
-    calledNumbers: [],
-    currentWinPattern: null, 
-    currentPrize: null,
-    currentPrizeDescription: null,
-  });
-
+  const [gameState, setGameState] = useState<any>(null);
+  const { toast } = useToast();
+  
   // Store channel reference
   const channelRef = useRef<any>(null);
   
-  // Use connection manager for better connection stability
-  const connectionManager = useRef(new ConnectionManagerClass());
-  
-  // Create a unique instance ID for this hook instance to track connections
-  const instanceId = useRef<string>(`${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
-  
-  // IMPROVED: Function to properly subscribe to a channel before using presence
-  const subscribeToChannel = useCallback(() => {
-    // Skip if missing required params
-    if (!sessionId || !playerCode) {
-      logWithTimestamp("Missing required params for connection");
-      return () => {};
-    }
-    
-    // Don't reconnect if we're already connecting or in cooldown
-    if (connectionManager.current.isConnecting) {
-      logWithTimestamp("Connection attempt already in progress, skipping redundant attempt");
-      return () => {};
-    }
-    
-    if (connectionManager.current.isInCooldown) {
-      const remainingCooldown = Math.ceil((connectionManager.current.cooldownUntil - Date.now()) / 1000);
-      logWithTimestamp(`In cooldown period, ${remainingCooldown}s remaining before next attempt`);
-      return () => {};
-    }
-    
-    // Check for duplicate connection from this same session/player
-    const connectionKey = `${sessionId}:${playerCode}`;
-    if (activeConnections.has(connectionKey) && activeConnections.get(connectionKey) !== instanceId.current) {
-      logWithTimestamp(`Another active connection exists for ${connectionKey}, skipping`);
-      return () => {};
-    }
-    
-    try {
-      connectionManager.current.startConnection();
-      setConnectionState('connecting');
-      
-      // Register this instance as the active connection
-      activeConnections.set(connectionKey, instanceId.current);
-      
-      // Cleanup any existing channel first
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
       if (channelRef.current) {
-        logWithTimestamp(`Cleaning up existing channel before reconnect`);
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
-      
-      // Create a unique channel name for this session
-      const channelName = `game-updates-${sessionId}`;
-      logWithTimestamp(`Creating realtime channel: ${channelName}`);
-      
-      // Create the channel
-      const channel = supabase.channel(channelName);
-      
-      // CRITICAL: First subscribe to the channel
-      channel.subscribe((status) => {
-        logWithTimestamp(`Channel status: ${status}`);
+    };
+  }, []);
+  
+  // Reconnect function
+  const reconnect = useCallback(() => {
+    logWithTimestamp(`[useBingoSync] Attempting to reconnect for sessionId ${sessionId}, playerId ${playerId}`);
+    setConnectionState('connecting');
+    
+    // Remove existing channel if it exists
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+    
+    // Set up a new connection
+    if (sessionId && playerId) {
+      setupConnection();
+    }
+  }, [sessionId, playerId]);
+
+  // Set up connection
+  const setupConnection = useCallback(() => {
+    if (!sessionId || !playerId) {
+      logWithTimestamp(`[useBingoSync] Cannot setup connection without sessionId and playerId`);
+      setConnectionState('error');
+      setConnectionError('Missing session ID or player ID');
+      return;
+    }
+    
+    logWithTimestamp(`[useBingoSync] Setting up connection for sessionId ${sessionId}, playerId ${playerId}`);
+    setConnectionState('connecting');
+    
+    // Create a new channel with presence support
+    const channel = supabase.channel(`game-${sessionId}`, {
+      config: {
+        presence: {
+          key: playerId,
+        },
+      },
+    });
+    
+    // Track user presence state
+    const presenceState = {
+      user_id: playerId,
+      name: playerName || playerId,
+      online_at: new Date().toISOString(),
+      session_id: sessionId
+    };
+
+    // Listen for game events
+    channel
+      .on('broadcast', { event: 'number-called' }, payload => {
+        logWithTimestamp(`[useBingoSync] Number called event received: ${JSON.stringify(payload.payload)}`);
+        if (payload.payload?.sessionId === sessionId) {
+          setGameState(prevState => ({
+            ...prevState,
+            lastCalledNumber: payload.payload.lastCalledNumber,
+            calledNumbers: payload.payload.calledNumbers || prevState?.calledNumbers || []
+          }));
+          setIsConnected(true);
+          setConnectionState('connected');
+        }
+      })
+      .on('broadcast', { event: 'game-update' }, payload => {
+        logWithTimestamp(`[useBingoSync] Game update received: ${JSON.stringify(payload.payload)}`);
+        if (payload.payload?.sessionId === sessionId) {
+          setGameState(prevState => ({
+            ...prevState,
+            ...payload.payload
+          }));
+          setIsConnected(true);
+          setConnectionState('connected');
+        }
+      })
+      .on('broadcast', { event: 'pattern-change' }, payload => {
+        logWithTimestamp(`[useBingoSync] Pattern change event received: ${JSON.stringify(payload.payload)}`);
+        if (payload.payload?.sessionId === sessionId) {
+          setGameState(prevState => ({
+            ...prevState,
+            currentWinPattern: payload.payload.pattern,
+            currentPrize: payload.payload.prize
+          }));
+          setIsConnected(true);
+          setConnectionState('connected');
+          
+          toast({
+            title: "Win Pattern Changed",
+            description: `The current pattern is now: ${payload.payload.pattern}`,
+            duration: 5000
+          });
+        }
+      })
+      .on('broadcast', { event: 'claim-result' }, payload => {
+        logWithTimestamp(`[useBingoSync] Claim result received: ${JSON.stringify(payload.payload)}`);
+        
+        // Check if this result is for our player
+        if (payload.payload?.playerId === playerId) {
+          const isValid = payload.payload?.result === 'valid';
+          
+          toast({
+            title: isValid ? "Bingo Validated!" : "Claim Rejected",
+            description: isValid 
+              ? "Your bingo claim has been verified by the caller"
+              : "Your claim was rejected by the caller",
+            variant: isValid ? "default" : "destructive",
+            duration: 5000
+          });
+        }
+      })
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        logWithTimestamp(`[useBingoSync] Presence sync: ${JSON.stringify(state)}`);
+        setIsConnected(true);
+        setConnectionState('connected');
+      })
+      .on('presence', { event: 'join' }, ({ newPresences }) => {
+        logWithTimestamp(`[useBingoSync] Presence join: ${JSON.stringify(newPresences)}`);
+        setIsConnected(true);
+        setConnectionState('connected');
+      })
+      .subscribe(status => {
+        logWithTimestamp(`[useBingoSync] Channel subscription status: ${status}`);
         
         if (status === 'SUBSCRIBED') {
-          // Only after subscription is confirmed, try to use presence
-          if (playerCode) {
-            // Now it's safe to track presence
-            channel.track({
-              playerCode,
-              playerName: playerName || playerCode,
-              online_at: new Date().toISOString(),
-              client_type: 'player'
-            }).then(() => {
-              logWithTimestamp('Player presence tracked successfully');
-            }).catch(err => {
-              logWithTimestamp(`Error tracking presence: ${err.message}`);
-            });
-          }
-          
           setIsConnected(true);
           setConnectionState('connected');
           setConnectionError(null);
-          connectionManager.current.endConnection(true);
+          
+          // Once subscribed, track presence
+          channel.track(presenceState).then(() => {
+            logWithTimestamp(`[useBingoSync] Tracked presence for ${playerId}`);
+          });
         } else if (status === 'CHANNEL_ERROR') {
           setIsConnected(false);
           setConnectionState('error');
-          setConnectionError('Channel error connecting to game server');
-          connectionManager.current.endConnection(false);
-          
-          // Schedule reconnect with backoff through manager
-          connectionManager.current.scheduleReconnect(reconnect);
-        } else if (status === 'CLOSED') {
+          setConnectionError('Channel error');
+        } else if (status === 'TIMED_OUT') {
           setIsConnected(false);
-          setConnectionState('disconnected');
-          connectionManager.current.endConnection(false);
-          
-          // Schedule reconnect with backoff through manager
-          connectionManager.current.scheduleReconnect(reconnect);
+          setConnectionState('error');
+          setConnectionError('Connection timed out');
         }
       });
-      
-      // Set up presence handlers for synchronized state
-      channel
-        .on('presence', { event: 'sync' }, () => {
-          const state = channel.presenceState();
-          logWithTimestamp(`Presence sync: ${JSON.stringify(state)}`);
-        })
-        .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-          logWithTimestamp(`Presence join: ${key}, ${JSON.stringify(newPresences)}`);
-        })
-        .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-          logWithTimestamp(`Presence leave: ${key}, ${JSON.stringify(leftPresences)}`);
-        });
-        
-      // Set up broadcast handlers for game events
-      channel
-        .on('broadcast', { event: 'game-update' }, (payload) => {
-          if (payload.payload && payload.payload.sessionId === sessionId) {
-            logWithTimestamp(`Received game update: ${JSON.stringify(payload.payload)}`);
-            
-            // Update game state based on payload
-            setGameState(prevState => ({
-              ...prevState,
-              gameStatus: payload.payload.gameStatus || prevState.gameStatus,
-              currentWinPattern: payload.payload.currentWinPattern || prevState.currentWinPattern,
-              currentPrize: payload.payload.currentPrize || prevState.currentPrize,
-              currentPrizeDescription: payload.payload.currentPrizeDescription || prevState.currentPrizeDescription,
-            }));
-          }
-        })
-        .on('broadcast', { event: 'number-called' }, (payload) => {
-          if (payload.payload && payload.payload.sessionId === sessionId) {
-            logWithTimestamp(`Received number: ${payload.payload.lastCalledNumber}`);
-            
-            // Update called numbers
-            setGameState(prevState => ({
-              ...prevState,
-              lastCalledNumber: payload.payload.lastCalledNumber,
-              calledNumbers: payload.payload.calledNumbers || prevState.calledNumbers,
-            }));
-          }
-        })
-        .on('broadcast', { event: 'pattern-change' }, (payload) => {
-          if (payload.payload && payload.payload.sessionId === sessionId) {
-            logWithTimestamp(`Received pattern change: ${payload.payload.pattern}`);
-            
-            // Update win pattern
-            setGameState(prevState => ({
-              ...prevState,
-              currentWinPattern: payload.payload.pattern,
-            }));
-          }
-        })
-        .on('broadcast', { event: 'claim-result' }, (payload) => {
-          if (payload.payload && payload.payload.playerId === playerCode) {
-            logWithTimestamp(`Received claim result: ${payload.payload.result}`);
-          }
-        });
-      
-      // Store the channel reference
-      channelRef.current = channel;
-      
-      return () => {
-        logWithTimestamp(`Cleaning up channel: ${channelName}`);
-        if (channelRef.current) {
-          supabase.removeChannel(channelRef.current);
-          channelRef.current = null;
-        }
-        
-        // Remove from active connections registry
-        activeConnections.delete(connectionKey);
-      };
-    } catch (error) {
-      logWithTimestamp(`Error setting up realtime channel: ${error}`);
-      setConnectionState('error');
-      setConnectionError(`Failed to connect: ${error}`);
-      connectionManager.current.endConnection(false);
-      
-      // Remove from active connections registry on error
-      activeConnections.delete(connectionKey);
-      
-      return () => {};
-    }
-  }, [sessionId, playerCode, playerName]);
-  
-  // Reconnect function for manual reconnection
-  const reconnect = useCallback(() => {
-    // Reset connection manager state
-    connectionManager.current.forceReconnect();
     
-    setConnectionState('connecting');
-    subscribeToChannel();
-  }, [subscribeToChannel]);
-  
-  // Setup channel on mount and cleanup on unmount
+    // Save channel reference
+    channelRef.current = channel;
+    
+    // Set up a heartbeat for presence
+    const heartbeatInterval = setInterval(() => {
+      if (channelRef.current) {
+        channelRef.current.track(presenceState).catch(error => {
+          console.error('Error updating presence:', error);
+        });
+      }
+    }, 30000); // Every 30 seconds
+    
+    return () => {
+      clearInterval(heartbeatInterval);
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [sessionId, playerId, playerName, toast]);
+
+  // Initialize connection
   useEffect(() => {
-    if (sessionId && playerCode) {
-      setConnectionState('connecting');
-      const cleanup = subscribeToChannel();
-      
-      return () => {
-        logWithTimestamp(`Cleaning up player connection for ${playerCode} from session ${sessionId}`);
-        
-        // Remove from active connections registry
-        const connectionKey = `${sessionId}:${playerCode}`;
-        activeConnections.delete(connectionKey);
-        
-        // Clean up the connection
-        cleanup();
-        
-        // Reset connection manager
-        connectionManager.current.reset();
-      };
+    if (sessionId && playerId) {
+      const cleanup = setupConnection();
+      return cleanup;
     }
-    
-    return () => {};
-  }, [sessionId, playerCode, subscribeToChannel]);
-  
-  // Claim bingo function
-  const claimBingo = useCallback((ticket: any) => {
-    if (!channelRef.current || !isConnected || !playerCode) {
-      logWithTimestamp("Cannot claim bingo: not connected");
+  }, [sessionId, playerId, setupConnection]);
+
+  // Submit bingo claim
+  const claimBingo = useCallback(async (ticketData: any) => {
+    if (!sessionId || !playerId) {
+      logWithTimestamp(`[useBingoSync] Cannot claim bingo without sessionId and playerId`);
       return false;
     }
     
     try {
-      logWithTimestamp(`Sending bingo claim for player: ${playerCode}`);
+      logWithTimestamp(`[useBingoSync] Claiming bingo for sessionId ${sessionId}, playerId ${playerId}`);
       
-      // Include the ticket data for verification
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'bingo_claimed',
-        payload: {
-          playerCode,
-          playerName: playerName || playerCode,
-          ticketData: ticket,
-          timestamp: Date.now()
-        }
+      // First add the claim to the universal_game_logs table
+      const { data, error } = await supabase
+        .from('universal_game_logs')
+        .insert({
+          session_id: sessionId,
+          player_id: playerId,
+          player_name: playerName || playerId,
+          game_type: 'mainstage',
+          win_pattern: gameState?.currentWinPattern || 'oneLine',
+          ticket_serial: ticketData.serial,
+          ticket_perm: ticketData.perm,
+          ticket_position: ticketData.position,
+          ticket_layout_mask: ticketData.layoutMask || ticketData.layout_mask,
+          ticket_numbers: ticketData.numbers,
+          called_numbers: gameState?.calledNumbers || [],
+          last_called_number: gameState?.lastCalledNumber,
+          total_calls: (gameState?.calledNumbers || []).length,
+          claimed_at: new Date().toISOString(),
+          validated_at: null // This will be set by the caller when validated
+        });
+      
+      if (error) {
+        console.error("Error logging claim:", error);
+        toast({
+          title: "Claim Error",
+          description: `Failed to submit claim: ${error.message}`,
+          variant: "destructive"
+        });
+        return false;
+      }
+      
+      // Once logged successfully, broadcast the claim
+      if (channelRef.current) {
+        await channelRef.current.send({
+          type: 'broadcast',
+          event: 'bingo-claim',
+          payload: {
+            sessionId,
+            playerId,
+            playerName: playerName || playerId,
+            ticketData: {
+              serial: ticketData.serial,
+              perm: ticketData.perm,
+              position: ticketData.position,
+              layoutMask: ticketData.layoutMask || ticketData.layout_mask,
+              numbers: ticketData.numbers
+            },
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
+      
+      toast({
+        title: "Claim Submitted",
+        description: "Your bingo claim has been sent to the caller for verification",
+        duration: 5000
       });
       
       return true;
     } catch (error) {
-      logWithTimestamp(`Error claiming bingo: ${error}`);
+      console.error("Error submitting claim:", error);
       return false;
     }
-  }, [isConnected, playerCode, playerName]);
-  
+  }, [sessionId, playerId, playerName, gameState, toast]);
+
   return {
     isConnected,
     connectionState,

@@ -1,9 +1,9 @@
-
 import React, { useState, useEffect } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { supabase } from '@/integrations/supabase/client';
 import { useClaimManagement } from '@/hooks/useClaimManagement';
 import ClaimVerificationModal from '@/components/game/ClaimVerificationModal';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 interface ClaimVerificationSheetProps {
   isOpen: boolean;
@@ -55,18 +55,21 @@ export default function ClaimVerificationSheet({
     }
   }, [playerName]);
 
+  // Fetch pending claims from universal_game_logs
   const fetchClaims = async () => {
     if (!sessionId) return;
     
     setIsLoading(true);
     try {
-      // First check for real-time claims
+      logWithTimestamp(`Fetching claims for session ${sessionId}`);
+      
+      // Get unvalidated claims for this session
       const { data: realtimeClaims, error: realtimeError } = await supabase
         .from('universal_game_logs')
         .select('*')
         .eq('session_id', sessionId)
-        .eq('game_number', gameNumber)
         .is('validated_at', null)
+        .not('claimed_at', 'is', null)
         .order('claimed_at', { ascending: true });
 
       if (realtimeError) {
@@ -80,18 +83,33 @@ export default function ClaimVerificationSheet({
         
         // If there's an active claim, get the player's tickets
         if (realtimeClaims[0]) {
-          const playerCode = realtimeClaims[0].player_id || realtimeClaims[0].player_name;
+          const playerCode = realtimeClaims[0].player_id;
+          const playerName = realtimeClaims[0].player_name || playerCode;
+          
           if (playerCode) {
-            setActiveClaimPlayerName(realtimeClaims[0].player_name || playerCode);
+            setActiveClaimPlayerName(playerName);
             setActiveClaimPlayerCode(playerCode);
-            fetchPlayerTickets(playerCode);
+            
+            // If the claim already has ticket data, use it
+            if (realtimeClaims[0].ticket_serial && realtimeClaims[0].ticket_numbers) {
+              setActiveClaimTickets([{
+                serial: realtimeClaims[0].ticket_serial,
+                perm: realtimeClaims[0].ticket_perm,
+                position: realtimeClaims[0].ticket_position,
+                layout_mask: realtimeClaims[0].ticket_layout_mask,
+                numbers: realtimeClaims[0].ticket_numbers
+              }]);
+              setModalOpen(true);
+            } else {
+              // Otherwise fetch the player's tickets
+              fetchPlayerTickets(playerCode);
+            }
           }
+          
+          setModalOpen(true);
         }
-        
-        setModalOpen(true);
       } else {
         // If no claims were found through the database, try an alternative approach
-        // You could add another fetch method here if needed
         console.log("No pending claims found in database");
         
         // Check if we have a player name passed in props
@@ -109,50 +127,63 @@ export default function ClaimVerificationSheet({
     }
   };
 
+  // Fetch a player's tickets
   const fetchPlayerTickets = async (playerCode: string) => {
     if (!sessionId) return;
     
     try {
-      console.log("Fetching tickets for player code:", playerCode);
+      logWithTimestamp(`Fetching tickets for player ${playerCode}`);
       
-      // First try player_id field
-      const { data: ticketsById, error: errorById } = await supabase
+      // Different approach for UUIDs vs. player codes
+      let queryBy = 'player_id';
+      
+      // Check if it looks like a player code rather than UUID
+      if (playerCode.length < 30 && !playerCode.includes('-')) {
+        console.log("Using player_code query approach");
+        
+        // First find the player's UUID from the player code
+        const { data: playerData, error: playerError } = await supabase
+          .from('players')
+          .select('id')
+          .eq('player_code', playerCode)
+          .single();
+          
+        if (playerError) {
+          console.error("Error finding player by code:", playerError);
+        } else if (playerData) {
+          console.log("Found player by code:", playerData);
+          playerCode = playerData.id;
+        } else {
+          // Continue with original code as fallback
+          console.log("No player found by code, using original code as ID");
+        }
+      }
+      
+      // Get tickets assigned to this player for this session
+      const { data: tickets, error: ticketsError } = await supabase
         .from('assigned_tickets')
         .select('*')
-        .eq('session_id', sessionId);
-        // We intentionally don't filter by player_id here as it might be a playerCode instead
-
-      if (errorById) {
-        console.error("Error fetching player tickets by ID:", errorById);
+        .eq('session_id', sessionId)
+        .eq('player_id', playerCode);
+      
+      if (ticketsError) {
+        console.error("Error fetching player tickets:", ticketsError);
         return;
       }
       
-      // Find tickets that match either the player_id or potentially a player code
-      // This handles both UUID format player IDs and string player codes
-      let matchingTickets: any[] = [];
-      
-      if (ticketsById) {
-        // Filter by playerCode after fetching - this lets us apply our own matching logic
-        matchingTickets = ticketsById.filter(ticket => 
-          ticket.player_id === playerCode || 
-          ticket.player_id?.includes(playerCode)
-        );
+      if (tickets && tickets.length > 0) {
+        console.log(`Found ${tickets.length} tickets for player:`, tickets);
+        setActiveClaimTickets(tickets);
+        setModalOpen(true);
+      } else {
+        console.log("No tickets found for player");
       }
-      
-      // If we found tickets, use them
-      if (matchingTickets.length > 0) {
-        console.log(`Found ${matchingTickets.length} tickets for player:`, matchingTickets);
-        setActiveClaimTickets(matchingTickets);
-        return;
-      }
-      
-      // If no tickets found, try fallback approach
-      console.log("No tickets found using player_id, trying alternative approach");
     } catch (error) {
       console.error("Error fetching player tickets:", error);
     }
   };
 
+  // Validate a claim
   const handleValidClaim = async () => {
     if (!activeClaimPlayerCode || !sessionId || !gameNumber || activeClaimTickets.length === 0) {
       console.error("Missing data for claim validation");
@@ -164,10 +195,11 @@ export default function ClaimVerificationSheet({
       serial: activeClaimTickets[0].serial,
       perm: activeClaimTickets[0].perm,
       position: activeClaimTickets[0].position,
-      layoutMask: activeClaimTickets[0].layout_mask,
+      layoutMask: activeClaimTickets[0].layoutMask || activeClaimTickets[0].layout_mask,
       numbers: activeClaimTickets[0].numbers
     };
     
+    // Validate the claim
     const success = await validateClaim(
       activeClaimPlayerCode,
       activeClaimPlayerName || activeClaimPlayerCode,
@@ -185,6 +217,7 @@ export default function ClaimVerificationSheet({
     }
   };
 
+  // Reject a claim
   const handleFalseClaim = async () => {
     if (!activeClaimPlayerCode || !sessionId || !gameNumber || activeClaimTickets.length === 0) {
       console.error("Missing data for claim rejection");
@@ -196,10 +229,11 @@ export default function ClaimVerificationSheet({
       serial: activeClaimTickets[0].serial,
       perm: activeClaimTickets[0].perm,
       position: activeClaimTickets[0].position,
-      layoutMask: activeClaimTickets[0].layout_mask,
+      layoutMask: activeClaimTickets[0].layoutMask || activeClaimTickets[0].layout_mask,
       numbers: activeClaimTickets[0].numbers
     };
     
+    // Reject the claim
     const success = await rejectClaim(
       activeClaimPlayerCode,
       activeClaimPlayerName || activeClaimPlayerCode,
