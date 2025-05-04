@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -141,8 +142,8 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
           
           // Try to reconnect automatically after timeout
           setTimeout(() => {
-            // Fix for the comparison error - use string type instead of comparing literal types
-            if (connectionState === 'disconnected' || connectionState === 'error') {
+            const currentState = connectionState;
+            if (currentState === 'disconnected' || currentState === 'error') {
               reconnect();
             }
           }, 3000);
@@ -221,8 +222,9 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
             // Heartbeat sent successfully
           }, (err) => {
             console.error('Heartbeat error:', err);
-            // Use type-safe comparison with string values instead of comparing enum-like string literals
-            if (connectionState as string !== 'connecting') {
+            // Convert to string before comparing to avoid TypeScript errors with literal types
+            const currentState = connectionState as string;
+            if (currentState !== 'connecting') {
               setConnectionState('disconnected');
               reconnect();
             }
