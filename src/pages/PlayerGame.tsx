@@ -1,3 +1,4 @@
+
 import React, { useEffect, useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -71,7 +72,7 @@ export default function PlayerGame() {
     initializePlayerCode();
   }, [urlPlayerCode, navigate, toast]);
 
-  // Local state for real-time called numbers - IMPROVED: Separated state for better updates
+  // Local state for real-time called numbers
   const [rtCalledItems, setRtCalledItems] = useState<number[]>([]);
   const [rtLastCalledItem, setRtLastCalledItem] = useState<number | null>(null);
   const [lastUpdateTime, setLastUpdateTime] = useState<number>(Date.now());
@@ -199,44 +200,12 @@ export default function PlayerGame() {
     return submitBingoClaim();
   }, [submitBingoClaim, tickets]);
   
-  // Determine error message with better priority handling
-  // For the waiting room, WebSocket errors should not be blockers
-  const effectiveErrorMessage = playerCode 
-    ? errorMessage || ''
-    : "Player code is required. Please join the game again.";
-
-  // Debug logging with stable dependencies
-  useEffect(() => {
-    console.log("PlayerGame render state:", {
-      playerCode,
-      playerName,
-      isLoading,
-      loadingStep,
-      hasTickets: tickets && tickets.length > 0,
-      hasSession: !!currentSession,
-      sessionState: currentSession?.lifecycle_state,
-      sessionStatus: currentSession?.status,
-      gameState: currentGameState?.status,
-      errorMessage: effectiveErrorMessage,
-      sessionProgress,
-      rtCalledItems: rtCalledItems.length,
-      rtLastCalledItem,
-      connectionState
-    });
-  }, [
-    playerCode, 
-    playerName,
-    isLoading, 
-    loadingStep, 
-    tickets, 
-    currentSession, 
-    currentGameState, 
-    effectiveErrorMessage, 
-    sessionProgress,
-    rtCalledItems,
-    rtLastCalledItem,
-    connectionState
-  ]);
+  // FIX: Only consider player code errors as blocking errors, not connection issues
+  const effectiveErrorMessage = !playerCode 
+    ? "Player code is required. Please join the game again."
+    : (errorMessage && !errorMessage.includes("connection") && !errorMessage.includes("WebSocket")) 
+      ? errorMessage 
+      : '';
 
   // Early return during initial loading - no conditional hooks after this point
   if (loadingPlayerCode) {
@@ -251,7 +220,7 @@ export default function PlayerGame() {
     );
   }
   
-  // Show error if player code is missing
+  // Show error if player code is missing - this should not normally happen with our redirection logic
   if (!playerCode) {
     return (
       <PlayerGameLoader 
@@ -267,26 +236,29 @@ export default function PlayerGame() {
   const isInitialLoading = isLoading && loadingStep !== 'completed';
   const hasTickets = tickets && tickets.length > 0;
   const hasSession = !!currentSession;
-  
+
+  // IMPROVED: Only consider critical errors as blocking, not connection issues
   // Waiting room conditions - show loader if:
   // 1. Still loading
-  // 2. Critical error that prevents loading (but not WebSocket errors)
-  // 3. No session found
-  // 4. Session exists but is not active yet (waiting room)
+  // 2. No session found (but exclude WebSocket connection errors)
+  // 3. Session exists but is not active yet (waiting room)
   const shouldShowLoader = 
     isInitialLoading || 
-    (!hasSession && !!errorMessage) || 
+    (!hasSession && !!effectiveErrorMessage) || // Only block on critical errors
     !hasSession || 
     (!isGameActive || !isGameLive || !isSessionActive);
 
   if (shouldShowLoader) {
     logWithTimestamp(`Showing PlayerGameLoader with game status: ${gameStatus}, session active: ${isSessionActive}, game live: ${isGameLive}`);
     
+    // Pass connection issues as non-blocking warnings
+    const loaderErrorMessage = errorMessage && errorMessage.includes("connection") ? errorMessage : effectiveErrorMessage;
+    
     // Pass session progress to loader
     return (
       <PlayerGameLoader 
         isLoading={isLoading} 
-        errorMessage={errorMessage}
+        errorMessage={loaderErrorMessage}
         currentSession={currentSession}
         loadingStep={loadingStep}
         sessionProgress={sessionProgress}

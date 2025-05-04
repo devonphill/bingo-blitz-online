@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -250,7 +251,7 @@ export function usePlayerGame(playerCode: string | null) {
     
     try {
       // Insert claim record in game logs
-      // Fix: Add the required ticket_serial field
+      // Add the required ticket_serial field
       const { error: logError } = await supabase.from('universal_game_logs').insert({
         session_id: currentSession.id,
         game_number: currentSession.current_game,
@@ -266,7 +267,7 @@ export function usePlayerGame(playerCode: string | null) {
         ticket_layout_mask: 0,
         ticket_perm: 0,
         total_calls: calledItems ? calledItems.length : 0,
-        ticket_serial: 'auto-generated' // Adding the missing required field
+        ticket_serial: 'auto-generated' // Adding the required field
       });
       
       if (logError) {
