@@ -30,7 +30,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
     
     try {
       // Use connection manager to fetch claims
-      const fetchedClaims = await connectionManager.fetchClaims();
+      const fetchedClaims = await connectionManager.fetchClaims(sessionId);
       
       if (Array.isArray(fetchedClaims) && fetchedClaims.length > 0) {
         logWithTimestamp(`Found ${fetchedClaims.length} pending claims`);
@@ -66,19 +66,23 @@ export function useCallerClaimManagement(sessionId: string | null) {
       logWithTimestamp(`Validating claim ${claim.id}, result: ${isValid ? 'valid' : 'rejected'}`);
       
       // Use connection manager to validate the claim
-      await connectionManager.validateClaim(claim, isValid);
+      const result = await connectionManager.validateClaim(claim, isValid);
       
-      // Show toast notification
-      toast({
-        title: isValid ? "Claim Verified" : "Claim Rejected",
-        description: isValid 
-          ? "The player's claim has been verified as valid." 
-          : "The player's claim has been rejected.",
-        duration: 3000
-      });
+      if (result) {
+        // Show toast notification
+        toast({
+          title: isValid ? "Claim Verified" : "Claim Rejected",
+          description: isValid 
+            ? "The player's claim has been verified as valid." 
+            : "The player's claim has been rejected.",
+          duration: 3000
+        });
       
-      // Refresh claims
-      fetchClaims();
+        // Refresh claims
+        fetchClaims();
+      } else {
+        throw new Error("Failed to validate claim");
+      }
     } catch (err) {
       console.error('Error validating claim:', err);
       toast({

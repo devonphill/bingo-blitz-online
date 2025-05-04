@@ -27,7 +27,7 @@ interface PlayerGameContentProps {
   errorMessage: string;
   isLoading: boolean;
   isClaiming?: boolean;
-  claimStatus?: 'pending' | 'validated' | 'rejected' | 'none';
+  claimStatus?: 'pending' | 'rejected' | 'validated' | 'none';
   gameType?: string;
 }
 
@@ -221,11 +221,11 @@ export default function PlayerGameContent({
   };
 
   // Convert the claimStatus to the type required by GameTypePlayspace
-  // Always use 'pending' if the value is 'none' since GameTypePlayspace doesn't accept 'none'
+  // This fixes the type error by ensuring we never pass 'none' to GameTypePlayspace
   const gameTypePlayspaceClaimStatus: 'validated' | 'rejected' | 'pending' = 
     claimStatus === 'validated' ? 'validated' :
     claimStatus === 'rejected' ? 'rejected' :
-    'pending'; // Default to pending instead of 'none'
+    'pending'; // Default to pending for 'none' or any other value
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
@@ -292,4 +292,3 @@ export default function PlayerGameContent({
     </div>
   );
 }
-

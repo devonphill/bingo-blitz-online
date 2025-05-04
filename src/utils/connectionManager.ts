@@ -326,6 +326,163 @@ class ConnectionManager {
   public getSessionId(): string | null {
     return this.sessionId;
   }
+
+  /**
+   * Call a number for a bingo game
+   * @param number The number to call
+   * @param sessionId The session ID
+   */
+  public async callNumber(number: number, sessionId: string | null = null): Promise<boolean> {
+    const targetSessionId = sessionId || this.sessionId;
+    if (!targetSessionId) {
+      logWithTimestamp("ConnectionManager: Cannot call number - no session ID");
+      return false;
+    }
+
+    try {
+      logWithTimestamp(`ConnectionManager: Calling number ${number} for session ${targetSessionId}`);
+      
+      // First, update the database with the new called number
+      const { data: progressData, error: progressError } = await supabase
+        .from('sessions_progress')
+        .select('called_numbers')
+        .eq('session_id', targetSessionId)
+        .single();
+      
+      if (progressError) {
+        console.error("Error fetching current called numbers:", progressError);
+        return false;
+      }
+      
+      // Get the current called numbers and add the new one
+      const calledNumbers = progressData?.called_numbers || [];
+      if (!calledNumbers.includes(number)) {
+        calledNumbers.push(number);
+      }
+      
+      // Update the database
+      const { error: updateError } = await supabase
+        .from('sessions_progress')
+        .update({ called_numbers: calledNumbers })
+        .eq('session_id', targetSessionId);
+      
+      if (updateError) {
+        console.error("Error updating called numbers:", updateError);
+        return false;
+      }
+      
+      // Broadcast the number to all clients
+      const channel = supabase.channel(`number-broadcast-${targetSessionId}`);
+      await channel.subscribe();
+      
+      // Send the broadcast
+      await channel.send({
+        type: 'broadcast',
+        event: 'number-called',
+        payload: {
+          number,
+          calledNumbers,
+          sessionId: targetSessionId,
+          timestamp: new Date().toISOString()
+        }
+      });
+      
+      // Clean up the channel
+      supabase.removeChannel(channel);
+      
+      return true;
+    } catch (err) {
+      console.error("Error calling number:", err);
+      return false;
+    }
+  }
+
+  /**
+   * Fetch pending claims for a session
+   * @returns Array of pending claims
+   */
+  public async fetchClaims(sessionId: string | null = null): Promise<any[]> {
+    const targetSessionId = sessionId || this.sessionId;
+    if (!targetSessionId) {
+      logWithTimestamp("ConnectionManager: Cannot fetch claims - no session ID");
+      return [];
+    }
+
+    try {
+      // Query the database for pending claims
+      const { data, error } = await supabase
+        .from('universal_game_logs')
+        .select('*')
+        .eq('session_id', targetSessionId)
+        .is('validated_at', null)
+        .not('claimed_at', 'is', null);
+      
+      if (error) {
+        console.error("Error fetching claims:", error);
+        return [];
+      }
+      
+      return data || [];
+    } catch (err) {
+      console.error("Error fetching claims:", err);
+      return [];
+    }
+  }
+
+  /**
+   * Validate a claim as valid or invalid
+   * @param claim The claim to validate
+   * @param isValid Whether the claim is valid
+   */
+  public async validateClaim(claim: any, isValid: boolean): Promise<boolean> {
+    if (!this.sessionId) {
+      logWithTimestamp("ConnectionManager: Cannot validate claim - no session ID");
+      return false;
+    }
+
+    try {
+      logWithTimestamp(`ConnectionManager: Validating claim ${claim.id} as ${isValid ? 'valid' : 'invalid'}`);
+      
+      // Update the claim in the database
+      const { error } = await supabase
+        .from('universal_game_logs')
+        .update({
+          validated_at: new Date().toISOString(),
+          validation_result: isValid ? 'valid' : 'invalid'
+        })
+        .eq('id', claim.id);
+      
+      if (error) {
+        console.error("Error validating claim:", error);
+        return false;
+      }
+      
+      // Broadcast the result to the player
+      const channel = supabase.channel(`claims-${claim.session_id}-${claim.player_id}`);
+      await channel.subscribe();
+      
+      // Send the broadcast
+      await channel.send({
+        type: 'broadcast',
+        event: 'claim-result',
+        payload: {
+          claimId: claim.id,
+          playerId: claim.player_id,
+          sessionId: claim.session_id,
+          result: isValid ? 'valid' : 'invalid',
+          timestamp: new Date().toISOString()
+        }
+      });
+      
+      // Clean up the channel
+      supabase.removeChannel(channel);
+      
+      return true;
+    } catch (err) {
+      console.error("Error validating claim:", err);
+      return false;
+    }
+  }
 }
 
 // Export a singleton instance

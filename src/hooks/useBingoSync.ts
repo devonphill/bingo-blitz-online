@@ -227,12 +227,14 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
         const channel = supabase.channel(`bingo-claim-${sessionId}`);
         await channel.subscribe();
         
-        // Send the claim broadcast
-        await channel.send({
-          type: 'broadcast',
-          event: 'bingo-claim',
-          payload: claimData
-        }).then(() => {
+        try {
+          // Send the claim broadcast
+          await channel.send({
+            type: 'broadcast',
+            event: 'bingo-claim',
+            payload: claimData
+          });
+          
           logWithTimestamp('Claim broadcast sent successfully');
           
           // Clean up the temporary channel
@@ -260,12 +262,10 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
           }, 10000);
           
           return true;
-        }).catch(error => {
+        } catch (error) {
           console.error('Error sending claim broadcast:', error);
           throw error;
-        });
-        
-        return true;
+        }
       } catch (error) {
         console.error('Error broadcasting claim:', error);
         setClaimStatus('none');

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -90,7 +89,7 @@ export function LiveGameView({
     const fetchClaims = async () => {
       if (sessionId) {
         try {
-          const fetchedClaims = await connectionManager.fetchClaims();
+          const fetchedClaims = await connectionManager.fetchClaims(sessionId);
           if (Array.isArray(fetchedClaims)) {
             setClaims(fetchedClaims);
           } else {
@@ -192,7 +191,15 @@ export function LiveGameView({
     console.log(`Calling number: ${number}`);
     
     // Call through connection manager
-    connectionManager.callNumber(number, sessionId);
+    connectionManager.callNumber(number, sessionId)
+      .then(success => {
+        if (!success) {
+          console.error("Failed to call number through connection manager");
+        }
+      })
+      .catch(err => {
+        console.error("Error calling number through connection manager:", err);
+      });
     
     // Also call through the traditional method for backward compatibility
     onCallNumber(number);

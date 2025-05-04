@@ -100,7 +100,15 @@ export default function CallerControls({
       
       // Also use the connection manager for database persistence
       if (connectionManager) {
-        connectionManager.callNumber(number, sessionId);
+        connectionManager.callNumber(number, sessionId)
+          .then(success => {
+            if (!success) {
+              console.error("Failed to call number through connection manager");
+            }
+          })
+          .catch(err => {
+            console.error("Error calling number through connection manager:", err);
+          });
       }
       
       onCallNumber(number);
