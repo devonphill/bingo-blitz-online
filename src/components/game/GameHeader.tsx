@@ -7,7 +7,16 @@ export interface GameHeaderProps {
   playerCode: string;
   currentGameNumber: number;
   numberOfGames: number;
-  gameType: string; // Add gameType prop
+  gameType: string;
+  // Adding the props that are being passed from PlayerGameContent
+  sessionName?: string;
+  accessCode?: string;
+  activeWinPattern?: string;
+  autoMarking?: boolean;
+  setAutoMarking?: (value: boolean) => void;
+  isConnected?: boolean;
+  connectionState?: 'disconnected' | 'connecting' | 'connected' | 'error';
+  onReconnect?: () => void;
 }
 
 export default function GameHeader({
@@ -15,7 +24,16 @@ export default function GameHeader({
   playerCode,
   currentGameNumber,
   numberOfGames,
-  gameType
+  gameType,
+  // Optional props with defaults
+  sessionName,
+  accessCode = playerCode,
+  activeWinPattern,
+  autoMarking,
+  setAutoMarking,
+  isConnected,
+  connectionState = 'connected',
+  onReconnect
 }: GameHeaderProps) {
   // Format the game type
   const formattedGameType = gameType === 'mainstage' ? '90-Ball' : gameType === '75-ball' ? '75-Ball' : gameType;

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -359,8 +358,8 @@ export default function PlayerGame() {
   
   // Map the claimStatus to the expected format
   const mappedClaimStatus = claimStatus === 'valid' ? 'validated' : 
-                          claimStatus === 'invalid' ? 'rejected' : 
-                          claimStatus;
+                           claimStatus === 'invalid' ? 'rejected' : 
+                           claimStatus === 'pending' ? 'pending' : undefined;
 
   return (
     <React.Fragment>
@@ -380,7 +379,7 @@ export default function PlayerGame() {
         errorMessage={effectiveErrorMessage || ''}
         isLoading={isLoading}
         isClaiming={isSubmittingClaim}
-        claimStatus={mappedClaimStatus as any}
+        claimStatus={mappedClaimStatus}
         gameType={gameType}
         currentGameNumber={currentGameNumber}
         numberOfGames={numberOfGames}
