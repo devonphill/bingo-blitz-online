@@ -18,6 +18,10 @@ export default function PlayerGame() {
   // Initialize playerCode state immediately
   const [playerCode, setPlayerCode] = useState<string | null>(null);
   const [loadingPlayerCode, setLoadingPlayerCode] = useState(true);
+
+  // Define these variables early to avoid reference errors
+  const [finalCalledNumbers, setFinalCalledNumbers] = useState<number[]>([]);
+  const [finalLastCalledNumber, setFinalLastCalledNumber] = useState<number | null>(null);
   
   // Handle player code initialization - only run once on mount
   useEffect(() => {
@@ -119,6 +123,18 @@ export default function PlayerGame() {
   
   // Always initialize tickets hook with the same parameters, even if it will not be used
   const { tickets } = useTickets(playerCode, currentSession?.id);
+
+  // Update the finalCalledNumbers whenever our data sources change
+  useEffect(() => {
+    // Use sessionProgress for most up-to-date data
+    const updatedCalledNumbers = sessionProgress?.called_numbers || calledItems || [];
+    setFinalCalledNumbers(updatedCalledNumbers);
+    
+    const updatedLastCalledNumber = updatedCalledNumbers.length > 0 
+      ? updatedCalledNumbers[updatedCalledNumbers.length - 1] 
+      : lastCalledItem;
+    setFinalLastCalledNumber(updatedLastCalledNumber);
+  }, [sessionProgress, calledItems, lastCalledItem]);
   
   // Handle bingo claims
   const handleClaimBingo = useCallback(() => {
@@ -222,13 +238,6 @@ export default function PlayerGame() {
       </div>
     );
   }
-
-  // Use sessionProgress for most up-to-date data
-  const finalCalledNumbers = sessionProgress?.called_numbers || calledItems || [];
-  
-  const finalLastCalledNumber = finalCalledNumbers.length > 0 
-    ? finalCalledNumbers[finalCalledNumbers.length - 1] 
-    : lastCalledItem;
   
   const currentWinPattern = sessionProgress?.current_win_pattern || 
                            (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
