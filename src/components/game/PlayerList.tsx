@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Loader, Users, RefreshCw } from "lucide-react";
@@ -30,14 +29,10 @@ const PlayerList: React.FC<PlayerListProps> = ({
 }) => {
   const [players, setPlayers] = useState(initialPlayers);
   const [isLoading, setIsLoading] = useState(initialLoading);
-  // Use a ref to avoid stale closures in event handlers
-  const playersRef = React.useRef(initialPlayers);
   
-  // Update ref when players prop changes
-  React.useEffect(() => {
-    playersRef.current = initialPlayers;
-  }, [initialPlayers]);
-
+  // Use a ref to keep track of the last known players to prevent redundant updates
+  const lastPlayersRef = React.useRef<string>('');
+  
   // Track if component is mounted
   const isMounted = React.useRef(true);
   
@@ -53,12 +48,11 @@ const PlayerList: React.FC<PlayerListProps> = ({
     
     setIsLoading(true);
     
-    // Only add listener for players updates from connectionManager
-    // This ensures we don't create a new channel, we just listen to the existing one
-    const playersUpdateCallback = (activePlayers: any[]) => {
+    // Define callback to handle player updates from connection manager
+    const handlePlayersUpdate = (activePlayers: any[]) => {
       if (!isMounted.current) return;
       
-      if (activePlayers && activePlayers.length > 0) {
+      if (activePlayers?.length >= 0) {
         logWithTimestamp(`PlayerList: Received ${activePlayers.length} active players update`);
         
         // Format the player data for display
@@ -72,31 +66,26 @@ const PlayerList: React.FC<PlayerListProps> = ({
           tickets: player.tickets
         }));
         
-        // Only set players if they've actually changed to avoid render loops
-        const playersJson = JSON.stringify(formattedPlayers);
-        const currentJson = JSON.stringify(playersRef.current);
+        // Create a string representation for comparison
+        const currentPlayersJson = JSON.stringify(formattedPlayers);
         
-        if (playersJson !== currentJson) {
+        // Only update state if players have actually changed
+        if (currentPlayersJson !== lastPlayersRef.current) {
+          lastPlayersRef.current = currentPlayersJson;
           setPlayers(formattedPlayers);
-          playersRef.current = formattedPlayers;
-          
           logWithTimestamp(`PlayerList: Updated with ${formattedPlayers.length} players`);
         }
         
         setIsLoading(false);
-      } else {
-        // If we got an empty array, we should still update
-        setPlayers([]);
-        playersRef.current = [];
-        setIsLoading(false);
       }
     };
 
-    // Add the callback to the connection manager
-    connectionManager.onPlayersUpdate(playersUpdateCallback);
+    // Register the callback with connection manager
+    // We'll only register it once, avoiding multiple handlers
+    connectionManager.onPlayersUpdate(handlePlayersUpdate);
     
-    // Initial players load from database - only once on mount
-    const fetchPlayers = async () => {
+    // Initial players load from database
+    const fetchInitialPlayers = async () => {
       try {
         const { data, error } = await supabase
           .from('players')
@@ -119,10 +108,13 @@ const PlayerList: React.FC<PlayerListProps> = ({
             tickets: p.tickets
           }));
           
-          // Only update if the component is still mounted
-          setPlayers(formattedPlayers);
-          playersRef.current = formattedPlayers;
-          logWithTimestamp(`PlayerList: Fetched ${formattedPlayers.length} players from database`);
+          // Set players if we got data
+          const currentPlayersJson = JSON.stringify(formattedPlayers);
+          if (currentPlayersJson !== lastPlayersRef.current) {
+            lastPlayersRef.current = currentPlayersJson;
+            setPlayers(formattedPlayers);
+            logWithTimestamp(`PlayerList: Loaded ${formattedPlayers.length} players from database`);
+          }
         }
       } catch (err) {
         console.error('Error in player fetch:', err);
@@ -134,15 +126,11 @@ const PlayerList: React.FC<PlayerListProps> = ({
     };
 
     // Execute the fetch
-    fetchPlayers();
+    fetchInitialPlayers();
     
-    // Request a reconnect to ensure we're connected to the latest data
-    // This will trigger presence updates through the existing channel
-    connectionManager.reconnect();
-    
-    // No need for cleanup, the connectionManager handles it
     return () => {
-      // Nothing to do here
+      // No explicit cleanup needed for the connection manager callbacks
+      // as we're not adding new handlers on each render
     };
   }, [sessionId]);
 
@@ -170,43 +158,26 @@ const PlayerList: React.FC<PlayerListProps> = ({
             onClick={onReconnect}
           >
             <RefreshCw className="h-3 w-3" />
-            Refresh Players
+            Refresh
           </Button>
         )}
       </div>
     );
   }
 
+  // Display connected players
   return (
-    <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto">
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-sm text-gray-500">Connected players ({players.length})</span>
-        <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
-          {players.length} Online
-        </Badge>
-      </div>
-
-      {players.map((player, idx) => (
-        <div key={player.id || player.clientId || player.playerCode || idx} className="bg-gray-50 p-3 rounded-md">
-          <div className="font-medium flex items-center justify-between">
-            {player.nickname || player.playerName || player.playerCode}
-            <Badge variant="outline" className="text-xs ml-1 bg-green-50 text-green-700 border-green-200">
-              Online
-            </Badge>
-          </div>
-          <div className="text-xs text-gray-500">
-            Joined {player.joinedAt ? new Date(player.joinedAt).toLocaleTimeString() : 'recently'}
-          </div>
-          <div className="text-xs font-mono mt-1">
-            Code: {player.playerCode}
-          </div>
-          {player.tickets !== undefined && (
-            <div className="text-xs mt-1">
-              Tickets: {player.tickets}
+    <div className="max-h-40 overflow-y-auto">
+      <ul className="divide-y divide-gray-100">
+        {players.map((player, index) => (
+          <li key={player.id || player.playerCode || index} className="py-1.5 flex items-center justify-between">
+            <div className="flex items-center">
+              <span className="text-sm">{player.nickname || player.playerName || player.playerCode}</span>
             </div>
-          )}
-        </div>
-      ))}
+            <Badge className="bg-green-500 text-white text-xs">online</Badge>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 };

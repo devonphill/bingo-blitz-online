@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -293,40 +292,45 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
     
     setConnectionState('connecting');
     
-    // Using Promise.then() instead of await to avoid issues with Promise types
-    connectionManager.reconnect();
-    
-    // Refresh data manually from Supabase
-    supabase
-      .from('sessions_progress')
-      .select('*')
-      .eq('session_id', sessionId)
-      .single()
-      .then(({ data }) => {
-        if (data) {
-          // Update game state with the fetched data
-          setGameState(prev => ({
-            ...prev,
-            currentWinPattern: data.current_win_pattern,
-            currentPrize: data.current_prize
-          }));
-          
-          if (data.called_numbers && data.called_numbers.length > 0) {
+    // Call reconnect and handle Promise properly
+    try {
+      connectionManager.reconnect();
+      
+      // Refresh data manually from Supabase
+      supabase
+        .from('sessions_progress')
+        .select('*')
+        .eq('session_id', sessionId)
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            // Update game state with the fetched data
             setGameState(prev => ({
               ...prev,
-              calledNumbers: data.called_numbers,
-              lastCalledNumber: data.called_numbers[data.called_numbers.length - 1]
+              currentWinPattern: data.current_win_pattern,
+              currentPrize: data.current_prize
             }));
+            
+            if (data.called_numbers && data.called_numbers.length > 0) {
+              setGameState(prev => ({
+                ...prev,
+                calledNumbers: data.called_numbers,
+                lastCalledNumber: data.called_numbers[data.called_numbers.length - 1]
+              }));
+            }
+            
+            setConnectionState('connected');
+            setIsConnected(true);
           }
-          
-          setConnectionState('connected');
-          setIsConnected(true);
-        }
-      })
-      .catch(error => {
-        console.error("Error refreshing data:", error);
-        setConnectionState('error');
-      });
+        })
+        .catch(error => {
+          console.error("Error refreshing data:", error);
+          setConnectionState('error');
+        });
+    } catch (error) {
+      console.error("Error during reconnection:", error);
+      setConnectionState('error');
+    }
   }, [sessionId]);
 
   return {
