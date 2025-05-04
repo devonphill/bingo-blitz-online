@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Sheet,
@@ -16,6 +17,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { CheckCircle, XCircle } from 'lucide-react';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { supabase } from '@/integrations/supabase/client';
+import CallerTicketDisplay from './CallerTicketDisplay';
 
 // Add import for the useCallerClaimManagement hook
 import { useCallerClaimManagement } from '@/hooks/useCallerClaimManagement';
@@ -53,6 +56,35 @@ export default function ClaimVerificationSheet({
   const { toast } = useToast()
   const [notes, setNotes] = useState("")
   const [selectedClaim, setSelectedClaim] = useState<any>(null);
+  
+  // Force fetch claims when sheet opens
+  useEffect(() => {
+    if (isOpen && sessionId) {
+      // Direct database query to ensure we have the latest data
+      const fetchLatestClaims = async () => {
+        logWithTimestamp(`Fetching latest claims for session ${sessionId}`);
+        try {
+          const { data, error } = await supabase
+            .from('universal_game_logs')
+            .select('*')
+            .eq('session_id', sessionId)
+            .is('validated_at', null)
+            .not('claimed_at', 'is', null);
+            
+          if (error) {
+            console.error('Error fetching latest claims:', error);
+          } else {
+            logWithTimestamp(`Found ${data?.length || 0} pending claims`);
+            console.log('Latest claims data:', data);
+          }
+        } catch (e) {
+          console.error('Exception fetching claims:', e);
+        }
+      };
+      
+      fetchLatestClaims();
+    }
+  }, [isOpen, sessionId]);
   
   // Log claims when they change
   useEffect(() => {
@@ -95,10 +127,31 @@ export default function ClaimVerificationSheet({
             claims.map((claim, index) => (
               <div key={index} className="border rounded-md p-4">
                 <div className="font-bold">Claim Details</div>
-                <div>Player: {claim.playerName}</div>
-                <div>Session: {claim.sessionId}</div>
-                <div>Game: {gameNumber}</div>
-                <div>Claimed at: {claim.timestamp}</div>
+                <div>Player: {claim.playerName || claim.player_name}</div>
+                <div>Session: {claim.sessionId || claim.session_id}</div>
+                <div>Game: {gameNumber || claim.game_number}</div>
+                <div>Claimed at: {claim.timestamp || claim.claimed_at}</div>
+                
+                {/* Display the ticket information */}
+                {claim.ticket_numbers && claim.ticket_layout_mask && (
+                  <div className="mt-4 border-t pt-3">
+                    <h3 className="font-medium text-sm mb-2">Claimed Ticket:</h3>
+                    <CallerTicketDisplay
+                      ticket={{
+                        numbers: claim.ticket_numbers,
+                        layoutMask: claim.ticket_layout_mask,
+                        serial: claim.ticket_serial || "Unknown",
+                        perm: claim.ticket_perm,
+                        position: claim.ticket_position
+                      }}
+                      calledNumbers={currentCalledNumbers || claim.called_numbers || []}
+                      lastCalledNumber={currentNumber}
+                      gameType={gameType}
+                      winPattern={currentWinPattern || undefined}
+                    />
+                  </div>
+                )}
+                
                 <div className="flex justify-end gap-2 mt-4">
                   <Button 
                     variant="outline" 

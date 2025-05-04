@@ -1,453 +1,332 @@
-import { supabase } from "@/integrations/supabase/client";
-import { logWithTimestamp } from "@/utils/logUtils";
 
-type ProgressCallback = (progress: any) => void;
-type NumberCallback = (number: number, allNumbers: number[]) => void;
-type PlayersCallback = (players: any[]) => void;
+import { supabase } from '@/integrations/supabase/client';
+import { logWithTimestamp } from './logUtils';
+
+// Define the type of callback functions
+type NumberCalledCallback = (lastCalledNumber: number | null, calledNumbers: number[]) => void;
+type PlayersUpdateCallback = (players: any[]) => void;
+type SessionProgressUpdateCallback = (progress: any) => void;
 
 class ConnectionManager {
+  // Store the session ID and callbacks
   private sessionId: string | null = null;
-  private channel: any | null = null;
-  private progressUpdateCallback: ProgressCallback | null = null;
-  private numberCalledCallback: NumberCallback | null = null;
-  private playersUpdateCallback: PlayersCallback | null = null;
-  private connectionState: 'disconnected' | 'connecting' | 'connected' | 'error' = 'disconnected';
-  private lastConnectionAttempt: number = 0;
-  private connectionAttempts: number = 0;
-  private reconnectTimer: any = null;
-  private keepAliveInterval: any = null;
-  private subscribedChannels: any[] = [];
-  private isInitializing: boolean = false;
-
-  constructor() {
-    logWithTimestamp("ConnectionManager created");
-  }
-
-  public initialize(sessionId: string) {
-    if (this.isInitializing) {
-      logWithTimestamp(`Already in the process of initializing session ID: ${sessionId}, avoiding duplicate initialization`);
-      return this;
+  private numberCalledCallbacks: NumberCalledCallback[] = [];
+  private playersUpdateCallbacks: PlayersUpdateCallback[] = [];
+  private sessionProgressUpdateCallbacks: SessionProgressUpdateCallback[] = [];
+  private channels: any[] = [];
+  private isConnected = false;
+  private initialized = false;
+  private lastNumberBroadcast = Date.now();
+  
+  // Initialize with a session ID
+  initialize(sessionId: string) {
+    if (this.sessionId === sessionId && this.initialized) {
+      logWithTimestamp(`ConnectionManager already initialized for session ${sessionId}`);
+      return this; // Already initialized for this session
     }
     
-    if (this.sessionId === sessionId && this.channel && this.connectionState === 'connected') {
-      logWithTimestamp(`Already initialized and connected with session ID: ${sessionId}`);
-      return this;
-    }
+    logWithTimestamp(`Initializing ConnectionManager for session ${sessionId}`);
     
-    this.isInitializing = true;
-    
-    // Clean up existing connection if any
+    // Clean up any existing channels if they exist
     this.cleanup();
     
     this.sessionId = sessionId;
-    this.connectionState = 'connecting';
-    this.lastConnectionAttempt = Date.now();
-    this.connectionAttempts = 0;
+    this.initialized = true;
     
-    logWithTimestamp(`Initializing connection manager with session ID: ${sessionId}`);
-    this.setupListeners();
-    this.setupKeepAlive();
+    // Set up channels for number calls, player updates, and session progress
+    this.setupChannels();
     
-    // Set a timeout to clear the initializing flag if something goes wrong
-    setTimeout(() => {
-      this.isInitializing = false;
-    }, 10000); // 10 seconds timeout
+    // Set up database polling
+    this.setupPolling();
     
-    return this;
-  }
-
-  public onSessionProgressUpdate(callback: ProgressCallback) {
-    this.progressUpdateCallback = callback;
-    return this;
-  }
-
-  public onNumberCalled(callback: NumberCallback) {
-    this.numberCalledCallback = callback;
     return this;
   }
   
-  public onPlayersUpdate(callback: PlayersCallback) {
-    this.playersUpdateCallback = callback;
-    this.setupPlayerMonitoring();
+  // Set up the broadcast channels
+  private setupChannels() {
+    if (!this.sessionId) return;
+    
+    logWithTimestamp(`Setting up channels for session ${this.sessionId}`);
+    
+    // Create primary number broadcast channel
+    const numberBroadcastChannel = supabase.channel('number-broadcast');
+    numberBroadcastChannel
+      .on('broadcast', { event: 'number-called' }, payload => {
+        if (payload.payload?.sessionId === this.sessionId) {
+          logWithTimestamp(`Received number call: ${payload.payload.lastCalledNumber}, total numbers: ${payload.payload.calledNumbers?.length || 0}`);
+          this.notifyNumberCalled(payload.payload.lastCalledNumber, payload.payload.calledNumbers || []);
+        }
+      })
+      .subscribe((status) => {
+        logWithTimestamp(`Number broadcast channel status: ${status}`);
+        this.isConnected = status === 'SUBSCRIBED';
+      });
+    
+    // Create backup channel specific to this session
+    const sessionNumberChannel = supabase.channel(`number-broadcast-${this.sessionId}`);
+    sessionNumberChannel
+      .on('broadcast', { event: 'number-called' }, payload => {
+        if (payload.payload?.sessionId === this.sessionId) {
+          logWithTimestamp(`[Backup] Received number call: ${payload.payload.lastCalledNumber}`);
+          this.notifyNumberCalled(payload.payload.lastCalledNumber, payload.payload.calledNumbers || []);
+        }
+      })
+      .subscribe();
+    
+    // Channel for game updates
+    const gameUpdatesChannel = supabase.channel('game-updates');
+    gameUpdatesChannel
+      .on('broadcast', { event: 'players-update' }, payload => {
+        if (payload.payload?.sessionId === this.sessionId) {
+          logWithTimestamp(`Received players update for session ${this.sessionId}`);
+          this.notifyPlayersUpdate(payload.payload.players || []);
+        }
+      })
+      .on('broadcast', { event: 'session-progress' }, payload => {
+        if (payload.payload?.sessionId === this.sessionId) {
+          logWithTimestamp(`Received session progress update for session ${this.sessionId}`);
+          this.notifySessionProgressUpdate(payload.payload);
+        }
+      })
+      .subscribe();
+    
+    // Store channels for later cleanup
+    this.channels = [numberBroadcastChannel, sessionNumberChannel, gameUpdatesChannel];
+  }
+  
+  // Set up database polling as a fallback
+  private setupPolling() {
+    if (!this.sessionId) return;
+    
+    // Set up polling every 10 seconds
+    const pollingIntervalId = setInterval(async () => {
+      try {
+        // Only poll if we haven't received a broadcast recently
+        if (Date.now() - this.lastNumberBroadcast > 8000) {
+          logWithTimestamp(`Polling for session progress data for session ${this.sessionId}`);
+          
+          // Fetch session progress
+          const { data: progressData, error: progressError } = await supabase
+            .from('sessions_progress')
+            .select('*')
+            .eq('session_id', this.sessionId)
+            .single();
+            
+          if (progressError) {
+            console.error('Error fetching session progress:', progressError);
+            return;
+          }
+          
+          if (progressData) {
+            this.notifySessionProgressUpdate(progressData);
+            
+            // If there are called numbers, notify about them
+            if (progressData.called_numbers && progressData.called_numbers.length > 0) {
+              const lastCalledNumber = progressData.called_numbers[progressData.called_numbers.length - 1];
+              this.notifyNumberCalled(lastCalledNumber, progressData.called_numbers);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error during polling:', error);
+      }
+    }, 10000); // Poll every 10 seconds
+    
+    // Create dummy channel just to store the interval for cleanup
+    const pollingChannel = { id: 'polling', unsubscribe: () => clearInterval(pollingIntervalId) };
+    this.channels.push(pollingChannel);
+  }
+  
+  // Clean up channels and reset state
+  cleanup() {
+    logWithTimestamp('Cleaning up ConnectionManager');
+    
+    // Remove all channels
+    this.channels.forEach(channel => {
+      if (channel.unsubscribe) channel.unsubscribe();
+      else if (channel.id !== 'polling') supabase.removeChannel(channel);
+    });
+    
+    this.channels = [];
+    this.isConnected = false;
+    this.initialized = false;
+    this.sessionId = null;
+  }
+  
+  // Register a callback for number calls
+  onNumberCalled(callback: NumberCalledCallback) {
+    this.numberCalledCallbacks.push(callback);
     return this;
   }
-
-  private setupKeepAlive() {
-    // Clear any existing keep-alive timer
-    if (this.keepAliveInterval) {
-      clearInterval(this.keepAliveInterval);
-    }
-    
-    // Set up a keep-alive ping every 30 seconds
-    this.keepAliveInterval = setInterval(() => {
-      if (this.connectionState !== 'connected') {
-        logWithTimestamp("Keep-alive detected disconnected state, attempting to reconnect");
-        this.reconnect();
-        return;
-      }
-      
-      // Send a keep-alive presence status update
-      if (this.channel) {
-        try {
-          logWithTimestamp("Sending keep-alive ping");
-          this.channel.send({
-            type: 'broadcast',
-            event: 'keep-alive',
-            payload: {
-              timestamp: Date.now()
-            }
-          }).then(() => {
-            // Keep-alive sent successfully
-          }, (error: any) => {
-            logWithTimestamp(`Keep-alive error: ${error}`);
-            this.connectionState = 'error';
-            this.reconnect();
-          });
-        } catch (error) {
-          logWithTimestamp(`Exception in keep-alive: ${error}`);
-          this.connectionState = 'error';
-          this.reconnect();
-        }
-      }
-    }, 30000);
+  
+  // Register a callback for player updates
+  onPlayersUpdate(callback: PlayersUpdateCallback) {
+    this.playersUpdateCallbacks.push(callback);
+    return this;
   }
-
-  private setupListeners() {
-    if (!this.sessionId) {
-      logWithTimestamp("Cannot setup listeners: no session ID");
-      this.isInitializing = false;
+  
+  // Register a callback for session progress updates
+  onSessionProgressUpdate(callback: SessionProgressUpdateCallback) {
+    this.sessionProgressUpdateCallbacks.push(callback);
+    return this;
+  }
+  
+  // Notify all callbacks about a number call
+  private notifyNumberCalled(lastCalledNumber: number, calledNumbers: number[]) {
+    this.lastNumberBroadcast = Date.now();
+    this.numberCalledCallbacks.forEach(callback => callback(lastCalledNumber, calledNumbers));
+  }
+  
+  // Notify all callbacks about player updates
+  private notifyPlayersUpdate(players: any[]) {
+    this.playersUpdateCallbacks.forEach(callback => callback(players));
+  }
+  
+  // Notify all callbacks about session progress updates
+  private notifySessionProgressUpdate(progress: any) {
+    this.sessionProgressUpdateCallbacks.forEach(callback => callback(progress));
+  }
+  
+  // Manually call a number
+  callNumber(number: number, sessionId?: string) {
+    if (!this.sessionId && !sessionId) {
+      logWithTimestamp('Cannot call number: no session ID');
       return;
     }
-
-    // Clean up existing subscriptions before creating new ones
-    this.subscribedChannels.forEach(channel => {
-      try {
-        supabase.removeChannel(channel);
-      } catch (error) {
-        console.error("Error removing channel:", error);
-      }
-    });
-    this.subscribedChannels = [];
-
-    logWithTimestamp(`Setting up listeners for session: ${this.sessionId}`);
     
-    // Use multiple channels for redundancy
-    const channelNames = [
-      `session-updates-${this.sessionId}`,
-      `number-broadcast-${this.sessionId}`,
-      'number-broadcast'
+    const targetSessionId = sessionId || this.sessionId;
+    logWithTimestamp(`Calling number ${number} for session ${targetSessionId}`);
+    
+    // Get current called numbers from database
+    supabase
+      .from('sessions_progress')
+      .select('called_numbers')
+      .eq('session_id', targetSessionId)
+      .single()
+      .then(({ data, error }) => {
+        if (error) {
+          console.error('Error fetching current called numbers:', error);
+          return;
+        }
+        
+        // Add new number to the array
+        const calledNumbers = data?.called_numbers || [];
+        if (!calledNumbers.includes(number)) {
+          calledNumbers.push(number);
+        }
+        
+        // Update the database
+        supabase
+          .from('sessions_progress')
+          .update({ 
+            called_numbers: calledNumbers,
+            updated_at: new Date().toISOString()
+          })
+          .eq('session_id', targetSessionId)
+          .then(({ error: updateError }) => {
+            if (updateError) {
+              console.error('Error updating called numbers:', updateError);
+              return;
+            }
+            
+            // Broadcast the number call
+            this.broadcastNumberCall(number, calledNumbers, targetSessionId);
+          });
+      });
+  }
+  
+  // Broadcast a number call to all channels
+  private broadcastNumberCall(lastCalledNumber: number, calledNumbers: number[], sessionId: string) {
+    logWithTimestamp(`Broadcasting number call: ${lastCalledNumber}, total numbers: ${calledNumbers.length}`);
+    
+    const payload = {
+      lastCalledNumber,
+      calledNumbers,
+      sessionId,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Broadcast on multiple channels for redundancy
+    const promises = [
+      supabase.channel('number-broadcast').send({
+        type: 'broadcast',
+        event: 'number-called',
+        payload
+      }),
+      supabase.channel(`number-broadcast-${sessionId}`).send({
+        type: 'broadcast',
+        event: 'number-called',
+        payload
+      })
     ];
     
-    // Subscribe to all channels for redundancy
-    channelNames.forEach((channelName, index) => {
-      const channel = supabase.channel(channelName);
+    Promise.all(promises)
+      .then(() => logWithTimestamp('Number call broadcast successful'))
+      .catch(error => console.error('Error broadcasting number call:', error));
       
-      channel
-        .on(
-          'broadcast',
-          { event: 'number-called' },
-          (payload) => {
-            if (
-              payload.payload &&
-              payload.payload.sessionId === this.sessionId &&
-              this.numberCalledCallback
-            ) {
-              const { lastCalledNumber, calledNumbers } = payload.payload;
-              logWithTimestamp(`Received number broadcast on channel ${channelName}: ${lastCalledNumber}`);
-              this.numberCalledCallback(lastCalledNumber, calledNumbers);
-              this.connectionState = 'connected';
-              this.isInitializing = false;
-            }
-          }
-        )
-        .on(
-          'broadcast',
-          { event: 'session-progress' },
-          (payload) => {
-            if (
-              payload.payload &&
-              payload.payload.sessionId === this.sessionId &&
-              this.progressUpdateCallback
-            ) {
-              logWithTimestamp(`Received session progress broadcast: ${JSON.stringify(payload)}`);
-              this.progressUpdateCallback(payload.payload);
-              this.connectionState = 'connected';
-              this.isInitializing = false;
-            }
-          }
-        )
-        .subscribe((status, error) => {
-          logWithTimestamp(`Channel ${channelName} subscription status: ${status}`);
-          if (error) {
-            logWithTimestamp(`Channel ${channelName} subscription error: ${JSON.stringify(error)}`);
-            
-            // Only set connection error if all channels have failed
-            if (index === channelNames.length - 1) {
-              this.connectionState = 'error';
-              this.handleConnectionFailure();
-            }
-          } else if (status === 'SUBSCRIBED') {
-            logWithTimestamp(`Channel ${channelName} successfully subscribed`);
-            this.connectionState = 'connected';
-            this.connectionAttempts = 0; // Reset attempts on successful connection
-            this.isInitializing = false;
-            
-            // Track this channel
-            this.subscribedChannels.push(channel);
-            
-            // If this is the primary channel, store it directly
-            if (index === 0) {
-              this.channel = channel;
-            }
-          }
-        });
-        
-      // For the primary channel, also set up presence tracking
-      if (index === 0) {
-        channel.track({
-          online_at: new Date().toISOString(),
-          client_type: 'player'
-        }).then(() => {
-          logWithTimestamp("Presence tracking established");
-        }, (err) => {
-          logWithTimestamp(`Error tracking presence: ${err}`);
-        });
-      }
-    });
+    // Also notify local callbacks
+    this.notifyNumberCalled(lastCalledNumber, calledNumbers);
   }
   
-  private handleConnectionFailure() {
-    this.connectionAttempts += 1;
-    
-    // Implement exponential backoff for reconnection attempts
-    const backoffTime = Math.min(1000 * Math.pow(2, this.connectionAttempts), 30000); // Max 30 seconds
-    
-    logWithTimestamp(`Connection attempt ${this.connectionAttempts} failed. Retrying in ${backoffTime}ms`);
-    
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-    }
-    
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnect();
-    }, backoffTime);
-    
-    this.isInitializing = false;
-  }
-  
-  private setupPlayerMonitoring() {
-    if (!this.sessionId || !this.playersUpdateCallback) {
-      return;
-    }
-    
-    // Initial fetch
-    this.fetchConnectedPlayers();
-    
-    // Set up polling
-    setInterval(() => {
-      this.fetchConnectedPlayers();
-    }, 10000);
-  }
-
-  public async fetchConnectedPlayers() {
-    if (!this.sessionId || !this.playersUpdateCallback) {
-      return [];
-    }
-    
-    try {
-      const { data, error } = await supabase
-        .from('players')
-        .select('id, nickname, player_code')
-        .eq('session_id', this.sessionId);
-        
-      if (error) {
-        logWithTimestamp(`Error fetching players: ${JSON.stringify(error)}`);
-        this.connectionState = 'error';
-        return [];
-      }
-      
-      if (data && this.playersUpdateCallback) {
-        this.playersUpdateCallback(data);
-      }
-      
-      return data || [];
-    } catch (err) {
-      logWithTimestamp(`Exception fetching players: ${err}`);
-      this.connectionState = 'error';
-      return [];
-    }
-  }
-  
-  public async fetchClaims() {
+  // Fetch claims for the current session
+  async fetchClaims() {
     if (!this.sessionId) {
+      logWithTimestamp('Cannot fetch claims: no session ID');
       return [];
     }
     
     try {
-      logWithTimestamp(`Fetching claims for session ${this.sessionId}`);
-      
-      // Use direct query instead of RPC
       const { data, error } = await supabase
         .from('universal_game_logs')
         .select('*')
         .eq('session_id', this.sessionId)
-        .is('validated_at', null);
-      
+        .is('validated_at', null)
+        .not('claimed_at', 'is', null);
+        
       if (error) {
-        logWithTimestamp(`Error fetching claims: ${JSON.stringify(error)}`);
-        this.connectionState = 'error';
+        console.error('Error fetching claims:', error);
         return [];
       }
       
       return data || [];
-    } catch (err) {
-      logWithTimestamp(`Exception fetching claims: ${err}`);
-      this.connectionState = 'error';
+    } catch (error) {
+      console.error('Error fetching claims:', error);
       return [];
     }
   }
-
-  public callNumber(number: number, sessionId?: string) {
-    const targetSessionId = sessionId || this.sessionId;
-    if (!targetSessionId) {
-      logWithTimestamp("Cannot call number: no session ID");
-      return;
-    }
-    
-    logWithTimestamp(`Calling number ${number} for session ${targetSessionId}`);
-    
-    // Calculate the current called numbers
-    this.fetchSessionProgress().then(progressData => {
-      const currentCalledNumbers = progressData?.called_numbers || [];
-      const updatedCalledNumbers = [...currentCalledNumbers, number];
-      
-      // Update the database
-      supabase
-        .from('sessions_progress')
-        .update({ called_numbers: updatedCalledNumbers })
-        .eq('session_id', targetSessionId)
-        .then(({ error }) => {
-          if (error) {
-            logWithTimestamp(`Error updating called numbers: ${JSON.stringify(error)}`);
-            this.connectionState = 'error';
-          } else {
-            logWithTimestamp(`Successfully updated called numbers in database`);
-            this.connectionState = 'connected';
-          }
-        });
-      
-      // Broadcast the number in real-time
-      supabase
-        .channel('number-broadcast')
-        .send({
-          type: 'broadcast',
-          event: 'number-called',
-          payload: {
-            sessionId: targetSessionId,
-            lastCalledNumber: number,
-            calledNumbers: updatedCalledNumbers,
-            timestamp: new Date().getTime()
-          }
-        })
-        .then(() => {
-          logWithTimestamp(`Successfully broadcast number ${number}`);
-          this.connectionState = 'connected';
-        })
-        .catch(err => {
-          logWithTimestamp(`Error broadcasting number: ${err}`);
-          this.connectionState = 'error';
-        });
-    });
-  }
-
-  private async fetchSessionProgress() {
-    if (!this.sessionId) {
-      return null;
-    }
-    
-    try {
-      const { data, error } = await supabase
-        .from('sessions_progress')
-        .select('*')
-        .eq('session_id', this.sessionId)
-        .single();
-        
-      if (error) {
-        logWithTimestamp(`Error fetching session progress: ${JSON.stringify(error)}`);
-        this.connectionState = 'error';
-        return null;
-      }
-      
-      return data;
-    } catch (err) {
-      logWithTimestamp(`Exception fetching session progress: ${err}`);
-      this.connectionState = 'error';
-      return null;
-    }
-  }
-
-  public reconnect() {
-    logWithTimestamp("Attempting to reconnect");
-    
-    if (this.isInitializing) {
-      logWithTimestamp("Already initializing connection, skipping redundant reconnect");
-      return;
-    }
-    
-    this.isInitializing = true;
-    this.connectionState = 'connecting';
-    this.lastConnectionAttempt = Date.now();
-    
-    // Clean up existing connection
-    this.cleanup();
-    
-    // Set up new connection
-    if (this.sessionId) {
-      this.setupListeners();
-    }
-    
-    // Set a timeout to clear the initializing flag if something goes wrong
-    setTimeout(() => {
-      this.isInitializing = false;
-    }, 10000); // 10 seconds timeout
-  }
-
-  public cleanup() {
-    // Clean up all subscribed channels
-    this.subscribedChannels.forEach(channel => {
-      try {
-        logWithTimestamp(`Cleaning up channel`);
-        supabase.removeChannel(channel);
-      } catch (error) {
-        logWithTimestamp(`Error cleaning up channel: ${error}`);
-      }
-    });
-    
-    // Reset subscribed channels array
-    this.subscribedChannels = [];
-    
-    // Clear keep-alive interval
-    if (this.keepAliveInterval) {
-      clearInterval(this.keepAliveInterval);
-      this.keepAliveInterval = null;
-    }
-    
-    // Clear reconnect timer
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    
-    this.channel = null;
-    this.connectionState = 'disconnected';
-    this.isInitializing = false;
-  }
   
-  // Add method to get connection state
-  public getConnectionState(): 'disconnected' | 'connecting' | 'connected' | 'error' {
-    return this.connectionState;
+  // Reconnect all channels
+  reconnect() {
+    if (!this.sessionId) {
+      logWithTimestamp('Cannot reconnect: no session ID');
+      return;
+    }
+    
+    logWithTimestamp(`Reconnecting ConnectionManager for session ${this.sessionId}`);
+    
+    // Clean up and re-initialize everything
+    this.cleanup();
+    this.initialize(this.sessionId);
+    
+    // Force a database refresh
+    supabase
+      .from('sessions_progress')
+      .select('*')
+      .eq('session_id', this.sessionId)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          this.notifySessionProgressUpdate(data);
+          
+          if (data.called_numbers && data.called_numbers.length > 0) {
+            const lastCalledNumber = data.called_numbers[data.called_numbers.length - 1];
+            this.notifyNumberCalled(lastCalledNumber, data.called_numbers);
+          }
+        }
+      })
+      .catch(error => console.error('Error during reconnection data fetch:', error));
   }
 }
 
-// Export a singleton instance
+// Create a singleton instance
 export const connectionManager = new ConnectionManager();

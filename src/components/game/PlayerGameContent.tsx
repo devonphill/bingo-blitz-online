@@ -1,8 +1,8 @@
+
 import React, { useEffect, useState, useCallback } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
 import BingoWinProgress from "./BingoWinProgress";
-import { useBingoSync } from "@/hooks/useBingoSync";
 import GameTypePlayspace from "./GameTypePlayspace";
 import { toast } from "@/hooks/use-toast";
 import { connectionManager } from "@/utils/connectionManager";
@@ -120,6 +120,37 @@ export default function PlayerGameContent({
               description: `The new win pattern is: ${payload.payload.pattern}`,
               duration: 3000
             });
+          }
+        })
+        .on('broadcast', { event: 'claim-result' }, (payload) => {
+          if (payload.payload?.sessionId === currentSession.id) {
+            logWithTimestamp(`PlayerGameContent (${instanceId.current}): Claim result received: ${payload.payload.result}`);
+            
+            // Display notification about claim result
+            toast({
+              title: payload.payload.result === 'valid' ? 'Bingo Verified!' : 'Claim Rejected',
+              description: payload.payload.result === 'valid' 
+                ? 'A winning claim has been verified. Game advancing.' 
+                : 'A claim has been rejected.',
+              duration: 5000
+            });
+          }
+        })
+        .on('broadcast', { event: 'game-advanced' }, (payload) => {
+          if (payload.payload?.sessionId === currentSession.id) {
+            logWithTimestamp(`PlayerGameContent (${instanceId.current}): Game advanced notification received`);
+            
+            // Display notification about game advancing
+            toast({
+              title: 'Game Advanced',
+              description: 'The game is progressing to the next stage.',
+              duration: 5000
+            });
+            
+            // Force a refresh of session progress data
+            setTimeout(() => {
+              window.location.reload();
+            }, 2000);
           }
         })
         .subscribe((status) => {
@@ -339,7 +370,7 @@ export default function PlayerGameContent({
             setIsConnected(true);
           }
         })
-        .then(undefined, (error) => { // Use this pattern instead of .catch()
+        .catch((error) => { 
           console.error("Error during manual reconnect:", error);
           setConnectionStatus('error');
         });

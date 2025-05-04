@@ -27,7 +27,17 @@ export function useCallerClaimManagement(sessionId: string | null) {
           console.log('Claim data:', payload.payload);
           
           // Add the claim to our list
-          setClaims(prev => [...prev, payload.payload]);
+          setClaims(prev => {
+            // Check if claim already exists
+            const exists = prev.some(c => 
+              c.id === payload.payload.id || 
+              (c.playerId === payload.payload.playerId && c.timestamp === payload.payload.timestamp)
+            );
+            if (exists) {
+              return prev;
+            }
+            return [...prev, payload.payload];
+          });
           
           // Show a toast notification
           toast({
@@ -43,31 +53,83 @@ export function useCallerClaimManagement(sessionId: string | null) {
     const resultsChannel = supabase.channel(`claim-results-${sessionId}`);
     resultsChannel.subscribe();
     
+    // Set up initial fetch of pending claims
+    fetchClaims().then(fetchedClaims => {
+      if (fetchedClaims.length > 0) {
+        logWithTimestamp(`Loaded ${fetchedClaims.length} existing claims from database`);
+        setClaims(fetchedClaims);
+      }
+    });
+    
+    // Set up polling for new claims
+    const pollingInterval = setInterval(() => {
+      fetchClaims().then(fetchedClaims => {
+        if (fetchedClaims.length > 0) {
+          setClaims(prev => {
+            // Merge with existing claims, avoiding duplicates
+            const existingIds = new Set(prev.map(c => c.id));
+            const newClaims = fetchedClaims.filter(c => !existingIds.has(c.id));
+            
+            if (newClaims.length > 0) {
+              logWithTimestamp(`Found ${newClaims.length} new claims during polling`);
+              
+              // Show notification for new claims
+              if (newClaims.length === 1) {
+                toast({
+                  title: "New Bingo Claim!",
+                  description: `${newClaims[0].player_name} has claimed bingo!`,
+                  duration: 5000,
+                });
+              } else if (newClaims.length > 1) {
+                toast({
+                  title: "New Bingo Claims!",
+                  description: `${newClaims.length} new claims have been submitted.`,
+                  duration: 5000,
+                });
+              }
+              
+              return [...prev, ...newClaims];
+            }
+            return prev;
+          });
+        }
+      });
+    }, 5000); // Poll every 5 seconds
+    
     // Cleanup on unmount
     return () => {
       supabase.removeChannel(claimsChannel);
       supabase.removeChannel(resultsChannel);
+      clearInterval(pollingInterval);
     };
   }, [sessionId, toast]);
   
   // Function to validate a claim
-  const validateClaim = useCallback((claim: any, isValid: boolean) => {
+  const validateClaim = useCallback(async (claim: any, isValid: boolean) => {
     if (!sessionId || !claim) return;
     
     setIsProcessingClaim(true);
     setCurrentClaim(claim);
     
     try {
-      logWithTimestamp(`Processing claim ${claim.id} for player ${claim.playerId}`);
+      logWithTimestamp(`Processing claim ${claim.id} for player ${claim.playerId || claim.player_id}`);
+      
+      // Normalize claim data
+      const normalizedClaim = {
+        id: claim.id,
+        playerId: claim.playerId || claim.player_id,
+        playerName: claim.playerName || claim.player_name,
+        sessionId: claim.sessionId || claim.session_id || sessionId,
+      };
       
       // Create a channel for sending claim results
       const resultsChannel = supabase.channel(`claim-results-${sessionId}`);
       
       // Prepare the result payload
       const resultPayload = {
-        claimId: claim.id,
+        claimId: normalizedClaim.id,
         sessionId: sessionId,
-        playerId: claim.playerId,
+        playerId: normalizedClaim.playerId,
         result: isValid ? 'valid' : 'invalid',
         timestamp: new Date().toISOString(),
         validatedBy: 'caller'
@@ -75,47 +137,88 @@ export function useCallerClaimManagement(sessionId: string | null) {
       
       logWithTimestamp(`Broadcasting claim result: ${JSON.stringify(resultPayload)}`);
       
+      // Update the database record first for persistence
+      const { error: dbError } = await supabase
+        .from('universal_game_logs')
+        .update({
+          validated_at: new Date().toISOString(),
+          validator_decision: isValid ? 'valid' : 'invalid'
+        })
+        .eq('id', normalizedClaim.id);
+        
+      if (dbError) {
+        console.error('Error updating claim in database:', dbError);
+        toast({
+          title: "Database Error",
+          description: "Failed to update claim status in database.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
       // Broadcast the result
-      resultsChannel.send({
+      await resultsChannel.send({
         type: 'broadcast',
         event: 'claim-result',
         payload: resultPayload
-      }).then(() => {
-        logWithTimestamp(`Claim result broadcast successfully`);
-        
-        // Remove the claim from our list
-        setClaims(prev => prev.filter(c => c.id !== claim.id));
-        
-        // Show a toast notification
-        toast({
-          title: isValid ? "Bingo Verified!" : "Claim Rejected",
-          description: isValid 
-            ? `${claim.playerName}'s bingo claim has been verified!` 
-            : `${claim.playerName}'s bingo claim was rejected.`,
-          duration: 5000,
-        });
-        
-        // Also broadcast to the general claims channel
-        supabase.channel('bingo-broadcast').send({
-          type: 'broadcast',
-          event: 'claim-result',
-          payload: resultPayload
-        });
-        
-      }).catch(error => {
-        console.error('Error broadcasting claim result:', error);
-        toast({
-          title: "Error",
-          description: "Failed to process the bingo claim.",
-          variant: "destructive"
-        });
-      }).finally(() => {
-        setIsProcessingClaim(false);
-        setCurrentClaim(null);
       });
+      
+      logWithTimestamp(`Claim result broadcast successfully`);
+      
+      // Remove the claim from our list
+      setClaims(prev => prev.filter(c => c.id !== normalizedClaim.id));
+      
+      // Show a toast notification
+      toast({
+        title: isValid ? "Bingo Verified!" : "Claim Rejected",
+        description: isValid 
+          ? `${normalizedClaim.playerName}'s bingo claim has been verified!` 
+          : `${normalizedClaim.playerName}'s bingo claim was rejected.`,
+        duration: 5000,
+      });
+      
+      // Also broadcast to the general claims channel
+      await supabase.channel('bingo-broadcast').send({
+        type: 'broadcast',
+        event: 'claim-result',
+        payload: resultPayload
+      });
+      
+      // If claim is valid, advance the game (this will move to the next pattern or game)
+      if (isValid) {
+        // Update the session progress
+        const { error: progressError } = await supabase
+          .from('sessions_progress')
+          .update({
+            game_status: 'won'
+          })
+          .eq('session_id', sessionId);
+          
+        if (progressError) {
+          console.error('Error updating session progress:', progressError);
+        }
+        
+        // Broadcast game advancement notification
+        await supabase.channel('bingo-broadcast').send({
+          type: 'broadcast',
+          event: 'game-advanced',
+          payload: {
+            sessionId: sessionId,
+            timestamp: new Date().toISOString(),
+            reason: 'claim_verified',
+            claimId: normalizedClaim.id
+          }
+        });
+      }
       
     } catch (error) {
       console.error('Error processing claim:', error);
+      toast({
+        title: "Error",
+        description: "Failed to process the bingo claim.",
+        variant: "destructive"
+      });
+    } finally {
       setIsProcessingClaim(false);
       setCurrentClaim(null);
     }
