@@ -260,6 +260,7 @@ class ConnectionManager {
       })
     ];
     
+    // Fix: Use Promise.all().catch() pattern for proper error handling with TypeScript
     Promise.all(promises)
       .then(() => logWithTimestamp('Number call broadcast successful'))
       .catch(error => console.error('Error broadcasting number call:', error));

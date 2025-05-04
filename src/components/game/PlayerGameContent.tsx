@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useCallback } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -350,11 +349,14 @@ export default function PlayerGameContent({
     
     // Force a direct database query to immediately refresh data
     if (currentSession?.id) {
-      supabase
-        .from('sessions_progress')
-        .select('called_numbers, current_win_pattern')
-        .eq('session_id', currentSession.id)
-        .single()
+      // Fix: Use Promise.resolve() to ensure we have a full Promise with catch method
+      Promise.resolve(
+        supabase
+          .from('sessions_progress')
+          .select('called_numbers, current_win_pattern')
+          .eq('session_id', currentSession.id)
+          .single()
+      )
         .then(({ data }) => {
           if (data?.called_numbers) {
             setRtCalledNumbers(data.called_numbers);
