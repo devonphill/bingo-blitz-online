@@ -1,3 +1,4 @@
+
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -107,7 +108,7 @@ export function useClaimManagement(sessionId?: string, gameNumber?: number) {
             last_called_number: lastCalledNumber,
             total_calls: calledNumbers.length,
             claimed_at: new Date().toISOString(),
-            validated_at: new Date().toISOString(),
+            validated_at: new Date().toISOString(), // Ensure we set a timestamp and not null
             prize_shared: true
           });
 
@@ -232,7 +233,7 @@ export function useClaimManagement(sessionId?: string, gameNumber?: number) {
         const { error: updateError } = await supabase
           .from('universal_game_logs')
           .update({
-            validated_at: new Date().toISOString(), 
+            validated_at: new Date().toISOString(), // Set timestamp instead of null
             prize_shared: false // Mark as rejected
           })
           .eq('id', existingClaims[0].id);
@@ -266,7 +267,7 @@ export function useClaimManagement(sessionId?: string, gameNumber?: number) {
             last_called_number: lastCalledNumber,
             total_calls: calledNumbers.length,
             claimed_at: new Date().toISOString(),
-            validated_at: new Date().toISOString(),
+            validated_at: new Date().toISOString(), // Set timestamp instead of null
             prize_shared: false // Mark as rejected
           });
 

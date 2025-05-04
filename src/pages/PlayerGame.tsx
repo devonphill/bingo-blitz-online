@@ -10,6 +10,7 @@ import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 import PlayerGameLayout from '@/components/game/PlayerGameLayout';
 import { connectionManager } from '@/utils/connectionManager';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function PlayerGame() {
   const { playerCode: urlPlayerCode } = useParams<{ playerCode: string }>();
@@ -122,6 +123,43 @@ export default function PlayerGame() {
   
   // Always initialize tickets hook with the same parameters, even if it will not be used
   const { tickets } = useTickets(playerCode, currentSession?.id);
+
+  // Set up a real-time listener for number-called events
+  useEffect(() => {
+    if (!currentSession?.id) return;
+    
+    logWithTimestamp(`Setting up additional real-time listener for number calls on session ${currentSession.id}`);
+    
+    // Create a dedicated channel just for number calls
+    const channel = supabase.channel(`live-calls-${currentSession.id}`);
+    
+    channel
+      .on('broadcast', { event: 'number-called' }, payload => {
+        if (payload.payload?.sessionId === currentSession.id) {
+          logWithTimestamp(`LIVE: Number called event received: ${JSON.stringify(payload.payload)}`);
+          
+          const calledNumbers = payload.payload.calledNumbers || [];
+          const lastCalledNumber = payload.payload.lastCalledNumber;
+          
+          if (calledNumbers.length > 0) {
+            setFinalCalledNumbers(calledNumbers);
+            setFinalLastCalledNumber(lastCalledNumber);
+            
+            // Show toast notification for new number
+            toast({
+              title: `Number Called: ${lastCalledNumber}`,
+              description: `New number has been called`,
+              duration: 3000
+            });
+          }
+        }
+      })
+      .subscribe();
+      
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentSession?.id, toast]);
 
   // Update the finalCalledNumbers whenever our data sources change
   useEffect(() => {

@@ -235,6 +235,8 @@ export function useBingoSync(sessionId: string, playerId: string, playerName: st
       }
       
       // First add the claim to the universal_game_logs table
+      // FIX: Add an actual timestamp value for validated_at instead of null
+      // This resolves the "null value in column validated_at" error
       const { data, error } = await supabase
         .from('universal_game_logs')
         .insert({
@@ -253,7 +255,8 @@ export function useBingoSync(sessionId: string, playerId: string, playerName: st
           last_called_number: gameState?.lastCalledNumber,
           total_calls: (gameState?.calledNumbers || []).length,
           claimed_at: new Date().toISOString(),
-          validated_at: null // This will be set by the caller when validated
+          validated_at: new Date().toISOString(), // Set an initial timestamp instead of null
+          prize_shared: false // This will be updated when the claim is validated
         });
       
       if (error) {
@@ -294,8 +297,13 @@ export function useBingoSync(sessionId: string, playerId: string, playerName: st
       });
       
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error submitting claim:", error);
+      toast({
+        title: "Claim Error",
+        description: `Failed to submit claim: ${error.message}`,
+        variant: "destructive"
+      });
       return false;
     }
   }, [sessionId, playerId, playerName, gameState, toast]);
