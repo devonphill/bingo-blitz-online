@@ -19,20 +19,6 @@ export default function PlayerGame() {
   // Initialize connection state
   const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('connecting');
   
-  // Initialize when component mounts
-  useEffect(() => {
-    logWithTimestamp("PlayerGame mounted - initializing connection manager");
-    
-    // We'll initialize the actual session connection once we have the session ID
-    // For now, just make sure we're in a clean state
-    connectionManager.cleanup();
-    
-    return () => {
-      logWithTimestamp("PlayerGame unmounting - cleaning up connection manager");
-      connectionManager.cleanup();
-    };
-  }, []);
-  
   // Initialize playerCode state immediately
   const [playerCode, setPlayerCode] = useState<string | null>(null);
   const [loadingPlayerCode, setLoadingPlayerCode] = useState(true);
@@ -56,10 +42,18 @@ export default function PlayerGame() {
         console.log("Using stored player code:", storedPlayerCode);
         setPlayerCode(storedPlayerCode);
         // Redirect to have the code in the URL for better bookmarking/sharing
-        if (window.location.pathname === '/player/game') {
+        if (!window.location.pathname.includes('/player/game/')) {
           navigate(`/player/game/${storedPlayerCode}`, { replace: true });
         }
         setLoadingPlayerCode(false);
+        return;
+      }
+      
+      // Home route handling - if we're on the home page, don't show error
+      if (window.location.pathname === '/') {
+        console.log("On home page, not showing player code error");
+        setLoadingPlayerCode(false);
+        setPlayerCode(null);
         return;
       }
       
@@ -111,58 +105,59 @@ export default function PlayerGame() {
   
   // Setup connection manager when we have a session ID
   useEffect(() => {
-    if (currentSession?.id) {
-      logWithTimestamp(`Setting up connection manager with session ID: ${currentSession.id}`);
-      
-      // Initialize the connection manager with the session ID
-      connectionManager.initialize(currentSession.id)
-        .onSessionProgressUpdate((progress) => {
-          logWithTimestamp(`Received session progress update: ${progress?.game_status || 'unknown status'}`);
-          setConnectionState('connected');
-          
-          // Also update numbers from progress if available
-          if (progress?.called_numbers && progress.called_numbers.length > 0) {
-            const lastNumIndex = progress.called_numbers.length - 1;
-            setRtCalledItems(progress.called_numbers);
-            setRtLastCalledItem(progress.called_numbers[lastNumIndex]);
-            setLastUpdateTime(Date.now());
-          }
-        })
-        .onNumberCalled((number, allNumbers) => {
-          logWithTimestamp(`Received real-time number call: ${number}, total called: ${allNumbers.length}`);
-          setRtLastCalledItem(number);
-          setRtCalledItems(allNumbers);
+    if (!currentSession?.id) return;
+    
+    logWithTimestamp(`Setting up connection manager with session ID: ${currentSession.id}`);
+    
+    // Initialize the connection manager with the session ID
+    connectionManager.initialize(currentSession.id)
+      .onSessionProgressUpdate((progress) => {
+        logWithTimestamp(`Received session progress update: ${progress?.game_status || 'unknown status'}`);
+        setConnectionState('connected');
+        
+        // Also update numbers from progress if available
+        if (progress?.called_numbers && progress.called_numbers.length > 0) {
+          const lastNumIndex = progress.called_numbers.length - 1;
+          setRtCalledItems(progress.called_numbers);
+          setRtLastCalledItem(progress.called_numbers[lastNumIndex]);
           setLastUpdateTime(Date.now());
-          
-          // Show a toast when a new number is called
-          if (number !== null) {
-            toast({
-              title: `Number Called: ${number}`,
-              description: `New number just called!`,
-              duration: 3000
-            });
-          }
-          
-          // Update connection state
-          setConnectionState('connected');
-        });
-      
-      setConnectionState('connecting');
-      
-      // Set up polling to check connection status
-      const intervalId = setInterval(() => {
-        // If no updates in 30 seconds, try to reconnect
-        const now = Date.now();
-        if (now - lastUpdateTime > 30000) {
-          logWithTimestamp(`No updates in 30 seconds, attempting reconnect`);
-          connectionManager.reconnect();
         }
-      }, 10000); // Check every 10 seconds
-      
-      return () => {
-        clearInterval(intervalId);
-      };
-    }
+      })
+      .onNumberCalled((number, allNumbers) => {
+        logWithTimestamp(`Received real-time number call: ${number}, total called: ${allNumbers.length}`);
+        setRtLastCalledItem(number);
+        setRtCalledItems(allNumbers);
+        setLastUpdateTime(Date.now());
+        
+        // Show a toast when a new number is called
+        if (number !== null) {
+          toast({
+            title: `Number Called: ${number}`,
+            description: `New number just called!`,
+            duration: 3000
+          });
+        }
+        
+        // Update connection state
+        setConnectionState('connected');
+      });
+    
+    setConnectionState('connecting');
+    
+    // Set up polling to check connection status
+    const intervalId = setInterval(() => {
+      // If no updates in 30 seconds, try to reconnect
+      const now = Date.now();
+      if (now - lastUpdateTime > 30000) {
+        logWithTimestamp(`No updates in 30 seconds, attempting reconnect`);
+        connectionManager.reconnect();
+      }
+    }, 10000); // Check every 10 seconds
+    
+    return () => {
+      clearInterval(intervalId);
+      connectionManager.cleanup();
+    };
   }, [currentSession?.id, toast]);
   
   // Initialize session state
@@ -205,7 +200,7 @@ export default function PlayerGame() {
   }, [submitBingoClaim, tickets]);
   
   // Only consider connection issues as non-critical errors
-  const effectiveErrorMessage = !playerCode 
+  const effectiveErrorMessage = !playerCode && window.location.pathname.includes('/player/game')
     ? "Player code is required. Please join the game again."
     : (errorMessage && !errorMessage.toLowerCase().includes("connection") && !errorMessage.toLowerCase().includes("websocket")) 
       ? errorMessage 
@@ -224,8 +219,13 @@ export default function PlayerGame() {
     );
   }
   
+  // If we're on the home page, no player code is required - just return nothing
+  if (window.location.pathname === '/') {
+    return null;
+  }
+  
   // Show error if player code is missing - this should not normally happen with our redirection logic
-  if (!playerCode) {
+  if (!playerCode && window.location.pathname.includes('/player/game')) {
     return (
       <PlayerGameLoader 
         isLoading={false} 

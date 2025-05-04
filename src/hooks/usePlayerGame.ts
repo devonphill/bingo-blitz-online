@@ -37,8 +37,16 @@ export function usePlayerGame(playerCode: string | null) {
   // Step 1: Fetch player data and validate player code
   useEffect(() => {
     const getPlayerData = async () => {
+      // Skip if we're on homepage
+      if (window.location.pathname === '/') {
+        setIsLoading(false);
+        return;
+      }
+      
       if (!playerCode) {
-        setErrorMessage('Player code is required');
+        if (window.location.pathname.includes('/player/game')) {
+          setErrorMessage('Player code is required');
+        }
         setIsLoading(false);
         return;
       }
@@ -278,7 +286,7 @@ export function usePlayerGame(playerCode: string | null) {
         ticket_layout_mask: 0,
         ticket_perm: 0,
         total_calls: calledItems ? calledItems.length : 0,
-        ticket_serial: 'auto-generated' // Adding the required field
+        ticket_serial: 'player-claim-' + Date.now() // Better unique identifier
       });
       
       if (logError) {

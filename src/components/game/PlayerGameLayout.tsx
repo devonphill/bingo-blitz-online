@@ -1,7 +1,16 @@
+
 import React from 'react';
 import CurrentNumberDisplay from '@/components/game/CurrentNumberDisplay';
 import GameHeader from '@/components/game/GameHeader';
 import BingoClaim from '@/components/game/BingoClaim';
+import {
+  SidebarProvider,
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarGroupContent
+} from "@/components/ui/sidebar";
 
 interface PlayerGameLayoutProps {
   tickets: any[];
@@ -53,55 +62,14 @@ export default function PlayerGameLayout({
   const resetClaimStatus = () => {}; // This is handled by the usePlayerGame hook
   
   return (
-    <div className="w-full min-h-screen bg-gray-100">
-      <div className="w-full bg-white shadow-sm py-4">
-        <div className="container mx-auto px-4">
-          <GameHeader 
-            gameType={gameType} 
-            playerName={playerName} 
-            playerCode={playerCode}
-            currentGameNumber={currentGameNumber}
-            numberOfGames={numberOfGames}
-          />
-        </div>
-      </div>
-      
-      <div className="container mx-auto px-4 py-8">
-        {errorMessage ? (
-          <div className="bg-red-50 p-4 rounded-md text-red-800 mb-6">
-            <p className="font-medium">Error: {errorMessage}</p>
-            <p className="text-sm mt-1">Please try refreshing the page or re-join using your player code.</p>
-          </div>
-        ) : null}
-        
-        <div className="flex flex-col lg:flex-row">
-          {/* Left sidebar - Current Number Display */}
-          <div className="w-full lg:w-[30%] lg:pr-6 mb-6 lg:mb-0 flex flex-col">
-            {/* Connection Status */}
-            <div className={`rounded-md py-2 px-4 mb-4 text-center text-sm ${
-              connectionState === 'connected' ? 'bg-green-50 text-green-700' :
-              connectionState === 'connecting' ? 'bg-blue-50 text-blue-700' :
-              'bg-red-50 text-red-700'
-            }`}>
-              <div className="flex items-center justify-center">
-                <div className={`h-2 w-2 rounded-full mr-2 ${
-                  connectionState === 'connected' ? 'bg-green-500' :
-                  connectionState === 'connecting' ? 'bg-blue-500' :
-                  'bg-red-500'
-                }`}></div>
-                <span>
-                  {connectionState === 'connected' ? 'Connected' :
-                   connectionState === 'connecting' ? 'Connecting...' :
-                   'Disconnected'}
-                </span>
-              </div>
-            </div>
-            
-            {/* Game Information Card */}
-            <div className="bg-white rounded-lg shadow-sm p-6 mb-4">
-              <h3 className="text-lg font-semibold mb-3">Game Information</h3>
-              
-              <div className="space-y-3">
+    <SidebarProvider defaultOpen={true}>
+      <div className="w-full flex min-h-screen bg-gray-100">
+        <Sidebar>
+          <SidebarContent>
+            {/* Game Information */}
+            <SidebarGroup>
+              <SidebarGroupLabel>Game Information</SidebarGroupLabel>
+              <SidebarGroupContent className="space-y-3 px-1">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Game Type:</span>
                   <span className="font-medium">{gameType === 'mainstage' ? '90-Ball' : gameType}</span>
@@ -121,35 +89,62 @@ export default function PlayerGameLayout({
                   <span className="text-gray-600">Win Pattern:</span>
                   <span className="font-medium">{currentWinPattern || 'Full House'}</span>
                 </div>
-              </div>
-            </div>
-            
-            {/* Recent Numbers */}
-            <div className="bg-white rounded-lg shadow-sm p-6 mb-4">
-              <h3 className="text-lg font-semibold mb-3">Recent Numbers</h3>
-              <div className="grid grid-cols-5 gap-2">
-                {calledNumbers.slice(-10).reverse().map((number, index) => (
-                  <div 
-                    key={`recent-${index}`}
-                    className="bg-gray-100 rounded-full h-8 w-8 flex items-center justify-center text-sm font-medium"
-                  >
-                    {number}
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            {/* Connection Status */}
+            <SidebarGroup>
+              <SidebarGroupLabel>Connection</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <div className={`rounded-md py-2 px-4 mb-4 text-center text-sm ${
+                  connectionState === 'connected' ? 'bg-green-50 text-green-700' :
+                  connectionState === 'connecting' ? 'bg-blue-50 text-blue-700' :
+                  'bg-red-50 text-red-700'
+                }`}>
+                  <div className="flex items-center justify-center">
+                    <div className={`h-2 w-2 rounded-full mr-2 ${
+                      connectionState === 'connected' ? 'bg-green-500' :
+                      connectionState === 'connecting' ? 'bg-blue-500' :
+                      'bg-red-500'
+                    }`}></div>
+                    <span>
+                      {connectionState === 'connected' ? 'Connected' :
+                      connectionState === 'connecting' ? 'Connecting...' :
+                      'Disconnected'}
+                    </span>
                   </div>
-                ))}
-              </div>
-            </div>
-            
-            {/* Current Number - Positioned at the bottom of the viewport */}
-            <div className="fixed bottom-0 left-0 lg:relative lg:mt-auto lg:mb-0 bg-white lg:bg-transparent w-full p-4 shadow-lg lg:shadow-none">
-              <div className="flex flex-col items-center justify-center">
+                </div>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            {/* Recent Numbers */}
+            <SidebarGroup>
+              <SidebarGroupLabel>Recent Numbers</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <div className="grid grid-cols-5 gap-2">
+                  {calledNumbers.slice(-10).reverse().map((number, index) => (
+                    <div 
+                      key={`recent-${index}`}
+                      className="bg-gray-100 rounded-full h-8 w-8 flex items-center justify-center text-sm font-medium"
+                    >
+                      {number}
+                    </div>
+                  ))}
+                </div>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            {/* Current Number */}
+            <SidebarGroup>
+              <SidebarGroupContent className="flex flex-col items-center">
                 <CurrentNumberDisplay 
                   number={currentNumber}
-                  sizePx={140}
+                  sizePx={120}
                   className="mb-4"
                 />
                 
                 {/* Bingo Claim Button */}
-                <div className="w-full max-w-xs mb-4 lg:mb-0">
+                <div className="w-full max-w-xs mb-4">
                   <BingoClaim
                     onClaimBingo={onClaimBingo}
                     claimStatus={claimStatus}
@@ -157,12 +152,32 @@ export default function PlayerGameLayout({
                     resetClaimStatus={() => {}}
                   />
                 </div>
-              </div>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </SidebarContent>
+        </Sidebar>
+
+        <main className="flex-1">
+          <div className="w-full bg-white shadow-sm py-4">
+            <div className="container mx-auto px-4">
+              <GameHeader 
+                gameType={gameType} 
+                playerName={playerName} 
+                playerCode={playerCode}
+                currentGameNumber={currentGameNumber}
+                numberOfGames={numberOfGames}
+              />
             </div>
           </div>
-
-          {/* Main content */}
-          <div className="w-full lg:w-[70%]">
+          
+          <div className="container mx-auto px-4 py-8">
+            {errorMessage ? (
+              <div className="bg-red-50 p-4 rounded-md text-red-800 mb-6">
+                <p className="font-medium">Error: {errorMessage}</p>
+                <p className="text-sm mt-1">Please try refreshing the page or re-join using your player code.</p>
+              </div>
+            ) : null}
+            
             {/* Auto marking toggle */}
             <div className="bg-white rounded-lg shadow-sm p-4 mb-6 flex items-center justify-between">
               <div>
@@ -190,8 +205,8 @@ export default function PlayerGameLayout({
               {children}
             </div>
           </div>
-        </div>
+        </main>
       </div>
-    </div>
+    </SidebarProvider>
   );
 }
