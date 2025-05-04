@@ -47,26 +47,30 @@ export default function PlayerGame() {
         localStorage.setItem('playerCode', urlPlayerCode);
         setPlayerCode(urlPlayerCode);
         setLoadingPlayerCode(false);
-      } else {
-        const storedPlayerCode = localStorage.getItem('playerCode');
-        
-        if (storedPlayerCode && storedPlayerCode.trim() !== '') {
-          console.log("Using stored player code:", storedPlayerCode);
-          setPlayerCode(storedPlayerCode);
-          // Redirect to have the code in the URL for better bookmarking/sharing
+        return;
+      } 
+      
+      const storedPlayerCode = localStorage.getItem('playerCode');
+      
+      if (storedPlayerCode && storedPlayerCode.trim() !== '') {
+        console.log("Using stored player code:", storedPlayerCode);
+        setPlayerCode(storedPlayerCode);
+        // Redirect to have the code in the URL for better bookmarking/sharing
+        if (window.location.pathname === '/player/game') {
           navigate(`/player/game/${storedPlayerCode}`, { replace: true });
-          setLoadingPlayerCode(false);
-        } else {
-          console.log("No player code found, redirecting to join page");
-          localStorage.removeItem('playerCode'); // Clear any invalid codes
-          toast({
-            title: 'Player Code Missing',
-            description: 'Please enter your player code to join the game.',
-            variant: 'destructive'
-          });
-          navigate('/player/join');
         }
+        setLoadingPlayerCode(false);
+        return;
       }
+      
+      console.log("No player code found, redirecting to join page");
+      localStorage.removeItem('playerCode'); // Clear any invalid codes
+      toast({
+        title: 'Player Code Missing',
+        description: 'Please enter your player code to join the game.',
+        variant: 'destructive'
+      });
+      navigate('/player/join');
     };
 
     initializePlayerCode();
@@ -200,10 +204,10 @@ export default function PlayerGame() {
     return submitBingoClaim();
   }, [submitBingoClaim, tickets]);
   
-  // FIX: Only consider player code errors as blocking errors, not connection issues
+  // Only consider connection issues as non-critical errors
   const effectiveErrorMessage = !playerCode 
     ? "Player code is required. Please join the game again."
-    : (errorMessage && !errorMessage.includes("connection") && !errorMessage.includes("WebSocket")) 
+    : (errorMessage && !errorMessage.toLowerCase().includes("connection") && !errorMessage.toLowerCase().includes("websocket")) 
       ? errorMessage 
       : '';
 
@@ -237,22 +241,20 @@ export default function PlayerGame() {
   const hasTickets = tickets && tickets.length > 0;
   const hasSession = !!currentSession;
 
-  // IMPROVED: Only consider critical errors as blocking, not connection issues
-  // Waiting room conditions - show loader if:
-  // 1. Still loading
-  // 2. No session found (but exclude WebSocket connection errors)
-  // 3. Session exists but is not active yet (waiting room)
+  // Don't block for connection issues, just show the loader for real issues
   const shouldShowLoader = 
     isInitialLoading || 
     (!hasSession && !!effectiveErrorMessage) || // Only block on critical errors
     !hasSession || 
-    (!isGameActive || !isGameLive || !isSessionActive);
+    (!isGameActive && !isGameLive && !isSessionActive);
 
   if (shouldShowLoader) {
     logWithTimestamp(`Showing PlayerGameLoader with game status: ${gameStatus}, session active: ${isSessionActive}, game live: ${isGameLive}`);
     
-    // Pass connection issues as non-blocking warnings
-    const loaderErrorMessage = errorMessage && errorMessage.includes("connection") ? errorMessage : effectiveErrorMessage;
+    // Show connection issues as non-blocking warnings
+    const loaderErrorMessage = errorMessage?.toLowerCase().includes("connection") 
+      ? null  // Don't show connection errors in the loader, we handle them in the header
+      : effectiveErrorMessage;
     
     // Pass session progress to loader
     return (

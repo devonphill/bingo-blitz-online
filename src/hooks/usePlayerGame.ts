@@ -21,6 +21,18 @@ export function usePlayerGame(playerCode: string | null) {
   const [gameType, setGameType] = useState<string>('mainstage');
   const [isSubmittingClaim, setIsSubmittingClaim] = useState<boolean>(false);
   const { toast } = useToast();
+  
+  // Clear error messages related to connection when they're set
+  useEffect(() => {
+    if (errorMessage && (errorMessage.toLowerCase().includes('connection') || errorMessage.toLowerCase().includes('websocket'))) {
+      // Auto-clear connection errors after 5 seconds
+      const timer = setTimeout(() => {
+        setErrorMessage(null);
+      }, 5000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [errorMessage]);
 
   // Step 1: Fetch player data and validate player code
   useEffect(() => {
@@ -251,7 +263,6 @@ export function usePlayerGame(playerCode: string | null) {
     
     try {
       // Insert claim record in game logs
-      // Add the required ticket_serial field
       const { error: logError } = await supabase.from('universal_game_logs').insert({
         session_id: currentSession.id,
         game_number: currentSession.current_game,
