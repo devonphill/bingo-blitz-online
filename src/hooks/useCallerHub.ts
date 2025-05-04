@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -25,7 +26,8 @@ export function useCallerHub(sessionId: string | undefined) {
     const channel = supabase
       .channel('caller-claims-channel')
       .on('broadcast', { event: 'bingo-claim' }, payload => {
-        logWithTimestamp('Received bingo claim broadcast:', payload);
+        // Fix: Use correct LogLevel parameter format
+        logWithTimestamp('Received bingo claim broadcast:', 'info', 'Connection');
         if (payload.payload && payload.payload.sessionId === sessionId) {
           toast({
             title: "New Bingo Claim!",
@@ -35,7 +37,7 @@ export function useCallerHub(sessionId: string | undefined) {
         }
       })
       .subscribe((status) => {
-        logWithTimestamp(`Caller hub connection status: ${status}`);
+        logWithTimestamp(`Caller hub connection status: ${status}`, 'info');
         setIsConnected(status === 'SUBSCRIBED');
         setConnectionState(status === 'SUBSCRIBED' ? 'connected' : 'connecting');
       });
@@ -52,7 +54,7 @@ export function useCallerHub(sessionId: string | undefined) {
     if (!sessionId) return;
     
     try {
-      logWithTimestamp(`Fetching pending claims for session ${sessionId}`);
+      logWithTimestamp(`Fetching pending claims for session ${sessionId}`, 'info');
       
       // Query universal_game_logs table for unvalidated claims
       const { data, error } = await supabase
@@ -69,7 +71,7 @@ export function useCallerHub(sessionId: string | undefined) {
       }
       
       if (data && Array.isArray(data)) {
-        logWithTimestamp(`Found ${data.length} pending claims`);
+        logWithTimestamp(`Found ${data.length} pending claims`, 'info');
         setPendingClaims(data);
         
         // If there are claims and we haven't shown a notification recently, show one
@@ -93,7 +95,7 @@ export function useCallerHub(sessionId: string | undefined) {
     
     setIsProcessing(true);
     try {
-      logWithTimestamp(`Responding to claim from player ${playerId} with result: ${isValid ? 'valid' : 'rejected'}`);
+      logWithTimestamp(`Responding to claim from player ${playerId} with result: ${isValid ? 'valid' : 'rejected'}`, 'info');
       
       // Update the claim in the database
       const { error } = await supabase
@@ -149,7 +151,7 @@ export function useCallerHub(sessionId: string | undefined) {
     if (!sessionId) return false;
     
     try {
-      logWithTimestamp(`Changing win pattern to ${patternId}`);
+      logWithTimestamp(`Changing win pattern to ${patternId}`, 'info');
       
       // Update the database
       const { error } = await supabase
@@ -180,7 +182,7 @@ export function useCallerHub(sessionId: string | undefined) {
     if (!sessionId) return false;
     
     try {
-      logWithTimestamp(`Starting game for session ${sessionId}`);
+      logWithTimestamp(`Starting game for session ${sessionId}`, 'info');
       
       // Update the database to mark the game as active
       const { error } = await supabase
@@ -211,7 +213,7 @@ export function useCallerHub(sessionId: string | undefined) {
 
   // Add reconnect method
   const reconnect = useCallback(() => {
-    logWithTimestamp("Manually reconnecting caller hub");
+    logWithTimestamp("Manually reconnecting caller hub", 'info');
     setConnectionState('connecting');
     fetchPendingClaims();
   }, [fetchPendingClaims]);
@@ -229,22 +231,29 @@ export function useCallerHub(sessionId: string | undefined) {
   };
 }
 
-// Add proper typing for the event
+// Add proper typing for the event and a proper channel variable
+// Create a function with channel as a parameter so it's available in the scope
 const sendBroadcast = async (event: string, payload: any) => {
-  if (!channel) return false;
-
+  // Create a new channel for each broadcast to avoid the channel not found error
+  const broadcastChannel = supabase.channel('broadcast-channel');
+  
   try {
     // Log with proper LogLevel type
-    logWithTimestamp('Message about broadcast', 'info');
+    logWithTimestamp('Sending broadcast message', 'info');
     
-    await channel.send({
+    await broadcastChannel.send({
       type: 'broadcast',
       event: event,
       payload: payload
     });
+    
+    // Clean up the channel after use
+    supabase.removeChannel(broadcastChannel);
     return true;
   } catch (err) {
     console.error(`Error sending broadcast ${event}:`, err);
+    // Clean up the channel even if there's an error
+    supabase.removeChannel(broadcastChannel);
     return false;
   }
 };

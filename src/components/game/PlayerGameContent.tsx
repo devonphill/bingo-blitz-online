@@ -219,20 +219,12 @@ export default function PlayerGameContent({
     });
   };
 
-  // Convert the claimStatus prop to the type required by GameTypePlayspace
-  // Fix: Map claim status values properly for GameTypePlayspace
-  const mapClaimStatus = (status: 'none' | 'pending' | 'valid' | 'invalid'): 'pending' | 'rejected' | 'validated' => {
-    switch (status) {
-      case 'valid':
-        return 'validated';
-      case 'invalid':
-        return 'rejected';
-      case 'none':
-      case 'pending':
-      default:
-        return 'pending';
-    }
-  };
+  // Add a helper function to map between the different claim status types
+  function mapClaimStatus(status: 'none' | 'pending' | 'valid' | 'invalid'): 'pending' | 'rejected' | 'validated' {
+    if (status === 'valid') return 'validated';
+    if (status === 'invalid') return 'rejected';
+    return 'pending'; // Default to 'pending' for both 'pending' and 'none'
+  }
 
   // Use the mapping function to get the correct type
   const gameTypePlayspaceClaimStatus = mapClaimStatus(claimStatus);

@@ -103,7 +103,7 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
       cacheTickets(playerCode, sessionId, mappedTickets);
       
       setTickets(mappedTickets);
-      logWithTimestamp(`Loaded ${mappedTickets.length} tickets from database and cached them`);
+      logWithTimestamp(`Loaded ${mappedTickets.length} tickets from database and cached them`, 'info');
     } catch (err) {
       const errorMsg = (err as Error).message;
       console.error('Error in fetchTickets:', errorMsg, err);
@@ -116,14 +116,14 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
   // Initial fetch
   useEffect(() => {
     if (playerCode && sessionId) {
-      logWithTimestamp(`Fetching tickets for player ${playerCode} in session ${sessionId}`);
+      logWithTimestamp(`Fetching tickets for player ${playerCode} in session ${sessionId}`, 'info');
       loadTickets();
       
       // Set up the real-time listener for ticket assignments via connection manager
       connectionManager.initialize(sessionId)
         .onTicketsAssigned((assignedPlayerCode, assignedTickets) => {
           if (assignedPlayerCode === playerCode && assignedTickets && assignedTickets.length > 0) {
-            logWithTimestamp(`Received ${assignedTickets.length} tickets assignment for player ${playerCode}`);
+            logWithTimestamp(`Received ${assignedTickets.length} tickets assignment for player ${playerCode}`, 'info');
             
             // Map the assigned tickets to our format
             const mappedTickets: Ticket[] = assignedTickets.map(ticket => ({
@@ -146,7 +146,7 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
           }
         });
     } else {
-      logWithTimestamp("Not fetching tickets: waiting for game to be active", { playerCode, sessionId });
+      logWithTimestamp("Not fetching tickets: waiting for game to be active", 'info');
       setTickets([]);
       setIsLoading(false);
     }
