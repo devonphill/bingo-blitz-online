@@ -17,15 +17,28 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
   const channelRef = useRef<any>(null);
   const claimChannelRef = useRef<any>(null);
   
+  // Track if the connection setup is in progress to prevent multiple connection attempts
+  const connectionSetupInProgress = useRef<boolean>(false);
+  
   // For reconnection purposes
   const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('connecting');
   const reconnect = useCallback(() => {
+    if (connectionSetupInProgress.current) {
+      logWithTimestamp(`Connection setup already in progress for player ${playerCode}, ignoring reconnect request`);
+      return;
+    }
+    
     logWithTimestamp(`Manual reconnection requested for player ${playerCode}`);
     setConnectionState('connecting');
     
     // Re-initialize channel subscriptions
     if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
+      try {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      } catch (err) {
+        console.error("Error removing channel during reconnect:", err);
+      }
     }
     
     // Setup will happen in the useEffect that depends on connectionState
@@ -45,6 +58,14 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
       return;
     }
 
+    // Prevent multiple connection setups
+    if (connectionSetupInProgress.current) {
+      logWithTimestamp(`Connection setup already in progress for player ${playerCode}, skipping duplicate setup`);
+      return;
+    }
+    
+    connectionSetupInProgress.current = true;
+
     // Try to connect to the session
     setIsLoading(true);
     setIsConnected(false);
@@ -53,9 +74,12 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
 
     logWithTimestamp(`Setting up connection for player ${playerCode} to session ${sessionId}`);
     
+    // Generate a unique channel name for this player and session
+    const channelName = `game-updates-${playerCode}-${Math.random().toString(36).substring(2, 9)}`;
+    
     // Start subscription for game updates
     const channel = supabase
-      .channel('game-updates')
+      .channel(channelName)
       .on('broadcast', { event: 'number-called' }, payload => {
         console.log('Received number-called update:', payload);
         if (payload.payload?.sessionId === sessionId) {
@@ -98,11 +122,29 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
           setIsConnected(true);
           setConnectionState('connected');
           setIsLoading(false);
+          connectionSetupInProgress.current = false;
         } else if (status === 'CHANNEL_ERROR') {
           setError('Error connecting to game updates');
           setConnectionState('error');
           setIsConnected(false);
           setIsLoading(false);
+          connectionSetupInProgress.current = false;
+        } else if (status === 'TIMED_OUT') {
+          setError('Connection timed out');
+          setConnectionState('error');
+          setIsConnected(false);
+          setIsLoading(false);
+          connectionSetupInProgress.current = false;
+          
+          // Try to reconnect automatically after timeout
+          setTimeout(() => {
+            if (connectionState !== 'connected') {
+              reconnect();
+            }
+          }, 3000);
+        } else if (status === 'CLOSED') {
+          logWithTimestamp(`Channel ${channelName} was closed`);
+          connectionSetupInProgress.current = false;
         }
       });
 
@@ -150,22 +192,69 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
     };
 
     // Initialize data
-    Promise.all([getPlayerInfo(), getSessionInfo()]);
+    Promise.all([getPlayerInfo(), getSessionInfo()]).then(() => {
+      logWithTimestamp(`Initial data loaded for player ${playerCode}`);
+    }, (err) => {
+      console.error('Error loading initial data:', err);
+    });
 
     // Store the channel for cleanup
     channelRef.current = channel;
 
+    // Set up a heartbeat to keep connection alive
+    const heartbeatInterval = setInterval(() => {
+      if (channel && connectionState === 'connected') {
+        try {
+          // Ping to keep the connection alive
+          channel.send({
+            type: 'broadcast',
+            event: 'heartbeat',
+            payload: {
+              playerCode,
+              timestamp: Date.now()
+            }
+          }).then(() => {
+            // Heartbeat sent successfully
+          }, (err) => {
+            console.error('Heartbeat error:', err);
+            if (connectionState !== 'connecting') {
+              setConnectionState('disconnected');
+              reconnect();
+            }
+          });
+        } catch (err) {
+          console.error('Error sending heartbeat:', err);
+        }
+      }
+    }, 30000); // Every 30 seconds
+
     // Cleanup on unmount
     return () => {
       console.log('Cleaning up useBingoSync');
+      clearInterval(heartbeatInterval);
+      
       if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
+        try {
+          logWithTimestamp(`Removing channel for player ${playerCode}`);
+          supabase.removeChannel(channelRef.current);
+          channelRef.current = null;
+        } catch (err) {
+          console.error("Error removing channel during cleanup:", err);
+        }
       }
+      
       if (claimChannelRef.current) {
-        supabase.removeChannel(claimChannelRef.current);
+        try {
+          supabase.removeChannel(claimChannelRef.current);
+          claimChannelRef.current = null;
+        } catch (err) {
+          console.error("Error removing claim channel during cleanup:", err);
+        }
       }
+      
+      connectionSetupInProgress.current = false;
     };
-  }, [playerCode, sessionId, connectionState]);
+  }, [playerCode, sessionId, connectionState, reconnect, playerId]);
 
   // Function to submit a bingo claim
   // This no longer writes to the database directly but broadcasts to the caller
@@ -229,7 +318,11 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
         
         // Clean up this channel after some time
         setTimeout(() => {
-          supabase.removeChannel(resultChannel);
+          try {
+            supabase.removeChannel(resultChannel);
+          } catch (err) {
+            console.error("Error removing result channel:", err);
+          }
         }, 60000); // 1 minute timeout
       }, (error) => { // Using this pattern instead of .catch()
         console.error('Error broadcasting claim:', error);

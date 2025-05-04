@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 
@@ -21,6 +20,7 @@ interface Client {
   playerName?: string;
   instanceId?: string;
   lastActivity: number;
+  pingTimer?: number;
 }
 
 // Initialize Supabase client for realtime fallback
@@ -63,17 +63,21 @@ const setupRealtimeFallback = () => {
           for (const clientId of sessionClients) {
             const client = clients.get(clientId);
             if (client && client.type === "caller" && client.socket.readyState === WebSocket.OPEN) {
-              client.socket.send(JSON.stringify({
-                type: "bingo_claimed",
-                data: {
-                  playerCode,
-                  playerName,
-                  ticketData,
-                  timestamp,
-                  instanceId
-                }
-              }));
-              logWithTimestamp(`Notified caller ${clientId} about claim from ${playerCode}`);
+              try {
+                client.socket.send(JSON.stringify({
+                  type: "bingo_claimed",
+                  data: {
+                    playerCode,
+                    playerName,
+                    ticketData,
+                    timestamp,
+                    instanceId
+                  }
+                }));
+                logWithTimestamp(`Notified caller ${clientId} about claim from ${playerCode}`);
+              } catch (err) {
+                console.error(`Error sending message to caller ${clientId}:`, err);
+              }
             }
           }
         }
@@ -113,11 +117,43 @@ setInterval(() => {
   }
 }, 30000);
 
+// Send ping to all clients every 25 seconds to keep connections alive
+setInterval(() => {
+  try {
+    for (const [id, client] of clients.entries()) {
+      if (client.socket.readyState === WebSocket.OPEN) {
+        try {
+          client.socket.send(JSON.stringify({
+            type: "ping",
+            data: {
+              timestamp: Date.now()
+            }
+          }));
+        } catch (err) {
+          console.error(`Error sending ping to client ${id}:`, err);
+          // If we can't send a ping, consider the client dead and remove it
+          removeClient(id);
+        }
+      } else if (client.socket.readyState === WebSocket.CLOSED || client.socket.readyState === WebSocket.CLOSING) {
+        // Remove clients with closed websockets
+        removeClient(id);
+      }
+    }
+  } catch (err) {
+    console.error("Error in ping interval:", err);
+  }
+}, 25000);
+
 function removeClient(clientId: string) {
   const client = clients.get(clientId);
   if (!client) {
     logWithTimestamp(`Client ${clientId} not found for removal`);
     return;
+  }
+  
+  // Clear ping timer if it exists
+  if (client.pingTimer) {
+    clearTimeout(client.pingTimer);
   }
   
   // Remove from session tracking
@@ -206,9 +242,11 @@ function broadcastToSession(sessionId: string, message: any) {
         sessionId,
         timestamp: Date.now()
       }
+    }).then(() => {
+      logWithTimestamp(`Also sent message via realtime broadcast: ${message.type}`);
+    }, (err) => {
+      console.error("Error broadcasting via realtime:", err);
     });
-    
-    logWithTimestamp(`Also sent message via realtime broadcast: ${message.type}`);
   } catch (err) {
     console.error("Error broadcasting via realtime:", err);
   }
@@ -619,6 +657,39 @@ serve(async (req) => {
       }
       sessionClients.add(clientId);
       
+      // Send immediate welcome message to confirm connection
+      try {
+        socket.send(JSON.stringify({
+          type: "connection_established",
+          data: {
+            clientId,
+            sessionId,
+            timestamp: Date.now()
+          }
+        }));
+      } catch (err) {
+        console.error(`Error sending welcome message to client ${clientId}:`, err);
+      }
+      
+      // Start ping timer for this client
+      client.pingTimer = setInterval(() => {
+        if (socket.readyState === WebSocket.OPEN) {
+          try {
+            socket.send(JSON.stringify({
+              type: "ping",
+              timestamp: Date.now()
+            }));
+          } catch (err) {
+            console.error(`Error sending ping to ${clientId}:`, err);
+            clearInterval(client.pingTimer);
+            removeClient(clientId);
+          }
+        } else {
+          clearInterval(client.pingTimer);
+          removeClient(clientId);
+        }
+      }, 25000) as unknown as number; // Type assertion needed for Deno
+      
       // If this is a player, notify caller about join
       if (clientType === 'player' && playerCode) {
         notifyCaller(sessionId, {
@@ -634,6 +705,15 @@ serve(async (req) => {
     
     socket.onmessage = (event) => {
       try {
+        // Update last activity timestamp
+        client.lastActivity = Date.now();
+        
+        // Handle pong messages specially
+        if (event.data === 'pong' || (typeof event.data === 'string' && event.data.includes('"type":"pong"'))) {
+          return; // Nothing else to do for pong messages
+        }
+        
+        // Parse and handle message
         const message = JSON.parse(event.data);
         
         // Add sessionId to message if not present
@@ -641,33 +721,35 @@ serve(async (req) => {
           message.sessionId = sessionId;
         }
         
-        // Route message to appropriate handler
-        if (clientType === 'caller') {
-          handleCallerMessage(client, message);
-        } else {
+        // Route message based on client type
+        if (client.type === "player") {
           handlePlayerMessage(client, message);
+        } else if (client.type === "caller") {
+          handleCallerMessage(client, message);
         }
       } catch (err) {
         console.error(`Error processing message from client ${clientId}:`, err);
+        // Don't remove client for parse errors
       }
     };
     
     socket.onclose = (event) => {
-      logWithTimestamp(`WebSocket connection closed for client ${clientId}: ${event.code} - ${event.reason || 'No reason provided'}`);
+      logWithTimestamp(`WebSocket closed for client ${clientId}: code=${event.code}, reason=${event.reason}`);
       removeClient(clientId);
     };
     
     socket.onerror = (event) => {
       logWithTimestamp(`WebSocket error for client ${clientId}`);
-      console.error(`WebSocket error for client ${clientId}:`, event);
+      console.error("Socket error:", event);
+      removeClient(clientId);
     };
     
     return response;
   } catch (error) {
-    console.error("Error handling WebSocket connection:", error);
+    console.error("Error handling connection:", error);
     return new Response(`Internal Server Error: ${error.message}`, { 
       status: 500,
-      headers: corsHeaders
+      headers: corsHeaders 
     });
   }
 });

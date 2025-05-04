@@ -1,4 +1,3 @@
-
 import React, { useEffect, useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -22,6 +21,7 @@ export default function PlayerGame() {
   const [loadingPlayerCode, setLoadingPlayerCode] = useState(true);
   const [finalCalledNumbers, setFinalCalledNumbers] = useState<number[]>([]);
   const [finalLastCalledNumber, setFinalLastCalledNumber] = useState<number | null>(null);
+  const [connectionReconnectAttempts, setConnectionReconnectAttempts] = useState(0);
   
   // Handle player code initialization - only run once on mount
   useEffect(() => {
@@ -116,10 +116,58 @@ export default function PlayerGame() {
     hookConnectionState || 'disconnected'
   );
   
-  // Update effective connection state from hook
+  // Update effective connection state from hook with debouncing
+  // This prevents rapid flickering between connected/disconnected states
   useEffect(() => {
-    setEffectiveConnectionState(hookConnectionState);
-  }, [hookConnectionState]);
+    const timer = setTimeout(() => {
+      setEffectiveConnectionState(hookConnectionState);
+      
+      // If we're disconnected for too long, try to reconnect
+      if (hookConnectionState === 'disconnected' && currentSession?.id) {
+        setConnectionReconnectAttempts(prev => prev + 1);
+        
+        // Implement exponential backoff for reconnect attempts
+        const reconnectDelay = Math.min(1000 * Math.pow(2, connectionReconnectAttempts), 30000); // Max 30 seconds
+        
+        setTimeout(() => {
+          // Only reconnect if we're still disconnected
+          if (effectiveConnectionState === 'disconnected') {
+            logWithTimestamp(`Auto-reconnecting after ${reconnectDelay}ms (attempt ${connectionReconnectAttempts + 1})`);
+            connectionManager.reconnect();
+            
+            // Also try other connection methods
+            if (supabase) {
+              try {
+                // Force a refresh of data from the database
+                supabase
+                  .from('sessions_progress')
+                  .select('*')
+                  .eq('session_id', currentSession.id)
+                  .single()
+                  .then(({ data }) => {
+                    if (data) {
+                      logWithTimestamp("Reconnection: Successfully fetched session data");
+                    }
+                  });
+              } catch (err) {
+                console.error("Error during reconnection data fetch:", err);
+              }
+            }
+          }
+        }, reconnectDelay);
+      } else if (hookConnectionState === 'connected') {
+        // Reset reconnect attempts when connected
+        setConnectionReconnectAttempts(0);
+      }
+    }, 1000); // Wait 1 second before updating connection state to prevent flickering
+    
+    return () => clearTimeout(timer);
+  }, [hookConnectionState, currentSession?.id, connectionReconnectAttempts, effectiveConnectionState]);
+  
+  // Reset connection attempts when session changes
+  useEffect(() => {
+    setConnectionReconnectAttempts(0);
+  }, [currentSession?.id]);
   
   // Always initialize tickets hook with the same parameters, even if it will not be used
   const { tickets } = useTickets(playerCode, currentSession?.id);
