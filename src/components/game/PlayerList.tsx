@@ -3,6 +3,9 @@ import React, { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Loader, Users, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { connectionManager } from "@/utils/connectionManager";
+import { logWithTimestamp } from "@/utils/logUtils";
+import { supabase } from "@/integrations/supabase/client";
 
 export interface PlayerListProps {
   players: {
@@ -16,13 +19,73 @@ export interface PlayerListProps {
   }[];
   isLoading?: boolean;
   onReconnect?: () => void;
+  sessionId?: string;
 }
 
 const PlayerList: React.FC<PlayerListProps> = ({ 
-  players, 
-  isLoading = false,
-  onReconnect
+  players: initialPlayers = [], 
+  isLoading: initialLoading = false,
+  onReconnect,
+  sessionId
 }) => {
+  const [players, setPlayers] = useState(initialPlayers);
+  const [isLoading, setIsLoading] = useState(initialLoading);
+
+  // Fetch players and set up presence tracking
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    setIsLoading(true);
+
+    // Fetch initial players list from database
+    const fetchPlayers = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('players')
+          .select('*')
+          .eq('session_id', sessionId);
+
+        if (error) {
+          console.error('Error fetching players:', error);
+          return;
+        }
+
+        if (data) {
+          // Format the players data
+          const formattedPlayers = data.map(p => ({
+            id: p.id,
+            nickname: p.nickname,
+            playerCode: p.player_code,
+            playerName: p.nickname,
+            joinedAt: p.joined_at,
+            tickets: p.tickets
+          }));
+          setPlayers(formattedPlayers);
+          logWithTimestamp(`PlayerList: Fetched ${formattedPlayers.length} players from database`);
+        }
+      } catch (err) {
+        console.error('Error in player fetch:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    // Execute the fetch
+    fetchPlayers();
+    
+    // Set up realtime updates for player presence using the connectionManager
+    connectionManager.initialize(sessionId)
+      .onPlayersUpdate((activePlayers) => {
+        if (activePlayers && activePlayers.length > 0) {
+          logWithTimestamp(`PlayerList: Received ${activePlayers.length} active players update`);
+          setPlayers(activePlayers);
+          setIsLoading(false);
+        }
+      });
+
+    // No need for cleanup here as connectionManager handles it
+  }, [sessionId]);
+
   // Simple loading state
   if (isLoading) {
     return (

@@ -1,6 +1,10 @@
-import React, { useMemo } from "react";
+
+import React, { useMemo, useState, useEffect } from "react";
 import BingoTicketDisplay from "@/components/game/BingoTicketDisplay";
 import { calculateTicketProgress, processTicketLayout } from "@/utils/ticketUtils";
+import { Button } from "@/components/ui/button";
+import { RefreshCw } from "lucide-react";
+import { logWithTimestamp } from "@/utils/logUtils";
 
 interface PlayerTicketsPanelProps {
   tickets: any[];
@@ -8,6 +12,8 @@ interface PlayerTicketsPanelProps {
   autoMarking: boolean;
   activeWinPatterns: string[];
   currentWinPattern?: string | null;
+  sessionId?: string;
+  onRefreshTickets?: () => void;
 }
 
 export default function PlayerTicketsPanel({ 
@@ -15,8 +21,23 @@ export default function PlayerTicketsPanel({
   calledNumbers, 
   autoMarking, 
   activeWinPatterns,
-  currentWinPattern
+  currentWinPattern,
+  sessionId,
+  onRefreshTickets
 }: PlayerTicketsPanelProps) {
+  const [showGameLobby, setShowGameLobby] = useState(false);
+
+  // Determine if we should show the game lobby
+  useEffect(() => {
+    // If we have no tickets but we have a valid session
+    if ((!tickets || tickets.length === 0) && sessionId) {
+      logWithTimestamp('PlayerTicketsPanel: No tickets but session active, showing game lobby');
+      setShowGameLobby(true);
+    } else {
+      setShowGameLobby(false);
+    }
+  }, [tickets, sessionId]);
+  
   console.log(`Rendering PlayerTicketsPanel with ${tickets?.length || 0} tickets`);
   
   // Debug ticket data in more detail
@@ -31,13 +52,48 @@ export default function PlayerTicketsPanel({
     });
   }
   
+  // Show game lobby if requested
+  if (showGameLobby) {
+    return (
+      <div className="bg-white shadow rounded-lg p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-bold text-gray-900">Game Lobby</h2>
+        </div>
+        <p className="text-gray-600 mb-4">
+          Waiting for the game organizer to assign tickets. The game will start soon.
+        </p>
+        {onRefreshTickets && (
+          <Button 
+            variant="outline" 
+            className="w-full flex items-center justify-center gap-2"
+            onClick={onRefreshTickets}
+          >
+            <RefreshCw className="h-4 w-4" />
+            Check for Tickets
+          </Button>
+        )}
+      </div>
+    );
+  }
+  
+  // No tickets state - different from game lobby
   if (!tickets || tickets.length === 0) {
     return (
       <div className="bg-white shadow rounded-lg p-6">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold text-gray-900">No Tickets Assigned</h2>
         </div>
-        <p className="text-gray-600">You don't have any tickets assigned yet. Please wait for the game organizer to assign tickets.</p>
+        <p className="text-gray-600">You don't have any tickets assigned yet. Please wait for the game organizer to assign tickets or contact them if you believe this is an error.</p>
+        {onRefreshTickets && (
+          <Button 
+            variant="outline" 
+            className="w-full mt-4 flex items-center justify-center gap-2"
+            onClick={onRefreshTickets}
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh Tickets
+          </Button>
+        )}
       </div>
     );
   }
@@ -86,7 +142,20 @@ export default function PlayerTicketsPanel({
 
   return (
     <div className="bg-white shadow rounded-lg p-6 mb-6">
-      <h2 className="text-xl font-bold text-gray-900 mb-4">Your Bingo Tickets ({tickets.length})</h2>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl font-bold text-gray-900">Your Bingo Tickets ({tickets.length})</h2>
+        {onRefreshTickets && (
+          <Button 
+            size="sm" 
+            variant="outline" 
+            onClick={onRefreshTickets} 
+            className="flex items-center gap-1"
+          >
+            <RefreshCw className="h-3 w-3" />
+            Refresh
+          </Button>
+        )}
+      </div>
       
       {/* Group tickets by perm (strip) */}
       {Array.from(new Set(sortedTickets.map(t => t.perm))).map(perm => (

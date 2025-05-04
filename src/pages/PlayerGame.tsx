@@ -126,7 +126,7 @@ export default function PlayerGame() {
   }, [hookConnectionState]);
   
   // Always initialize tickets hook with the same parameters, even if it will not be used
-  const { tickets } = useTickets(playerCode, currentSession?.id);
+  const { tickets, refreshTickets } = useTickets(playerCode, currentSession?.id);
 
   // Set up a SINGLE real-time connection using the connection manager
   useEffect(() => {
@@ -354,6 +354,8 @@ export default function PlayerGame() {
         currentGameNumber={currentGameNumber}
         numberOfGames={numberOfGames}
         connectionState={effectiveConnectionState}
+        onRefreshTickets={refreshTickets}
+        sessionId={currentSession?.id}
       >
         <GameTypePlayspace
           gameType={gameType as any}

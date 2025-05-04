@@ -33,6 +33,8 @@ interface PlayerGameLayoutProps {
   currentGameNumber: number; 
   numberOfGames: number;
   connectionState?: 'disconnected' | 'connecting' | 'connected' | 'error';
+  onRefreshTickets?: () => void;
+  sessionId?: string;
 }
 
 export default function PlayerGameLayout({
@@ -56,7 +58,9 @@ export default function PlayerGameLayout({
   children,
   currentGameNumber,
   numberOfGames,
-  connectionState = 'connected'
+  connectionState = 'connected',
+  onRefreshTickets,
+  sessionId
 }: PlayerGameLayoutProps) {
   const resetClaimStatus = () => {}; // This is handled by the usePlayerGame hook
   

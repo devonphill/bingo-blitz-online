@@ -221,11 +221,11 @@ export default function PlayerGameContent({
   };
 
   // Convert the claimStatus to the type required by GameTypePlayspace
-  // Map 'none' to 'pending' since GameTypePlayspace doesn't accept 'none'
+  // Always use 'pending' if the value is 'none' since GameTypePlayspace doesn't accept 'none'
   const gameTypePlayspaceClaimStatus: 'validated' | 'rejected' | 'pending' = 
     claimStatus === 'validated' ? 'validated' :
     claimStatus === 'rejected' ? 'rejected' :
-    'pending'; // Both 'pending' and 'none' map to 'pending'
+    'pending'; // Default to pending instead of 'none'
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
@@ -292,3 +292,4 @@ export default function PlayerGameContent({
     </div>
   );
 }
+

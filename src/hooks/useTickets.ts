@@ -4,6 +4,8 @@ import { Ticket } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { cacheTickets, getCachedTickets } from '@/utils/ticketUtils';
 import { toast } from 'sonner';
+import { connectionManager } from '@/utils/connectionManager';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 interface UseTicketsResult {
   tickets: Ticket[];
@@ -103,7 +105,7 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
       cacheTickets(playerCode, sessionId, mappedTickets);
       
       setTickets(mappedTickets);
-      console.log(`Loaded ${mappedTickets.length} tickets from database and cached them`);
+      logWithTimestamp(`Loaded ${mappedTickets.length} tickets from database and cached them`);
     } catch (err) {
       const errorMsg = (err as Error).message;
       console.error('Error in fetchTickets:', errorMsg, err);
@@ -116,10 +118,37 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
   // Initial fetch
   useEffect(() => {
     if (playerCode && sessionId) {
-      console.log(`Fetching tickets for player ${playerCode} in session ${sessionId}`);
+      logWithTimestamp(`Fetching tickets for player ${playerCode} in session ${sessionId}`);
       fetchTickets();
+      
+      // Set up the real-time listener for ticket assignments via connection manager
+      connectionManager.initialize(sessionId)
+        .onTicketsAssigned((assignedPlayerCode, assignedTickets) => {
+          if (assignedPlayerCode === playerCode && assignedTickets && assignedTickets.length > 0) {
+            logWithTimestamp(`Received ${assignedTickets.length} tickets assignment for player ${playerCode}`);
+            
+            // Map the assigned tickets to our format
+            const mappedTickets: Ticket[] = assignedTickets.map(ticket => ({
+              id: ticket.id,
+              playerId: ticket.player_id,
+              sessionId: ticket.session_id,
+              numbers: ticket.numbers || [],
+              serial: ticket.serial || `RT-${Math.random().toString(36).substring(2, 7)}`,
+              position: ticket.position || 0,
+              layoutMask: ticket.layout_mask || 0, 
+              perm: ticket.perm || 0
+            }));
+            
+            // Update state and cache
+            setTickets(mappedTickets);
+            cacheTickets(playerCode, sessionId, mappedTickets);
+            
+            toast.success(`${mappedTickets.length} tickets have been assigned to you!`);
+            setIsLoading(false);
+          }
+        });
     } else {
-      console.log("Not fetching tickets: waiting for game to be active", { playerCode, sessionId });
+      logWithTimestamp("Not fetching tickets: waiting for game to be active", { playerCode, sessionId });
       setTickets([]);
       setIsLoading(false);
     }
