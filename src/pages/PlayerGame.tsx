@@ -356,12 +356,18 @@ export default function PlayerGame() {
   console.log("- Player name:", playerName);
   console.log("- Connection state:", connectionState);
   
-  // Map the claimStatus to the expected format for PlayerGameLayout
-  // This fixes the inconsistent claim status types between components
-  const mappedClaimStatus = claimStatus === 'valid' ? 'valid' : 
-                           claimStatus === 'invalid' ? 'invalid' : 
-                           claimStatus === 'pending' ? 'pending' : 
-                           'none';
+  // Map the claimStatus to the proper format expected by each component
+  // The PlayerGameLayout expects: 'none' | 'pending' | 'valid' | 'invalid'
+  // The GameTypePlayspace expects: 'pending' | 'validated' | 'rejected'
+  const layoutClaimStatus = claimStatus === 'valid' ? 'valid' : 
+                          claimStatus === 'invalid' ? 'invalid' : 
+                          claimStatus === 'pending' ? 'pending' : 
+                          'none';
+                          
+  const gameTypePlayspaceClaimStatus = claimStatus === 'valid' ? 'validated' : 
+                                     claimStatus === 'invalid' ? 'rejected' : 
+                                     claimStatus === 'pending' ? 'pending' : 
+                                     'pending'; // Default to pending instead of 'none'
 
   return (
     <React.Fragment>
@@ -381,7 +387,7 @@ export default function PlayerGame() {
         errorMessage={effectiveErrorMessage || ''}
         isLoading={isLoading}
         isClaiming={isSubmittingClaim}
-        claimStatus={mappedClaimStatus}
+        claimStatus={layoutClaimStatus}
         gameType={gameType}
         currentGameNumber={currentGameNumber}
         numberOfGames={numberOfGames}
@@ -396,7 +402,7 @@ export default function PlayerGame() {
           setAutoMarking={setAutoMarking}
           handleClaimBingo={handleClaimBingo}
           isClaiming={isSubmittingClaim}
-          claimStatus={mappedClaimStatus}
+          claimStatus={gameTypePlayspaceClaimStatus}
         />
       </PlayerGameLayout>
     </React.Fragment>
