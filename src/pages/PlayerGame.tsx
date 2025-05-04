@@ -127,7 +127,7 @@ export default function PlayerGame() {
   useEffect(() => {
     // Use the latest data from any source
     const latestCalledNumbers = sessionProgress?.called_numbers || 
-                               gameState?.calledNumbers || 
+                               currentGameState?.calledNumbers || 
                                calledItems || [];
                                
     if (latestCalledNumbers && latestCalledNumbers.length > 0) {
@@ -142,7 +142,7 @@ export default function PlayerGame() {
       // Log for debugging
       logWithTimestamp(`Updated called numbers: ${latestCalledNumbers.length} numbers, last: ${latestLastCalledNumber}`);
     }
-  }, [sessionProgress, calledItems, lastCalledItem, gameState]);
+  }, [sessionProgress, calledItems, lastCalledItem, currentGameState]);
   
   // Handle bingo claims - select the best ticket for claiming
   const handleClaimBingo = useCallback(() => {
