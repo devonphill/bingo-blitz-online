@@ -219,7 +219,9 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
             // Heartbeat sent successfully
           }, (err) => {
             console.error('Heartbeat error:', err);
-            if (connectionState !== 'connecting') {
+            // Fix the comparison - check connectionState as a string
+            const currentConnectionState = connectionState;
+            if (currentConnectionState !== 'connecting') {
               setConnectionState('disconnected');
               reconnect();
             }
