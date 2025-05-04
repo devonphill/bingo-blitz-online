@@ -27,9 +27,11 @@ interface PlayerGameContentProps {
   errorMessage: string;
   isLoading: boolean;
   isClaiming?: boolean;
-  claimStatus?: 'pending' | 'rejected' | 'validated' | 'none';
+  claimStatus?: 'none' | 'pending' | 'valid' | 'invalid';
   gameType?: string;
 }
+
+type GameTypePlayspaceClaimStatus = 'pending' | 'rejected' | 'validated';
 
 export default function PlayerGameContent({
   tickets,
@@ -221,11 +223,22 @@ export default function PlayerGameContent({
   };
 
   // Convert the claimStatus prop to the type required by GameTypePlayspace
-  // This fixes the type error by ensuring we never pass 'none' to GameTypePlayspace
-  const gameTypePlayspaceClaimStatus: 'pending' | 'rejected' | 'validated' = 
-    claimStatus === 'validated' ? 'validated' :
-    claimStatus === 'rejected' ? 'rejected' : 
-    'pending'; // Default to pending for 'none' or any other value
+  // FIX: Map claim status values properly to avoid type errors
+  const mapClaimStatus = (status: 'none' | 'pending' | 'valid' | 'invalid'): GameTypePlayspaceClaimStatus => {
+    switch (status) {
+      case 'valid':
+        return 'validated';
+      case 'invalid':
+        return 'rejected';
+      case 'none':
+      case 'pending':
+      default:
+        return 'pending';
+    }
+  };
+
+  // Use the mapping function to get the correct type
+  const gameTypePlayspaceClaimStatus = mapClaimStatus(claimStatus);
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">

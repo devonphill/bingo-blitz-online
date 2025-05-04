@@ -37,6 +37,8 @@ class ConnectionManager {
   private _lastHeartbeat: number = 0;
   private _connectionAttempts: number = 0;
   private _uniqueClientId: string = '';
+  private _isSyncProcessing: boolean = false;
+  private _syncDebounceTimer: any = null;
   
   // Private constructor to enforce singleton
   private constructor() {
@@ -116,8 +118,15 @@ class ConnectionManager {
       this._heartbeatIntervals = [];
     }
     
+    // Clear any debounce timer
+    if (this._syncDebounceTimer) {
+      clearTimeout(this._syncDebounceTimer);
+      this._syncDebounceTimer = null;
+    }
+    
     this.connectedState = false;
     this._lastHeartbeat = 0;
+    this._isSyncProcessing = false;
   }
   
   /**
@@ -172,11 +181,12 @@ class ConnectionManager {
   private setupGameChannel(): void {
     if (!this.sessionId) return;
     
-    // Generate a unique channel name that includes our connection ID
-    const channelName = `game-updates-${this.sessionId}-${this.channelId}`;
+    // CRITICAL FIX: Use a consistent channel name based only on the session ID
+    // This ensures all clients (caller and players) use the same channel
+    const channelName = `game-updates-${this.sessionId}`;
     logWithTimestamp(`ConnectionManager: Setting up game updates channel: ${channelName}`);
     
-    // Create the channel with our unique name
+    // Create the channel with our standard name, removing the client-specific ID
     this.gameUpdatesChannel = supabase.channel(channelName);
     
     // Subscribe to number calls
@@ -251,16 +261,18 @@ class ConnectionManager {
           // Send an initial heartbeat
           setTimeout(() => {
             try {
-              this.gameUpdatesChannel.send({
-                type: 'broadcast',
-                event: 'heartbeat',
-                payload: {
-                  clientId: this.channelId,
-                  timestamp: new Date().toISOString()
-                }
-              }).catch((err: any) => {
-                console.error("Initial heartbeat error:", err);
-              });
+              if (this.gameUpdatesChannel) {
+                this.gameUpdatesChannel.send({
+                  type: 'broadcast',
+                  event: 'heartbeat',
+                  payload: {
+                    clientId: this.channelId,
+                    timestamp: new Date().toISOString()
+                  }
+                }).catch((err: any) => {
+                  console.error("Initial heartbeat error:", err);
+                });
+              }
             } catch (e) {
               console.error("Error sending initial heartbeat:", e);
             }
@@ -270,8 +282,10 @@ class ConnectionManager {
           // We're disconnected
           this.connectedState = false;
           
-          // Try to reconnect automatically after a short delay
-          setTimeout(() => this.reconnect(), 2000);
+          // Avoid multiple rapid reconnection attempts
+          // Use exponential backoff for reconnection
+          const backoffDelay = Math.min(2000 * Math.pow(1.5, this._connectionAttempts), 10000);
+          setTimeout(() => this.reconnect(), backoffDelay);
         }
       });
   }
@@ -305,45 +319,50 @@ class ConnectionManager {
       }
     });
     
-    // Set up presence sync with debounce
-    let lastSyncTimestamp = 0;
-    
+    // Set up debounced presence sync
     this.presenceChannel
       .on('presence', { event: 'sync' }, () => {
-        // Get the current state - all users in the room
-        const state = this.presenceChannel.presenceState();
+        // Prevent duplicate processing with debounce
+        if (this._isSyncProcessing) return;
+        this._isSyncProcessing = true;
         
-        // Avoid multiple rapid-fire sync events by using a timestamp check
-        const now = Date.now();
-        if (now - lastSyncTimestamp < 300) { // 300ms debounce
-          return;
+        // Clear any existing debounce timer
+        if (this._syncDebounceTimer) {
+          clearTimeout(this._syncDebounceTimer);
         }
-        lastSyncTimestamp = now;
         
-        // Convert state to array of players
-        const players = Object.keys(state).map(key => {
-          const userPresence = state[key][0];
-          return {
-            id: userPresence.user_id,
-            playerCode: userPresence.player_code,
-            nickname: userPresence.nickname,
-            playerName: userPresence.nickname,
-            joinedAt: userPresence.joined_at,
-            tickets: userPresence.tickets,
-            clientId: key
-          };
-        });
-        
-        logWithTimestamp(`ConnectionManager: Presence sync, ${players.length} players online`);
-        
-        // Notify all callbacks
-        this.playersUpdateCallbacks.forEach(callback => {
-          try {
-            callback(players);
-          } catch (err) {
-            console.error("Error in players update callback:", err);
-          }
-        });
+        // Set up debounce timer
+        this._syncDebounceTimer = setTimeout(() => {
+          const state = this.presenceChannel.presenceState();
+          
+          // Convert state to array of players
+          const players = Object.keys(state).map(key => {
+            const userPresence = state[key][0];
+            return {
+              id: userPresence.user_id,
+              playerCode: userPresence.player_code,
+              nickname: userPresence.nickname,
+              playerName: userPresence.nickname,
+              joinedAt: userPresence.joined_at,
+              tickets: userPresence.tickets,
+              clientId: key
+            };
+          });
+          
+          logWithTimestamp(`ConnectionManager: Presence sync, ${players.length} players online`);
+          
+          // Notify all callbacks
+          this.playersUpdateCallbacks.forEach(callback => {
+            try {
+              callback(players);
+            } catch (err) {
+              console.error("Error in players update callback:", err);
+            }
+          });
+          
+          // Reset processing flag
+          this._isSyncProcessing = false;
+        }, 300); // 300ms debounce
       })
       .on('presence', { event: 'join' }, ({ key, newPresences }) => {
         // Ignore joins from our own client to prevent loops
@@ -493,7 +512,7 @@ class ConnectionManager {
       this._heartbeatIntervals = [];
     }
     
-    // Send presence heartbeat every 10 seconds
+    // Send presence heartbeat every 15 seconds - increased from 10 to reduce traffic
     const heartbeatInterval = window.setInterval(() => {
       if (this.presenceChannel) {
         try {
@@ -517,7 +536,7 @@ class ConnectionManager {
             
             // Check if we need to reconnect
             const timeSinceLastHeartbeat = Date.now() - this._lastHeartbeat;
-            if (timeSinceLastHeartbeat > 15000) { // 15 seconds
+            if (timeSinceLastHeartbeat > 20000) { // 20 seconds - increased from 15
               logWithTimestamp(`ConnectionManager: No heartbeat for ${timeSinceLastHeartbeat}ms, reconnecting`);
               this.reconnect();
             }
@@ -526,16 +545,16 @@ class ConnectionManager {
           console.error("Error sending heartbeat:", err);
         }
       }
-    }, 10000); // Heartbeat every 10 seconds
+    }, 15000); // Heartbeat every 15 seconds - increased from 10
     
     // Track connection health
     const healthCheckInterval = window.setInterval(() => {
       const timeSinceLastHeartbeat = Date.now() - this._lastHeartbeat;
-      if (this._lastHeartbeat > 0 && timeSinceLastHeartbeat > 15000) { // 15 seconds
+      if (this._lastHeartbeat > 0 && timeSinceLastHeartbeat > 20000) { // 20 seconds - increased from 15
         logWithTimestamp(`ConnectionManager: No heartbeat for ${timeSinceLastHeartbeat}ms, reconnecting`);
         this.reconnect();
       }
-    }, 5000);
+    }, 10000); // Check every 10 seconds - increased from 5
     
     // Store the heartbeat intervals for cleanup
     this._heartbeatIntervals.push(heartbeatInterval);
@@ -600,7 +619,8 @@ class ConnectionManager {
         return false;
       }
       
-      // Broadcast the number directly to the game updates channel
+      // CRITICAL FIX: Use the shared game updates channel to broadcast the number
+      // This ensures all clients receive the broadcast on the same channel
       if (this.gameUpdatesChannel) {
         try {
           await this.gameUpdatesChannel.send({
@@ -622,7 +642,8 @@ class ConnectionManager {
       }
       
       // Fallback to creating a temporary channel if needed
-      const channel = supabase.channel(`number-broadcast-${targetSessionId}`);
+      // CRITICAL FIX: Use a standardized channel name for the fallback as well
+      const channel = supabase.channel(`game-updates-${targetSessionId}`);
       await channel.subscribe();
       
       try {
@@ -719,7 +740,7 @@ class ConnectionManager {
       const playerId = claim.player_id;
       const sessionId = claim.session_id;
       
-      // Broadcast the result to the player using the existing game channel
+      // CRITICAL FIX: Use the shared game updates channel for broadcasting claim results
       if (this.gameUpdatesChannel) {
         try {
           await this.gameUpdatesChannel.send({
@@ -742,6 +763,7 @@ class ConnectionManager {
       }
       
       // Fallback to player-specific channel if needed
+      // Keep this for backward compatibility
       const channel = supabase.channel(`claims-${sessionId}-${playerId}`);
       await channel.subscribe();
       
