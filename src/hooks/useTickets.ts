@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { Ticket } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
@@ -26,7 +27,7 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
     
     setIsLoading(true);
     try {
-      // Fix: Use separate message and level parameters for logWithTimestamp
+      // Fix: Use correct parameter format for logWithTimestamp
       logWithTimestamp(`Loading tickets for player ${playerCode} in session ${sessionId}`, 'info');
       
       // Try to get tickets from cache first

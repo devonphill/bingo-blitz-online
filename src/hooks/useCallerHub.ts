@@ -1,8 +1,7 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { logWithTimestamp, ensureLogLevel } from '@/utils/logUtils';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 export function useCallerHub(sessionId: string | undefined) {
   const [pendingClaims, setPendingClaims] = useState<any[]>([]);
