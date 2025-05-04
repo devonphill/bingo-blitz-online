@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -90,7 +91,19 @@ export function LiveGameView({
       if (!isMounted.current) return;
       
       console.log(`Received ${players.length} players update`);
-      setConnectedPlayers(players);
+      
+      // Update player list with formatted data (including names)
+      const formattedPlayers = players.map(player => ({
+        id: player.id || player.user_id,
+        playerCode: player.playerCode || player.player_code,
+        nickname: player.nickname || player.playerName || player.player_code,
+        playerName: player.nickname || player.playerName || player.player_code || player.playerCode,
+        joinedAt: player.joinedAt || player.joined_at || new Date().toISOString(),
+        tickets: player.tickets,
+        clientId: player.clientId || player.client_id
+      }));
+      
+      setConnectedPlayers(formattedPlayers);
       setIsLoading(false);
     };
     
@@ -119,6 +132,15 @@ export function LiveGameView({
     };
     
     fetchClaims();
+    
+    // When the component mounts, reconnect to make sure we're in sync
+    connectionManager.reconnect();
+    
+    // Clean up listener on unmount
+    return () => {
+      // No need to clean up connection manager callbacks specifically
+      // as they're kept for the session's lifetime
+    };
   }, [sessionId]);
   
   // Set up claims polling - separate from connection management
@@ -127,27 +149,17 @@ export function LiveGameView({
     
     const pollClaims = async () => {
       try {
-        // Use a direct supabase query to get pending claims
-        const { data, error } = await supabase
-          .from('universal_game_logs')
-          .select('*')
-          .eq('session_id', sessionId)
-          .is('validated_at', null)
-          .not('claimed_at', 'is', null);
+        // Fetch claims directly through connectionManager to use one approach
+        const claims = await connectionManager.fetchClaims(sessionId);
         
-        if (error) {
-          console.error("Error fetching claims:", error);
-          return;
-        }
-        
-        if (Array.isArray(data) && isMounted.current) {
-          setClaims(data);
+        if (Array.isArray(claims) && isMounted.current) {
+          setClaims(claims);
           
           // Auto-open claims sheet if new claims arrive
-          if (data.length > 0 && data.length !== claims.length) {
-            logWithTimestamp(`Found ${data.length} pending claims, was ${claims.length} before`);
+          if (claims.length > 0 && claims.length !== claims.length) {
+            logWithTimestamp(`Found ${claims.length} pending claims, was ${claims.length} before`);
             
-            if (data.length > claims.length) {
+            if (claims.length > claims.length) {
               toast({
                 title: "New Bingo Claim!",
                 description: `A new bingo claim has been submitted. Check the claims panel to verify.`,
@@ -309,6 +321,7 @@ export function LiveGameView({
                     players={connectedPlayers} 
                     isLoading={isLoading} 
                     onReconnect={handleReconnect}
+                    sessionId={sessionId}
                   />
                 </div>
                 

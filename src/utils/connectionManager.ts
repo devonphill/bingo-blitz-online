@@ -1,3 +1,4 @@
+
 /**
  * Unified connection manager for all game-related real-time communication
  */
@@ -36,11 +37,13 @@ class ConnectionManager {
   private _playerInfo: any = null;
   private _lastHeartbeat: number = 0;
   private _connectionAttempts: number = 0;
+  private _uniqueClientId: string = '';
   
   // Private constructor to enforce singleton
   private constructor() {
     // Generate a unique ID for this connection instance
-    this.channelId = `conn-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    this._uniqueClientId = `conn-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    this.channelId = this._uniqueClientId;
     logWithTimestamp(`ConnectionManager: Created with ID ${this.channelId}`);
   }
   
@@ -281,7 +284,7 @@ class ConnectionManager {
     if (!this.sessionId) return;
     
     // Use a consistent presence key that doesn't change on reconnect
-    const presenceKey = this.channelId;
+    const presenceKey = this._uniqueClientId;
     logWithTimestamp(`ConnectionManager: Setting up presence channel for session ${this.sessionId} with key ${presenceKey}`);
     
     // Create the channel
@@ -424,7 +427,7 @@ class ConnectionManager {
       nickname: playerInfo.nickname,
       tickets: playerInfo.tickets || [],
       joined_at: new Date().toISOString(),
-      client_id: this.channelId
+      client_id: this._uniqueClientId  // Use consistent ID
     };
     
     // Send presence heartbeat every 10 seconds to keep connection alive
@@ -441,7 +444,7 @@ class ConnectionManager {
               event: 'heartbeat',
               payload: {
                 player_code: playerInfo.player_code,
-                client_id: this.channelId,
+                client_id: this._uniqueClientId,
                 timestamp: new Date().toISOString()
               }
             }),
@@ -450,7 +453,7 @@ class ConnectionManager {
               event: 'heartbeat',
               payload: {
                 player_code: playerInfo.player_code,
-                client_id: this.channelId,
+                client_id: this._uniqueClientId,
                 timestamp: new Date().toISOString()
               }
             })
@@ -498,7 +501,7 @@ class ConnectionManager {
               event: 'heartbeat',
               payload: {
                 player_code: playerInfo.player_code,
-                client_id: this.channelId,
+                client_id: this._uniqueClientId,
                 timestamp: new Date().toISOString()
               }
             }).then(() => {
@@ -584,7 +587,28 @@ class ConnectionManager {
         return false;
       }
       
-      // Broadcast the number to all clients
+      // Broadcast the number directly to the game updates channel
+      if (this.gameUpdatesChannel) {
+        try {
+          await this.gameUpdatesChannel.send({
+            type: 'broadcast',
+            event: 'number-called',
+            payload: {
+              number,
+              calledNumbers,
+              sessionId: targetSessionId,
+              timestamp: new Date().toISOString()
+            }
+          });
+          
+          logWithTimestamp(`ConnectionManager: Number ${number} broadcast successfully`);
+          return true;
+        } catch (err) {
+          console.error("Error broadcasting number call:", err);
+        }
+      }
+      
+      // Fallback to creating a temporary channel if needed
       const channel = supabase.channel(`number-broadcast-${targetSessionId}`);
       await channel.subscribe();
       
@@ -627,6 +651,8 @@ class ConnectionManager {
     }
 
     try {
+      logWithTimestamp(`Fetching pending claims for session ${targetSessionId}`);
+      
       // Query the database for pending claims
       const { data, error } = await supabase
         .from('universal_game_logs')
@@ -640,6 +666,7 @@ class ConnectionManager {
         return [];
       }
       
+      logWithTimestamp(`Found ${data?.length || 0} pending claims`);
       return data || [];
     } catch (err) {
       console.error("Error fetching claims:", err);
@@ -675,8 +702,34 @@ class ConnectionManager {
         return false;
       }
       
-      // Broadcast the result to the player
-      const channel = supabase.channel(`claims-${claim.session_id}-${claim.player_id}`);
+      // Get the player ID and session ID from the claim
+      const playerId = claim.player_id;
+      const sessionId = claim.session_id;
+      
+      // Broadcast the result to the player using the existing game channel
+      if (this.gameUpdatesChannel) {
+        try {
+          await this.gameUpdatesChannel.send({
+            type: 'broadcast',
+            event: 'claim-result',
+            payload: {
+              claimId: claim.id,
+              playerId: playerId,
+              sessionId: sessionId,
+              result: isValid ? 'valid' : 'invalid',
+              timestamp: new Date().toISOString()
+            }
+          });
+          
+          logWithTimestamp(`ConnectionManager: Claim result broadcast successfully`);
+          return true;
+        } catch (err) {
+          console.error("Error broadcasting claim result:", err);
+        }
+      }
+      
+      // Fallback to player-specific channel if needed
+      const channel = supabase.channel(`claims-${sessionId}-${playerId}`);
       await channel.subscribe();
       
       try {
@@ -686,8 +739,8 @@ class ConnectionManager {
           event: 'claim-result',
           payload: {
             claimId: claim.id,
-            playerId: claim.player_id,
-            sessionId: claim.session_id,
+            playerId: playerId,
+            sessionId: sessionId,
             result: isValid ? 'valid' : 'invalid',
             timestamp: new Date().toISOString()
           }

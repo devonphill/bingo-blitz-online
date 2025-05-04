@@ -61,12 +61,33 @@ const PlayerList: React.FC<PlayerListProps> = ({
       if (activePlayers && activePlayers.length > 0) {
         logWithTimestamp(`PlayerList: Received ${activePlayers.length} active players update`);
         
+        // Format the player data for display
+        const formattedPlayers = activePlayers.map(player => ({
+          id: player.id || player.user_id,
+          clientId: player.clientId || player.client_id,
+          playerCode: player.playerCode || player.player_code,
+          playerName: player.nickname || player.playerName || player.player_code,
+          nickname: player.nickname || player.playerName || player.playerCode || player.player_code,
+          joinedAt: player.joinedAt || player.joined_at || new Date().toISOString(),
+          tickets: player.tickets
+        }));
+        
         // Only set players if they've actually changed to avoid render loops
-        if (JSON.stringify(activePlayers) !== JSON.stringify(playersRef.current)) {
-          setPlayers(activePlayers);
-          playersRef.current = activePlayers;
+        const playersJson = JSON.stringify(formattedPlayers);
+        const currentJson = JSON.stringify(playersRef.current);
+        
+        if (playersJson !== currentJson) {
+          setPlayers(formattedPlayers);
+          playersRef.current = formattedPlayers;
+          
+          logWithTimestamp(`PlayerList: Updated with ${formattedPlayers.length} players`);
         }
         
+        setIsLoading(false);
+      } else {
+        // If we got an empty array, we should still update
+        setPlayers([]);
+        playersRef.current = [];
         setIsLoading(false);
       }
     };
@@ -119,10 +140,9 @@ const PlayerList: React.FC<PlayerListProps> = ({
     // This will trigger presence updates through the existing channel
     connectionManager.reconnect();
     
-    // Cleanup - we don't remove the callback since connectionManager is a singleton
-    // and other components may rely on the same channel
+    // No need for cleanup, the connectionManager handles it
     return () => {
-      // Nothing to do here - connectionManager handles cleanup
+      // Nothing to do here
     };
   }, [sessionId]);
 

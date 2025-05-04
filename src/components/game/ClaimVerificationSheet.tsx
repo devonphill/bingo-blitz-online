@@ -22,6 +22,7 @@ import CallerTicketDisplay from './CallerTicketDisplay';
 
 // Add import for the useCallerClaimManagement hook
 import { useCallerClaimManagement } from '@/hooks/useCallerClaimManagement';
+import { connectionManager } from '@/utils/connectionManager';
 
 interface ClaimVerificationSheetProps {
   isOpen: boolean;
@@ -53,30 +54,19 @@ export default function ClaimVerificationSheet({
     isProcessingClaim 
   } = useCallerClaimManagement(sessionId || null);
   
-  const { toast } = useToast()
-  const [notes, setNotes] = useState("")
+  const { toast } = useToast();
+  const [notes, setNotes] = useState("");
   const [selectedClaim, setSelectedClaim] = useState<any>(null);
   
   // Force fetch claims when sheet opens
   useEffect(() => {
     if (isOpen && sessionId) {
-      // Direct database query to ensure we have the latest data
+      // Fetch claims through connectionManager to use our single channel approach
       const fetchLatestClaims = async () => {
         logWithTimestamp(`Fetching latest claims for session ${sessionId}`);
         try {
-          const { data, error } = await supabase
-            .from('universal_game_logs')
-            .select('*')
-            .eq('session_id', sessionId)
-            .is('validated_at', null)
-            .not('claimed_at', 'is', null);
-            
-          if (error) {
-            console.error('Error fetching latest claims:', error);
-          } else {
-            logWithTimestamp(`Found ${data?.length || 0} pending claims`);
-            console.log('Latest claims data:', data);
-          }
+          const claims = await connectionManager.fetchClaims(sessionId);
+          logWithTimestamp(`Found ${claims?.length || 0} pending claims`);
         } catch (e) {
           console.error('Exception fetching claims:', e);
         }
@@ -89,25 +79,74 @@ export default function ClaimVerificationSheet({
   // Log claims when they change
   useEffect(() => {
     logWithTimestamp(`ClaimVerificationSheet has ${claims.length} claims`);
-    console.log('Claims:', claims);
   }, [claims]);
 
   // Enhance the verify/reject handlers to use the new hook
   const handleVerify = useCallback((claim: any) => {
     if (!claim) return;
     
-    logWithTimestamp(`Verifying claim: ${JSON.stringify(claim)}`);
-    validateClaim(claim, true);
+    logWithTimestamp(`Verifying claim: ${claim.id}`);
     
-  }, [validateClaim]);
+    // Use connectionManager directly for claim validation to ensure single channel approach
+    connectionManager.validateClaim(claim, true)
+      .then(success => {
+        if (success) {
+          toast({
+            title: "Claim Verified",
+            description: "The bingo claim has been verified successfully.",
+            variant: "default"
+          });
+        } else {
+          toast({
+            title: "Verification Error",
+            description: "There was an error verifying the claim.",
+            variant: "destructive"
+          });
+        }
+      })
+      .catch(err => {
+        console.error("Error validating claim:", err);
+        toast({
+          title: "Verification Error",
+          description: "There was an error verifying the claim.",
+          variant: "destructive"
+        });
+      });
+    
+  }, [toast]);
   
   const handleReject = useCallback((claim: any) => {
     if (!claim) return;
     
-    logWithTimestamp(`Rejecting claim: ${JSON.stringify(claim)}`);
-    validateClaim(claim, false);
+    logWithTimestamp(`Rejecting claim: ${claim.id}`);
     
-  }, [validateClaim]);
+    // Use connectionManager directly for claim validation to ensure single channel approach
+    connectionManager.validateClaim(claim, false)
+      .then(success => {
+        if (success) {
+          toast({
+            title: "Claim Rejected",
+            description: "The bingo claim has been rejected.",
+            variant: "default"
+          });
+        } else {
+          toast({
+            title: "Rejection Error",
+            description: "There was an error rejecting the claim.",
+            variant: "destructive"
+          });
+        }
+      })
+      .catch(err => {
+        console.error("Error rejecting claim:", err);
+        toast({
+          title: "Rejection Error",
+          description: "There was an error rejecting the claim.",
+          variant: "destructive"
+        });
+      });
+    
+  }, [toast]);
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
