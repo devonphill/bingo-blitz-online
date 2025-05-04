@@ -139,8 +139,8 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
           
           // Try to reconnect automatically after timeout
           setTimeout(() => {
-            // Fix for the comparison error - properly check connectionState
-            if (connectionState !== 'connected') {
+            // Fix for the comparison error - use string type instead of comparing literal types
+            if (connectionState === 'disconnected' || connectionState === 'error') {
               reconnect();
             }
           }, 3000);
