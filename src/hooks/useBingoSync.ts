@@ -1,7 +1,9 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
+
+// Define the connection state type to be used consistently
+type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 export function useBingoSync(playerCode: string | null, sessionId: string | null) {
   const [isLoading, setIsLoading] = useState(true);
@@ -22,7 +24,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
   const connectionSetupInProgress = useRef<boolean>(false);
   
   // For reconnection purposes
-  const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('connecting');
+  const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const reconnect = useCallback(() => {
     if (connectionSetupInProgress.current) {
       logWithTimestamp(`Connection setup already in progress for player ${playerCode}, ignoring reconnect request`);
@@ -219,9 +221,8 @@ export function useBingoSync(playerCode: string | null, sessionId: string | null
             // Heartbeat sent successfully
           }, (err) => {
             console.error('Heartbeat error:', err);
-            // Fix the comparison - check connectionState as a string
-            const currentConnectionState = connectionState;
-            if (currentConnectionState !== 'connecting') {
+            // Use type-safe comparison with string values instead of comparing enum-like string literals
+            if (connectionState as string !== 'connecting') {
               setConnectionState('disconnected');
               reconnect();
             }
