@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useCallback } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -279,7 +280,7 @@ export default function PlayerGameContent({
             currentWinPattern={currentWinPattern}
             handleClaimBingo={handleClaimBingoWithErrorHandling}
             isClaiming={isClaiming}
-            claimStatus={claimStatus}
+            claimStatus={layoutClaimStatus}
             gameType={gameType}
           />
         </div>
