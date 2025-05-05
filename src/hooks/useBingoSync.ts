@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
+import { supabase } from '@/integrations/supabase/client';
 
 // Define interfaces for better type safety
 interface BingoSyncState {
@@ -12,7 +13,7 @@ interface BingoSyncState {
 }
 
 /**
- * Hook to sync bingo game state via the network connection
+ * Hook to sync bingo game state via database subscriptions
  * @param playerCode The player's code
  * @param sessionId The game session ID
  * @returns State and methods for interacting with the game
@@ -26,41 +27,99 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
     gameState: null
   });
 
-  // Use refs to track initialization status and create instance ID for better logging
+  // Use refs to track initialization status 
   const hookIdRef = useRef<string>(`bingoSync-${Math.random().toString(36).substring(2, 9)}`);
-  const listenersSetupRef = useRef<boolean>(false);
   
   // Use the network context 
   const network = useNetwork();
   
-  // Effect to set up listeners only (not connection)
+  // Effect for initial data loading and to establish database subscription
   useEffect(() => {
     // Skip if we don't have necessary data
     if (!playerCode || !sessionId) {
       setState(prev => ({ ...prev, isLoading: false }));
-      logWithTimestamp(`[${hookIdRef.current}] Missing playerCode or sessionId, skipping listener setup`, 'info');
-      return;
-    }
-
-    if (listenersSetupRef.current) {
-      logWithTimestamp(`[${hookIdRef.current}] Listeners already set up, skipping`, 'debug');
+      logWithTimestamp(`[${hookIdRef.current}] Missing playerCode or sessionId, skipping setup`, 'info');
       return;
     }
 
     setState(prev => ({ ...prev, isLoading: true }));
     
-    logWithTimestamp(`[${hookIdRef.current}] Setting up bingo sync listeners for player ${playerCode} in session ${sessionId}`, 'info');
+    logWithTimestamp(`[${hookIdRef.current}] Setting up bingo sync for player ${playerCode} in session ${sessionId}`, 'info');
 
-    // Set up event handlers for game state updates, connection status
+    // First, load the initial session progress data
+    const loadSessionProgress = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('sessions_progress')
+          .select('*')
+          .eq('session_id', sessionId)
+          .single();
+          
+        if (error) {
+          logWithTimestamp(`[${hookIdRef.current}] Error loading session progress: ${error.message}`, 'error');
+          setState(prev => ({ 
+            ...prev, 
+            error: `Error loading game data: ${error.message}`,
+            isLoading: false
+          }));
+          return;
+        }
+        
+        if (data) {
+          logWithTimestamp(`[${hookIdRef.current}] Loaded initial session progress`, 'info');
+          
+          const gameState = {
+            sessionId: data.session_id,
+            gameNumber: data.current_game_number,
+            maxGameNumber: data.max_game_number,
+            gameType: data.current_game_type,
+            calledNumbers: data.called_numbers || [],
+            lastCalledNumber: data.called_numbers && data.called_numbers.length > 0 
+              ? data.called_numbers[data.called_numbers.length - 1] 
+              : null,
+            currentWinPattern: data.current_win_pattern,
+            currentPrize: data.current_prize,
+            gameStatus: data.game_status
+          };
+          
+          setState(prev => ({
+            ...prev,
+            gameState,
+            isLoading: false,
+            isConnected: true
+          }));
+        }
+      } catch (err) {
+        logWithTimestamp(`[${hookIdRef.current}] Exception loading session progress: ${(err as Error).message}`, 'error');
+        setState(prev => ({ 
+          ...prev, 
+          error: `Error loading game data: ${(err as Error).message}`,
+          isLoading: false
+        }));
+      }
+    };
+    
+    // Load initial data
+    loadSessionProgress();
+    
+    // Connect to network for updates
+    if (sessionId) {
+      logWithTimestamp(`[${hookIdRef.current}] Connecting to session ${sessionId}`, 'info');
+      network.connect(sessionId);
+    }
+
+    // Set up game state update listener
     const removeGameStateListener = network.addGameStateUpdateListener((gameState) => {
       logWithTimestamp(`[${hookIdRef.current}] Received game state update`, 'debug');
       setState(prev => ({
         ...prev,
         gameState,
-        isLoading: false
+        isLoading: false,
+        isConnected: true
       }));
     });
     
+    // Set up connection status listener
     const removeConnectionListener = network.addConnectionStatusListener((isConnected) => {
       logWithTimestamp(`[${hookIdRef.current}] Connection status: ${isConnected ? 'connected' : 'disconnected'}`, 'info');
       setState(prev => ({
@@ -70,41 +129,52 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
       }));
     });
     
-    // Set initial state based on current connection status
-    setState(prev => ({
-      ...prev,
-      isConnected: network.isConnected,
-      isLoading: false
-    }));
-
-    // Mark listeners as set up
-    listenersSetupRef.current = true;
+    // Update player presence periodically
+    let presenceInterval: any = null;
+    const updatePresenceData = async () => {
+      if (playerCode && sessionId) {
+        try {
+          // Get player data
+          const { data: playerData } = await supabase
+            .from('players')
+            .select('id, nickname')
+            .eq('player_code', playerCode)
+            .single();
+            
+          if (playerData) {
+            // Update presence
+            await network.updatePlayerPresence({
+              player_id: playerData.id,
+              player_code: playerCode,
+              nickname: playerData.nickname || playerCode
+            });
+          }
+        } catch (err) {
+          logWithTimestamp(`[${hookIdRef.current}] Error updating presence: ${(err as Error).message}`, 'error');
+        }
+      }
+    };
     
-    // Clean up listeners when component unmounts
+    // Update presence immediately and then every 30 seconds
+    updatePresenceData();
+    presenceInterval = setInterval(updatePresenceData, 30000);
+    
+    // Clean up listeners and intervals when component unmounts
     return () => {
       removeGameStateListener();
       removeConnectionListener();
-      listenersSetupRef.current = false;
+      if (presenceInterval) clearInterval(presenceInterval);
       logWithTimestamp(`[${hookIdRef.current}] Cleaning up bingo sync listeners`, 'debug');
     };
   }, [network, playerCode, sessionId]);
 
-  // Effect specifically for connection management
+  // Update the state based on current connection status
   useEffect(() => {
-    if (!sessionId) {
-      logWithTimestamp(`[${hookIdRef.current}] No session ID available, can't connect`, 'info');
-      return;
-    }
-
-    // The actual connection is managed by the NetworkStatusContext
-    // Here we just ensure it's connected
-    if (!network.isConnected && sessionId) {
-      logWithTimestamp(`[${hookIdRef.current}] Ensuring connection to session ${sessionId}`, 'info');
-      network.connect(sessionId);
-    }
-
-    // No cleanup here as the connection is managed by the context
-  }, [network, sessionId]);
+    setState(prev => ({
+      ...prev,
+      isConnected: network.isConnected
+    }));
+  }, [network.isConnected]);
 
   // Memoize the submitBingoClaim function to prevent unnecessary re-renders
   const submitBingoClaim = useCallback((ticket: any) => {
@@ -123,7 +193,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
       logWithTimestamp(`[${hookIdRef.current}] Error submitting bingo claim: ${error}`, 'error');
       return false;
     }
-  }, [network, playerCode, sessionId]);
+  }, [network, playerCode, sessionId, hookIdRef]);
 
   return {
     ...state,

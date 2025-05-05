@@ -19,7 +19,7 @@ export default function ConnectionStatus({
   
   // Use the network context
   const network = useNetwork();
-  const { connectionState, isConnected, lastPingTime, reconnect, sessionId } = network;
+  const { connectionState, isConnected, sessionId } = network;
   
   const getStatusColor = useCallback(() => {
     if (isReconnecting) return 'bg-amber-500 animate-pulse';
@@ -50,8 +50,10 @@ export default function ConnectionStatus({
     setIsReconnecting(true);
     logWithTimestamp('User requested manual reconnection', 'info');
     
-    // Use the network context to reconnect
-    reconnect();
+    if (sessionId) {
+      // Use the network context to reconnect
+      network.connect(sessionId);
+    }
     
     // Reset reconnecting UI after a delay
     setTimeout(() => setIsReconnecting(false), 3000);
@@ -94,17 +96,12 @@ export default function ConnectionStatus({
               
               {/* Enhanced status details */}
               <div>Session ID: <span className="font-mono">{sessionId || 'Not connected'}</span></div>
-              {lastPingTime !== null && (
-                <div>
-                  Last ping: <span className="font-mono">{Date.now() - lastPingTime}ms ago</span>
-                </div>
-              )}
               
               <div className="pt-2">
                 <button 
                   className="w-full bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs flex items-center justify-center gap-1"
                   onClick={handleReconnectClick}
-                  disabled={isReconnecting}
+                  disabled={isReconnecting || !sessionId}
                 >
                   <RefreshCw className={`h-3 w-3 ${isReconnecting ? 'animate-spin' : ''}`} />
                   {isReconnecting ? 'Reconnecting...' : 'Force Reconnect'}

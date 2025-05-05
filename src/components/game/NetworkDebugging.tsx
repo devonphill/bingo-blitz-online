@@ -13,12 +13,12 @@ export default function NetworkDebugging() {
   
   // Use the network context
   const network = useNetwork();
-  const { connectionState, isConnected, reconnect, sessionId } = network;
+  const { connectionState, isConnected, sessionId } = network;
   
   useEffect(() => {
     // Set up message capture
     const originalLog = console.log;
-    const messageRegex = /Received broadcast|Sending broadcast|WebSocket|connection|channel/i;
+    const messageRegex = /supabase|database|subscription|connection|session_progress/i;
     
     console.log = (...args) => {
       originalLog(...args);
@@ -40,9 +40,14 @@ export default function NetworkDebugging() {
   }, []);
   
   // Force a reconnection
-  const handleForceReconnect = () => {
+  const handleForceReconnect = (e: React.MouseEvent) => {
+    e.stopPropagation();
     logWithTimestamp("Manual reconnection requested from debug panel", 'info');
-    reconnect();
+    
+    if (sessionId) {
+      // Use the network context to reconnect
+      network.connect(sessionId);
+    }
     
     // Add a message to the log
     const timestamp = new Date().toISOString();
@@ -52,36 +57,59 @@ export default function NetworkDebugging() {
     ]);
   };
   
-  // Test sending a broadcast
-  const handleTestBroadcast = async () => {
+  // Test database subscription
+  const handleTestSubscription = async () => {
     try {
-      logWithTimestamp("Sending test broadcast message", 'info');
+      logWithTimestamp("Testing database subscription", 'info');
       
-      const channel = supabase.channel('test-channel');
-      await channel.subscribe();
+      if (!sessionId) {
+        const timestamp = new Date().toISOString();
+        setMessages(prev => [
+          { timestamp, type: 'error', payload: 'No active session ID available for test' },
+          ...prev
+        ]);
+        return;
+      }
       
-      await channel.send({
-        type: 'broadcast',
-        event: 'test',
-        payload: { message: 'Test message', timestamp: new Date().toISOString() }
-      });
+      // Get current session progress
+      const { data: progressData } = await supabase
+        .from('sessions_progress')
+        .select('id')
+        .eq('session_id', sessionId)
+        .single();
+        
+      if (!progressData) {
+        const timestamp = new Date().toISOString();
+        setMessages(prev => [
+          { timestamp, type: 'error', payload: 'No session progress found for test' },
+          ...prev
+        ]);
+        return;
+      }
+      
+      // Update the timestamp to trigger subscription
+      const { error } = await supabase
+        .from('sessions_progress')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', progressData.id);
+        
+      if (error) {
+        throw error;
+      }
       
       // Add a message to the log
       const timestamp = new Date().toISOString();
       setMessages(prev => [
-        { timestamp, type: 'action', payload: 'Test broadcast sent' },
+        { timestamp, type: 'action', payload: 'Subscription test sent' },
         ...prev
       ]);
-      
-      // Clean up
-      supabase.removeChannel(channel);
     } catch (err) {
-      console.error("Error sending test broadcast:", err);
+      console.error("Error testing subscription:", err);
       
       // Add error to the log
       const timestamp = new Date().toISOString();
       setMessages(prev => [
-        { timestamp, type: 'error', payload: `Error sending test broadcast: ${err}` },
+        { timestamp, type: 'error', payload: `Error testing subscription: ${err}` },
         ...prev
       ]);
     }
@@ -105,10 +133,6 @@ export default function NetworkDebugging() {
     );
   }
   
-  // Get the channel for display
-  const activeChannel = network.getActiveChannel();
-  const channelState = activeChannel?.state || 'no channel';
-  
   return (
     <div className="fixed bottom-4 left-4 z-40">
       <Card className="w-80 max-h-96 overflow-hidden shadow-xl">
@@ -118,7 +142,7 @@ export default function NetworkDebugging() {
               <Badge className={isConnected ? 'bg-green-500' : 'bg-red-500'} variant="secondary">
                 •
               </Badge>
-              <span className="ml-2">Network Debugger</span>
+              <span className="ml-2">Database Network Debugger</span>
             </CardTitle>
             <Button variant="ghost" size="sm" onClick={() => setIsExpanded(false)}>
               ×
@@ -130,8 +154,8 @@ export default function NetworkDebugging() {
             <Button variant="outline" size="sm" onClick={handleForceReconnect}>
               Force Reconnect
             </Button>
-            <Button variant="outline" size="sm" onClick={handleTestBroadcast}>
-              Test Broadcast
+            <Button variant="outline" size="sm" onClick={handleTestSubscription}>
+              Test Subscription
             </Button>
           </div>
           
@@ -142,12 +166,6 @@ export default function NetworkDebugging() {
                 <span>State:</span>
                 <Badge variant={connectionState === 'connected' ? 'outline' : 'secondary'}>
                   {connectionState}
-                </Badge>
-              </div>
-              <div className="text-xs flex justify-between">
-                <span>Channel:</span>
-                <Badge variant={channelState === 'SUBSCRIBED' ? 'outline' : 'secondary'}>
-                  {channelState}
                 </Badge>
               </div>
               <div className="text-xs flex justify-between">

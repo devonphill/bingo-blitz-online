@@ -1,7 +1,6 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { logWithTimestamp } from '@/utils/logUtils';
 
 export interface SessionProgress {
@@ -30,7 +29,7 @@ export interface SessionProgressUpdate {
 }
 
 /**
- * Hook to manage session progress data with real-time updates
+ * Hook to manage session progress data with real-time updates via database
  * @param sessionId The ID of the game session to track
  * @returns Object containing progress data, loading state, error state, and update function
  */
@@ -38,28 +37,44 @@ export function useSessionProgress(sessionId: string | undefined) {
   const [progress, setProgress] = useState<SessionProgress | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [subscription, setSubscription] = useState<any>(null);
   
   // Added for better debugging
   const hookId = `useSessionProgress-${Math.random().toString(36).substring(2, 8)}`;
 
+  // Cleanup function for subscription
+  const cleanupSubscription = useCallback(() => {
+    if (subscription) {
+      try {
+        supabase.removeChannel(subscription);
+        logWithTimestamp(`[${hookId}] Removed session progress subscription`, 'debug');
+      } catch (err) {
+        logWithTimestamp(`[${hookId}] Error removing subscription: ${err}`, 'error');
+      }
+      setSubscription(null);
+    }
+  }, [subscription, hookId]);
+
+  // Setup subscription and initial data load
   useEffect(() => {
-    // Abort controller to cancel fetch if component unmounts
-    const abortController = new AbortController();
-    let timeoutId: ReturnType<typeof setTimeout>;
-    let channel: any = null;
-    
     // If no sessionId is provided, just set loading to false and return
     if (!sessionId) {
       setLoading(false);
-      logWithTimestamp(`[${hookId}] No sessionId provided to useSessionProgress`, 'info'); // Changed from 'warn' to 'info'
+      logWithTimestamp(`[${hookId}] No sessionId provided to useSessionProgress`, 'info');
       return;
     }
 
-    async function fetchSessionProgress() {
-      // Clear any previous errors
-      setError(null);
-      setLoading(true);
-      
+    // Cleanup any existing subscription
+    cleanupSubscription();
+
+    // Set loading state
+    setLoading(true);
+    setError(null);
+    
+    logWithTimestamp(`[${hookId}] Setting up session progress for session ${sessionId}`, 'info');
+    
+    // Function to fetch the initial data
+    const fetchSessionProgress = async () => {
       try {
         logWithTimestamp(`[${hookId}] Fetching session progress for: ${sessionId}`, 'info');
         
@@ -144,49 +159,37 @@ export function useSessionProgress(sessionId: string | undefined) {
             }
           }
         }
-      } catch (err) {
-        const errorMessage = (err as Error).message;
-        logWithTimestamp(`[${hookId}] Error in useSessionProgress: ${errorMessage}`, 'error');
-        setError(errorMessage);
         
-        // Retry once after 2 seconds if there was an error
-        if (!abortController.signal.aborted) {
-          timeoutId = setTimeout(() => {
-            logWithTimestamp(`[${hookId}] Retrying session progress fetch...`, 'info');
-            fetchSessionProgress();
-          }, 2000);
-        }
-      } finally {
-        if (!abortController.signal.aborted) {
-          setLoading(false);
-        }
+        // After loading initial data, set up the subscription
+        setupSubscription();
+        
+      } catch (err) {
+        logWithTimestamp(`[${hookId}] Error in useSessionProgress: ${(err as Error).message}`, 'error');
+        setError((err as Error).message);
+        setLoading(false);
       }
-    }
-
-    fetchSessionProgress();
+    };
     
-    // Set up real-time subscription for session progress updates
-    // Only set up if sessionId is valid
-    if (sessionId) {
-      channel = supabase
-        .channel(`session_progress_${sessionId}`)
-        .on('postgres_changes', 
-          { 
-            event: 'UPDATE', 
-            schema: 'public', 
-            table: 'sessions_progress',
-            filter: `session_id=eq.${sessionId}`
-          }, 
-          (payload) => {
-            if (payload.new) {
-              logWithTimestamp(`[${hookId}] Received real-time update for session progress`, 'debug');
-              setProgress(prev => {
-                // Only update if there are actual changes
+    // Function to set up the subscription
+    const setupSubscription = () => {
+      try {
+        logWithTimestamp(`[${hookId}] Setting up session progress subscription for session ${sessionId}`, 'info');
+        
+        const channel = supabase
+          .channel(`session_progress_${sessionId}`)
+          .on('postgres_changes', 
+            { 
+              event: 'UPDATE', 
+              schema: 'public', 
+              table: 'sessions_progress',
+              filter: `session_id=eq.${sessionId}`
+            }, 
+            (payload) => {
+              logWithTimestamp(`[${hookId}] Received session progress update`, 'debug');
+              
+              if (payload.new) {
                 const newData = payload.new as any;
-                if (JSON.stringify(prev) === JSON.stringify(newData)) {
-                  return prev;
-                }
-                return {
+                setProgress({
                   id: newData.id,
                   session_id: newData.session_id,
                   current_game_number: newData.current_game_number,
@@ -199,22 +202,42 @@ export function useSessionProgress(sessionId: string | undefined) {
                   current_prize_description: newData.current_prize_description,
                   created_at: newData.created_at,
                   updated_at: newData.updated_at
-                };
-              });
+                });
+              }
             }
-          }
-        )
-        .subscribe();
-    }
-    
-    // Clean up function
-    return () => {
-      abortController.abort();
-      if (timeoutId) clearTimeout(timeoutId);
-      if (channel) supabase.removeChannel(channel);
+          )
+          .subscribe((status) => {
+            logWithTimestamp(`[${hookId}] Session progress subscription status: ${status}`, 'debug');
+            
+            if (status === 'SUBSCRIBED') {
+              setLoading(false);
+            } else if (status === 'CHANNEL_ERROR') {
+              logWithTimestamp(`[${hookId}] Error with session progress subscription`, 'error');
+              setError('Error connecting to real-time updates');
+              setLoading(false);
+            }
+          });
+          
+        setSubscription(channel);
+        
+      } catch (err) {
+        logWithTimestamp(`[${hookId}] Error setting up subscription: ${(err as Error).message}`, 'error');
+        setError(`Error setting up real-time updates: ${(err as Error).message}`);
+        setLoading(false);
+      }
     };
-  }, [sessionId, hookId]);
+    
+    // Load initial data
+    fetchSessionProgress();
+    
+    // Clean up subscription when unmounting or changing sessionId
+    return () => {
+      cleanupSubscription();
+    };
+    
+  }, [sessionId, hookId, cleanupSubscription]);
 
+  // Function to update session progress
   const updateProgress = useCallback(async (updates: SessionProgressUpdate): Promise<boolean> => {
     if (!sessionId || !progress?.id) {
       logWithTimestamp(`[${hookId}] Cannot update session progress - missing sessionId or progress data`, 'error');
@@ -249,4 +272,3 @@ export function useSessionProgress(sessionId: string | undefined) {
     updateProgress
   };
 }
-
