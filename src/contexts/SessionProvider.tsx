@@ -12,7 +12,7 @@ interface SessionContextType {
   currentSession: GameSession | null;
   setCurrentSession: (sessionId: string | null) => void;
   getSessionByCode: (code: string) => GameSession | null;
-  fetchSessions: () => Promise<void>;
+  fetchSessions: () => Promise<boolean>; // Changed from Promise<void> to Promise<boolean>
   updateSession: (sessionId: string, updates: Partial<GameSession>) => Promise<boolean>;
   isLoading: boolean;
   error: string | null;

@@ -7,7 +7,7 @@ import { TempPlayer, GameSession, Player } from '@/types';
 interface SessionContextProps {
   sessions: GameSession[];
   currentSession: GameSession | null;
-  fetchSessions: () => Promise<void>;
+  fetchSessions: () => Promise<boolean>; // Changed from Promise<void> to Promise<boolean>
   updateSession: (sessionId: string, updates: Partial<GameSession>) => Promise<boolean>;
   setCurrentSession: (sessionId: string | null) => void;
   getSessionByCode: (code: string) => GameSession | null;
