@@ -26,6 +26,17 @@ export default function CreateSessionForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Check if user is authenticated
+    if (!user) {
+      toast({
+        title: 'Authentication Error',
+        description: 'You must be logged in to create a session',
+        variant: 'destructive'
+      });
+      return;
+    }
+    
     if (!sessionName.trim()) {
       toast({
         title: 'Error',
@@ -55,13 +66,13 @@ export default function CreateSessionForm() {
       number_of_games: Number(numberOfGames) || 1,
       access_code: accessCode,
       status: 'pending',
-      created_by: user?.id || '00000000-0000-0000-0000-000000000000' // Use a default UUID if user ID is missing
+      created_by: user.id
     };
     
     console.log("Creating session with payload:", payload);
     
     try {
-      const { error } = await supabase.from('game_sessions').insert([payload]);
+      const { error, data } = await supabase.from('game_sessions').insert([payload]).select();
       
       if (error) {
         console.error("Session creation error:", error);
@@ -72,6 +83,8 @@ export default function CreateSessionForm() {
         });
         return;
       }
+      
+      console.log("Session created successfully:", data);
       
       // Refresh the sessions list after successful creation
       await fetchSessions();

@@ -26,6 +26,7 @@ const Login = lazy(() => import("./pages/Login"));
 const CallerSession = lazy(() => import("./pages/CallerSession"));
 const PlayerJoin = lazy(() => import("./pages/PlayerJoin"));
 const PlayerGame = lazy(() => import("./pages/PlayerGame"));
+const AddPlayers = lazy(() => import("./pages/AddPlayers"));
 
 // Setup simplified pages
 const Register = () => <div className="p-8"><h1 className="text-2xl">Register Page</h1><p>This page is not yet implemented.</p></div>;
@@ -82,6 +83,9 @@ function App() {
                   <Route path="/caller/setup" element={<AdminRoute><GameSetup /></AdminRoute>} />
                   <Route path="/caller/manage" element={<AdminRoute><GameManagement /></AdminRoute>} />
                   <Route path="/caller/session/:sessionId" element={<AdminRoute><CallerSession /></AdminRoute>} />
+                  
+                  {/* Players management */}
+                  <Route path="/session/:sessionId/players/add" element={<PrivateRoute><AddPlayers /></PrivateRoute>} />
                   
                   {/* Player routes (publicly accessible) */}
                   <Route path="/player/join" element={<PlayerJoin />} />

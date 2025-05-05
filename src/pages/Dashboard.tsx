@@ -12,27 +12,36 @@ import DashboardSidebar from '@/components/dashboard/DashboardSidebar';
 import { supabase } from '@/integrations/supabase/client';
 
 export default function Dashboard() {
-  const { user, logout } = useAuth();
-  const { sessions, fetchSessions, isLoading } = useSessionContext();
+  const { user, logout, isLoading: authLoading } = useAuth();
+  const { sessions, fetchSessions, isLoading: sessionsLoading } = useSessionContext();
   const navigate = useNavigate();
   const [tokenCount, setTokenCount] = useState<number | null>(null);
+  const isLoading = authLoading || sessionsLoading;
 
   useEffect(() => {
-    // Fetch sessions when the dashboard loads
-    fetchSessions();
+    // If not loading and no user, redirect to login
+    if (!authLoading && !user) {
+      console.log("No authenticated user found, redirecting to login");
+      navigate('/login');
+      return;
+    }
 
-    // Fetch token count
-    if (user) {
+    // Fetch sessions when the dashboard loads and user is authenticated
+    if (user && !authLoading) {
+      console.log("User is authenticated, fetching sessions");
+      fetchSessions();
       fetchTokenCount();
     }
-  }, [fetchSessions, user]);
+  }, [user, authLoading, fetchSessions, navigate]);
 
   const fetchTokenCount = async () => {
+    if (!user) return;
+    
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('token_count')
-        .eq('id', user?.id)
+        .eq('id', user.id)
         .single();
 
       if (error) throw error;
@@ -46,6 +55,15 @@ export default function Dashboard() {
     logout();
     navigate('/');
   };
+
+  // Show loading state while auth is being determined
+  if (authLoading) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <p className="text-gray-500">Loading user data...</p>
+      </div>
+    );
+  }
 
   return (
     <SidebarProvider>
