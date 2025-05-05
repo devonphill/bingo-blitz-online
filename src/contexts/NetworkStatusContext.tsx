@@ -79,6 +79,9 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
   const [playersUpdateListeners] = useState<Array<(players: any[]) => void>>([]);
   const [ticketsAssignedListeners] = useState<Array<(playerCode: string, tickets: any[]) => void>>([]);
   
+  // Connection tracking ref to prevent multiple connection attempts to the same session
+  const connectedSessionRef = React.useRef<string | null>(null);
+  
   // Check if we're connected
   const isConnected = connectionState === 'connected';
   
@@ -180,11 +183,18 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
     return newChannel;
   }, [gameStateListeners, numberCalledListeners, playersUpdateListeners, ticketsAssignedListeners]);
   
-  // Connect to the channel
+  // Connect to the channel - with improved session tracking
   const connect = useCallback((newSessionId: string) => {
+    // If we're already connected to this session, do nothing
+    if (connectedSessionRef.current === newSessionId && channel && connectionState === 'connected') {
+      logWithTimestamp(`Already connected to session ${newSessionId}`, 'info');
+      return;
+    }
+    
     // Don't allow connection if we're in the middle of another operation
     if (connectionLockRef.current) {
       logWithTimestamp('Connection operation in progress, deferring connect', 'info');
+      setTimeout(() => connect(newSessionId), 500);
       return;
     }
     
@@ -194,13 +204,7 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
     try {
       // Store the session ID
       setSessionId(newSessionId);
-      
-      // Skip if we're already connected to this session
-      if (isConnected && channel && sessionId === newSessionId) {
-        logWithTimestamp(`Already connected to session ${newSessionId}`, 'info');
-        connectionLockRef.current = false;
-        return;
-      }
+      connectedSessionRef.current = newSessionId;
       
       // Set to connecting state
       setConnectionState('connecting');
@@ -273,10 +277,9 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
   }, [
     channel, 
     cleanupChannel, 
+    connectionState,
     connectionStatusListeners, 
-    isConnected, 
     reconnectAttempts, 
-    sessionId, 
     setupChannelListeners
   ]);
   
@@ -289,6 +292,7 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
     
     cleanupChannel();
     setConnectionState('disconnected');
+    connectedSessionRef.current = null;
     
     // Notify connection status listeners
     connectionStatusListeners.forEach(listener => {
@@ -368,6 +372,8 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
   const addConnectionStatusListener = useCallback(
     (callback: (isConnected: boolean) => void) => {
       connectionStatusListeners.push(callback);
+      // Immediately call with current state
+      callback(connectionState === 'connected');
       return () => {
         const index = connectionStatusListeners.indexOf(callback);
         if (index !== -1) {
@@ -375,7 +381,7 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
         }
       };
     },
-    [connectionStatusListeners]
+    [connectionState, connectionStatusListeners]
   );
   
   // Add a players update listener
@@ -602,18 +608,19 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
   // Get the active channel
   const getActiveChannel = useCallback(() => channel, [channel]);
   
-  // Set up a heartbeat to check connection status
+  // Set up a more conservative heartbeat to check connection status
+  // This will prevent excessive reconnection attempts
   useEffect(() => {
     const heartbeatInterval = setInterval(() => {
       if (connectionState === 'connected' && channel) {
-        // If we haven't received a ping in the last 30 seconds, reconnect
+        // If we haven't received a ping in the last 60 seconds, reconnect
         const now = Date.now();
-        if (lastPingTime && now - lastPingTime > 30000) {
-          logWithTimestamp('No ping received in 30 seconds, reconnecting', 'info');
+        if (lastPingTime && now - lastPingTime > 60000) {
+          logWithTimestamp('No ping received in 60 seconds, attempting reconnect', 'info');
           reconnect();
         }
       }
-    }, 10000);
+    }, 20000); // Check less frequently
     
     return () => {
       clearInterval(heartbeatInterval);

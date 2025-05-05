@@ -20,13 +20,13 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
     gameState: null
   });
 
-  // Use refs to track initialization status and prevent duplicate setup
+  // Use refs to track initialization status
   const hookIdRef = useRef<string>(`bingoSync-${Math.random().toString(36).substring(2, 9)}`);
   
-  // Use the network context instead of directly using connectionManager
+  // Use the network context 
   const network = useNetwork();
   
-  // Effect to set up connection and listeners
+  // Effect to set up listeners only (not connection)
   useEffect(() => {
     // Skip if we don't have necessary data
     if (!playerCode || !sessionId) {
@@ -36,12 +36,9 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
 
     setState(prev => ({ ...prev, isLoading: true }));
     
-    logWithTimestamp(`[${hookIdRef.current}] Setting up bingo sync for player ${playerCode} in session ${sessionId}`, 'info');
+    logWithTimestamp(`[${hookIdRef.current}] Setting up bingo sync listeners for player ${playerCode} in session ${sessionId}`, 'info');
 
-    // Connect to the session
-    network.connect(sessionId);
-    
-    // Set up event handlers for game state updates, connection status, and errors
+    // Set up event handlers for game state updates, connection status
     const removeGameStateListener = network.addGameStateUpdateListener((gameState) => {
       logWithTimestamp(`[${hookIdRef.current}] Received game state update`, 'debug');
       setState(prev => ({
@@ -64,7 +61,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
     setState(prev => ({
       ...prev,
       isConnected: network.isConnected,
-      isLoading: !network.isConnected
+      isLoading: false
     }));
     
     // Clean up listeners when component unmounts

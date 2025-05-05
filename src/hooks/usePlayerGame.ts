@@ -1,11 +1,10 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useBingoSync } from '@/hooks/useBingoSync';
 import { useTickets } from '@/hooks/useTickets';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { connectionManager, ConnectionState } from '@/utils/connectionManager';
+import { useNetwork } from '@/contexts/NetworkStatusContext';
 
 export function usePlayerGame(playerCode: string | null) {
   // State for player data
@@ -32,20 +31,17 @@ export function usePlayerGame(playerCode: string | null) {
   const [claimStatus, setClaimStatus] = useState<'none' | 'pending' | 'valid' | 'invalid'>('none');
   const [isSubmittingClaim, setIsSubmittingClaim] = useState<boolean>(false);
   
-  // Connection state with more detailed monitoring
-  const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
-  
   // Game type (default to mainstage/90-ball)
   const [gameType, setGameType] = useState<string>('mainstage');
+  
+  // Get the network context for connection management
+  const network = useNetwork();
   
   // Get toast for notifications
   const { toast } = useToast();
   
   // Track if component is mounted
   const isMounted = useRef(true);
-  
-  // Connection initialization flag to prevent multiple init
-  const connectionInitialized = useRef<boolean>(false);
   
   // Generate a unique ID for this hook instance for better debug logging
   const instanceId = useRef(`playerGame-${Math.random().toString(36).substring(2, 9)}`);
@@ -71,7 +67,6 @@ export function usePlayerGame(playerCode: string | null) {
   // Initialize bingo sync hook for real-time updates AFTER connection is established
   const {
     isLoading: bingoSyncLoading,
-    isConnected,
     error: bingoSyncError,
     gameState,
     submitBingoClaim: claimBingo
@@ -114,12 +109,6 @@ export function usePlayerGame(playerCode: string | null) {
       setErrorMessage(`Connection error: ${bingoSyncError}`);
     }
   }, [bingoSyncError]);
-  
-  // Update connection state based on isConnected from useBingoSync
-  useEffect(() => {
-    logWithTimestamp(`[${instanceId.current}] Connection status from useBingoSync: ${isConnected ? 'connected' : 'disconnected'}`, 'info');
-    setConnectionState(isConnected ? 'connected' : 'disconnected');
-  }, [isConnected]);
   
   // Load player data
   useEffect(() => {
@@ -212,6 +201,27 @@ export function usePlayerGame(playerCode: string | null) {
       
       // Load game state
       await loadGameState(sessionData.id);
+      
+      // THE KEY CHANGE: Connect to the session once we have the session ID
+      // This single connection will be used by all components
+      if (sessionData.id) {
+        logWithTimestamp(`Connecting to session ${sessionData.id} from usePlayerGame`, 'info');
+        network.connect(sessionData.id);
+        
+        // Only track presence after a delay
+        setTimeout(() => {
+          if (playerId && playerCode) {
+            const presenceData = {
+              player_id: playerId,
+              player_code: playerCode,
+              nickname: playerName || playerCode,
+              last_presence_update: new Date().toISOString()
+            };
+            network.trackPlayerPresence(presenceData);
+          }
+        }, 1000);
+      }
+      
     } catch (error: any) {
       console.error('Error in loadSessionData:', error);
       setErrorMessage(`Error loading session data: ${error.message}`);
@@ -321,16 +331,8 @@ export function usePlayerGame(playerCode: string | null) {
       
       console.log("Submitting claim with ticket:", preparedTicket);
       
-      // Use the bingo sync hook to submit the claim with the ticket data
-      if (!claimBingo) {
-        console.error('claimBingo function not available');
-        setErrorMessage('Claim function not available');
-        setIsSubmittingClaim(false);
-        setClaimStatus('none');
-        return Promise.resolve(false);
-      }
-      
-      const claimSubmitted = claimBingo(preparedTicket);
+      // Use the network context to submit the claim with the ticket data
+      const claimSubmitted = network.submitBingoClaim(preparedTicket, playerCode, currentSession.id);
       
       if (claimSubmitted) {
         // Keep status as pending until we get a response
@@ -360,87 +362,7 @@ export function usePlayerGame(playerCode: string | null) {
       setClaimStatus('none');
       return Promise.resolve(false);
     }
-  }, [playerCode, currentSession?.id, isSubmittingClaim, claimStatus, claimBingo, tickets]);
-  
-  // THIS IS THE KEY CHANGE: This hook is now the single place where connection is initialized
-  useEffect(() => {
-    // Don't do anything until we have all required data
-    if (!playerCode || !playerId || !currentSession?.id) {
-      return;
-    }
-    
-    // Prevent multiple initializations
-    if (connectionInitialized.current) {
-      logWithTimestamp(`[${instanceId.current}] Connection already initialized, skipping`, 'info');
-      return;
-    }
-    
-    logWithTimestamp(`[${instanceId.current}] Setting up player game connection for session ${currentSession.id}`, 'info');
-    
-    // Mark as initialized - this flag prevents multiple initialization
-    connectionInitialized.current = true;
-    
-    // This is the ONLY place where connection initialization should happen
-    connectionManager.initialize(currentSession.id);
-    
-    // Setup delayed presence tracking with retries
-    const attemptPresenceTracking = () => {
-      if (connectionManager.isConnected()) {
-        logWithTimestamp(`[${instanceId.current}] Tracking player presence`, 'info');
-        
-        const presenceData = {
-          player_id: playerId,
-          player_code: playerCode,
-          nickname: playerName || playerCode,
-          tickets: tickets,
-          last_presence_update: new Date().toISOString()
-        };
-        
-        // Try to track presence
-        const success = connectionManager.trackPlayerPresence(presenceData);
-        
-        // If failed, retry after a delay
-        if (!success) {
-          setTimeout(attemptPresenceTracking, 3000); // Retry after 3 seconds
-        }
-      } else {
-        // Not connected yet, try again later
-        setTimeout(attemptPresenceTracking, 2000); // Retry after 2 seconds
-      }
-    };
-    
-    // Start presence tracking after a delay to ensure connection is established
-    setTimeout(attemptPresenceTracking, 1000);
-    
-    // Setup connection state monitoring via the connection manager's status
-    const monitorConnection = () => {
-      const currentState = connectionManager.getConnectionState();
-      
-      // Only update state if it's different to prevent UI flashing
-      if (currentState !== connectionState) {
-        logWithTimestamp(`[${instanceId.current}] Connection state changed to ${currentState}`, 'info');
-        setConnectionState(currentState);
-      }
-      
-      // If disconnected, try to reconnect (but don't reinitialize)
-      if (currentState === 'disconnected') {
-        logWithTimestamp(`[${instanceId.current}] Detected disconnection, triggering reconnect`, 'info');
-        connectionManager.reconnect();
-      }
-    };
-    
-    // Do an initial connection check
-    monitorConnection();
-    
-    // Set up periodic connection monitoring - less aggressive than before
-    const connectionMonitorInterval = setInterval(monitorConnection, 10000);
-    
-    // Clean up on unmount
-    return () => {
-      clearInterval(connectionMonitorInterval);
-      connectionInitialized.current = false;
-    };
-  }, [playerCode, playerId, playerName, currentSession?.id, tickets, connectionState]);
+  }, [playerCode, currentSession?.id, isSubmittingClaim, claimStatus, network, tickets, playerName]);
   
   return {
     playerName,
@@ -461,6 +383,6 @@ export function usePlayerGame(playerCode: string | null) {
     gameType,
     isSubmittingClaim,
     handleClaimBingo,
-    connectionState
+    connectionState: network.connectionState
   };
 }

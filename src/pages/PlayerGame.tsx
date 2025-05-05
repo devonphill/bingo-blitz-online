@@ -1,5 +1,4 @@
-
-import React, { useEffect, useCallback, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { usePlayerGame } from '@/hooks/usePlayerGame';
@@ -9,7 +8,6 @@ import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 import PlayerGameLayout from '@/components/game/PlayerGameLayout';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { supabase } from '@/integrations/supabase/client';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
 
 export default function PlayerGame() {
@@ -26,10 +24,13 @@ export default function PlayerGame() {
   const [finalCalledNumbers, setFinalCalledNumbers] = useState<number[]>([]);
   const [finalLastCalledNumber, setFinalLastCalledNumber] = useState<number | null>(null);
   
+  // Generate a unique ID for tracking this component 
+  const instanceId = useRef(`playerGame-${Math.random().toString(36).substring(2, 9)}`);
+  
   // Handle player code initialization - only run once on mount
   useEffect(() => {
     const initializePlayerCode = () => {
-      logWithTimestamp(`PlayerGame initialized with playerCode from URL: ${urlPlayerCode}`, 'info');
+      logWithTimestamp(`PlayerGame (${instanceId.current}) initialized with playerCode from URL: ${urlPlayerCode}`, 'info');
       
       // Priority 1: Use URL parameter if available
       if (urlPlayerCode && urlPlayerCode.trim() !== '') {
@@ -59,7 +60,7 @@ export default function PlayerGame() {
       
       // Home route handling - if we're on the home page, don't show error or redirect
       if (window.location.pathname === '/') {
-        logWithTimestamp("On home page, not showing player code error", 'info');
+        logWithTimestamp(`On home page, not showing player code error`, 'info');
         setLoadingPlayerCode(false);
         setPlayerCode(null);
         return;
@@ -67,7 +68,7 @@ export default function PlayerGame() {
       
       // If we're on the player game path but no player code, redirect to join page
       if (window.location.pathname.includes('/player/game')) {
-        logWithTimestamp("No player code found, redirecting to join page", 'info');
+        logWithTimestamp(`No player code found, redirecting to join page`, 'info');
         localStorage.removeItem('playerCode'); // Clear any invalid codes
         toast({
           title: 'Player Code Missing',
@@ -86,7 +87,6 @@ export default function PlayerGame() {
   }, [urlPlayerCode, navigate, toast]);
 
   // Always initialize hooks with the same ordering - even if some will not be used
-  // This ensures React's hook rules are followed
   const {
     playerName,
     playerId,
@@ -106,25 +106,22 @@ export default function PlayerGame() {
     gameType,
     isSubmittingClaim,
     handleClaimBingo: submitBingoClaim,
+    connectionState
   } = usePlayerGame(playerCode);
   
-  // Initialize session progress hook - but only use it if we have a valid session
+  // Initialize session progress hook
   const { progress: sessionProgress } = useSessionProgress(
     currentSession?.id
   );
   
-  // Initialize tickets hook with the same parameters, even if it will not be used
-  // Moving this up before it's used in handleClaimBingo
+  // Initialize tickets hook
   const { tickets, refreshTickets } = useTickets(playerCode, currentSession?.id);
   
-  // Set up number called listener
+  // Set up number called listener using the network context
   useEffect(() => {
     if (!currentSession?.id) return;
     
-    // Connect to the session
-    network.connect(currentSession.id);
-    
-    // Listen for number called events
+    // Set up listener for number called events
     const removeListener = network.addNumberCalledListener((lastCalledNumber, calledNumbers) => {
       if (lastCalledNumber && calledNumbers.length > 0) {
         logWithTimestamp(`Received number call update: ${lastCalledNumber}, total: ${calledNumbers.length}`);
@@ -168,7 +165,7 @@ export default function PlayerGame() {
   }, [sessionProgress, calledItems, lastCalledItem, currentGameState]);
   
   // Handle bingo claims - select the best ticket for claiming
-  const handleClaimBingo = useCallback(() => {
+  const handleClaimBingo = React.useCallback(() => {
     if (!tickets || tickets.length === 0) {
       console.log("Cannot claim bingo: no tickets available");
       return Promise.resolve(false);
@@ -296,7 +293,7 @@ export default function PlayerGame() {
   logWithTimestamp(`- Last called number: ${finalLastCalledNumber}`);
   logWithTimestamp(`- Current win pattern: ${currentWinPattern}`);
   logWithTimestamp(`- Player name: ${playerName}`);
-  logWithTimestamp(`- Connection state: ${network.connectionState}`);
+  logWithTimestamp(`- Connection state: ${connectionState}`);
   
   // Map the claimStatus to the proper format expected by each component
   const layoutClaimStatus = claimStatus === 'valid' ? 'valid' : 
@@ -305,11 +302,10 @@ export default function PlayerGame() {
                           'none';
                           
   // Convert the claimStatus to the type required by GameTypePlayspace
-  // Always use 'pending' if the value is 'none' since GameTypePlayspace doesn't accept 'none'
   const gameTypePlayspaceClaimStatus: 'validated' | 'rejected' | 'pending' = 
     claimStatus === 'valid' ? 'validated' : 
     claimStatus === 'invalid' ? 'rejected' : 
-    'pending'; // Default to pending instead of 'none'
+    'pending';
 
   return (
     <React.Fragment>
@@ -333,7 +329,7 @@ export default function PlayerGame() {
         gameType={gameType}
         currentGameNumber={currentGameNumber}
         numberOfGames={numberOfGames}
-        connectionState={network.connectionState}
+        connectionState={connectionState}
         onRefreshTickets={refreshTickets}
         sessionId={currentSession?.id}
       >
