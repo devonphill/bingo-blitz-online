@@ -32,14 +32,14 @@ export default function PrizeSharingDialog({
             {winnerCount} players have valid claims. How should the prize be awarded?
           </DialogDescription>
         </DialogHeader>
-        <div className="flex justify-end space-x-2">
+        <DialogFooter className="flex justify-end space-x-2">
           <Button onClick={() => onConfirm(true)} variant="default">
             Share Prize
           </Button>
           <Button onClick={() => onConfirm(false)} variant="outline">
             Each Gets Full Prize
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

@@ -5,6 +5,7 @@ import { GameSession, GameConfig } from '@/types';
 import { convertFromLegacyConfig } from '@/utils/callerSessionHelper';
 import { jsonToGameConfigs, gameConfigsToJson } from '@/utils/jsonUtils';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
 
 export function useSessions() {
   const [sessions, setSessions] = useState<GameSession[]>([]);
@@ -12,6 +13,7 @@ export function useSessions() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const fetchSessions = useCallback(async () => {
     setIsLoading(true);
@@ -19,10 +21,17 @@ export function useSessions() {
     
     try {
       console.log("Fetching all game sessions");
-      const { data, error: fetchError } = await supabase
-        .from('game_sessions')
-        .select('*')
-        .order('created_at', { ascending: false });
+      
+      // Create a query that filters by the current user's ID if a user is logged in
+      let query = supabase.from('game_sessions').select('*');
+      
+      if (user) {
+        console.log(`Filtering sessions for user: ${user.id}`);
+        query = query.eq('created_by', user.id);
+      }
+      
+      // Add ordering
+      const { data, error: fetchError } = await query.order('created_at', { ascending: false });
 
       if (fetchError) {
         console.error('Error fetching sessions:', fetchError);
@@ -30,7 +39,7 @@ export function useSessions() {
       }
 
       if (data) {
-        console.log(`Retrieved ${data.length} sessions from database`);
+        console.log(`Retrieved ${data.length} sessions from database for ${user ? 'user ' + user.id : 'anonymous user'}`);
         
         // Convert raw data to GameSession objects
         const sessionObjects: GameSession[] = data.map(session => {
@@ -81,7 +90,7 @@ export function useSessions() {
     } finally {
       setIsLoading(false);
     }
-  }, [toast]);
+  }, [toast, user]);
 
   const setSessionById = useCallback((sessionId: string | null) => {
     if (!sessionId) {
