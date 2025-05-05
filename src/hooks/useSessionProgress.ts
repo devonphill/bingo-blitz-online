@@ -1,7 +1,8 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 export interface SessionProgress {
   id: string;
@@ -32,18 +33,28 @@ export function useSessionProgress(sessionId: string | undefined) {
   const [progress, setProgress] = useState<SessionProgress | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Added for better debugging
+  const hookId = `useSessionProgress-${Math.random().toString(36).substring(2, 8)}`;
 
   useEffect(() => {
+    // Abort controller to cancel fetch if component unmounts
+    const abortController = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout>;
+    
     if (!sessionId) {
-      console.log("No sessionId provided to useSessionProgress");
+      logWithTimestamp(`[${hookId}] No sessionId provided to useSessionProgress`, 'warn');
       setLoading(false);
       return;
     }
 
     async function fetchSessionProgress() {
+      // Clear any previous errors
+      setError(null);
       setLoading(true);
+      
       try {
-        console.log(`Fetching session progress for: ${sessionId}`);
+        logWithTimestamp(`[${hookId}] Fetching session progress for: ${sessionId}`, 'info');
         
         const { data, error } = await supabase
           .from('sessions_progress')
@@ -54,14 +65,14 @@ export function useSessionProgress(sessionId: string | undefined) {
         if (error) {
           if (error.code === 'PGRST116') {
             // No data found, this might be expected in some cases
-            console.log(`No session progress found for session ${sessionId}`);
+            logWithTimestamp(`[${hookId}] No session progress found for session ${sessionId}, will create one if needed`, 'info');
           } else {
             throw new Error(`Error fetching session progress: ${error.message}`);
           }
         }
 
         if (data) {
-          console.log("Loaded session progress:", data);
+          logWithTimestamp(`[${hookId}] Loaded session progress successfully`, 'info');
           setProgress({
             id: data.id,
             session_id: data.session_id,
@@ -77,30 +88,131 @@ export function useSessionProgress(sessionId: string | undefined) {
             updated_at: data.updated_at
           });
         } else {
-          console.log("No session progress found, should be created by trigger");
+          // Check if we need to create a new sessions_progress entry
+          logWithTimestamp(`[${hookId}] No session progress found, checking if we need to create one`, 'info');
+          
+          // Get session information first
+          const { data: sessionData } = await supabase
+            .from('game_sessions')
+            .select('number_of_games, game_type')
+            .eq('id', sessionId)
+            .single();
+            
+          if (sessionData) {
+            logWithTimestamp(`[${hookId}] Creating new session progress for session ${sessionId}`, 'info');
+            // Create a new session progress entry
+            const { data: newProgress, error: createError } = await supabase
+              .from('sessions_progress')
+              .insert({
+                session_id: sessionId,
+                current_game_number: 1,
+                max_game_number: sessionData.number_of_games || 1,
+                current_game_type: sessionData.game_type,
+                called_numbers: [],
+                game_status: 'pending'
+              })
+              .select('*')
+              .single();
+              
+            if (createError) {
+              throw new Error(`Failed to create session progress: ${createError.message}`);
+            }
+            
+            if (newProgress) {
+              logWithTimestamp(`[${hookId}] New session progress created successfully`, 'info');
+              setProgress({
+                id: newProgress.id,
+                session_id: newProgress.session_id,
+                current_game_number: newProgress.current_game_number,
+                max_game_number: newProgress.max_game_number,
+                current_game_type: newProgress.current_game_type,
+                current_win_pattern: newProgress.current_win_pattern,
+                called_numbers: newProgress.called_numbers || [],
+                game_status: newProgress.game_status,
+                current_prize: newProgress.current_prize,
+                current_prize_description: newProgress.current_prize_description,
+                created_at: newProgress.created_at,
+                updated_at: newProgress.updated_at
+              });
+            }
+          }
         }
       } catch (err) {
-        console.error('Error in useSessionProgress:', err);
-        setError((err as Error).message);
+        const errorMessage = (err as Error).message;
+        logWithTimestamp(`[${hookId}] Error in useSessionProgress: ${errorMessage}`, 'error');
+        setError(errorMessage);
+        
+        // Retry once after 2 seconds if there was an error
+        timeoutId = setTimeout(() => {
+          if (!abortController.signal.aborted) {
+            logWithTimestamp(`[${hookId}] Retrying session progress fetch...`, 'info');
+            fetchSessionProgress();
+          }
+        }, 2000);
       } finally {
-        setLoading(false);
+        if (!abortController.signal.aborted) {
+          setLoading(false);
+        }
       }
     }
 
     fetchSessionProgress();
     
-    // No need to set up a real-time subscription since we'll use the WebSocket server for real-time updates
+    // Set up real-time subscription for session progress updates
+    const channel = supabase
+      .channel(`session_progress_${sessionId}`)
+      .on('postgres_changes', 
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'sessions_progress',
+          filter: `session_id=eq.${sessionId}`
+        }, 
+        (payload) => {
+          if (payload.new) {
+            logWithTimestamp(`[${hookId}] Received real-time update for session progress`, 'debug');
+            setProgress(prev => {
+              // Only update if there are actual changes
+              const newData = payload.new as any;
+              if (JSON.stringify(prev) === JSON.stringify(newData)) {
+                return prev;
+              }
+              return {
+                id: newData.id,
+                session_id: newData.session_id,
+                current_game_number: newData.current_game_number,
+                max_game_number: newData.max_game_number,
+                current_game_type: newData.current_game_type,
+                current_win_pattern: newData.current_win_pattern,
+                called_numbers: newData.called_numbers || [],
+                game_status: newData.game_status,
+                current_prize: newData.current_prize,
+                current_prize_description: newData.current_prize_description,
+                created_at: newData.created_at,
+                updated_at: newData.updated_at
+              };
+            });
+          }
+        }
+      )
+      .subscribe();
     
-  }, [sessionId]);
+    // Clean up function
+    return () => {
+      abortController.abort();
+      if (timeoutId) clearTimeout(timeoutId);
+      supabase.removeChannel(channel);
+    };
+  }, [sessionId, hookId]);
 
-  const updateProgress = async (updates: SessionProgressUpdate): Promise<boolean> => {
-    if (!sessionId || !progress) {
-      console.error("Cannot update session progress - missing sessionId or progress data");
+  const updateProgress = useCallback(async (updates: SessionProgressUpdate): Promise<boolean> => {
+    if (!sessionId || !progress?.id) {
+      logWithTimestamp(`[${hookId}] Cannot update session progress - missing sessionId or progress data`, 'error');
       return false;
     }
     
     try {
-      console.log("Updating session progress with:", updates);
+      logWithTimestamp(`[${hookId}] Updating session progress with: ${JSON.stringify(updates)}`, 'info');
       
       const { error } = await supabase
         .from('sessions_progress')
@@ -108,16 +220,17 @@ export function useSessionProgress(sessionId: string | undefined) {
         .eq('session_id', sessionId);
         
       if (error) {
-        console.error("Error updating session progress:", error);
+        logWithTimestamp(`[${hookId}] Error updating session progress: ${error.message}`, 'error');
         return false;
       }
       
+      logWithTimestamp(`[${hookId}] Session progress updated successfully`, 'info');
       return true;
     } catch (err) {
-      console.error("Exception updating session progress:", err);
+      logWithTimestamp(`[${hookId}] Exception updating session progress: ${(err as Error).message}`, 'error');
       return false;
     }
-  };
+  }, [sessionId, progress, hookId]);
 
   return { 
     progress, 
