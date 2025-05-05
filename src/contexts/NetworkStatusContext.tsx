@@ -74,11 +74,11 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const updatePlayerPresence = useCallback(async (presenceData: any): Promise<boolean> => {
     try {
       // FIX: Use the 'players' table instead of 'player_presence'
-      // We'll update the players' last activity timestamp
+      // Since 'updated_at' doesn't exist, use joined_at which is a timestamp field
       const { error } = await supabase
         .from('players')
         .update({
-          updated_at: new Date().toISOString()
+          joined_at: new Date().toISOString() // Use joined_at instead of updated_at
         })
         .eq('id', presenceData.player_id)
         .eq('player_code', presenceData.player_code);
@@ -178,25 +178,24 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       logWithTimestamp(`Submitting bingo claim for player ${playerCode} in session ${sessionId}`, 'info');
       
-      // FIX: Update the insert to match the universal_game_logs table schema
-      // Removing player_code field which doesn't exist and adding required fields
+      // FIX: Update the fields to match the universal_game_logs table schema
+      // According to the error, action and ticket_data don't exist, and we need to use the proper required fields
       supabase
         .from('universal_game_logs')
         .insert({
           session_id: sessionId,
-          player_name: playerCode, // Using playerCode as name since player_code field doesn't exist
-          action: 'bingo_claim',
-          ticket_data: ticket,
-          created_at: new Date().toISOString(),
+          player_name: playerCode,
           game_type: 'unknown', // Required field
           game_number: 1, // Required field
           win_pattern: 'unknown', // Required field
+          claimed_at: new Date().toISOString(),
           player_id: '00000000-0000-0000-0000-000000000000', // Required field, using a placeholder
           ticket_perm: ticket.perm || 0, // Required field
           ticket_layout_mask: ticket.layout_mask || 0, // Required field
           ticket_numbers: ticket.numbers || [], // Required field
           total_calls: 0, // Required field
-          ticket_serial: ticket.serial || 'unknown' // Required field
+          ticket_serial: ticket.serial || 'unknown', // Required field
+          called_numbers: [] // Required field
         })
         .then(({ error }) => {
           if (error) {
