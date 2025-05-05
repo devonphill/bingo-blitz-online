@@ -5,10 +5,10 @@ import { Separator } from '@/components/ui/separator';
 import { Trophy } from 'lucide-react';
 
 export interface GameHeaderProps {
-  gameNumber: number;
-  totalGames: number;
-  pattern: string;
-  prize: string;
+  gameNumber?: number;
+  totalGames?: number;
+  pattern?: string;
+  prize?: string;
   claimStatus?: 'none' | 'pending' | 'valid' | 'invalid';
   isClaiming?: boolean;
   onClaimBingo?: () => Promise<boolean>;

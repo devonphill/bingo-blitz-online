@@ -164,11 +164,18 @@ export default function PlayerGameLayout({
           <div className="w-full bg-white shadow-sm py-4">
             <div className="container mx-auto px-4">
               <GameHeader 
+                gameNumber={currentGameNumber} 
+                totalGames={numberOfGames}
+                pattern={currentWinPattern || 'Full House'}
+                prize={currentWinPattern && winPrizes[currentWinPattern] || 'Prize to be announced'}
                 gameType={gameType} 
                 playerName={playerName} 
                 playerCode={playerCode}
                 currentGameNumber={currentGameNumber}
                 numberOfGames={numberOfGames}
+                claimStatus={claimStatus}
+                isClaiming={isClaiming}
+                onClaimBingo={onClaimBingo}
               />
             </div>
           </div>
