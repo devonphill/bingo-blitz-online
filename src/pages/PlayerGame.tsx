@@ -1,3 +1,4 @@
+
 import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -112,6 +113,10 @@ export default function PlayerGame() {
     currentSession?.id
   );
   
+  // Initialize tickets hook with the same parameters, even if it will not be used
+  // Moving this up before it's used in handleClaimBingo
+  const { tickets, refreshTickets } = useTickets(playerCode, currentSession?.id);
+  
   // Set up number called listener
   useEffect(() => {
     if (!currentSession?.id) return;
@@ -190,9 +195,6 @@ export default function PlayerGame() {
     // Try to claim bingo
     return submitBingoClaim(bestTicket);
   }, [submitBingoClaim, tickets, finalCalledNumbers]);
-  
-  // Initialize tickets hook with the same parameters, even if it will not be used
-  const { tickets, refreshTickets } = useTickets(playerCode, currentSession?.id);
   
   // Only consider connection issues as non-critical errors
   const effectiveErrorMessage = !playerCode && window.location.pathname.includes('/player/game')
