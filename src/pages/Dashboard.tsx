@@ -16,10 +16,13 @@ export default function Dashboard() {
   const { sessions, fetchSessions, isLoading: sessionsLoading } = useSessionContext();
   const navigate = useNavigate();
   const [tokenCount, setTokenCount] = useState<number | null>(null);
-  const isLoading = authLoading || sessionsLoading;
+  const [fetchAttempted, setFetchAttempted] = useState(false);
+  const isLoading = authLoading || (sessionsLoading && !fetchAttempted);
 
   useEffect(() => {
-    // If not loading and no user, redirect to login
+    console.log("Dashboard render - Auth loading:", authLoading, "User:", user ? "logged in" : "not logged in");
+    
+    // If auth is not loading and user is not logged in, redirect to login
     if (!authLoading && !user) {
       console.log("No authenticated user found, redirecting to login");
       navigate('/login');
@@ -29,7 +32,9 @@ export default function Dashboard() {
     // Fetch sessions when the dashboard loads and user is authenticated
     if (user && !authLoading) {
       console.log("User is authenticated, fetching sessions");
-      fetchSessions();
+      fetchSessions().then(() => {
+        setFetchAttempted(true);
+      });
       fetchTokenCount();
     }
   }, [user, authLoading, fetchSessions, navigate]);
@@ -65,6 +70,11 @@ export default function Dashboard() {
     );
   }
 
+  // If not loading and no user, we should be redirecting to login
+  if (!user && !authLoading) {
+    return null;
+  }
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full bg-gray-50">
@@ -98,7 +108,7 @@ export default function Dashboard() {
               <CreateSessionForm />
             </div>
             
-            {isLoading ? (
+            {sessionsLoading ? (
               <div className="flex justify-center items-center h-48">
                 <p className="text-gray-500">Loading sessions...</p>
               </div>

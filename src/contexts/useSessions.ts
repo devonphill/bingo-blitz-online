@@ -28,6 +28,8 @@ export function useSessions() {
       if (user) {
         console.log(`Filtering sessions for user: ${user.id}`);
         query = query.eq('created_by', user.id);
+      } else {
+        console.log('No user logged in, fetching without filter');
       }
       
       // Add ordering
@@ -87,9 +89,11 @@ export function useSessions() {
         description: errorMessage,
         variant: "destructive"
       });
+      setSessions([]); // Set empty array on error to prevent infinite loading
     } finally {
       setIsLoading(false);
     }
+    return true; // Always return something so Promise resolves
   }, [toast, user]);
 
   const setSessionById = useCallback((sessionId: string | null) => {
