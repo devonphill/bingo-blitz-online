@@ -17,10 +17,28 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [tokenCount, setTokenCount] = useState<number | null>(null);
   const [fetchAttempted, setFetchAttempted] = useState(false);
+  const [authCheckComplete, setAuthCheckComplete] = useState(false);
   const isLoading = authLoading || (sessionsLoading && !fetchAttempted);
 
   useEffect(() => {
+    // Set a timeout to ensure we don't get stuck in loading state forever
+    const authTimeout = setTimeout(() => {
+      if (authLoading) {
+        console.log("Auth check timed out, proceeding with null user");
+        setAuthCheckComplete(true);
+      }
+    }, 3000); // 3 second timeout for auth check
+    
+    return () => clearTimeout(authTimeout);
+  }, []);
+
+  useEffect(() => {
     console.log("Dashboard render - Auth loading:", authLoading, "User:", user ? "logged in" : "not logged in");
+    
+    // Mark auth check as complete when auth is no longer loading
+    if (!authLoading) {
+      setAuthCheckComplete(true);
+    }
     
     // If auth is not loading and user is not logged in, redirect to login
     if (!authLoading && !user) {
@@ -33,6 +51,9 @@ export default function Dashboard() {
     if (user && !authLoading) {
       console.log("User is authenticated, fetching sessions");
       fetchSessions().then(() => {
+        setFetchAttempted(true);
+      }).catch(err => {
+        console.error("Error fetching sessions:", err);
         setFetchAttempted(true);
       });
       fetchTokenCount();
@@ -61,8 +82,8 @@ export default function Dashboard() {
     navigate('/');
   };
 
-  // Show loading state while auth is being determined
-  if (authLoading) {
+  // Show loading state while auth is being determined, but only for a reasonable time
+  if (authLoading && !authCheckComplete) {
     return (
       <div className="flex justify-center items-center h-screen">
         <p className="text-gray-500">Loading user data...</p>
@@ -108,7 +129,7 @@ export default function Dashboard() {
               <CreateSessionForm />
             </div>
             
-            {sessionsLoading ? (
+            {sessionsLoading && !fetchAttempted ? (
               <div className="flex justify-center items-center h-48">
                 <p className="text-gray-500">Loading sessions...</p>
               </div>
