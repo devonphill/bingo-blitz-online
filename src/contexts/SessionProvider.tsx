@@ -48,9 +48,10 @@ export function SessionProvider({ children }: SessionProviderProps) {
   const ticketsHook = useTickets();
   
   // Initialize usePlayers with the ticketsHook.assignTicketsToPlayer function
+  // Note: We're now passing a function that returns Promise<boolean> to usePlayers
   const playersHook = usePlayers(
     sessions,
-    fetchSessions,
+    fetchSessions as () => Promise<any>, // Use type assertion to resolve type mismatch
     ticketsHook.assignTicketsToPlayer
   );
 
