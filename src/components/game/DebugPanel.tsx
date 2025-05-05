@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import { ReloadIcon, SignalIcon, InfoIcon } from '@radix-ui/react-icons';
+import { RefreshCw, Signal, Info } from 'lucide-react';
 import { connectionManager } from '@/utils/connectionManager';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
 
@@ -74,10 +74,10 @@ export default function DebugPanel({
     <div className="bg-bingo-muted/10 border rounded-md p-2 text-xs space-y-2 shadow-sm">
       <div className="flex justify-between items-center">
         <h3 className="font-semibold flex items-center">
-          <InfoIcon className="h-3 w-3 mr-1" /> Debug Info
+          <Info className="h-3 w-3 mr-1" /> Debug Info
         </h3>
         <Badge className={getStatusColor()}>
-          <SignalIcon className="h-3 w-3 mr-1" />
+          <Signal className="h-3 w-3 mr-1" />
           {network.connectionState || connectionState}
         </Badge>
       </div>
@@ -123,7 +123,7 @@ export default function DebugPanel({
           className="w-full mt-2 h-7 text-xs"
           onClick={onReconnect}
         >
-          <ReloadIcon className="h-3 w-3 mr-1" /> Reconnect
+          <RefreshCw className="h-3 w-3 mr-1" /> Reconnect
         </Button>
       )}
     </div>

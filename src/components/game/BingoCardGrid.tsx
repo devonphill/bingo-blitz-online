@@ -1,171 +1,64 @@
 
-import React, { useState, useEffect } from "react";
-import BingoCell from "./BingoCell";
-import BingoTicketDisplay from "./BingoTicketDisplay";
+import React from 'react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { RefreshCw } from 'lucide-react';
 
-interface BingoCardGridProps {
-  tickets?: any[];
+export interface BingoCardGridProps {
+  tickets: any[];
   calledNumbers: number[];
-  autoMarking: boolean;
-  activeWinPatterns: string[];
-  currentWinPattern?: string | null;
+  currentCalledNumber?: number | null;
+  autoMarking?: boolean;
   gameType?: string;
-  // Legacy props
-  card?: (number | null)[][];
-  markedCells?: Set<string>;
-  setMarkedCells?: (f: (prev: Set<string>) => Set<string>) => void;
-  oneTGNumbers?: number[];
+  winPattern?: string | null;
+  onRefreshTickets?: () => void;
 }
 
 export default function BingoCardGrid({
-  tickets = [],
-  calledNumbers = [],
+  tickets,
+  calledNumbers,
+  currentCalledNumber,
   autoMarking = true,
-  activeWinPatterns = [],
-  currentWinPattern = null,
-  gameType = '90-ball',
-  card,
-  markedCells,
-  setMarkedCells,
-  oneTGNumbers = []
+  gameType = 'mainstage',
+  winPattern,
+  onRefreshTickets
 }: BingoCardGridProps) {
-  // Debug log to check what ticket data we're receiving
-  console.log("BingoCardGrid rendering with tickets:", tickets?.length || 0);
-  if (tickets && tickets.length > 0) {
-    console.log("First ticket sample:", {
-      serial: tickets[0].serial || 'No serial',
-      perm: tickets[0].perm || 'No perm',
-      position: tickets[0].position || 'No position',
-      layoutMask: tickets[0].layoutMask || tickets[0].layout_mask || 'No layout mask',
-      numbers: tickets[0].numbers ? `Array[${tickets[0].numbers.length}]` : 'No numbers'
-    });
-  }
-
-  // If we're using legacy props, render the legacy card grid
-  if (card && markedCells && setMarkedCells) {
-    return renderLegacyCard();
-  }
-  
-  // Get the actual win pattern to use
-  const effectiveWinPattern = currentWinPattern || (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
-  
-  // Render the new ticket-based grid
+  // This is a simplified placeholder until we implement the actual grid
   return (
-    <div className="space-y-6">
-      {tickets.map((ticket, index) => (
-        <div key={ticket.serial || index} className="p-4 bg-white rounded-lg shadow">
-          <BingoTicketDisplay
-            numbers={ticket.numbers || []}
-            layoutMask={ticket.layoutMask || ticket.layout_mask || 0}
-            calledNumbers={calledNumbers}
-            serial={ticket.serial || `Unknown-${index}`}
-            perm={ticket.perm || 0}
-            position={ticket.position || 0}
-            autoMarking={autoMarking}
-            currentWinPattern={effectiveWinPattern}
-            showProgress={true}
-          />
-        </div>
-      ))}
-      
-      {tickets.length === 0 && (
-        <div className="p-4 bg-white rounded-lg shadow text-center text-gray-500">
-          No tickets assigned
+    <div className="space-y-4">
+      {tickets.length === 0 ? (
+        <Card className="p-8 text-center">
+          <CardContent className="pt-6">
+            <p className="text-gray-500">No tickets available</p>
+            {onRefreshTickets && (
+              <Button 
+                variant="outline" 
+                onClick={onRefreshTickets}
+                className="mt-4"
+              >
+                <RefreshCw className="mr-2 h-4 w-4" /> Refresh Tickets
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {tickets.map((ticket, index) => (
+            <Card key={index} className="overflow-hidden">
+              <CardContent className="p-4">
+                <div className="text-center p-4 bg-gray-50 rounded-md mb-2">
+                  <p className="text-sm text-gray-500">Ticket ID: {ticket.serial || index + 1}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm">
+                    {autoMarking ? 'Auto marking enabled' : 'Manual marking'}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
     </div>
   );
-
-  // Legacy render function (for backward compatibility)
-  function renderLegacyCard() {
-    
-    const [recentlyMarked, setRecentlyMarked] = useState<Set<string>>(new Set());
-    
-    // Track recently called numbers for flashing effect
-    useEffect(() => {
-      if (!autoMarking || !card) return;
-      
-      // Find newly marked cells
-      const newlyMarked = new Set<string>();
-      
-      card.forEach((row, rowIndex) => {
-        row.forEach((value, colIndex) => {
-          if (value === null) return;
-          
-          const key = `${rowIndex},${colIndex}`;
-          const isMarked = calledNumbers.includes(value);
-          const wasMarked = [...(markedCells || new Set())].some(cellKey => cellKey === key);
-          
-          // If it's newly marked, add to recentlyMarked set
-          if (isMarked && !wasMarked) {
-            newlyMarked.add(key);
-          }
-        });
-      });
-      
-      if (newlyMarked.size > 0) {
-        setRecentlyMarked(newlyMarked);
-        
-        // Clear the recently marked status after animation completes
-        setTimeout(() => {
-          setRecentlyMarked(new Set());
-        }, 2000);
-      }
-    }, [calledNumbers, card, markedCells, autoMarking]);
-
-    
-
-    const isCellMarked = (row: number, col: number, value: number | null) => {
-      if (value === null) return false;
-      if (autoMarking) return calledNumbers.includes(value);
-      return markedCells?.has(`${row},${col}`) || false;
-    };
-
-    const isCell1TG = (value: number | null) => {
-      return value !== null && oneTGNumbers.includes(value);
-    };
-    
-    const isCellRecentlyMarked = (row: number, col: number) => {
-      return recentlyMarked.has(`${row},${col}`);
-    };
-
-    const toggleMark = (row: number, col: number, value: number | null) => {
-      if (value === null || autoMarking || !setMarkedCells) return;
-      setMarkedCells((prev) => {
-        const key = `${row},${col}`;
-        const next = new Set(prev);
-        if (next.has(key)) {
-          next.delete(key);
-        } else {
-          next.add(key);
-          // Mark as recently marked for animation
-          setRecentlyMarked(new Set([key]));
-          setTimeout(() => setRecentlyMarked(new Set()), 2000);
-        }
-        return next;
-      });
-    };
-
-    if (!card) return null;
-
-    return (
-      <div className="grid grid-cols-9 gap-1">
-        {card.map((row, rowIndex) => (
-          row.map((cell, colIndex) => (
-            <BingoCell
-              key={`${rowIndex}-${colIndex}`}
-              rowIndex={rowIndex}
-              colIndex={colIndex}
-              value={cell}
-              marked={isCellMarked(rowIndex, colIndex, cell)}
-              autoMarking={autoMarking}
-              onClick={() => toggleMark(rowIndex, colIndex, cell)}
-              is1TG={isCell1TG(cell)}
-              isRecentlyMarked={isCellRecentlyMarked(rowIndex, colIndex)}
-            />
-          ))
-        ))}
-      </div>
-    );
-  }
 }

@@ -2,7 +2,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from './use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { supabase } from '@/integrations/supabase/client';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
 
 /**
@@ -27,7 +26,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
     };
   }, []);
   
-  // Load claims on mount and set up subscription
+  // Set up listener for new claims
   useEffect(() => {
     if (!sessionId) return;
     
@@ -55,37 +54,45 @@ export function useCallerClaimManagement(sessionId: string | null) {
       }
     };
     
+    // Run initial fetch
     fetchClaims();
     
-    // Subscribe to new claims
-    const channel = supabase
-      .channel(`claims-${sessionId}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'universal_game_logs',
-        filter: `session_id=eq.${sessionId}`
-      }, (payload) => {
-        logWithTimestamp(`New claim detected for session ${sessionId}`, 'info');
-        
-        // Show notification
-        toast({
-          title: "New Bingo Claim!",
-          description: `A new bingo claim has been submitted. Check the claims panel to verify.`,
-          duration: 5000
-        });
-        
-        // Refetch claims when a new one comes in
-        fetchClaims();
-      })
-      .subscribe((status) => {
-        logWithTimestamp(`Claims channel subscription status: ${status}`, 'info');
-      });
-      
+    // Set up real-time listener through our network context
+    const removeListener = network.addGameStateUpdateListener((gameState) => {
+      // Re-fetch claims when game state changes
+      fetchClaims();
+    });
+    
     return () => {
-      supabase.removeChannel(channel);
+      removeListener();
     };
-  }, [sessionId, network, toast]);
+  }, [sessionId, network]);
+  
+  // For new claims specifically, set up a broadcast listener
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    // Subscribe to broadcast channel for new claims
+    const channel = network.addConnectionStatusListener((isConnected) => {
+      // When connection state changes, refetch claims if connected
+      if (isConnected) {
+        // Use the fetch claims method from our network context
+        network.fetchClaims(sessionId)
+          .then(fetched => {
+            if (isMounted.current) {
+              setClaims(fetched || []);
+            }
+          })
+          .catch(error => {
+            console.error('Error fetching claims after connection change:', error);
+          });
+      }
+    });
+    
+    return () => {
+      channel();
+    };
+  }, [sessionId, network]);
   
   // Validate a claim (approve or reject)
   const validateClaim = useCallback(async (claim: any, isValid: boolean) => {

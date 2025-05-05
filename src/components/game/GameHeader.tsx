@@ -1,60 +1,58 @@
 
 import React from 'react';
-import { BingoLogo } from '../ui/bingo-logo';
+import { Card, CardContent } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { Trophy } from 'lucide-react';
 
 export interface GameHeaderProps {
-  playerName: string;
-  playerCode: string;
-  currentGameNumber: number;
-  numberOfGames: number;
-  gameType: string;
-  // Adding the props that are being passed from PlayerGameContent
-  sessionName?: string;
-  accessCode?: string;
-  activeWinPattern?: string;
-  autoMarking?: boolean;
-  setAutoMarking?: (value: boolean) => void;
-  isConnected?: boolean;
-  connectionState?: 'disconnected' | 'connecting' | 'connected' | 'error';
-  onReconnect?: () => void;
+  gameNumber: number;
+  totalGames: number;
+  pattern: string;
+  prize: string;
+  claimStatus?: 'none' | 'pending' | 'valid' | 'invalid';
+  isClaiming?: boolean;
+  onClaimBingo?: () => Promise<boolean>;
 }
 
 export default function GameHeader({
-  playerName,
-  playerCode,
-  currentGameNumber,
-  numberOfGames,
-  gameType,
-  // Optional props with defaults
-  sessionName,
-  accessCode = playerCode,
-  activeWinPattern,
-  autoMarking,
-  setAutoMarking,
-  isConnected,
-  connectionState = 'connected',
-  onReconnect
+  gameNumber,
+  totalGames,
+  pattern,
+  prize,
+  claimStatus = 'none',
+  isClaiming = false,
+  onClaimBingo
 }: GameHeaderProps) {
-  // Format the game type
-  const formattedGameType = gameType === 'mainstage' ? '90-Ball' : gameType === '75-ball' ? '75-Ball' : gameType;
-
   return (
-    <div className="flex justify-between items-center">
-      <div className="flex items-center">
-        <BingoLogo className="h-9 w-auto mr-2" />
-        <div>
-          <h1 className="text-lg font-bold">
-            {formattedGameType} Game {currentGameNumber}/{numberOfGames}
-          </h1>
-          <p className="text-sm text-gray-500">Welcome, {playerName}</p>
-        </div>
-      </div>
-      
-      <div className="flex items-center">
-        <div className="text-right">
-          <span className="text-sm text-gray-500">Player Code:</span>
-          <div className="text-md font-mono px-2 py-1 bg-gray-100 rounded">{playerCode}</div>
-        </div>
+    <div className="bg-bingo-muted p-2">
+      <div className="container mx-auto">
+        <Card className="border-none shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex flex-col md:flex-row justify-between items-center gap-2">
+              <div className="flex items-center gap-4">
+                <div className="text-center">
+                  <div className="text-xs text-gray-500">Game</div>
+                  <div className="font-bold text-lg">{gameNumber} / {totalGames}</div>
+                </div>
+                
+                <Separator orientation="vertical" className="h-10 hidden md:block" />
+                
+                <div>
+                  <div className="text-xs text-gray-500">Current Pattern</div>
+                  <div className="font-semibold">{pattern}</div>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <Trophy className="h-5 w-5 text-amber-500" />
+                <div>
+                  <div className="text-xs text-gray-500">Prize</div>
+                  <div className="font-semibold">{prize}</div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

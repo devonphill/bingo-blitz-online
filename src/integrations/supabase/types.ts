@@ -181,48 +181,6 @@ export type Database = {
           },
         ]
       }
-      player_presence: {
-        Row: {
-          id: string
-          last_seen_at: string | null
-          nickname: string | null
-          player_code: string
-          player_id: string | null
-          session_id: string | null
-        }
-        Insert: {
-          id?: string
-          last_seen_at?: string | null
-          nickname?: string | null
-          player_code: string
-          player_id?: string | null
-          session_id?: string | null
-        }
-        Update: {
-          id?: string
-          last_seen_at?: string | null
-          nickname?: string | null
-          player_code?: string
-          player_id?: string | null
-          session_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "player_presence_player_id_fkey"
-            columns: ["player_id"]
-            isOneToOne: false
-            referencedRelation: "players"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "player_presence_session_id_fkey"
-            columns: ["session_id"]
-            isOneToOne: false
-            referencedRelation: "game_sessions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       players: {
         Row: {
           email: string | null

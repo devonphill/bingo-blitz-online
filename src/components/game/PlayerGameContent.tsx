@@ -212,16 +212,17 @@ export default function PlayerGameContent({
             showAutoMarkToggle={true}
             autoMarkEnabled={isAutoMarkingEnabled}
             onToggleAutoMark={toggleAutoMarking}
+            connectionState={connectionState}
           />
           
           <div className="mt-4">
             <BingoCardGrid 
               tickets={tickets}
               calledNumbers={localNumbers}
-              lastCalledNumber={localCurrentNumber}
+              currentCalledNumber={localCurrentNumber}
               autoMarking={isAutoMarkingEnabled}
               gameType={gameType}
-              currentWinPattern={effectivePattern}
+              winPattern={effectivePattern}
               onRefreshTickets={onRefreshTickets}
             />
           </div>
@@ -232,6 +233,7 @@ export default function PlayerGameContent({
         onClaimBingo={onClaimBingo}
         claimStatus={claimStatus}
         isClaiming={isClaiming}
+        onRefreshTickets={onRefreshTickets}
       />
       
       {showDebug && (

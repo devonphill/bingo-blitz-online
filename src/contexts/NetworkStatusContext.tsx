@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -17,10 +18,10 @@ interface NetworkContextType {
   disconnect: () => void;
   
   // Listeners
-  addNumberCalledListener: (callback: (number: number, allNumbers: number[]) => void) => () => void;
-  addGameStateUpdateListener: (callback: (gameState: any) => void) => () => void;
-  addConnectionStatusListener: (callback: (isConnected: boolean) => void) => () => void;
-  addTicketsAssignedListener: (callback: (playerCode: string, tickets: any[]) => void) => () => void;
+  addNumberCalledListener: (callback: (number: number, allNumbers: number[]) => void) => (() => void);
+  addGameStateUpdateListener: (callback: (gameState: any) => void) => (() => void);
+  addConnectionStatusListener: (callback: (isConnected: boolean) => void) => (() => void);
+  addTicketsAssignedListener: (callback: (playerCode: string, tickets: any[]) => void) => (() => void);
   
   // Action methods
   callNumber: (number: number, sessionId?: string) => Promise<boolean>;
@@ -62,13 +63,14 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [channels, setChannels] = useState<any[]>([]);
-  const { toast } = useToast();
-
-  // Event listeners storage
+  const [lastPingTime, setLastPingTime] = useState<number>(0);
+  const [reconnectAttempts, setReconnectAttempts] = useState<number>(0);
   const [numberCalledListeners] = useState<Array<(number: number, allNumbers: number[]) => void>>([]);
   const [gameStateListeners] = useState<Array<(gameState: any) => void>>([]);
   const [connectionStatusListeners] = useState<Array<(isConnected: boolean) => void>>([]);
   const [ticketsAssignedListeners] = useState<Array<(playerCode: string, tickets: any[]) => void>>([]);
+  
+  const { toast } = useToast();
   
   // Check if we're connected
   const isConnected = connectionState === 'connected';
@@ -89,7 +91,7 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
     setChannels([]);
   }, [channels]);
   
-  // Connect to session by subscribing to relevant tables
+  // Connect to session by subscribing to relevant tables and broadcast channels
   const connect = useCallback((newSessionId: string) => {
     // If already connected to this session, do nothing
     if (sessionId === newSessionId && isConnected) {
@@ -104,12 +106,106 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
     setConnectionState('connecting');
     setSessionId(newSessionId);
     
-    logWithTimestamp(`Connecting to session ${newSessionId} via database subscriptions`, 'info');
+    logWithTimestamp(`Connecting to session ${newSessionId}`, 'info');
     
     try {
-      // Subscribe to sessions_progress table
+      // Create a broadcast channel for real-time number calls
+      const numberBroadcastChannel = supabase.channel(`number-broadcast-${newSessionId}`);
+      
+      // Subscribe to broadcast events
+      numberBroadcastChannel
+        .on('broadcast', { event: 'number-called' }, (payload) => {
+          // Only process events meant for this session
+          if (payload.payload && payload.payload.sessionId === newSessionId) {
+            const { lastCalledNumber, calledNumbers } = payload.payload;
+            
+            logWithTimestamp(`Received broadcast number: ${lastCalledNumber}`, 'info');
+            setLastPingTime(Date.now());
+            
+            // Notify all listeners
+            numberCalledListeners.forEach(listener => {
+              try {
+                listener(lastCalledNumber, calledNumbers || []);
+              } catch (err) {
+                console.error('Error in number called listener:', err);
+              }
+            });
+          }
+        })
+        .on('broadcast', { event: 'game-reset' }, (payload) => {
+          // Reset the game state when requested
+          if (payload.payload && payload.payload.sessionId === newSessionId) {
+            logWithTimestamp(`Received game reset event`, 'info');
+            
+            // Notify all listeners with null to indicate reset
+            numberCalledListeners.forEach(listener => {
+              try {
+                listener(null, []);
+              } catch (err) {
+                console.error('Error in game reset listener:', err);
+              }
+            });
+          }
+        })
+        .on('broadcast', { event: 'game-state-update' }, (payload) => {
+          // Process game state updates
+          if (payload.payload && payload.payload.sessionId === newSessionId) {
+            logWithTimestamp(`Received game state update event`, 'info');
+            
+            // Notify all game state listeners
+            gameStateListeners.forEach(listener => {
+              try {
+                listener(payload.payload);
+              } catch (err) {
+                console.error('Error in game state update listener:', err);
+              }
+            });
+          }
+        })
+        .subscribe((status) => {
+          logWithTimestamp(`Broadcast channel subscription status: ${status}`, 'info');
+          
+          if (status === "SUBSCRIBED") {
+            setConnectionState('connected');
+            setReconnectAttempts(0);
+            
+            // Notify connection status listeners
+            connectionStatusListeners.forEach(listener => {
+              try {
+                listener(true);
+              } catch (err) {
+                console.error('Error in connection status listener:', err);
+              }
+            });
+          } else if (status === "CHANNEL_ERROR") {
+            setConnectionState('error');
+            
+            // Notify connection status listeners
+            connectionStatusListeners.forEach(listener => {
+              try {
+                listener(false);
+              } catch (err) {
+                console.error('Error in connection status listener:', err);
+              }
+            });
+            
+            // Auto-reconnect with exponential backoff
+            const delay = Math.min(1000 * (2 ** reconnectAttempts), 30000);
+            setTimeout(() => {
+              if (reconnectAttempts < 5) {
+                setReconnectAttempts(prev => prev + 1);
+                connect(newSessionId);
+              }
+            }, delay);
+          }
+        });
+      
+      // Store the channel for cleanup
+      setChannels(prev => [...prev, numberBroadcastChannel]);
+      
+      // Listen for session progress updates through database changes
       const progressChannel = supabase
-        .channel(`progress_${newSessionId}`)
+        .channel(`progress-${newSessionId}`)
         .on('postgres_changes', 
           { 
             event: 'UPDATE', 
@@ -144,103 +240,19 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
                 try {
                   listener(gameState);
                 } catch (err) {
-                  logWithTimestamp(`Error in game state listener: ${err}`, 'error');
+                  console.error('Error in game state listener:', err);
                 }
               });
-              
-              // If there's a new number called, notify number called listeners
-              if (newData.called_numbers && newData.called_numbers.length > 0) {
-                const lastNumber = newData.called_numbers[newData.called_numbers.length - 1];
-                numberCalledListeners.forEach(listener => {
-                  try {
-                    listener(lastNumber, newData.called_numbers);
-                  } catch (err) {
-                    logWithTimestamp(`Error in number called listener: ${err}`, 'error');
-                  }
-                });
-              }
-            }
-          })
-        .subscribe(status => {
-          if (status === 'SUBSCRIBED') {
-            logWithTimestamp(`Subscribed to sessions_progress for session ${newSessionId}`, 'info');
-            setConnectionState('connected');
-            
-            // Notify connection status listeners
-            connectionStatusListeners.forEach(listener => {
-              try {
-                listener(true);
-              } catch (err) {
-                logWithTimestamp(`Error in connection status listener: ${err}`, 'error');
-              }
-            });
-          } else {
-            logWithTimestamp(`Sessions progress subscription status: ${status}`, 'info');
-          }
-        });
-      
-      // Store channel for cleanup
-      setChannels(prev => [...prev, progressChannel]);
-      
-      // Subscribe to assigned_tickets table for ticket updates
-      const ticketsChannel = supabase
-        .channel(`tickets_${newSessionId}`)
-        .on('postgres_changes', 
-          { 
-            event: 'INSERT', 
-            schema: 'public', 
-            table: 'assigned_tickets',
-            filter: `session_id=eq.${newSessionId}`
-          },
-          async (payload) => {
-            logWithTimestamp('Received new ticket assignment', 'debug');
-            
-            // Extract ticket data from payload
-            const ticketData = payload.new as any;
-            
-            if (ticketData && ticketData.player_id) {
-              try {
-                // Get player information to find player code
-                const { data: playerData } = await supabase
-                  .from('players')
-                  .select('player_code, nickname')
-                  .eq('id', ticketData.player_id)
-                  .single();
-                
-                if (playerData && playerData.player_code) {
-                  // Get all tickets for this player in this session
-                  const { data: allTickets } = await supabase
-                    .from('assigned_tickets')
-                    .select('*')
-                    .eq('player_id', ticketData.player_id)
-                    .eq('session_id', newSessionId);
-                    
-                  // Notify ticket listeners
-                  if (allTickets) {
-                    logWithTimestamp(`Player ${playerData.player_code} assigned ${allTickets.length} tickets`, 'info');
-                    
-                    ticketsAssignedListeners.forEach(listener => {
-                      try {
-                        listener(playerData.player_code, allTickets);
-                      } catch (err) {
-                        logWithTimestamp(`Error in tickets assigned listener: ${err}`, 'error');
-                      }
-                    });
-                  }
-                }
-              } catch (err) {
-                logWithTimestamp(`Error processing ticket assignment: ${err}`, 'error');
-              }
             }
           })
         .subscribe();
       
-      // Store channel for cleanup
-      setChannels(prev => [...prev, ticketsChannel]);
+      // Store the channel for cleanup
+      setChannels(prev => [...prev, progressChannel]);
       
-      // Subscribe to universal_game_logs table for claim updates
+      // Listen for claim validation updates
       const claimsChannel = supabase
-        .channel(`claims_${newSessionId}`)
+        .channel(`claims-${newSessionId}`)
         .on('postgres_changes',
           {
             event: 'INSERT',
@@ -249,128 +261,222 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
             filter: `session_id=eq.${newSessionId}`
           },
           (payload) => {
-            logWithTimestamp('Received new claim submission', 'info');
+            logWithTimestamp('New claim detected', 'info');
             
-            // If there's a caller view open, they'll be notified of pending claims
-            // This is handled in useCallerClaimManagement hook
+            // Show notification (to caller)
+            toast({
+              title: "New Bingo Claim!",
+              description: "A new bingo claim has been submitted for verification.",
+              duration: 5000
+            });
           })
-        .subscribe();
-        
-      // Store channel for cleanup
-      setChannels(prev => [...prev, claimsChannel]);
-      
-      // Subscribe to player_presence table for player updates
-      const presenceChannel = supabase
-        .channel(`presence_${newSessionId}`)
-        .on('postgres_changes', 
-          { 
-            event: '*', 
-            schema: 'public', 
-            table: 'player_presence',
+        .on('postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'universal_game_logs',
             filter: `session_id=eq.${newSessionId}`
           },
-          async () => {
-            try {
-              const { data } = await supabase
-                .from('player_presence')
-                .select('*')
-                .eq('session_id', newSessionId);
+          (payload) => {
+            logWithTimestamp('Claim update detected', 'info');
+            
+            // Check if this is a validation update (validated_at is not null)
+            if (payload.new && (payload.new as any).validated_at) {
+              // This is a claim that has been validated
+              // Format a notification based on this
+              const claimData = payload.new as any;
               
-              if (data) {
-                logWithTimestamp(`Player presence update: ${data.length} players`, 'debug');
-              }
-            } catch (err) {
-              logWithTimestamp(`Error fetching players after presence update: ${err}`, 'error');
+              toast({
+                title: "Claim Validated",
+                description: `The bingo claim from ${claimData.player_name || 'a player'} has been processed.`,
+                duration: 5000
+              });
             }
           })
         .subscribe();
+        
+      // Store the channel for cleanup  
+      setChannels(prev => [...prev, claimsChannel]);
       
-      // Store channel for cleanup
-      setChannels(prev => [...prev, presenceChannel]);
-    } catch (error) {
-      logWithTimestamp(`Error setting up subscriptions: ${error}`, 'error');
+      // Start a heartbeat mechanism to check connection health
+      const heartbeatInterval = setInterval(() => {
+        // Check if the last ping time is too old
+        const now = Date.now();
+        const lastPing = lastPingTime;
+        
+        // If we haven't received a ping in 30 seconds, try to reconnect
+        if (lastPing > 0 && now - lastPing > 30000 && connectionState === 'connected') {
+          logWithTimestamp('Connection heartbeat failed, attempting reconnect', 'warn');
+          
+          // Clean up and reconnect
+          cleanupSubscriptions();
+          setConnectionState('connecting');
+          connect(newSessionId);
+        }
+      }, 10000);  // Check every 10 seconds
+      
+      // Store the interval for cleanup
+      const heartbeatIntervalId = heartbeatInterval;
+      
+      // Return cleanup function
+      return () => {
+        clearInterval(heartbeatIntervalId);
+      };
+      
+    } catch (err) {
+      logWithTimestamp(`Error connecting to session: ${err}`, 'error');
       setConnectionState('error');
       
-      // Notify connection status listeners
-      connectionStatusListeners.forEach(listener => {
-        try {
-          listener(false);
-        } catch (err) {
-          logWithTimestamp(`Error in connection status listener: ${err}`, 'error');
+      // Try to reconnect with exponential backoff
+      const delay = Math.min(1000 * (2 ** reconnectAttempts), 30000);
+      setTimeout(() => {
+        if (reconnectAttempts < 5) {
+          setReconnectAttempts(prev => prev + 1);
+          connect(newSessionId);
         }
-      });
+      }, delay);
     }
-  }, [sessionId, isConnected, cleanupSubscriptions, connectionStatusListeners, gameStateListeners, numberCalledListeners, ticketsAssignedListeners]);
-
-  // Disconnect and clean up subscriptions
+  }, [sessionId, isConnected, cleanupSubscriptions, numberCalledListeners, 
+      gameStateListeners, connectionStatusListeners, lastPingTime, 
+      reconnectAttempts, toast]);
+  
+  // Disconnect method
   const disconnect = useCallback(() => {
+    logWithTimestamp('Disconnecting from session', 'info');
     cleanupSubscriptions();
-    setConnectionState('disconnected');
     setSessionId(null);
+    setConnectionState('disconnected');
+  }, [cleanupSubscriptions]);
+  
+  // Add Number Called Listener
+  const addNumberCalledListener = useCallback((callback: (number: number, allNumbers: number[]) => void) => {
+    numberCalledListeners.push(callback);
+    logWithTimestamp('Added number called listener', 'debug');
     
-    // Notify connection status listeners
-    connectionStatusListeners.forEach(listener => {
-      try {
-        listener(false);
-      } catch (err) {
-        logWithTimestamp(`Error in connection status listener: ${err}`, 'error');
+    // Return a function to remove this listener
+    return () => {
+      const index = numberCalledListeners.indexOf(callback);
+      if (index !== -1) {
+        numberCalledListeners.splice(index, 1);
+        logWithTimestamp('Removed number called listener', 'debug');
       }
-    });
-  }, [cleanupSubscriptions, connectionStatusListeners]);
-
-  // Call a bingo number
-  const callNumber = useCallback(async (number: number, targetSessionId?: string) => {
-    const sid = targetSessionId || sessionId;
+    };
+  }, [numberCalledListeners]);
+  
+  // Add Game State Update Listener
+  const addGameStateUpdateListener = useCallback((callback: (gameState: any) => void) => {
+    gameStateListeners.push(callback);
+    logWithTimestamp('Added game state listener', 'debug');
     
-    if (!sid) {
+    // Return a function to remove this listener
+    return () => {
+      const index = gameStateListeners.indexOf(callback);
+      if (index !== -1) {
+        gameStateListeners.splice(index, 1);
+        logWithTimestamp('Removed game state listener', 'debug');
+      }
+    };
+  }, [gameStateListeners]);
+  
+  // Add Connection Status Listener
+  const addConnectionStatusListener = useCallback((callback: (isConnected: boolean) => void) => {
+    connectionStatusListeners.push(callback);
+    logWithTimestamp('Added connection status listener', 'debug');
+    
+    // Return a function to remove this listener
+    return () => {
+      const index = connectionStatusListeners.indexOf(callback);
+      if (index !== -1) {
+        connectionStatusListeners.splice(index, 1);
+        logWithTimestamp('Removed connection status listener', 'debug');
+      }
+    };
+  }, [connectionStatusListeners]);
+  
+  // Add Tickets Assigned Listener
+  const addTicketsAssignedListener = useCallback((callback: (playerCode: string, tickets: any[]) => void) => {
+    ticketsAssignedListeners.push(callback);
+    logWithTimestamp('Added tickets assigned listener', 'debug');
+    
+    // Return a function to remove this listener
+    return () => {
+      const index = ticketsAssignedListeners.indexOf(callback);
+      if (index !== -1) {
+        ticketsAssignedListeners.splice(index, 1);
+        logWithTimestamp('Removed tickets assigned listener', 'debug');
+      }
+    };
+  }, [ticketsAssignedListeners]);
+  
+  // Call a bingo number
+  const callNumber = useCallback(async (number: number, sessionIdParam?: string) => {
+    const targetSessionId = sessionIdParam || sessionId;
+    
+    if (!targetSessionId) {
       logWithTimestamp('Cannot call number: No session ID', 'error');
       return false;
     }
     
     try {
-      // Get current session progress
-      const { data: progressData, error: progressError } = await supabase
+      // Get current called numbers
+      const { data: progressData, error: getError } = await supabase
         .from('sessions_progress')
         .select('called_numbers')
-        .eq('session_id', sid)
+        .eq('session_id', targetSessionId)
         .single();
-        
-      if (progressError) {
-        logWithTimestamp(`Error getting session progress: ${progressError.message}`, 'error');
+      
+      if (getError) {
+        logWithTimestamp(`Error getting called numbers: ${getError.message}`, 'error');
         return false;
       }
       
-      // Update called numbers array
+      // Update the called numbers array
       const calledNumbers = progressData?.called_numbers || [];
-      
-      // Don't add the number if it's already been called
       if (!calledNumbers.includes(number)) {
         calledNumbers.push(number);
       }
       
-      // Update the database
+      // First, broadcast the number to all connected clients
+      // This ensures immediate notification regardless of database latency
+      const broadcastChannel = supabase.channel('number-broadcast');
+      await broadcastChannel.send({
+        type: 'broadcast', 
+        event: 'number-called',
+        payload: {
+          sessionId: targetSessionId,
+          lastCalledNumber: number,
+          calledNumbers: calledNumbers,
+          timestamp: new Date().getTime()
+        }
+      });
+      
+      // Then update the database for persistence
       const { error } = await supabase
         .from('sessions_progress')
-        .update({ called_numbers: calledNumbers })
-        .eq('session_id', sid);
-        
+        .update({ 
+          called_numbers: calledNumbers,
+        })
+        .eq('session_id', targetSessionId);
+      
       if (error) {
         logWithTimestamp(`Error updating called numbers: ${error.message}`, 'error');
-        return false;
+        // Even if the database update fails, we still return true because the broadcast was sent
+        // The next time we call a number, we'll try to get the current state again
+        return true;
       }
       
-      logWithTimestamp(`Number ${number} called for session ${sid}`);
+      logWithTimestamp(`Number ${number} called for session ${targetSessionId}`, 'info');
       return true;
     } catch (error) {
       logWithTimestamp(`Exception calling number: ${(error as Error).message}`, 'error');
       return false;
     }
   }, [sessionId]);
-
-  // Submit a bingo claim
-  const submitBingoClaim = useCallback(async (ticket: any, playerCode: string, targetSessionId: string) => {
-    if (!ticket || !playerCode || !targetSessionId) {
-      logWithTimestamp('Cannot submit claim: missing required data', 'error');
+  
+  // Submit bingo claim
+  const submitBingoClaim = useCallback(async (ticket: any, playerCode: string, claimSessionId: string) => {
+    if (!ticket || !playerCode || !claimSessionId) {
+      logWithTimestamp('Cannot submit claim: Missing required data', 'error');
       return false;
     }
     
@@ -378,181 +484,169 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
       // Get player info
       const { data: playerData, error: playerError } = await supabase
         .from('players')
-        .select('id, nickname')
+        .select('*')
         .eq('player_code', playerCode)
         .single();
-        
+      
       if (playerError) {
-        logWithTimestamp(`Error getting player info: ${playerError.message}`, 'error');
+        logWithTimestamp(`Error fetching player: ${playerError.message}`, 'error');
         return false;
       }
       
-      if (!playerData) {
-        logWithTimestamp(`Player not found with code ${playerCode}`, 'error');
+      // Get session info
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('game_sessions')
+        .select('*')
+        .eq('id', claimSessionId)
+        .single();
+      
+      if (sessionError) {
+        logWithTimestamp(`Error fetching session: ${sessionError.message}`, 'error');
         return false;
       }
       
-      // Get session progress info
+      // Get session progress for current game number and called numbers
       const { data: progressData, error: progressError } = await supabase
         .from('sessions_progress')
-        .select('current_game_number, called_numbers, current_game_type, current_win_pattern')
-        .eq('session_id', targetSessionId)
+        .select('*')
+        .eq('session_id', claimSessionId)
         .single();
-        
+      
       if (progressError) {
-        logWithTimestamp(`Error getting session progress: ${progressError.message}`, 'error');
+        logWithTimestamp(`Error fetching progress: ${progressError.message}`, 'error');
         return false;
       }
       
-      // Log claim data for debugging
-      logWithTimestamp(`Submitting claim with ticket data: ${JSON.stringify({
-        serial: ticket.serial || ticket.id,
-        perm: ticket.perm,
-        position: ticket.position,
-        layout_mask: ticket.layoutMask || ticket.layout_mask,
-        numbers_length: ticket.numbers ? ticket.numbers.length : 0
-      })}`, 'info');
-      
-      // Submit claim to universal_game_logs
-      const { error: claimError } = await supabase
+      // Insert claim record
+      const { data: claimData, error: claimError } = await supabase
         .from('universal_game_logs')
-        .insert({
-          session_id: targetSessionId,
-          player_id: playerData.id,
-          player_name: playerData.nickname || playerCode,
-          game_number: progressData.current_game_number,
-          game_type: progressData.current_game_type,
-          win_pattern: progressData.current_win_pattern || 'bingo',
-          called_numbers: progressData.called_numbers,
-          total_calls: progressData.called_numbers ? progressData.called_numbers.length : 0,
-          last_called_number: progressData.called_numbers && progressData.called_numbers.length > 0 
-            ? progressData.called_numbers[progressData.called_numbers.length - 1] 
-            : null,
-          ticket_serial: ticket.serial || ticket.id,
-          ticket_perm: ticket.perm,
-          ticket_position: ticket.position,
-          ticket_layout_mask: ticket.layoutMask || ticket.layout_mask,
-          ticket_numbers: ticket.numbers,
-          claimed_at: new Date().toISOString()
-        });
+        .insert([
+          {
+            session_id: claimSessionId,
+            player_id: playerData.id,
+            player_name: playerData.nickname || playerCode,
+            player_email: playerData.email,
+            game_number: progressData.current_game_number,
+            game_type: sessionData.game_type,
+            win_pattern: progressData.current_win_pattern,
+            prize: progressData.current_prize,
+            prize_amount: progressData.current_prize,
+            called_numbers: progressData.called_numbers,
+            total_calls: progressData.called_numbers?.length || 0,
+            last_called_number: progressData.called_numbers?.length > 0 
+              ? progressData.called_numbers[progressData.called_numbers.length - 1]
+              : null,
+            ticket_serial: ticket.serial,
+            ticket_perm: ticket.perm,
+            ticket_position: ticket.position,
+            ticket_layout_mask: ticket.layoutMask,
+            ticket_numbers: ticket.numbers
+          }
+        ])
+        .select()
+        .single();
         
       if (claimError) {
         logWithTimestamp(`Error submitting claim: ${claimError.message}`, 'error');
         return false;
       }
       
-      toast({
-        title: "Bingo Claim Submitted",
-        description: "Your claim has been submitted and is being verified."
+      // Broadcast the claim event through a separate channel
+      const broadcastChannel = supabase.channel('claim-broadcast');
+      await broadcastChannel.send({
+        type: 'broadcast', 
+        event: 'bingo-claimed',
+        payload: {
+          sessionId: claimSessionId,
+          claimId: claimData.id,
+          playerCode,
+          playerName: playerData.nickname || playerCode,
+          timestamp: new Date().getTime()
+        }
       });
       
-      logWithTimestamp(`Claim submitted for player ${playerCode} in session ${targetSessionId}`);
+      logWithTimestamp(`Bingo claim submitted successfully by ${playerCode}`, 'info');
+      
+      // Show notification to player submitting claim
+      toast({
+        title: "Bingo Claim Submitted!",
+        description: "Your claim has been submitted for verification.",
+        duration: 5000
+      });
+      
       return true;
     } catch (error) {
       logWithTimestamp(`Exception submitting claim: ${(error as Error).message}`, 'error');
       return false;
     }
   }, [toast]);
-
-  // Validate a bingo claim
+  
+  // Validate a claim
   const validateClaim = useCallback(async (claim: any, isValid: boolean) => {
     if (!claim || !claim.id) {
-      logWithTimestamp('Cannot validate claim: No claim ID provided', 'error');
+      logWithTimestamp('Cannot validate claim: Invalid claim data', 'error');
       return false;
     }
     
     try {
-      // Log detailed information about the claim
-      logWithTimestamp(`Validating claim ${claim.id}, isValid=${isValid}, player=${claim.player_name || claim.playerName}`, 'info');
-      
-      // Update the claim in the database
+      // Update the claim record
       const { error } = await supabase
         .from('universal_game_logs')
         .update({
-          validated_at: isValid ? new Date().toISOString() : null,
-          prize_shared: isValid
+          validated_at: new Date().toISOString(),
+          prize_shared: false  // Default to false, can be updated later
         })
         .eq('id', claim.id);
-        
+      
       if (error) {
         logWithTimestamp(`Error validating claim: ${error.message}`, 'error');
         return false;
       }
       
-      // Show toast notification
-      toast({
-        title: isValid ? "Claim Verified" : "Claim Rejected",
-        description: isValid
-          ? `The bingo claim for ${claim.player_name || claim.playerName} has been verified.`
-          : `The bingo claim for ${claim.player_name || claim.playerName} has been rejected.`,
-        variant: isValid ? "default" : "destructive",
+      // Broadcast the validation result
+      const broadcastChannel = supabase.channel('claim-validation-broadcast');
+      await broadcastChannel.send({
+        type: 'broadcast', 
+        event: isValid ? 'claim-validated' : 'claim-rejected',
+        payload: {
+          claimId: claim.id,
+          playerId: claim.player_id,
+          playerCode: claim.player_code,
+          playerName: claim.player_name,
+          isValid,
+          timestamp: new Date().getTime()
+        }
       });
       
-      logWithTimestamp(`Claim ${claim.id} ${isValid ? 'verified' : 'rejected'}`);
+      logWithTimestamp(`Claim ${claim.id} ${isValid ? 'validated' : 'rejected'}`, 'info');
       return true;
     } catch (error) {
       logWithTimestamp(`Exception validating claim: ${(error as Error).message}`, 'error');
       return false;
     }
-  }, [toast]);
-
-  // Update player presence
+  }, []);
+  
+  // Update player presence without using the presence table
   const updatePlayerPresence = useCallback(async (presenceData: any) => {
-    if (!sessionId) {
-      logWithTimestamp('Cannot update presence: No session ID', 'error');
-      return false;
-    }
-    
-    if (!presenceData || !presenceData.player_id) {
-      logWithTimestamp('Cannot update presence: Missing player data', 'error');
+    if (!presenceData || !sessionId) {
+      logWithTimestamp('Cannot update presence: Missing data', 'error');
       return false;
     }
     
     try {
-      // Check if the player already has a presence record
-      const { data, error: selectError } = await supabase
-        .from('player_presence')
-        .select('id')
-        .eq('session_id', sessionId)
-        .eq('player_id', presenceData.player_id)
-        .maybeSingle();
-        
-      if (selectError) {
-        logWithTimestamp(`Error checking player presence: ${selectError.message}`, 'error');
-        return false;
-      }
-      
-      if (data) {
-        // Update existing presence record
-        const { error } = await supabase
-          .from('player_presence')
-          .update({
-            last_seen_at: new Date().toISOString()
-          })
-          .eq('id', data.id);
-          
-        if (error) {
-          logWithTimestamp(`Error updating player presence: ${error.message}`, 'error');
-          return false;
+      // Instead of storing in a database, broadcast presence to the caller
+      const broadcastChannel = supabase.channel('player-presence-broadcast');
+      await broadcastChannel.send({
+        type: 'broadcast', 
+        event: 'player-presence-update',
+        payload: {
+          sessionId,
+          ...presenceData,
+          timestamp: new Date().getTime()
         }
-      } else {
-        // Insert new presence record
-        const { error } = await supabase
-          .from('player_presence')
-          .insert({
-            session_id: sessionId,
-            player_id: presenceData.player_id,
-            player_code: presenceData.player_code,
-            nickname: presenceData.nickname,
-            last_seen_at: new Date().toISOString()
-          });
-          
-        if (error) {
-          logWithTimestamp(`Error inserting player presence: ${error.message}`, 'error');
-          return false;
-        }
-      }
+      });
       
+      logWithTimestamp(`Player presence broadcast sent for ${presenceData.player_code || presenceData.nickname}`, 'debug');
       return true;
     } catch (error) {
       logWithTimestamp(`Exception updating player presence: ${(error as Error).message}`, 'error');
@@ -560,35 +654,31 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
     }
   }, [sessionId]);
   
-  // Alias for updatePlayerPresence for compatibility
-  const trackPlayerPresence = useCallback((presenceData: any) => {
+  // Legacy method for backward compatibility
+  const trackPlayerPresence = useCallback(async (presenceData: any) => {
     return updatePlayerPresence(presenceData);
   }, [updatePlayerPresence]);
-
-  // Fetch pending claims
-  const fetchClaims = useCallback(async (targetSessionId?: string) => {
-    const sid = targetSessionId || sessionId;
-    
-    if (!sid) {
-      logWithTimestamp('Cannot fetch claims: No session ID', 'error');
-      return [];
-    }
-    
+  
+  // Fetch pending claims for a session
+  const fetchClaims = useCallback(async (fetchSessionId?: string) => {
     try {
-      logWithTimestamp(`Fetching claims for session ${sid}`, 'info');
+      const targetSessionId = fetchSessionId || sessionId;
+      if (!targetSessionId) {
+        logWithTimestamp('Cannot fetch claims: No session ID', 'error');
+        return [];
+      }
       
       const { data, error } = await supabase
         .from('universal_game_logs')
         .select('*')
-        .eq('session_id', sid)
+        .eq('session_id', targetSessionId)
         .is('validated_at', null);
-        
+      
       if (error) {
         logWithTimestamp(`Error fetching claims: ${error.message}`, 'error');
         return [];
       }
       
-      logWithTimestamp(`Found ${data?.length || 0} pending claims`, 'info');
       return data || [];
     } catch (error) {
       logWithTimestamp(`Exception fetching claims: ${(error as Error).message}`, 'error');
@@ -596,51 +686,7 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
     }
   }, [sessionId]);
 
-  // Add number called listener
-  const addNumberCalledListener = useCallback((callback: (number: number, allNumbers: number[]) => void) => {
-    numberCalledListeners.push(callback);
-    return () => {
-      const index = numberCalledListeners.indexOf(callback);
-      if (index !== -1) {
-        numberCalledListeners.splice(index, 1);
-      }
-    };
-  }, [numberCalledListeners]);
-
-  // Add game state update listener
-  const addGameStateUpdateListener = useCallback((callback: (gameState: any) => void) => {
-    gameStateListeners.push(callback);
-    return () => {
-      const index = gameStateListeners.indexOf(callback);
-      if (index !== -1) {
-        gameStateListeners.splice(index, 1);
-      }
-    };
-  }, [gameStateListeners]);
-
-  // Add connection status listener
-  const addConnectionStatusListener = useCallback((callback: (isConnected: boolean) => void) => {
-    connectionStatusListeners.push(callback);
-    return () => {
-      const index = connectionStatusListeners.indexOf(callback);
-      if (index !== -1) {
-        connectionStatusListeners.splice(index, 1);
-      }
-    };
-  }, [connectionStatusListeners]);
-  
-  // Add tickets assigned listener
-  const addTicketsAssignedListener = useCallback((callback: (playerCode: string, tickets: any[]) => void) => {
-    ticketsAssignedListeners.push(callback);
-    return () => {
-      const index = ticketsAssignedListeners.indexOf(callback);
-      if (index !== -1) {
-        ticketsAssignedListeners.splice(index, 1);
-      }
-    };
-  }, [ticketsAssignedListeners]);
-
-  // Provide context value
+  // Context value
   const contextValue = {
     connectionState,
     isConnected,
