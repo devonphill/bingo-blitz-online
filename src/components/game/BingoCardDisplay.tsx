@@ -1,30 +1,31 @@
 
-import React from "react";
-import { useAutoMark } from "./useAutoMark";
-import BingoCell from "./BingoCell";
+import React from 'react';
+import BingoCell from './BingoCell';
 
 interface BingoCardDisplayProps {
   numbers: number[];
   layoutMask: number;
   calledNumbers: number[];
   autoMarking?: boolean;
+  card?: Array<Array<number | null>>;
+  markedCells?: Set<string>;
+  setMarkedCells?: React.Dispatch<React.SetStateAction<Set<string>>>;
+  oneTGNumbers?: number[];
 }
 
 export default function BingoCardDisplay({
   numbers,
   layoutMask,
   calledNumbers,
-  autoMarking = true
+  autoMarking = true,
+  card = [],
+  markedCells = new Set(),
+  setMarkedCells,
+  oneTGNumbers = []
 }: BingoCardDisplayProps) {
-  const {
-    card,
-    markedCells,
-    setMarkedCells,
-  } = useAutoMark({ numbers, layoutMask, calledNumbers, autoMarking });
-  
   // Function to toggle cell marking when not in autoMarking mode
   const toggleMark = (row: number, col: number, value: number | null) => {
-    if (value === null || autoMarking) return;
+    if (value === null || autoMarking || !setMarkedCells) return;
     
     setMarkedCells((prev) => {
       const key = `${row},${col}`;
@@ -44,6 +45,11 @@ export default function BingoCardDisplay({
     return markedCells?.has(`${row},${col}`) || false;
   };
 
+  const isOneTG = (value: number | null) => {
+    if (value === null) return false;
+    return oneTGNumbers.includes(value);
+  };
+
   if (!card || card.length === 0) return null;
 
   return (
@@ -58,6 +64,7 @@ export default function BingoCardDisplay({
             marked={isCellMarked(rowIndex, colIndex, cell)}
             autoMarking={autoMarking}
             onClick={() => toggleMark(rowIndex, colIndex, cell)}
+            isOneTG={isOneTG(cell)}
           />
         ))
       ))}

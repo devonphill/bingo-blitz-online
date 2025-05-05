@@ -3,27 +3,64 @@ import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
+import BingoCardDisplay from './BingoCardDisplay';
 
 export interface BingoCardGridProps {
-  tickets: any[];
+  tickets?: any[];
   calledNumbers: number[];
   currentCalledNumber?: number | null;
   autoMarking?: boolean;
   gameType?: string;
   winPattern?: string | null;
   onRefreshTickets?: () => void;
+  // Add the following properties to fix type errors
+  card?: Array<Array<number | null>>;
+  markedCells?: Set<string>;
+  setMarkedCells?: React.Dispatch<React.SetStateAction<Set<string>>>;
+  oneTGNumbers?: number[];
+  activeWinPatterns?: string[];
 }
 
 export default function BingoCardGrid({
-  tickets,
-  calledNumbers,
+  tickets = [],
+  calledNumbers = [],
   currentCalledNumber,
   autoMarking = true,
   gameType = 'mainstage',
   winPattern,
-  onRefreshTickets
+  onRefreshTickets,
+  // Add the new props with default values
+  card,
+  markedCells,
+  setMarkedCells,
+  oneTGNumbers = [],
+  activeWinPatterns = []
 }: BingoCardGridProps) {
-  // This is a simplified placeholder until we implement the actual grid
+  // Handle the case when card is provided directly
+  if (card && markedCells && setMarkedCells) {
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 gap-4">
+          <Card className="overflow-hidden">
+            <CardContent className="p-4">
+              <BingoCardDisplay 
+                numbers={[]} // Will be handled internally by BingoCardDisplay
+                layoutMask={0} // Will be handled internally by BingoCardDisplay
+                calledNumbers={calledNumbers}
+                autoMarking={autoMarking}
+                card={card}
+                markedCells={markedCells}
+                setMarkedCells={setMarkedCells}
+                oneTGNumbers={oneTGNumbers}
+              />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // This is the simplified placeholder until we implement the actual grid
   return (
     <div className="space-y-4">
       {tickets.length === 0 ? (

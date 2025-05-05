@@ -12,6 +12,12 @@ export interface GameHeaderProps {
   claimStatus?: 'none' | 'pending' | 'valid' | 'invalid';
   isClaiming?: boolean;
   onClaimBingo?: () => Promise<boolean>;
+  // Add the following properties to fix type errors
+  gameType?: string;
+  playerName?: string;
+  playerCode?: string;
+  currentGameNumber?: number;
+  numberOfGames?: number;
 }
 
 export default function GameHeader({
@@ -21,8 +27,19 @@ export default function GameHeader({
   prize,
   claimStatus = 'none',
   isClaiming = false,
-  onClaimBingo
+  onClaimBingo,
+  // Add the new props (with defaults)
+  gameType,
+  playerName,
+  playerCode,
+  currentGameNumber,
+  numberOfGames
 }: GameHeaderProps) {
+  // We'll use the provided gameNumber/totalGames, but if they're not available,
+  // we'll fall back to currentGameNumber/numberOfGames
+  const effectiveGameNumber = gameNumber || currentGameNumber || 1;
+  const effectiveTotalGames = totalGames || numberOfGames || 1;
+
   return (
     <div className="bg-bingo-muted p-2">
       <div className="container mx-auto">
@@ -32,7 +49,7 @@ export default function GameHeader({
               <div className="flex items-center gap-4">
                 <div className="text-center">
                   <div className="text-xs text-gray-500">Game</div>
-                  <div className="font-bold text-lg">{gameNumber} / {totalGames}</div>
+                  <div className="font-bold text-lg">{effectiveGameNumber} / {effectiveTotalGames}</div>
                 </div>
                 
                 <Separator orientation="vertical" className="h-10 hidden md:block" />
