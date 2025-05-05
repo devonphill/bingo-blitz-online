@@ -54,7 +54,7 @@ const GameSetup = () => <div className="p-8"><h1 className="text-2xl">Game Setup
 const GameManagement = () => <div className="p-8"><h1 className="text-2xl">Game Management</h1><p>This page is not yet implemented.</p></div>;
 
 // Player game pages
-const PlayerJoin = () => <div className="p-8"><h1 className="text-2xl">Player Join</h1><p>This page is not yet implemented.</p></div>;
+const PlayerJoin = lazy(() => import("./pages/PlayerJoin"));
 const PlayerGame = lazy(() => import("./pages/PlayerGame"));
 
 function App() {
