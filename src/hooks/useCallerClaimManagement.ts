@@ -37,9 +37,13 @@ export function useCallerClaimManagement(sessionId: string | null) {
       
       try {
         setIsProcessingClaim(true);
+        logWithTimestamp(`Fetching claims for session ${sessionId}`, 'info');
+        
         // Use the fetch claims method from our network context
         const fetched = await network.fetchClaims(sessionId);
+        
         if (isMounted.current) {
+          logWithTimestamp(`Found ${fetched?.length || 0} claims for session ${sessionId}`, 'info');
           setClaims(fetched || []);
           setIsProcessingClaim(false);
         }
@@ -61,16 +65,27 @@ export function useCallerClaimManagement(sessionId: string | null) {
         schema: 'public',
         table: 'universal_game_logs',
         filter: `session_id=eq.${sessionId}`
-      }, () => {
+      }, (payload) => {
+        logWithTimestamp(`New claim detected for session ${sessionId}`, 'info');
+        
+        // Show notification
+        toast({
+          title: "New Bingo Claim!",
+          description: `A new bingo claim has been submitted. Check the claims panel to verify.`,
+          duration: 5000
+        });
+        
         // Refetch claims when a new one comes in
         fetchClaims();
       })
-      .subscribe();
+      .subscribe((status) => {
+        logWithTimestamp(`Claims channel subscription status: ${status}`, 'info');
+      });
       
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [sessionId, network]);
+  }, [sessionId, network, toast]);
   
   // Validate a claim (approve or reject)
   const validateClaim = useCallback(async (claim: any, isValid: boolean) => {
@@ -80,7 +95,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
         description: "Invalid claim data",
         variant: "destructive"
       });
-      return;
+      return false;
     }
     
     try {
@@ -109,6 +124,8 @@ export function useCallerClaimManagement(sessionId: string | null) {
           variant: "destructive"
         });
       }
+      
+      return success;
     } catch (error) {
       console.error('Error validating claim:', error);
       toast({
@@ -116,6 +133,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
         description: "An error occurred while processing the claim",
         variant: "destructive"
       });
+      return false;
     } finally {
       if (isMounted.current) {
         setIsProcessingClaim(false);

@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -239,6 +238,27 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
       // Store channel for cleanup
       setChannels(prev => [...prev, ticketsChannel]);
       
+      // Subscribe to universal_game_logs table for claim updates
+      const claimsChannel = supabase
+        .channel(`claims_${newSessionId}`)
+        .on('postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'universal_game_logs',
+            filter: `session_id=eq.${newSessionId}`
+          },
+          (payload) => {
+            logWithTimestamp('Received new claim submission', 'info');
+            
+            // If there's a caller view open, they'll be notified of pending claims
+            // This is handled in useCallerClaimManagement hook
+          })
+        .subscribe();
+        
+      // Store channel for cleanup
+      setChannels(prev => [...prev, claimsChannel]);
+      
       // Subscribe to player_presence table for player updates
       const presenceChannel = supabase
         .channel(`presence_${newSessionId}`)
@@ -384,6 +404,15 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
         return false;
       }
       
+      // Log claim data for debugging
+      logWithTimestamp(`Submitting claim with ticket data: ${JSON.stringify({
+        serial: ticket.serial || ticket.id,
+        perm: ticket.perm,
+        position: ticket.position,
+        layout_mask: ticket.layoutMask || ticket.layout_mask,
+        numbers_length: ticket.numbers ? ticket.numbers.length : 0
+      })}`, 'info');
+      
       // Submit claim to universal_game_logs
       const { error: claimError } = await supabase
         .from('universal_game_logs')
@@ -433,12 +462,15 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
     }
     
     try {
+      // Log detailed information about the claim
+      logWithTimestamp(`Validating claim ${claim.id}, isValid=${isValid}, player=${claim.player_name || claim.playerName}`, 'info');
+      
       // Update the claim in the database
       const { error } = await supabase
         .from('universal_game_logs')
         .update({
           validated_at: isValid ? new Date().toISOString() : null,
-          prize_shared: false
+          prize_shared: isValid
         })
         .eq('id', claim.id);
         
@@ -543,6 +575,8 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
     }
     
     try {
+      logWithTimestamp(`Fetching claims for session ${sid}`, 'info');
+      
       const { data, error } = await supabase
         .from('universal_game_logs')
         .select('*')
@@ -554,6 +588,7 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
         return [];
       }
       
+      logWithTimestamp(`Found ${data?.length || 0} pending claims`, 'info');
       return data || [];
     } catch (error) {
       logWithTimestamp(`Exception fetching claims: ${(error as Error).message}`, 'error');

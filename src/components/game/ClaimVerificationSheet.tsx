@@ -46,7 +46,6 @@ export default function ClaimVerificationSheet({
   } = useCallerClaimManagement(sessionId || null);
   
   const { toast } = useToast();
-  const [notes, setNotes] = useState("");
   
   // Use the network context
   const network = useNetwork();

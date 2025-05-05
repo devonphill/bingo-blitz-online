@@ -1,97 +1,133 @@
+
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
-import GameTypePlayspace from "./GameTypePlayspace";
-import { toast } from "@/hooks/use-toast";
-import { connectionManager, ConnectionState } from "@/utils/connectionManager";
+import StatusBar from "./StatusBar";
+import GameSheetControls from "./GameSheetControls";
+import DebugPanel from "./DebugPanel";
+import { connectionManager } from "@/utils/connectionManager";
 import { logWithTimestamp } from "@/utils/logUtils";
-import CalledNumbers from "./CalledNumbers";
-import CurrentNumberDisplay from "./CurrentNumberDisplay";
-import { GoLiveButton } from "@/components/ui/go-live-button";
+import { useNetwork } from "@/contexts/NetworkStatusContext";
 
 interface PlayerGameContentProps {
   tickets: any[];
-  calledNumbers: number[];
-  currentNumber: number | null;
-  currentSession: any;
-  autoMarking: boolean;
-  setAutoMarking: (value: boolean) => void;
-  playerCode: string;
+  calledNumbers?: number[];
+  currentNumber?: number | null;
+  currentSession?: any;
+  autoMarking?: boolean;
+  setAutoMarking?: (value: boolean) => void;
+  playerCode?: string;
   playerName?: string;
-  winPrizes: { [key: string]: string };
-  activeWinPatterns: string[];
-  onClaimBingo: () => Promise<boolean>;
-  errorMessage: string;
-  isLoading: boolean;
-  isClaiming?: boolean;
+  winPrizes?: Record<string, string>;
+  activeWinPatterns?: string[];
+  onClaimBingo?: () => Promise<boolean>;
   claimStatus?: 'none' | 'pending' | 'valid' | 'invalid';
+  isClaiming?: boolean;
   gameType?: string;
+  currentWinPattern?: string | null;
+  currentGameNumber?: number;
+  numberOfGames?: number;
+  backgroundColor?: string;
+  connectionState?: 'disconnected' | 'connecting' | 'connected' | 'error';
+  onRefreshTickets?: () => void;
+  onReconnect?: () => void;
 }
 
-// Define a mapping type for GameTypePlayspace claim status
-type GameTypePlayspaceClaimStatus = 'pending' | 'rejected' | 'validated';
-
 export default function PlayerGameContent({
-  tickets,
-  calledNumbers,
-  currentNumber,
+  tickets = [],
+  calledNumbers = [],
+  currentNumber = null,
   currentSession,
-  autoMarking,
+  autoMarking = true,
   setAutoMarking,
   playerCode,
-  playerName = '',
-  winPrizes,
-  activeWinPatterns,
+  playerName,
+  winPrizes = {},
+  activeWinPatterns = [],
   onClaimBingo,
-  errorMessage,
-  isLoading,
-  isClaiming,
   claimStatus = 'none',
-  gameType = '90-ball'
+  isClaiming = false,
+  gameType = 'mainstage',
+  currentWinPattern = null,
+  currentGameNumber = 1,
+  numberOfGames = 1,
+  backgroundColor = 'transparent',
+  connectionState = 'connected',
+  onRefreshTickets,
+  onReconnect
 }: PlayerGameContentProps) {
-  // Track local state for real-time number calls
-  const [rtCalledNumbers, setRtCalledNumbers] = useState<number[]>([]);
-  const [rtLastCalledNumber, setRtLastCalledNumber] = useState<number | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionState>('connecting');
-  const [activeWinPattern, setActiveWinPattern] = useState<string | null>(null);
-  
-  // Generate a unique ID for this component instance for better debug logging
-  const instanceId = React.useRef(`player-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
-  
-  // Update active win pattern when it changes from props
+  // Local states for UI elements
+  const [isAutoMarkingEnabled, setIsAutoMarkingEnabled] = useState(autoMarking);
+  const [showDebug, setShowDebug] = useState(false);
+  const [localNumbers, setLocalNumbers] = useState<number[]>(calledNumbers);
+  const [localCurrentNumber, setLocalCurrentNumber] = useState<number | null>(currentNumber);
+
+  // Use the network context
+  const network = useNetwork();
+
+  // Handle changes to external props
   useEffect(() => {
-    if (activeWinPatterns && activeWinPatterns.length > 0 && activeWinPatterns[0] !== activeWinPattern) {
-      setActiveWinPattern(activeWinPatterns[0]);
+    if (calledNumbers && calledNumbers.length > 0) {
+      setLocalNumbers(calledNumbers);
     }
-  }, [activeWinPatterns, activeWinPattern]);
-  
-  // Custom, debounced connection status check to avoid UI flashing
-  const debouncedSetConnectionStatus = useCallback((status: ConnectionState) => {
-    // Only update if there's a significant change to prevent UI flashing 
-    setConnectionStatus(prevStatus => {
-      // Don't rapidly toggle between connecting/disconnected
-      if (status === 'connecting' && prevStatus === 'disconnected') {
-        return prevStatus;
-      }
-      
-      // Always show connected status immediately
-      if (status === 'connected') {
-        return status;
-      }
-      
-      // Otherwise update normally
-      return status;
-    });
-  }, []);
-  
-  // Setup single connection handling
+  }, [calledNumbers]);
+
   useEffect(() => {
-    if (!currentSession?.id) {
-      logWithTimestamp(`PlayerGameContent (${instanceId.current}): No session ID, skipping connection setup`, 'info');
-      return;
+    setLocalCurrentNumber(currentNumber);
+  }, [currentNumber]);
+
+  useEffect(() => {
+    setIsAutoMarkingEnabled(autoMarking);
+  }, [autoMarking]);
+
+  // Toggle automarking (in local state and parent state if available)
+  const toggleAutoMarking = useCallback(() => {
+    const newValue = !isAutoMarkingEnabled;
+    setIsAutoMarkingEnabled(newValue);
+    
+    if (setAutoMarking) {
+      setAutoMarking(newValue);
     }
     
-    logWithTimestamp(`PlayerGameContent (${instanceId.current}): Setting up connection manager for session ${currentSession.id}`, 'info');
+    // Store preference in localStorage
+    localStorage.setItem('autoMarking', newValue.toString());
+  }, [isAutoMarkingEnabled, setAutoMarking]);
+
+  // Handle the key sequence to toggle debug panel
+  useEffect(() => {
+    const keySequence: string[] = [];
+    const targetSequence = 'debugon';
+    
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      
+      keySequence.push(key);
+      if (keySequence.length > targetSequence.length) {
+        keySequence.shift();
+      }
+      
+      if (keySequence.join('') === targetSequence) {
+        setShowDebug(true);
+      }
+      
+      if (keySequence.join('') === 'debugoff') {
+        setShowDebug(false);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  // Initialize connection when we have a session
+  useEffect(() => {
+    if (!currentSession || !currentSession.id) {
+      logWithTimestamp('No session available for connection', 'warn');
+      return;
+    }
     
     try {
       // Initialize connection once
@@ -99,242 +135,118 @@ export default function PlayerGameContent({
         .onNumberCalled((number, allNumbers) => {
           if (number === null) {
             // Handle reset event
-            logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received reset event, clearing numbers`, 'info');
-            setRtCalledNumbers([]);
-            setRtLastCalledNumber(null);
+            setLocalNumbers([]);
+            setLocalCurrentNumber(null);
             return;
           }
           
-          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Received number call: ${number}, total: ${allNumbers.length}`, 'info');
+          logWithTimestamp(`Received number call: ${number}`, 'info');
           
-          // Only update state if we have new data to prevent unnecessary renders
-          if (number !== rtLastCalledNumber || 
-              !rtCalledNumbers.length || 
-              allNumbers.length !== rtCalledNumbers.length) {
-            setRtLastCalledNumber(number);
-            setRtCalledNumbers(allNumbers);
-            
-            // Show toast notification for new number
-            toast({
-              title: `Number Called: ${number}`,
-              description: `New number has been called`,
-              duration: 3000
-            });
-          }
+          // Update our local state with the new number
+          setLocalCurrentNumber(number);
+          
+          // Add to called numbers if not already present
+          setLocalNumbers(prev => {
+            if (prev.includes(number)) return prev;
+            return [...prev, number];
+          });
         })
+        // Add session progress update listener
         .onSessionProgressUpdate((progress) => {
-          // This callback is required to avoid the error we were seeing
-          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Session progress update received`, 'info');
-          
-          // Update numbers from progress if available
-          if (progress?.called_numbers?.length > 0) {
-            const lastNumberIndex = progress.called_numbers.length - 1;
-            const lastNumber = progress.called_numbers[lastNumberIndex];
-            
-            // Only update if we have new data
-            if (!rtCalledNumbers.length || 
-                rtCalledNumbers.length !== progress.called_numbers.length ||
-                rtLastCalledNumber !== lastNumber) {
-              logWithTimestamp(`PlayerGameContent (${instanceId.current}): Updating called numbers from progress`, 'info');
-              setRtCalledNumbers(progress.called_numbers);
-              setRtLastCalledNumber(lastNumber);
-            }
+          // This method just returns this for method chaining, it doesn't need to do anything
+          if (progress) {
+            // Could handle progress updates here if needed
+            logWithTimestamp('Received session progress update', 'debug');
           }
-          
-          // Update win pattern if available
-          if (progress?.current_win_pattern) {
-            setActiveWinPattern(progress.current_win_pattern);
-          }
-        })
-        .onConnectionStatusChange((isConnected) => {
-          const status: ConnectionState = isConnected ? 'connected' : 'disconnected'; 
-          debouncedSetConnectionStatus(status);
-        })
-        .onError((error) => {
-          logWithTimestamp(`PlayerGameContent (${instanceId.current}): Connection error: ${error}`, 'error');
-          debouncedSetConnectionStatus('error');
         });
-      
-    } catch (err) {
-      console.error("Error setting up connection manager:", err);
-      debouncedSetConnectionStatus('error');
-    }
-    
-    // Check connection status periodically but don't reconnect here
-    const checkInterval = setInterval(() => {
-      // Only check if we have a session
-      if (currentSession?.id) {
-        const currentStatus = connectionManager.getConnectionState();
-        debouncedSetConnectionStatus(currentStatus);
-      }
-    }, 5000);
-    
-    // Clean up on unmount
-    return () => {
-      logWithTimestamp(`PlayerGameContent (${instanceId.current}): Cleaning up connection check interval`, 'info');
-      clearInterval(checkInterval);
-    };
-  }, [currentSession?.id, debouncedSetConnectionStatus]);
-  
-  // Log state for debugging but with reduced frequency using dependencies
-  useEffect(() => {
-    if (currentSession?.id) {
-      logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Connection: ${connectionStatus}, Session: ${currentSession?.id}`, 'info');
-      
-      if (rtCalledNumbers.length > 0) {
-        logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Called numbers: ${rtCalledNumbers.length}, last: ${rtLastCalledNumber}`, 'info');
-      }
-    } else {
-      logWithTimestamp(`[PlayerGameContent (${instanceId.current})] No active session`, 'info');
-    }
-  }, [connectionStatus, currentSession?.id, rtLastCalledNumber, rtCalledNumbers.length]);
-
-  // Use the local state for win pattern if available, otherwise fall back to props
-  const currentWinPattern = activeWinPattern || (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
-
-  // Merge real-time called numbers with prop values, giving priority to real-time
-  const mergedCalledNumbers = useMemo(() => {
-    return rtCalledNumbers.length > 0 ? rtCalledNumbers : calledNumbers;
-  }, [rtCalledNumbers, calledNumbers]);
-
-  // Use real-time last called number or fall back to props
-  const mergedCurrentNumber = useMemo(() => {
-    return rtLastCalledNumber !== null ? rtLastCalledNumber : currentNumber;
-  }, [rtLastCalledNumber, currentNumber]);
-
-  // Force auto-marking for Mainstage games
-  React.useEffect(() => {
-    if (gameType?.toUpperCase().includes('MAINSTAGE') && !autoMarking) {
-      setAutoMarking(true);
-    }
-  }, [gameType, autoMarking, setAutoMarking]);
-
-  // Handle bingo claim with error handling
-  const handleClaimBingoWithErrorHandling = async () => {
-    if (!onClaimBingo) {
-      console.error("No claim handler available");
-      toast({
-        title: "Claim Not Available",
-        description: "Cannot claim bingo at this time.",
-        variant: "destructive"
-      });
-      return false;
-    }
-
-    try {
-      logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Attempting to claim bingo...`, 'info');
-      const result = await onClaimBingo();
-      logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Claim result: ${result}`, 'info');
-      return result;
     } catch (error) {
-      console.error("Error claiming bingo:", error);
-      toast({
-        title: "Claim Error",
-        description: "There was a problem submitting your claim.",
-        variant: "destructive"
-      });
-      return false;
+      logWithTimestamp(`Error initializing connection: ${error}`, 'error');
     }
-  };
+  }, [currentSession]);
 
-  // Function to manually trigger reconnection with improved error handling
-  const handleManualReconnect = useCallback(() => {
-    if (!currentSession?.id) {
-      toast({
-        title: "Reconnection Failed",
-        description: "No active session to reconnect to.",
-        variant: "destructive"
-      });
-      return;
+  // Derive pattern-related data for display
+  const {
+    effectivePattern, 
+    effectivePrize,
+    effectivePatternDisplay
+  } = useMemo(() => {
+    const pattern = currentWinPattern || (activeWinPatterns && activeWinPatterns.length > 0 ? activeWinPatterns[0] : 'oneLine');
+    
+    // Map pattern IDs to display names
+    let patternDisplay = pattern;
+    switch (pattern) {
+      case 'oneLine': patternDisplay = 'One Line'; break;
+      case 'twoLines': patternDisplay = 'Two Lines'; break;
+      case 'fullHouse': patternDisplay = 'Full House'; break;
+      case 'fourCorners': patternDisplay = 'Four Corners'; break;
+      case 'centerSquare': patternDisplay = 'Center Square'; break;
+      default: patternDisplay = pattern?.charAt(0).toUpperCase() + pattern?.slice(1) || 'One Line';
     }
     
-    logWithTimestamp(`Manual reconnection requested by user for session ${currentSession.id}`, 'info');
-    
-    // Reset connection state
-    setConnectionStatus('connecting');
-    
-    // Attempt to re-establish connection
-    connectionManager.reconnect();
-    
-    toast({
-      title: "Reconnecting...",
-      description: "Attempting to reconnect to the game server",
-    });
-  }, [currentSession?.id]);
-
-  // Define a proper mapping function to convert between the different claim status types
-  const mapClaimStatus = useCallback((status: 'none' | 'pending' | 'valid' | 'invalid'): GameTypePlayspaceClaimStatus => {
-    switch(status) {
-      case 'none':
-        return 'pending';
-      case 'valid':
-        return 'validated';
-      case 'invalid':
-        return 'rejected';
-      case 'pending':
-        return 'pending';
-      default:
-        return 'pending';
-    }
-  }, []);
-
-  // For GameTypePlayspace we must use the mapped claim status
-  const gameTypePlayspaceClaimStatus = useMemo(() => 
-    mapClaimStatus(claimStatus), 
-  [claimStatus, mapClaimStatus]);
-
-  // Determine if we're connected based on connection status
-  const isConnected = connectionStatus === 'connected';
+    return {
+      effectivePattern: pattern,
+      effectivePrize: winPrizes && pattern ? winPrizes[pattern] || 'Prize' : 'Prize',
+      effectivePatternDisplay: patternDisplay
+    };
+  }, [currentWinPattern, activeWinPatterns, winPrizes]);
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
-      <div className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
-        <GameHeader
-          playerName={playerName}
-          playerCode={playerCode}
-          currentGameNumber={currentSession?.current_game || 1}
-          numberOfGames={currentSession?.number_of_games || 1}
-          gameType={gameType}
-          sessionName={currentSession?.name || "Bingo Game"}
-          accessCode={playerCode}
-          activeWinPattern={activeWinPattern}
-          autoMarking={autoMarking}
-          setAutoMarking={setAutoMarking}
-          isConnected={isConnected}
-          connectionState={connectionStatus}
-          onReconnect={handleManualReconnect}
-        />
+    <div className={`min-h-full flex flex-col`} style={{ backgroundColor }}>
+      <GameHeader 
+        gameNumber={currentGameNumber} 
+        totalGames={numberOfGames}
+        pattern={effectivePatternDisplay || 'Not set'}
+        prize={effectivePrize || 'Prize to be announced'}
+        claimStatus={claimStatus}
+        isClaiming={isClaiming}
+        onClaimBingo={onClaimBingo}
+      />
+      
+      <div className="flex-grow overflow-y-auto">
+        <div className="container mx-auto px-4 py-6">
+          <StatusBar
+            playerName={playerName}
+            currentNumber={localCurrentNumber}
+            calledNumbers={localNumbers}
+            gameType={gameType}
+            showAutoMarkToggle={true}
+            autoMarkEnabled={isAutoMarkingEnabled}
+            onToggleAutoMark={toggleAutoMarking}
+          />
+          
+          <div className="mt-4">
+            <BingoCardGrid 
+              tickets={tickets}
+              calledNumbers={localNumbers}
+              lastCalledNumber={localCurrentNumber}
+              autoMarking={isAutoMarkingEnabled}
+              gameType={gameType}
+              currentWinPattern={effectivePattern}
+              onRefreshTickets={onRefreshTickets}
+            />
+          </div>
+        </div>
       </div>
       
-      <div className="flex-1 p-4">
-        {/* Add prominent current number display */}
-        <div className="mb-6 flex justify-center">
-          <CurrentNumberDisplay 
-            number={mergedCurrentNumber} 
-            className="animate-bounce-subtle"
+      <GameSheetControls
+        onClaimBingo={onClaimBingo}
+        claimStatus={claimStatus}
+        isClaiming={isClaiming}
+      />
+      
+      {showDebug && (
+        <div className="fixed bottom-4 right-4 w-64">
+          <DebugPanel 
+            playerCode={playerCode}
+            sessionId={currentSession?.id}
+            gameType={gameType}
+            calledNumbers={localNumbers}
+            lastCalledNumber={localCurrentNumber}
+            connectionState={network.connectionState || connectionState}
+            onReconnect={onReconnect}
           />
         </div>
-        
-        {/* Show called numbers section */}
-        <div className="mb-4">
-          <CalledNumbers 
-            calledNumbers={mergedCalledNumbers} 
-            currentNumber={mergedCurrentNumber} 
-          />
-        </div>
-        
-        <GameTypePlayspace
-          gameType={gameType as any}
-          tickets={tickets || []}
-          calledNumbers={mergedCalledNumbers}
-          lastCalledNumber={mergedCurrentNumber}
-          autoMarking={autoMarking}
-          setAutoMarking={setAutoMarking}
-          handleClaimBingo={handleClaimBingoWithErrorHandling}
-          isClaiming={isClaiming}
-          claimStatus={gameTypePlayspaceClaimStatus}
-        />
-      </div>
+      )}
     </div>
   );
 }
