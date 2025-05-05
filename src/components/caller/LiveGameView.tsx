@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,9 +8,9 @@ import { Button } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import PlayerList from '../game/PlayerList';
-import { connectionManager } from '@/utils/connectionManager';
-import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { supabase } from '@/integrations/supabase/client';
+import { useNetwork } from '@/contexts/NetworkStatusContext';
 
 interface WinPattern {
   id: string;
@@ -73,93 +72,46 @@ export function LiveGameView({
     };
   }, []);
   
-  // Set up connection manager when component mounts
+  // Use the network context
+  const network = useNetwork();
+  
+  // Set up connection when component mounts
   useEffect(() => {
-    console.log('LiveGameView: Setting up connection manager');
+    console.log('LiveGameView: Setting up network connection');
     
     if (!sessionId) {
       console.log('No session ID provided');
       return;
     }
     
-    // Initialize connection manager with session ID
-    // This doesn't create a new connection if one exists
-    connectionManager.initialize(sessionId);
-    
-    // Set up players update callback - works with the existing channel
-    const playersUpdateCallback = (players: any[]) => {
-      if (!isMounted.current) return;
-      
-      console.log(`Received ${players.length} players update`);
-      
-      // Update player list with formatted data (including names)
-      const formattedPlayers = players.map(player => ({
-        id: player.id || player.user_id,
-        playerCode: player.playerCode || player.player_code,
-        nickname: player.nickname || player.playerName || player.player_code,
-        playerName: player.nickname || player.playerName || player.player_code || player.playerCode,
-        joinedAt: player.joinedAt || player.joined_at || new Date().toISOString(),
-        tickets: player.tickets,
-        clientId: player.clientId || player.client_id
-      }));
-      
-      setConnectedPlayers(formattedPlayers);
-      setIsLoading(false);
-    };
-    
-    connectionManager.onPlayersUpdate(playersUpdateCallback);
-    
-    // Initial claims fetch
-    const fetchClaims = async () => {
-      if (sessionId) {
-        try {
-          const fetchedClaims = await connectionManager.fetchClaims(sessionId);
-          if (isMounted.current) {
-            if (Array.isArray(fetchedClaims)) {
-              setClaims(fetchedClaims);
-            } else {
-              console.error("Fetched claims is not an array:", fetchedClaims);
-              setClaims([]);
-            }
-          }
-        } catch (error) {
-          console.error("Error fetching claims:", error);
-          if (isMounted.current) {
-            setClaims([]);
-          }
-        }
-      }
-    };
-    
-    fetchClaims();
+    // Initialize network connection with session ID
+    network.connect(sessionId);
     
     // When the component mounts, reconnect to make sure we're in sync
-    connectionManager.reconnect();
+    // This is a no-op if already connected
+    setTimeout(() => {
+      network.connect(sessionId);
+    }, 500);
     
-    // Clean up listener on unmount
-    return () => {
-      // No need to clean up connection manager callbacks specifically
-      // as they're kept for the session's lifetime
-    };
-  }, [sessionId]);
+  }, [sessionId, network]);
   
-  // Set up claims polling - separate from connection management
+  // Set up claims polling
   useEffect(() => {
     if (!sessionId) return;
     
     const pollClaims = async () => {
       try {
-        // Fetch claims directly through connectionManager to use one approach
-        const claims = await connectionManager.fetchClaims(sessionId);
+        // Fetch claims through the network context
+        const fetchedClaims = await network.fetchClaims(sessionId);
         
-        if (Array.isArray(claims) && isMounted.current) {
-          setClaims(claims);
+        if (Array.isArray(fetchedClaims) && isMounted.current) {
+          setClaims(fetchedClaims);
           
           // Auto-open claims sheet if new claims arrive
-          if (claims.length > 0 && claims.length !== claims.length) {
-            logWithTimestamp(`Found ${claims.length} pending claims, was ${claims.length} before`);
+          if (fetchedClaims.length > 0 && fetchedClaims.length !== claims.length) {
+            logWithTimestamp(`Found ${fetchedClaims.length} pending claims, was ${claims.length} before`);
             
-            if (claims.length > claims.length) {
+            if (fetchedClaims.length > claims.length) {
               toast({
                 title: "New Bingo Claim!",
                 description: `A new bingo claim has been submitted. Check the claims panel to verify.`,
@@ -179,16 +131,12 @@ export function LiveGameView({
     return () => {
       clearInterval(interval);
     };
-  }, [sessionId, claims.length, toast]);
+  }, [sessionId, claims.length, toast, network]);
   
   const handleReconnect = () => {
-    // Simple reconnect just re-fetches player data
-    setIsLoading(true);
-    
-    // Force immediate polling
+    // Simple reconnect using network context
     if (sessionId) {
-      // This doesn't create a new connection, just refreshes the existing one
-      connectionManager.reconnect();
+      network.connect(sessionId);
       
       toast({
         title: "Reconnecting",
@@ -208,19 +156,19 @@ export function LiveGameView({
     setIsClaimSheetOpen(false);
   };
   
-  // Direct call number through connection manager
+  // Direct call number through network context
   const handleCallNumber = (number: number) => {
     console.log(`Calling number: ${number}`);
     
-    // Call through connection manager
-    connectionManager.callNumber(number, sessionId)
+    // Call through network context
+    network.callNumber(number, sessionId)
       .then(success => {
         if (!success) {
-          console.error("Failed to call number through connection manager");
+          console.error("Failed to call number through network context");
         }
       })
       .catch(err => {
-        console.error("Error calling number through connection manager:", err);
+        console.error("Error calling number through network context:", err);
       });
     
     // Also call through the traditional method for backward compatibility
@@ -239,7 +187,7 @@ export function LiveGameView({
       });
 
       // Broadcast a message to all players about the force close
-      if (connectionManager) {
+      if (network) {
         try {
           // Create a channel for broadcasting
           const broadcastChannel = supabase.channel('force-close-broadcast');

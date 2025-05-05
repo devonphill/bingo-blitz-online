@@ -46,6 +46,9 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
     
     logWithTimestamp(`[${hookIdRef.current}] Setting up bingo sync for player ${playerCode} in session ${sessionId}`, 'info');
 
+    // Initialize connection with the network context
+    network.connect(sessionId);
+
     // First, load the initial session progress data
     const loadSessionProgress = async () => {
       try {
@@ -102,32 +105,42 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
     // Load initial data
     loadSessionProgress();
     
-    // Connect to network for updates
-    if (sessionId) {
-      logWithTimestamp(`[${hookIdRef.current}] Connecting to session ${sessionId}`, 'info');
-      network.connect(sessionId);
-    }
-
-    // Set up game state update listener
-    const removeGameStateListener = network.addGameStateUpdateListener((gameState) => {
-      logWithTimestamp(`[${hookIdRef.current}] Received game state update`, 'debug');
-      setState(prev => ({
-        ...prev,
-        gameState,
-        isLoading: false,
-        isConnected: true
-      }));
-    });
-    
-    // Set up connection status listener
-    const removeConnectionListener = network.addConnectionStatusListener((isConnected) => {
-      logWithTimestamp(`[${hookIdRef.current}] Connection status: ${isConnected ? 'connected' : 'disconnected'}`, 'info');
-      setState(prev => ({
-        ...prev,
-        isConnected,
-        isLoading: false
-      }));
-    });
+    // Set up session progress subscription
+    const progressChannel = supabase
+      .channel(`progress-sync-${sessionId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'sessions_progress',
+        filter: `session_id=eq.${sessionId}`
+      }, (payload) => {
+        const newData = payload.new as any;
+        logWithTimestamp(`[${hookIdRef.current}] Received sessions_progress update`, 'info');
+        
+        if (newData) {
+          const gameState = {
+            sessionId: newData.session_id,
+            gameNumber: newData.current_game_number,
+            maxGameNumber: newData.max_game_number,
+            gameType: newData.current_game_type,
+            calledNumbers: newData.called_numbers || [],
+            lastCalledNumber: newData.called_numbers && newData.called_numbers.length > 0 
+              ? newData.called_numbers[newData.called_numbers.length - 1] 
+              : null,
+            currentWinPattern: newData.current_win_pattern,
+            currentPrize: newData.current_prize,
+            gameStatus: newData.game_status
+          };
+          
+          setState(prev => ({
+            ...prev,
+            gameState,
+            isLoading: false,
+            isConnected: true
+          }));
+        }
+      })
+      .subscribe();
     
     // Update player presence periodically
     let presenceInterval: any = null;
@@ -159,8 +172,30 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
     updatePresenceData();
     presenceInterval = setInterval(updatePresenceData, 30000);
     
+    // Set up game state update listener from the network context
+    const removeGameStateListener = network.addGameStateUpdateListener((gameState) => {
+      if (gameState) {
+        setState(prev => ({
+          ...prev,
+          gameState,
+          isLoading: false,
+          isConnected: true
+        }));
+      }
+    });
+    
+    // Set up connection status listener
+    const removeConnectionListener = network.addConnectionStatusListener((isConnected) => {
+      setState(prev => ({
+        ...prev,
+        isConnected,
+        isLoading: false
+      }));
+    });
+    
     // Clean up listeners and intervals when component unmounts
     return () => {
+      supabase.removeChannel(progressChannel);
       removeGameStateListener();
       removeConnectionListener();
       if (presenceInterval) clearInterval(presenceInterval);

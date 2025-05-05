@@ -9,7 +9,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useCallerHub } from '@/hooks/useCallerHub';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { GoLiveButton } from '@/components/ui/go-live-button';
-import { connectionManager } from '@/utils/connectionManager';
+import { useNetwork } from '@/contexts/NetworkStatusContext';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -55,6 +55,9 @@ export default function CallerControls({
   // Connect to the WebSocket hub as a caller
   const callerHub = useCallerHub(sessionId);
 
+  // Use the network context instead of connectionManager
+  const network = useNetwork();
+
   useEffect(() => {
     logWithTimestamp(`CallControls connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}`);
   }, [callerHub.connectionState, callerHub.isConnected]);
@@ -75,58 +78,41 @@ export default function CallerControls({
       const randomIndex = Math.floor(Math.random() * remainingNumbers.length);
       const number = remainingNumbers[randomIndex];
       
-      // IMPROVED BROADCASTING: Use separate channels for different purposes
+      // IMPORTANT: First broadcast the number to all clients immediately
       try {
         logWithTimestamp(`Broadcasting number ${number} via realtime channels`);
         
-        // Create dedicated channel name for number broadcasts based on session id
-        const broadcastChannel = supabase.channel(`numbers-${sessionId}`);
-        
-        // Calculate the called numbers
-        const calledNumbers = getCalledNumbersFromRemaining(number, remainingNumbers);
-        
-        // Prepare payload with essential data
-        const payload = {
-          sessionId: sessionId,
-          lastCalledNumber: number,
-          calledNumbers: calledNumbers,
-          timestamp: new Date().toISOString()
-        };
-        
-        logWithTimestamp(`Broadcasting number called payload: ${JSON.stringify(payload)}`);
-        
-        // Send the broadcast
-        broadcastChannel.send({
+        // Use a dedicated broadcast channel
+        supabase.channel('number-broadcast').send({
           type: 'broadcast',
           event: 'number-called',
-          payload: payload
+          payload: {
+            sessionId: sessionId,
+            lastCalledNumber: number,
+            // We need to calculate the called numbers since we don't have direct access to the full list
+            // We infer it from the remaining numbers
+            calledNumbers: getCalledNumbersFromRemaining(number, remainingNumbers),
+            timestamp: new Date().toISOString()
+          }
         }).then(() => {
           logWithTimestamp("Number broadcast sent successfully");
-          
-          // Also broadcast to the general channel for legacy support
-          supabase.channel('number-broadcast').send({
-            type: 'broadcast',
-            event: 'number-called',
-            payload: payload
-          });
-          
-        }, (error) => {
+        }).catch(error => {
           console.error("Error broadcasting number:", error);
         });
       } catch (err) {
         console.error("Error sending broadcast:", err);
       }
       
-      // Also use the connection manager for database persistence
-      if (connectionManager) {
-        connectionManager.callNumber(number, sessionId)
+      // Use network context for database persistence
+      if (network) {
+        network.callNumber(number, sessionId)
           .then(success => {
             if (!success) {
-              console.error("Failed to call number through connection manager");
+              console.error("Failed to call number through network context");
             }
           })
           .catch(err => {
-            console.error("Error calling number through connection manager:", err);
+            console.error("Error calling number through network context:", err);
           });
       }
       
