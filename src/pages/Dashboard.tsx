@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -10,6 +9,7 @@ import { Menu } from 'lucide-react';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import DashboardSidebar from '@/components/dashboard/DashboardSidebar';
 import { supabase } from '@/integrations/supabase/client';
+import SessionDebugPanel from '@/components/dashboard/SessionDebugPanel';
 
 export default function Dashboard() {
   const { user, logout, isLoading: authLoading } = useAuth();
@@ -49,9 +49,10 @@ export default function Dashboard() {
 
     // Fetch sessions when the dashboard loads and user is authenticated
     if (user && !authLoading) {
-      console.log("User is authenticated, fetching sessions");
+      console.log("User is authenticated, fetching sessions for user ID:", user.id);
       fetchSessions().then(() => {
         setFetchAttempted(true);
+        console.log("Sessions fetch completed, sessions count:", sessions.length);
       }).catch(err => {
         console.error("Error fetching sessions:", err);
         setFetchAttempted(true);
@@ -59,6 +60,11 @@ export default function Dashboard() {
       fetchTokenCount();
     }
   }, [user, authLoading, fetchSessions, navigate]);
+
+  // Debug sessions state changes
+  useEffect(() => {
+    console.log("Sessions state updated:", sessions.length, "sessions available");
+  }, [sessions]);
 
   const fetchTokenCount = async () => {
     if (!user) return;
@@ -129,13 +135,16 @@ export default function Dashboard() {
               <CreateSessionForm />
             </div>
             
+            {/* Add Debug Panel in development */}
+            {process.env.NODE_ENV === 'development' && <SessionDebugPanel />}
+            
             {sessionsLoading && !fetchAttempted ? (
               <div className="flex justify-center items-center h-48">
                 <p className="text-gray-500">Loading sessions...</p>
               </div>
             ) : sessions.length === 0 ? (
               <div className="bg-white shadow rounded-lg p-6 text-center">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No Sessions Yet</h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No Sessions Found</h3>
                 <p className="text-gray-500 mb-4">Create your first bingo session to get started</p>
                 <CreateSessionForm />
               </div>

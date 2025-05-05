@@ -22,64 +22,69 @@ export function useSessions() {
     try {
       console.log("Fetching all game sessions");
       
-      // Create a query that filters by the current user's ID if a user is logged in
-      let query = supabase.from('game_sessions').select('*');
-      
+      // Log the user's authentication status for debugging
       if (user) {
-        console.log(`Filtering sessions for user: ${user.id}`);
-        query = query.eq('created_by', user.id);
+        console.log(`Authenticated user found with ID: ${user.id}`);
       } else {
-        console.log('No user logged in, fetching without filter');
+        console.log('No authenticated user found when fetching sessions');
+        setSessions([]);
+        setIsLoading(false);
+        return true;
       }
       
-      // Add ordering
-      const { data, error: fetchError } = await query.order('created_at', { ascending: false });
+      // Create a query that filters by the current user's ID
+      const { data, error: fetchError } = await supabase
+        .from('game_sessions')
+        .select('*')
+        .eq('created_by', user.id)
+        .order('created_at', { ascending: false });
 
       if (fetchError) {
         console.error('Error fetching sessions:', fetchError);
         throw new Error(`Database error: ${fetchError.message}`);
       }
 
-      if (data) {
-        console.log(`Retrieved ${data.length} sessions from database for ${user ? 'user ' + user.id : 'anonymous user'}`);
-        
-        // Convert raw data to GameSession objects
-        const sessionObjects: GameSession[] = data.map(session => {
-          // Process games_config to ensure it's in the correct format
-          let processedGamesConfig: GameConfig[] = [];
-          
-          if (session.games_config) {
-            console.log(`Session ${session.id} - Raw games_config:`, session.games_config);
-            
-            try {
-              // Use jsonToGameConfigs to safely convert the JSON data
-              // This explicitly handles the active flag to ensure it's only true if explicitly set to true
-              processedGamesConfig = jsonToGameConfigs(session.games_config);
-              console.log(`Session ${session.id} - Processed games_config:`, processedGamesConfig);
-            } catch (parseError) {
-              console.error(`Error parsing games_config for session ${session.id}:`, parseError);
-            }
-          }
-          
-          return {
-            id: session.id,
-            name: session.name,
-            gameType: session.game_type as any,
-            createdBy: session.created_by,
-            accessCode: session.access_code,
-            status: session.status as any,
-            createdAt: session.created_at,
-            sessionDate: session.session_date,
-            numberOfGames: session.number_of_games,
-            current_game: session.current_game,
-            lifecycle_state: session.lifecycle_state as any,
-            games_config: processedGamesConfig
-          };
-        });
-        
-        console.log("Final processed sessions:", sessionObjects);
-        setSessions(sessionObjects);
+      console.log(`Retrieved ${data?.length || 0} sessions from database for user ${user.id}`);
+      
+      if (!data || data.length === 0) {
+        console.log('No sessions found for the current user');
+        setSessions([]);
+        setIsLoading(false);
+        return true;
       }
+
+      // Convert raw data to GameSession objects
+      const sessionObjects: GameSession[] = data.map(session => {
+        // Process games_config to ensure it's in the correct format
+        let processedGamesConfig: GameConfig[] = [];
+        
+        if (session.games_config) {
+          try {
+            // Use jsonToGameConfigs to safely convert the JSON data
+            processedGamesConfig = jsonToGameConfigs(session.games_config);
+          } catch (parseError) {
+            console.error(`Error parsing games_config for session ${session.id}:`, parseError);
+          }
+        }
+        
+        return {
+          id: session.id,
+          name: session.name,
+          gameType: session.game_type as any,
+          createdBy: session.created_by,
+          accessCode: session.access_code,
+          status: session.status as any,
+          createdAt: session.created_at,
+          sessionDate: session.session_date,
+          numberOfGames: session.number_of_games,
+          current_game: session.current_game,
+          lifecycle_state: session.lifecycle_state as any,
+          games_config: processedGamesConfig
+        };
+      });
+      
+      console.log("Final processed sessions:", sessionObjects);
+      setSessions(sessionObjects);
     } catch (err) {
       const errorMessage = `An error occurred while fetching sessions: ${(err as Error).message}`;
       console.error(errorMessage);
