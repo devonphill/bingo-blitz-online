@@ -5,18 +5,14 @@ import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from "@/components/ui/theme-provider";
 import { AuthContextProvider } from "./contexts/AuthContext";
 import { NetworkProvider } from "./contexts/NetworkStatusContext";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 
 // Simplified loading spinner component
-const Spinner = ({ size = "md" }: { size?: "sm" | "md" | "lg" }) => {
-  const sizeClass = {
-    sm: "h-4 w-4",
-    md: "h-8 w-8",
-    lg: "h-12 w-12",
-  };
-  
+const LoadingSpinner = ({ size = "md" }: { size?: "sm" | "md" | "lg" }) => {
   return (
-    <div className={`animate-spin rounded-full border-t-2 border-blue-500 ${sizeClass[size]}`}></div>
+    <div className="flex items-center justify-center h-screen">
+      <Spinner size={size} />
+    </div>
   );
 };
 
@@ -31,7 +27,7 @@ const Register = () => <div className="p-8"><h1 className="text-2xl">Register Pa
 const ForgotPassword = () => <div className="p-8"><h1 className="text-2xl">Forgot Password</h1><p>This page is not yet implemented.</p></div>;
 
 // Simple layout component
-const Layout = ({ children }: { children?: React.ReactNode }) => {
+const Layout = ({ children }: { children: React.ReactNode }) => {
   return (
     <div className="min-h-screen">
       <header className="p-4 bg-slate-100 border-b">
@@ -44,7 +40,7 @@ const Layout = ({ children }: { children?: React.ReactNode }) => {
   );
 };
 
-// Auth route components
+// Auth route components with proper children props
 const AdminRoute = ({ children }: { children: React.ReactNode }) => <>{children}</>;
 const PrivateRoute = ({ children }: { children: React.ReactNode }) => <>{children}</>;
 const PublicRoute = ({ children }: { children: React.ReactNode }) => <>{children}</>;
@@ -65,33 +61,25 @@ function App() {
       <NetworkProvider> 
         <AuthContextProvider>
           <BrowserRouter>
-            <Suspense fallback={<div className="flex items-center justify-center h-screen"><Spinner size="lg" /></div>}>
+            <Suspense fallback={<LoadingSpinner size="lg" />}>
               <Routes>
                 {/* Public routes */}
-                <Route path="/" element={<Layout />}>
-                  <Route index element={<Home />} />
-                  <Route path="about" element={<About />} />
-                </Route>
+                <Route path="/" element={<Layout><Home /></Layout>} />
+                <Route path="/about" element={<Layout><About /></Layout>} />
                 
                 {/* Public auth routes (accessible only when NOT logged in) */}
-                <Route element={<PublicRoute />}>
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/register" element={<Register />} />
-                  <Route path="/forgot-password" element={<ForgotPassword />} />
-                </Route>
+                <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+                <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+                <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
                 
                 {/* Protected routes (require auth) */}
-                <Route element={<PrivateRoute />}>
-                  <Route path="/dashboard" element={<Dashboard />} />
-                </Route>
+                <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
                 
                 {/* Admin only routes */}
-                <Route element={<AdminRoute />}>
-                  <Route path="/caller" element={<CallerHome />} />
-                  <Route path="/caller/setup" element={<GameSetup />} />
-                  <Route path="/caller/manage" element={<GameManagement />} />
-                  <Route path="/caller/session/:sessionId" element={<GameSession />} />
-                </Route>
+                <Route path="/caller" element={<AdminRoute><CallerHome /></AdminRoute>} />
+                <Route path="/caller/setup" element={<AdminRoute><GameSetup /></AdminRoute>} />
+                <Route path="/caller/manage" element={<AdminRoute><GameManagement /></AdminRoute>} />
+                <Route path="/caller/session/:sessionId" element={<AdminRoute><GameSession /></AdminRoute>} />
                 
                 {/* Player routes (publicly accessible) */}
                 <Route path="/player/join" element={<PlayerJoin />} />
