@@ -4,8 +4,8 @@ import { Ticket } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { cacheTickets, getCachedTickets } from '@/utils/ticketUtils';
 import { toast } from 'sonner';
-import { connectionManager } from '@/utils/connectionManager';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { useNetwork } from '@/contexts/NetworkStatusContext';
 
 interface UseTicketsResult {
   tickets: Ticket[];
@@ -19,6 +19,9 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
+  // Use the network context
+  const network = useNetwork();
+  
   const loadTickets = useCallback(async () => {
     if (!playerCode || !sessionId) {
       setIsLoading(false);
@@ -27,7 +30,6 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
     
     setIsLoading(true);
     try {
-      // Fix: Use correct parameter format for logWithTimestamp
       logWithTimestamp(`Loading tickets for player ${playerCode} in session ${sessionId}`, 'info');
       
       // Try to get tickets from cache first
@@ -120,9 +122,12 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
       logWithTimestamp(`Fetching tickets for player ${playerCode} in session ${sessionId}`, 'info');
       loadTickets();
       
-      // Set up the real-time listener for ticket assignments via connection manager
-      connectionManager.initialize(sessionId)
-        .onTicketsAssigned((assignedPlayerCode, assignedTickets) => {
+      // Connect to the session
+      network.connect(sessionId);
+      
+      // Set up the listener for ticket assignments
+      const removeTicketsAssignedListener = network.addTicketsAssignedListener(
+        (assignedPlayerCode, assignedTickets) => {
           if (assignedPlayerCode === playerCode && assignedTickets && assignedTickets.length > 0) {
             logWithTimestamp(`Received ${assignedTickets.length} tickets assignment for player ${playerCode}`, 'info');
             
@@ -145,13 +150,19 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
             toast.success(`${mappedTickets.length} tickets have been assigned to you!`);
             setIsLoading(false);
           }
-        });
+        }
+      );
+      
+      // Clean up
+      return () => {
+        removeTicketsAssignedListener();
+      };
     } else {
       logWithTimestamp("Not fetching tickets: waiting for game to be active", 'info');
       setTickets([]);
       setIsLoading(false);
     }
-  }, [loadTickets, playerCode, sessionId]);
+  }, [loadTickets, network, playerCode, sessionId]);
   
   return {
     tickets,

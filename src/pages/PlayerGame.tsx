@@ -7,14 +7,17 @@ import { useTickets } from '@/hooks/useTickets';
 import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 import PlayerGameLayout from '@/components/game/PlayerGameLayout';
-import { connectionManager } from '@/utils/connectionManager';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { supabase } from '@/integrations/supabase/client';
+import { useNetwork } from '@/contexts/NetworkStatusContext';
 
 export default function PlayerGame() {
   const { playerCode: urlPlayerCode } = useParams<{ playerCode: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  
+  // Get the network context
+  const network = useNetwork();
   
   // Initialize states early
   const [playerCode, setPlayerCode] = useState<string | null>(null);
@@ -102,7 +105,6 @@ export default function PlayerGame() {
     gameType,
     isSubmittingClaim,
     handleClaimBingo: submitBingoClaim,
-    connectionState: hookConnectionState
   } = usePlayerGame(playerCode);
   
   // Initialize session progress hook - but only use it if we have a valid session
@@ -110,126 +112,42 @@ export default function PlayerGame() {
     currentSession?.id
   );
   
-  // Local state for connection and real-time data
-  const [effectiveConnectionState, setEffectiveConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>(
-    hookConnectionState || 'disconnected'
-  );
-  
-  // Connection monitoring ref
-  const connectionMonitorRef = useRef<number | null>(null);
-  
-  // Manual connection check function
-  const checkConnectionStatus = useCallback(() => {
-    const isConnected = connectionManager.isConnected();
-    // Only update if it's different to prevent unnecessary renders
-    if ((isConnected && effectiveConnectionState !== 'connected') || 
-        (!isConnected && effectiveConnectionState === 'connected')) {
-      setEffectiveConnectionState(isConnected ? 'connected' : 'disconnected');
-    }
-  }, [effectiveConnectionState]);
-  
-  // Set up a direct connection status check that runs every 2 seconds
+  // Set up number called listener
   useEffect(() => {
-    if (connectionMonitorRef.current) {
-      window.clearInterval(connectionMonitorRef.current);
-    }
+    if (!currentSession?.id) return;
     
-    connectionMonitorRef.current = window.setInterval(() => {
-      checkConnectionStatus();
-    }, 2000);
+    // Connect to the session
+    network.connect(currentSession.id);
     
-    return () => {
-      if (connectionMonitorRef.current) {
-        window.clearInterval(connectionMonitorRef.current);
-        connectionMonitorRef.current = null;
-      }
-    };
-  }, [checkConnectionStatus]);
-  
-  // Update effective connection state from hook with debouncing
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      // Update the connection state but also check the direct connection status
-      const isDirectlyConnected = connectionManager.isConnected();
-      
-      // Important: Don't override a connected state with a connecting state
-      if (hookConnectionState === 'connecting' && isDirectlyConnected) {
-        setEffectiveConnectionState('connected');
-        return;
-      }
-      
-      const newState = isDirectlyConnected ? 'connected' : hookConnectionState;
-      setEffectiveConnectionState(newState);
-      
-      // Log the connection state for debugging
-      logWithTimestamp(`PlayerGame: Connection state from hook: ${hookConnectionState}, direct check: ${isDirectlyConnected ? 'connected' : 'disconnected'}, effective: ${newState}`);
-      
-      // If we're still disconnected, try to reconnect
-      if (newState !== 'connected' && currentSession?.id) {
-        logWithTimestamp('PlayerGame: Still disconnected, attempting reconnect');
+    // Listen for number called events
+    const removeListener = network.addNumberCalledListener((lastCalledNumber, calledNumbers) => {
+      if (lastCalledNumber && calledNumbers.length > 0) {
+        logWithTimestamp(`Received number call update: ${lastCalledNumber}, total: ${calledNumbers.length}`);
+        setFinalCalledNumbers(calledNumbers);
+        setFinalLastCalledNumber(lastCalledNumber);
         
-        // Only call connect() if we're not already connecting or connected
-        if (hookConnectionState !== 'connecting' && !isDirectlyConnected) {
-          connectionManager.connect();
-        }
+        // Show toast for new number
+        toast({
+          title: `Number Called: ${lastCalledNumber}`,
+          description: "New number has been called",
+          duration: 3000
+        });
       }
-    }, 1000); // Wait 1 second before updating connection state to prevent flickering
+    });
     
-    return () => clearTimeout(timer);
-  }, [hookConnectionState, currentSession?.id]);
-  
-  // Always initialize tickets hook with the same parameters, even if it will not be used
-  const { tickets, refreshTickets } = useTickets(playerCode, currentSession?.id);
-
-  // Set up a SINGLE real-time connection using the connection manager
-  useEffect(() => {
-    if (!currentSession?.id || !playerCode || !playerId) {
-      logWithTimestamp("No session ID or player info available, skipping connection setup");
-      return;
-    }
-    
-    logWithTimestamp(`Setting up unified connection management for session ${currentSession.id}`);
-    
-    // Set up event handlers first
-    connectionManager
-      .onNumberCalled((lastCalledNumber, calledNumbers) => {
-        if (lastCalledNumber && calledNumbers.length > 0) {
-          logWithTimestamp(`Received number call update: ${lastCalledNumber}, total: ${calledNumbers.length}`);
-          setFinalCalledNumbers(calledNumbers);
-          setFinalLastCalledNumber(lastCalledNumber);
-          
-          // Show toast for new number
-          toast({
-            title: `Number Called: ${lastCalledNumber}`,
-            description: "New number has been called",
-            duration: 3000
-          });
-        }
-      })
-      .onSessionProgressUpdate((progress) => {
-        if (progress?.called_numbers && progress.called_numbers.length > 0) {
-          const lastCalledNumber = progress.called_numbers[progress.called_numbers.length - 1];
-          logWithTimestamp(`Received session progress with ${progress.called_numbers.length} numbers, last: ${lastCalledNumber}`);
-          
-          setFinalCalledNumbers(progress.called_numbers);
-          setFinalLastCalledNumber(lastCalledNumber);
-        }
-      });
-    
-    // Now actively connect to the channel
-    // The initialization happens in usePlayerGame, we just need to ensure we're connected here
-    connectionManager.connect();
-    
-    // No cleanup needed as the connectionManager handles its own lifecycle
-  }, [currentSession?.id, playerCode, playerId, toast]);
+    // Cleanup
+    return () => {
+      removeListener();
+    };
+  }, [currentSession?.id, network, toast]);
   
   // Update the finalCalledNumbers whenever our data sources change
   useEffect(() => {
     // Use the latest data from any source
     const latestCalledNumbers = sessionProgress?.called_numbers || 
-                               currentGameState?.calledNumbers || 
-                               calledItems || [];
-                               
+                              currentGameState?.calledNumbers || 
+                              calledItems || [];
+                              
     if (latestCalledNumbers && latestCalledNumbers.length > 0) {
       setFinalCalledNumbers(latestCalledNumbers);
       
@@ -272,6 +190,9 @@ export default function PlayerGame() {
     // Try to claim bingo
     return submitBingoClaim(bestTicket);
   }, [submitBingoClaim, tickets, finalCalledNumbers]);
+  
+  // Initialize tickets hook with the same parameters, even if it will not be used
+  const { tickets, refreshTickets } = useTickets(playerCode, currentSession?.id);
   
   // Only consider connection issues as non-critical errors
   const effectiveErrorMessage = !playerCode && window.location.pathname.includes('/player/game')
@@ -373,7 +294,7 @@ export default function PlayerGame() {
   logWithTimestamp(`- Last called number: ${finalLastCalledNumber}`);
   logWithTimestamp(`- Current win pattern: ${currentWinPattern}`);
   logWithTimestamp(`- Player name: ${playerName}`);
-  logWithTimestamp(`- Connection state: ${effectiveConnectionState}`);
+  logWithTimestamp(`- Connection state: ${network.connectionState}`);
   
   // Map the claimStatus to the proper format expected by each component
   const layoutClaimStatus = claimStatus === 'valid' ? 'valid' : 
@@ -410,7 +331,7 @@ export default function PlayerGame() {
         gameType={gameType}
         currentGameNumber={currentGameNumber}
         numberOfGames={numberOfGames}
-        connectionState={effectiveConnectionState}
+        connectionState={network.connectionState}
         onRefreshTickets={refreshTickets}
         sessionId={currentSession?.id}
       >

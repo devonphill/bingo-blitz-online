@@ -1,51 +1,73 @@
 
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import Index from './pages/Index';
-import Login from './pages/Login';
-import RegisterSuperuser from './pages/RegisterSuperuser';
-import Dashboard from './pages/Dashboard';
-import PlayerJoin from './pages/PlayerJoin';
-import { ThemeProvider } from '@/components/ui/theme-provider';
-import { Toaster } from '@/components/ui/toaster';
-import { AuthContextProvider } from '@/contexts/AuthContext';
-import { SessionProvider } from './contexts/SessionProvider';
-import NotFound from './pages/NotFound';
-import AdminDashboard from './pages/AdminDashboard';
-import CallerSession from './pages/CallerSession';
-import AddPlayers from './pages/AddPlayers';
-import PlayerGame from './pages/PlayerGame';
-import AddTokens from './pages/AddTokens';
-import { Footer } from './components/Footer';
+import { Suspense, lazy } from "react";
+import { Route, Routes, BrowserRouter } from "react-router-dom";
+import { Toaster } from "@/components/ui/toaster";
+import { ThemeProvider } from "@/components/ThemeProvider";
+import { AuthProvider } from "./contexts/AuthContext";
+import { NetworkProvider } from "./contexts/NetworkStatusContext"; // Import the NetworkProvider
+import { Spinner } from "@/components/ui/spinner";
+
+// Lazy load components to improve initial load time
+const Home = lazy(() => import("./pages/Home"));
+const About = lazy(() => import("./pages/About"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Login = lazy(() => import("./pages/Login"));
+const Register = lazy(() => import("./pages/Register"));
+const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
+const Layout = lazy(() => import("./components/Layout"));
+const AdminRoute = lazy(() => import("./components/auth/AdminRoute"));
+const PrivateRoute = lazy(() => import("./components/auth/PrivateRoute"));
+const PublicRoute = lazy(() => import("./components/auth/PublicRoute"));
+const CallerHome = lazy(() => import("./pages/CallerHome"));
+const GameSetup = lazy(() => import("./pages/GameSetup"));
+const GameManagement = lazy(() => import("./pages/GameManagement"));
+const GameSession = lazy(() => import("./pages/GameSession"));
+const PlayerJoin = lazy(() => import("./pages/PlayerJoin"));
+const PlayerGame = lazy(() => import("./pages/PlayerGame"));
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="light" storageKey="bingo-ui-theme">
-      <AuthContextProvider>
-        <SessionProvider>
-          <Router>
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/signup" element={<RegisterSuperuser />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/admin" element={<AdminDashboard />} />
-              <Route path="/admin/*" element={<AdminDashboard />} />
-              <Route path="/caller/session/:sessionId" element={<CallerSession />} />
-              <Route path="/caller/*" element={<Dashboard />} />
-              <Route path="/player/join" element={<PlayerJoin />} />
-              <Route path="/player/game/:playerCode" element={<PlayerGame />} />
-              <Route path="/player/game" element={<PlayerGame />} />
-              <Route path="/session/:sessionId/players/add" element={<AddPlayers />} />
-              <Route path="/add-tokens" element={<AddTokens />} />
-              <Route path="/404" element={<NotFound />} />
-              <Route path="*" element={<Navigate to="/404" replace />} />
-            </Routes>
-            <Footer />
-          </Router>
-        </SessionProvider>
-      </AuthContextProvider>
-      <Toaster />
+    <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
+      <NetworkProvider> {/* Wrap the entire app in the NetworkProvider */}
+        <AuthProvider>
+          <BrowserRouter>
+            <Suspense fallback={<div className="flex items-center justify-center h-screen"><Spinner size="lg" /></div>}>
+              <Routes>
+                {/* Public routes */}
+                <Route path="/" element={<Layout />}>
+                  <Route index element={<Home />} />
+                  <Route path="about" element={<About />} />
+                </Route>
+                
+                {/* Public auth routes (accessible only when NOT logged in) */}
+                <Route element={<PublicRoute />}>
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/register" element={<Register />} />
+                  <Route path="/forgot-password" element={<ForgotPassword />} />
+                </Route>
+                
+                {/* Protected routes (require auth) */}
+                <Route element={<PrivateRoute />}>
+                  <Route path="/dashboard" element={<Dashboard />} />
+                </Route>
+                
+                {/* Admin only routes */}
+                <Route element={<AdminRoute />}>
+                  <Route path="/caller" element={<CallerHome />} />
+                  <Route path="/caller/setup" element={<GameSetup />} />
+                  <Route path="/caller/manage" element={<GameManagement />} />
+                  <Route path="/caller/session/:sessionId" element={<GameSession />} />
+                </Route>
+                
+                {/* Player routes (publicly accessible) */}
+                <Route path="/player/join" element={<PlayerJoin />} />
+                <Route path="/player/game/:playerCode?" element={<PlayerGame />} />
+              </Routes>
+            </Suspense>
+          </BrowserRouter>
+        </AuthProvider>
+        <Toaster />
+      </NetworkProvider>
     </ThemeProvider>
   );
 }

@@ -6,23 +6,14 @@ import {
   SheetHeader,
   SheetTitle,
   SheetDescription,
-  SheetFooter,
-  SheetClose,
-  SheetTrigger,
-} from "@/components/ui/sheet"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { useToast } from "@/hooks/use-toast"
+} from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 import { CheckCircle, XCircle } from 'lucide-react';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { supabase } from '@/integrations/supabase/client';
 import CallerTicketDisplay from './CallerTicketDisplay';
-
-// Add import for the useCallerClaimManagement hook
 import { useCallerClaimManagement } from '@/hooks/useCallerClaimManagement';
-import { connectionManager } from '@/utils/connectionManager';
+import { useNetwork } from '@/contexts/NetworkStatusContext';
 
 interface ClaimVerificationSheetProps {
   isOpen: boolean;
@@ -56,97 +47,53 @@ export default function ClaimVerificationSheet({
   
   const { toast } = useToast();
   const [notes, setNotes] = useState("");
-  const [selectedClaim, setSelectedClaim] = useState<any>(null);
+  
+  // Use the network context
+  const network = useNetwork();
   
   // Force fetch claims when sheet opens
   useEffect(() => {
     if (isOpen && sessionId) {
-      // Fetch claims through connectionManager to use our single channel approach
-      const fetchLatestClaims = async () => {
-        logWithTimestamp(`Fetching latest claims for session ${sessionId}`);
-        try {
-          const claims = await connectionManager.fetchClaims(sessionId);
-          logWithTimestamp(`Found ${claims?.length || 0} pending claims`);
-        } catch (e) {
-          console.error('Exception fetching claims:', e);
-        }
-      };
-      
-      fetchLatestClaims();
+      logWithTimestamp(`Fetching latest claims for session ${sessionId}`);
+      try {
+        // Fetch claims directly using the network context
+        network.fetchClaims(sessionId)
+          .then(claims => {
+            logWithTimestamp(`Found ${claims?.length || 0} pending claims`);
+          })
+          .catch(e => {
+            console.error('Exception fetching claims:', e);
+          });
+      } catch (e) {
+        console.error('Exception fetching claims:', e);
+      }
     }
-  }, [isOpen, sessionId]);
+  }, [isOpen, network, sessionId]);
   
   // Log claims when they change
   useEffect(() => {
     logWithTimestamp(`ClaimVerificationSheet has ${claims.length} claims`);
   }, [claims]);
 
-  // Enhance the verify/reject handlers to use the new hook
+  // Handle verifying a claim
   const handleVerify = useCallback((claim: any) => {
     if (!claim) return;
     
     logWithTimestamp(`Verifying claim: ${claim.id}`);
     
-    // Use connectionManager directly for claim validation to ensure single channel approach
-    connectionManager.validateClaim(claim, true)
-      .then(success => {
-        if (success) {
-          toast({
-            title: "Claim Verified",
-            description: "The bingo claim has been verified successfully.",
-            variant: "default"
-          });
-        } else {
-          toast({
-            title: "Verification Error",
-            description: "There was an error verifying the claim.",
-            variant: "destructive"
-          });
-        }
-      })
-      .catch(err => {
-        console.error("Error validating claim:", err);
-        toast({
-          title: "Verification Error",
-          description: "There was an error verifying the claim.",
-          variant: "destructive"
-        });
-      });
-    
-  }, [toast]);
+    // Use the validateClaim function from the hook
+    validateClaim(claim, true);
+  }, [validateClaim]);
   
+  // Handle rejecting a claim
   const handleReject = useCallback((claim: any) => {
     if (!claim) return;
     
     logWithTimestamp(`Rejecting claim: ${claim.id}`);
     
-    // Use connectionManager directly for claim validation to ensure single channel approach
-    connectionManager.validateClaim(claim, false)
-      .then(success => {
-        if (success) {
-          toast({
-            title: "Claim Rejected",
-            description: "The bingo claim has been rejected.",
-            variant: "default"
-          });
-        } else {
-          toast({
-            title: "Rejection Error",
-            description: "There was an error rejecting the claim.",
-            variant: "destructive"
-          });
-        }
-      })
-      .catch(err => {
-        console.error("Error rejecting claim:", err);
-        toast({
-          title: "Rejection Error",
-          description: "There was an error rejecting the claim.",
-          variant: "destructive"
-        });
-      });
-    
-  }, [toast]);
+    // Use the validateClaim function from the hook
+    validateClaim(claim, false);
+  }, [validateClaim]);
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>

@@ -1,8 +1,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { connectionManager, ConnectionState } from '@/utils/connectionManager';
+import { useNetwork } from '@/contexts/NetworkStatusContext';
 
 // Define interfaces for better type safety
 interface BingoSyncState {
@@ -24,26 +23,10 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
   // Use refs to track initialization status and prevent duplicate setup
   const hookIdRef = useRef<string>(`bingoSync-${Math.random().toString(36).substring(2, 9)}`);
   
-  // Memoize the submitBingoClaim function to prevent unnecessary re-renders
-  const submitBingoClaim = useCallback((ticket: any) => {
-    if (!playerCode || !sessionId) {
-      logWithTimestamp('Cannot claim bingo: missing player code or session', 'error');
-      return false;
-    }
-
-    try {
-      logWithTimestamp(`Submitting bingo claim for player ${playerCode} in session ${sessionId}`, 'info');
-      
-      // Use the connectionManager to submit the claim
-      return connectionManager.submitBingoClaim(ticket, playerCode, sessionId);
-    } catch (err) {
-      const error = err instanceof Error ? err.message : 'Unknown error submitting claim';
-      logWithTimestamp(`Error submitting bingo claim: ${error}`, 'error');
-      return false;
-    }
-  }, [playerCode, sessionId]);
-
-  // Set up game state updates and connection status monitoring
+  // Use the network context instead of directly using connectionManager
+  const network = useNetwork();
+  
+  // Effect to set up connection and listeners
   useEffect(() => {
     // Skip if we don't have necessary data
     if (!playerCode || !sessionId) {
@@ -55,55 +38,60 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
     
     logWithTimestamp(`[${hookIdRef.current}] Setting up bingo sync for player ${playerCode} in session ${sessionId}`, 'info');
 
+    // Connect to the session
+    network.connect(sessionId);
+    
     // Set up event handlers for game state updates, connection status, and errors
-    const onGameStateUpdate = (gameState: any) => {
+    const removeGameStateListener = network.addGameStateUpdateListener((gameState) => {
       logWithTimestamp(`[${hookIdRef.current}] Received game state update`, 'debug');
       setState(prev => ({
         ...prev,
         gameState,
         isLoading: false
       }));
-    };
+    });
     
-    const onConnectionStatusChange = (isConnected: boolean) => {
-      logWithTimestamp(`[${hookIdRef.current}] Connection status from manager: ${isConnected ? 'connected' : 'disconnected'}`, 'info');
+    const removeConnectionListener = network.addConnectionStatusListener((isConnected) => {
+      logWithTimestamp(`[${hookIdRef.current}] Connection status: ${isConnected ? 'connected' : 'disconnected'}`, 'info');
       setState(prev => ({
         ...prev,
         isConnected,
         isLoading: false
       }));
-    };
+    });
     
-    const onError = (error: string) => {
-      logWithTimestamp(`[${hookIdRef.current}] Connection error: ${error}`, 'error');
-      setState(prev => ({
-        ...prev,
-        error,
-        isLoading: false
-      }));
-    };
-    
-    // Add listeners to connection manager
-    connectionManager
-      .onGameStateUpdate(onGameStateUpdate)
-      .onConnectionStatusChange(onConnectionStatusChange)
-      .onError(onError);
-    
-    // Check current connection state
-    const currentState = connectionManager.getConnectionState();
+    // Set initial state based on current connection status
     setState(prev => ({
       ...prev,
-      isConnected: currentState === 'connected',
-      isLoading: currentState === 'connecting'
+      isConnected: network.isConnected,
+      isLoading: !network.isConnected
     }));
     
-    // Return cleanup function - but don't remove listeners since connectionManager
-    // maintains its own state and other components might be using these listeners
+    // Clean up listeners when component unmounts
     return () => {
-      // We could implement a listener removal system in connectionManager if needed
+      removeGameStateListener();
+      removeConnectionListener();
     };
-    
-  }, [playerCode, sessionId]);
+  }, [network, playerCode, sessionId]);
+
+  // Memoize the submitBingoClaim function to prevent unnecessary re-renders
+  const submitBingoClaim = useCallback((ticket: any) => {
+    if (!playerCode || !sessionId) {
+      logWithTimestamp('Cannot claim bingo: missing player code or session', 'error');
+      return false;
+    }
+
+    try {
+      logWithTimestamp(`Submitting bingo claim for player ${playerCode} in session ${sessionId}`, 'info');
+      
+      // Use the network context to submit the claim
+      return network.submitBingoClaim(ticket, playerCode, sessionId);
+    } catch (err) {
+      const error = err instanceof Error ? err.message : 'Unknown error submitting claim';
+      logWithTimestamp(`Error submitting bingo claim: ${error}`, 'error');
+      return false;
+    }
+  }, [network, playerCode, sessionId]);
 
   return {
     ...state,
