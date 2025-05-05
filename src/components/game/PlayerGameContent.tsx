@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -96,8 +95,7 @@ export default function PlayerGameContent({
     
     try {
       // Initialize connection once
-      const session = connectionManager
-        .initialize(currentSession.id)
+      connectionManager.initialize(currentSession.id)
         .onNumberCalled((number, allNumbers) => {
           if (number === null) {
             // Handle reset event

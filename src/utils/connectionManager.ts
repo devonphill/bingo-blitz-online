@@ -12,10 +12,12 @@ class ConnectionManager {
   private connectionState: ConnectionState = 'disconnected';
   private playerListeners: Array<(players: any[]) => void> = [];
   private numberCalledListeners: Array<(number: number | null, allNumbers: number[]) => void> = [];
+  private lastPing: number | null = null;
 
   initialize(sessionId: string) {
     this.sessionId = sessionId;
     this.connectionState = 'connected';
+    this.lastPing = Date.now();
     logWithTimestamp(`ConnectionManager initialized with session ID: ${sessionId}`);
     return this;
   }
@@ -24,9 +26,18 @@ class ConnectionManager {
     return this.connectionState;
   }
 
+  isConnected(): boolean {
+    return this.connectionState === 'connected';
+  }
+
+  getLastPing(): number {
+    return this.lastPing || 0;
+  }
+
   reconnect() {
     logWithTimestamp('Database reconnection requested');
     // In the database model, there's no explicit reconnection - subscriptions auto-reconnect
+    this.lastPing = Date.now();
     return true;
   }
 
@@ -100,43 +111,39 @@ class ConnectionManager {
 
   onPlayersUpdate(callback: (players: any[]) => void) {
     this.playerListeners.push(callback);
-    return () => {
-      const index = this.playerListeners.indexOf(callback);
-      if (index !== -1) {
-        this.playerListeners.splice(index, 1);
-      }
-    };
+    return this;
   }
 
   // For compatibility with existing code
   onNumberCalled(callback: (number: number | null, allNumbers: number[]) => void) {
     this.numberCalledListeners.push(callback);
-    return () => {
-      const index = this.numberCalledListeners.indexOf(callback);
-      if (index !== -1) {
-        this.numberCalledListeners.splice(index, 1);
-      }
-    };
+    return this;
   }
 
   // For compatibility with existing code
-  onSessionProgressUpdate() {
-    return () => {}; // No-op
+  onSessionProgressUpdate(callback: (progress: any) => void) {
+    // No-op but return this for method chaining
+    return this;
   }
 
   // For compatibility with existing code
-  onConnectionStatusChange() {
-    return () => {}; // No-op
+  onConnectionStatusChange(callback: (isConnected: boolean) => void) {
+    return this;
   }
 
   // For compatibility with existing code
-  onError() {
-    return () => {}; // No-op
+  onError(callback: (error: string) => void) {
+    return this;
   }
 
   // No-op methods for compatibility
-  startGame() {}
-  endGame() {}
+  startGame() {
+    return this;
+  }
+  
+  endGame() {
+    return this;
+  }
 }
 
 // Create a singleton instance
