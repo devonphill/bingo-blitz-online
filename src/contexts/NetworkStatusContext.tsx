@@ -21,6 +21,7 @@ interface NetworkContextType {
   addNumberCalledListener: (callback: (number: number, allNumbers: number[]) => void) => () => void;
   addGameStateUpdateListener: (callback: (gameState: any) => void) => () => void;
   addConnectionStatusListener: (callback: (isConnected: boolean) => void) => () => void;
+  addTicketsAssignedListener: (callback: (playerCode: string, tickets: any[]) => void) => () => void;
   
   // Action methods
   callNumber: (number: number, sessionId?: string) => Promise<boolean>;
@@ -30,6 +31,7 @@ interface NetworkContextType {
   // Session tracking
   sessionId: string | null;
   updatePlayerPresence: (presenceData: any) => Promise<boolean>;
+  trackPlayerPresence: (presenceData: any) => Promise<boolean>;
   fetchClaims: (sessionId?: string) => Promise<any[]>;
 }
 
@@ -42,11 +44,13 @@ const NetworkContext = createContext<NetworkContextType>({
   addNumberCalledListener: () => () => {},
   addGameStateUpdateListener: () => () => {},
   addConnectionStatusListener: () => () => {},
+  addTicketsAssignedListener: () => () => {},
   callNumber: async () => false,
   submitBingoClaim: async () => false,
   validateClaim: async () => false,
   sessionId: null,
   updatePlayerPresence: async () => false,
+  trackPlayerPresence: async () => false,
   fetchClaims: async () => []
 });
 
@@ -58,23 +62,24 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
   // State
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [subscriptions, setSubscriptions] = useState<any[]>([]);
+  const [channels, setChannels] = useState<any[]>([]);
   const { toast } = useToast();
 
   // Event listeners storage
   const [numberCalledListeners] = useState<Array<(number: number, allNumbers: number[]) => void>>([]);
   const [gameStateListeners] = useState<Array<(gameState: any) => void>>([]);
   const [connectionStatusListeners] = useState<Array<(isConnected: boolean) => void>>([]);
+  const [ticketsAssignedListeners] = useState<Array<(playerCode: string, tickets: any[]) => void>>([]);
   
   // Check if we're connected
   const isConnected = connectionState === 'connected';
   
   // Clean up existing subscriptions
   const cleanupSubscriptions = useCallback(() => {
-    subscriptions.forEach(subscription => {
-      if (subscription && subscription.subscription) {
+    channels.forEach(channel => {
+      if (channel) {
         try {
-          supabase.removeChannel(subscription.channel);
+          supabase.removeChannel(channel);
           logWithTimestamp(`Removed subscription channel`, 'info');
         } catch (err) {
           logWithTimestamp(`Error removing subscription: ${err}`, 'error');
@@ -82,8 +87,8 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
       }
     });
     
-    setSubscriptions([]);
-  }, [subscriptions]);
+    setChannels([]);
+  }, [channels]);
   
   // Connect to session by subscribing to relevant tables
   const connect = useCallback((newSessionId: string) => {
@@ -175,11 +180,66 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
           }
         });
       
-      // Store subscription for cleanup
-      setSubscriptions(prev => [...prev, { channel: progressChannel, subscription: progressChannel.subscription }]);
+      // Store channel for cleanup
+      setChannels(prev => [...prev, progressChannel]);
+      
+      // Subscribe to assigned_tickets table for ticket updates
+      const ticketsChannel = supabase
+        .channel(`tickets_${newSessionId}`)
+        .on('postgres_changes', 
+          { 
+            event: 'INSERT', 
+            schema: 'public', 
+            table: 'assigned_tickets',
+            filter: `session_id=eq.${newSessionId}`
+          },
+          async (payload) => {
+            logWithTimestamp('Received new ticket assignment', 'debug');
+            
+            // Extract ticket data from payload
+            const ticketData = payload.new as any;
+            
+            if (ticketData && ticketData.player_id) {
+              try {
+                // Get player information to find player code
+                const { data: playerData } = await supabase
+                  .from('players')
+                  .select('player_code, nickname')
+                  .eq('id', ticketData.player_id)
+                  .single();
+                
+                if (playerData && playerData.player_code) {
+                  // Get all tickets for this player in this session
+                  const { data: allTickets } = await supabase
+                    .from('assigned_tickets')
+                    .select('*')
+                    .eq('player_id', ticketData.player_id)
+                    .eq('session_id', newSessionId);
+                    
+                  // Notify ticket listeners
+                  if (allTickets) {
+                    logWithTimestamp(`Player ${playerData.player_code} assigned ${allTickets.length} tickets`, 'info');
+                    
+                    ticketsAssignedListeners.forEach(listener => {
+                      try {
+                        listener(playerData.player_code, allTickets);
+                      } catch (err) {
+                        logWithTimestamp(`Error in tickets assigned listener: ${err}`, 'error');
+                      }
+                    });
+                  }
+                }
+              } catch (err) {
+                logWithTimestamp(`Error processing ticket assignment: ${err}`, 'error');
+              }
+            }
+          })
+        .subscribe();
+      
+      // Store channel for cleanup
+      setChannels(prev => [...prev, ticketsChannel]);
       
       // Subscribe to player_presence table for player updates
-      const presenceQueryString = `session_id=eq.${newSessionId}`;
       const presenceChannel = supabase
         .channel(`presence_${newSessionId}`)
         .on('postgres_changes', 
@@ -187,17 +247,15 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
             event: '*', 
             schema: 'public', 
             table: 'player_presence',
-            filter: presenceQueryString
+            filter: `session_id=eq.${newSessionId}`
           },
           async () => {
-            // When player presence changes, fetch all players for this session
             try {
               const { data } = await supabase
                 .from('player_presence')
                 .select('*')
                 .eq('session_id', newSessionId);
               
-              // Notify any player listeners
               if (data) {
                 logWithTimestamp(`Player presence update: ${data.length} players`, 'debug');
               }
@@ -207,8 +265,8 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
           })
         .subscribe();
       
-      // Store subscription for cleanup
-      setSubscriptions(prev => [...prev, { channel: presenceChannel, subscription: presenceChannel.subscription }]);
+      // Store channel for cleanup
+      setChannels(prev => [...prev, presenceChannel]);
     } catch (error) {
       logWithTimestamp(`Error setting up subscriptions: ${error}`, 'error');
       setConnectionState('error');
@@ -222,7 +280,7 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
         }
       });
     }
-  }, [sessionId, isConnected, cleanupSubscriptions, connectionStatusListeners, gameStateListeners, numberCalledListeners]);
+  }, [sessionId, isConnected, cleanupSubscriptions, connectionStatusListeners, gameStateListeners, numberCalledListeners, ticketsAssignedListeners]);
 
   // Disconnect and clean up subscriptions
   const disconnect = useCallback(() => {
@@ -356,7 +414,7 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
       
       toast({
         title: "Bingo Claim Submitted",
-        description: "Your claim has been submitted and is being verified.",
+        description: "Your claim has been submitted and is being verified."
       });
       
       logWithTimestamp(`Claim submitted for player ${playerCode} in session ${targetSessionId}`);
@@ -469,6 +527,11 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
       return false;
     }
   }, [sessionId]);
+  
+  // Alias for updatePlayerPresence for compatibility
+  const trackPlayerPresence = useCallback((presenceData: any) => {
+    return updatePlayerPresence(presenceData);
+  }, [updatePlayerPresence]);
 
   // Fetch pending claims
   const fetchClaims = useCallback(async (targetSessionId?: string) => {
@@ -530,6 +593,17 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
       }
     };
   }, [connectionStatusListeners]);
+  
+  // Add tickets assigned listener
+  const addTicketsAssignedListener = useCallback((callback: (playerCode: string, tickets: any[]) => void) => {
+    ticketsAssignedListeners.push(callback);
+    return () => {
+      const index = ticketsAssignedListeners.indexOf(callback);
+      if (index !== -1) {
+        ticketsAssignedListeners.splice(index, 1);
+      }
+    };
+  }, [ticketsAssignedListeners]);
 
   // Provide context value
   const contextValue = {
@@ -540,11 +614,13 @@ export const NetworkProvider: React.FC<{children: React.ReactNode}> = ({ childre
     addNumberCalledListener,
     addGameStateUpdateListener,
     addConnectionStatusListener,
+    addTicketsAssignedListener,
     callNumber,
     submitBingoClaim,
     validateClaim,
     sessionId,
     updatePlayerPresence,
+    trackPlayerPresence,
     fetchClaims
   };
 

@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from './use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -37,6 +36,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
       
       try {
         setIsProcessingClaim(true);
+        // Use the fetch claims method from our network context
         const fetched = await network.fetchClaims(sessionId);
         if (isMounted.current) {
           setClaims(fetched || []);

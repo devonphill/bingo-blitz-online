@@ -217,7 +217,12 @@ export function usePlayerGame(playerCode: string | null) {
               nickname: playerName || playerCode,
               last_presence_update: new Date().toISOString()
             };
-            network.trackPlayerPresence(presenceData);
+            
+            // Use the updatePlayerPresence method directly instead of trackPlayerPresence
+            network.updatePlayerPresence(presenceData)
+              .catch(err => {
+                console.error('Error updating player presence:', err);
+              });
           }
         }, 1000);
       }

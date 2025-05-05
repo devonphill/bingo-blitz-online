@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { Ticket } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
@@ -125,37 +124,45 @@ export function useTickets(playerCode: string | null | undefined, sessionId: str
       // Connect to the session
       network.connect(sessionId);
       
-      // Set up the listener for ticket assignments
-      const removeTicketsAssignedListener = network.addTicketsAssignedListener(
-        (assignedPlayerCode, assignedTickets) => {
-          if (assignedPlayerCode === playerCode && assignedTickets && assignedTickets.length > 0) {
-            logWithTimestamp(`Received ${assignedTickets.length} tickets assignment for player ${playerCode}`, 'info');
+      // Set up a direct listener for assigned tickets in the database
+      const ticketsChannel = supabase
+        .channel(`player_tickets_${playerCode}`)
+        .on('postgres_changes', 
+          { 
+            event: 'INSERT', 
+            schema: 'public', 
+            table: 'assigned_tickets'
+          },
+          async (payload) => {
+            // When new tickets are assigned, check if they're for our player
+            const newTicket = payload.new as any;
             
-            // Map the assigned tickets to our format
-            const mappedTickets: Ticket[] = assignedTickets.map(ticket => ({
-              id: ticket.id,
-              playerId: ticket.player_id,
-              sessionId: ticket.session_id,
-              numbers: ticket.numbers || [],
-              serial: ticket.serial || `RT-${Math.random().toString(36).substring(2, 7)}`,
-              position: ticket.position || 0,
-              layoutMask: ticket.layout_mask || 0, 
-              perm: ticket.perm || 0
-            }));
-            
-            // Update state and cache
-            setTickets(mappedTickets);
-            cacheTickets(playerCode, sessionId, mappedTickets);
-            
-            toast.success(`${mappedTickets.length} tickets have been assigned to you!`);
-            setIsLoading(false);
-          }
-        }
-      );
+            if (newTicket) {
+              try {
+                // Get the player ID for this player code
+                const { data: playerData } = await supabase
+                  .from('players')
+                  .select('id')
+                  .eq('player_code', playerCode)
+                  .single();
+                
+                // If this ticket belongs to our player, refresh tickets
+                if (playerData && playerData.id === newTicket.player_id) {
+                  logWithTimestamp(`New ticket assigned to player ${playerCode}`, 'info');
+                  loadTickets();
+                  
+                  toast.success('New tickets have been assigned to you!');
+                }
+              } catch (err) {
+                console.error('Error processing ticket assignment:', err);
+              }
+            }
+          })
+        .subscribe();
       
       // Clean up
       return () => {
-        removeTicketsAssignedListener();
+        supabase.removeChannel(ticketsChannel);
       };
     } else {
       logWithTimestamp("Not fetching tickets: waiting for game to be active", 'info');
