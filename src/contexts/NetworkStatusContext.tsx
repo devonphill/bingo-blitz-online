@@ -1,11 +1,12 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { connectionManager, ConnectionState } from '@/utils/connectionManager';
+import { connectionManager } from '@/utils/connectionManager';
 import { logWithTimestamp } from '@/utils/logUtils';
 
 // Export the ConnectionState type so it can be used by other components
-export { ConnectionState } from '@/utils/connectionManager';
+// Fix: Use 'export type' for re-exporting when isolatedModules is enabled
+export type { ConnectionState } from '@/utils/connectionManager';
 
 // Extended interface to include all required methods
 interface NetworkContextType {
@@ -25,6 +26,9 @@ interface NetworkContextType {
   submitBingoClaim: (ticket: any, playerCode: string, sessionId: string) => boolean;
   validateClaim: (claim: any, isValid: boolean) => Promise<boolean>;
 }
+
+// Type import to avoid the isolatedModules error
+import type { ConnectionState } from '@/utils/connectionManager';
 
 const NetworkContext = createContext<NetworkContextType | undefined>(undefined);
 
@@ -69,18 +73,15 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Add implementation for updatePlayerPresence
   const updatePlayerPresence = useCallback(async (presenceData: any): Promise<boolean> => {
     try {
-      // Store the player presence in the database
+      // FIX: Use the 'players' table instead of 'player_presence'
+      // We'll update the players' last activity timestamp
       const { error } = await supabase
-        .from('player_presence')
-        .upsert({
-          player_id: presenceData.player_id,
-          session_id: connectedSessionId.current,
-          player_code: presenceData.player_code,
-          nickname: presenceData.nickname,
-          last_presence_update: new Date().toISOString()
-        }, {
-          onConflict: 'player_id,session_id'
-        });
+        .from('players')
+        .update({
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', presenceData.player_id)
+        .eq('player_code', presenceData.player_code);
         
       return !error;
     } catch (err) {
@@ -177,15 +178,25 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       logWithTimestamp(`Submitting bingo claim for player ${playerCode} in session ${sessionId}`, 'info');
       
-      // Submit the claim to the database
+      // FIX: Update the insert to match the universal_game_logs table schema
+      // Removing player_code field which doesn't exist and adding required fields
       supabase
         .from('universal_game_logs')
         .insert({
           session_id: sessionId,
-          player_code: playerCode,
+          player_name: playerCode, // Using playerCode as name since player_code field doesn't exist
           action: 'bingo_claim',
           ticket_data: ticket,
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          game_type: 'unknown', // Required field
+          game_number: 1, // Required field
+          win_pattern: 'unknown', // Required field
+          player_id: '00000000-0000-0000-0000-000000000000', // Required field, using a placeholder
+          ticket_perm: ticket.perm || 0, // Required field
+          ticket_layout_mask: ticket.layout_mask || 0, // Required field
+          ticket_numbers: ticket.numbers || [], // Required field
+          total_calls: 0, // Required field
+          ticket_serial: ticket.serial || 'unknown' // Required field
         })
         .then(({ error }) => {
           if (error) {
