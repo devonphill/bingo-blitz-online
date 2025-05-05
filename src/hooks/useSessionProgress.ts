@@ -40,30 +40,39 @@ export function useSessionProgress(sessionId: string | undefined) {
   const [subscription, setSubscription] = useState<any>(null);
   
   // Added for better debugging
-  const hookId = `useSessionProgress-${Math.random().toString(36).substring(2, 8)}`;
+  const hookId = useRef(`useSessionProgress-${Math.random().toString(36).substring(2, 8)}`);
+  const isInitialMount = useRef(true);
+  const initialized = useRef(false);
 
   // Cleanup function for subscription
   const cleanupSubscription = useCallback(() => {
     if (subscription) {
       try {
         supabase.removeChannel(subscription);
-        logWithTimestamp(`[${hookId}] Removed session progress subscription`, 'debug');
+        logWithTimestamp(`[${hookId.current}] Removed session progress subscription`, 'debug');
       } catch (err) {
-        logWithTimestamp(`[${hookId}] Error removing subscription: ${err}`, 'error');
+        logWithTimestamp(`[${hookId.current}] Error removing subscription: ${err}`, 'error');
       }
       setSubscription(null);
     }
-  }, [subscription, hookId]);
+  }, [subscription]);
 
   // Setup subscription and initial data load
   useEffect(() => {
-    // If no sessionId is provided, just set loading to false and return
-    if (!sessionId) {
-      setLoading(false);
-      logWithTimestamp(`[${hookId}] No sessionId provided to useSessionProgress`, 'info');
+    // Guard against multiple initializations
+    if (initialized.current) {
       return;
     }
 
+    // If no sessionId is provided, just set loading to false and return
+    if (!sessionId) {
+      setLoading(false);
+      logWithTimestamp(`[${hookId.current}] No sessionId provided to useSessionProgress`, 'info');
+      return;
+    }
+
+    initialized.current = true;
+    
     // Cleanup any existing subscription
     cleanupSubscription();
 
@@ -71,12 +80,12 @@ export function useSessionProgress(sessionId: string | undefined) {
     setLoading(true);
     setError(null);
     
-    logWithTimestamp(`[${hookId}] Setting up session progress for session ${sessionId}`, 'info');
+    logWithTimestamp(`[${hookId.current}] Setting up session progress for session ${sessionId}`, 'info');
     
     // Function to fetch the initial data
     const fetchSessionProgress = async () => {
       try {
-        logWithTimestamp(`[${hookId}] Fetching session progress for: ${sessionId}`, 'info');
+        logWithTimestamp(`[${hookId.current}] Fetching session progress for: ${sessionId}`, 'info');
         
         const { data, error } = await supabase
           .from('sessions_progress')
@@ -87,14 +96,14 @@ export function useSessionProgress(sessionId: string | undefined) {
         if (error) {
           if (error.code === 'PGRST116') {
             // No data found, this might be expected in some cases
-            logWithTimestamp(`[${hookId}] No session progress found for session ${sessionId}, will create one if needed`, 'info');
+            logWithTimestamp(`[${hookId.current}] No session progress found for session ${sessionId}, will create one if needed`, 'info');
           } else {
             throw new Error(`Error fetching session progress: ${error.message}`);
           }
         }
 
         if (data) {
-          logWithTimestamp(`[${hookId}] Loaded session progress successfully`, 'info');
+          logWithTimestamp(`[${hookId.current}] Loaded session progress successfully`, 'info');
           setProgress({
             id: data.id,
             session_id: data.session_id,
@@ -111,7 +120,7 @@ export function useSessionProgress(sessionId: string | undefined) {
           });
         } else {
           // Check if we need to create a new sessions_progress entry
-          logWithTimestamp(`[${hookId}] No session progress found, checking if we need to create one`, 'info');
+          logWithTimestamp(`[${hookId.current}] No session progress found, checking if we need to create one`, 'info');
           
           // Get session information first
           const { data: sessionData } = await supabase
@@ -121,7 +130,7 @@ export function useSessionProgress(sessionId: string | undefined) {
             .single();
             
           if (sessionData) {
-            logWithTimestamp(`[${hookId}] Creating new session progress for session ${sessionId}`, 'info');
+            logWithTimestamp(`[${hookId.current}] Creating new session progress for session ${sessionId}`, 'info');
             // Create a new session progress entry
             const { data: newProgress, error: createError } = await supabase
               .from('sessions_progress')
@@ -141,7 +150,7 @@ export function useSessionProgress(sessionId: string | undefined) {
             }
             
             if (newProgress) {
-              logWithTimestamp(`[${hookId}] New session progress created successfully`, 'info');
+              logWithTimestamp(`[${hookId.current}] New session progress created successfully`, 'info');
               setProgress({
                 id: newProgress.id,
                 session_id: newProgress.session_id,
@@ -164,7 +173,7 @@ export function useSessionProgress(sessionId: string | undefined) {
         setupSubscription();
         
       } catch (err) {
-        logWithTimestamp(`[${hookId}] Error in useSessionProgress: ${(err as Error).message}`, 'error');
+        logWithTimestamp(`[${hookId.current}] Error in useSessionProgress: ${(err as Error).message}`, 'error');
         setError((err as Error).message);
         setLoading(false);
       }
@@ -173,7 +182,7 @@ export function useSessionProgress(sessionId: string | undefined) {
     // Function to set up the subscription
     const setupSubscription = () => {
       try {
-        logWithTimestamp(`[${hookId}] Setting up session progress subscription for session ${sessionId}`, 'info');
+        logWithTimestamp(`[${hookId.current}] Setting up session progress subscription for session ${sessionId}`, 'info');
         
         const channel = supabase
           .channel(`session_progress_${sessionId}`)
@@ -185,7 +194,7 @@ export function useSessionProgress(sessionId: string | undefined) {
               filter: `session_id=eq.${sessionId}`
             }, 
             (payload) => {
-              logWithTimestamp(`[${hookId}] Received session progress update`, 'debug');
+              logWithTimestamp(`[${hookId.current}] Received session progress update`, 'debug');
               
               if (payload.new) {
                 const newData = payload.new as any;
@@ -207,12 +216,12 @@ export function useSessionProgress(sessionId: string | undefined) {
             }
           )
           .subscribe((status) => {
-            logWithTimestamp(`[${hookId}] Session progress subscription status: ${status}`, 'debug');
+            logWithTimestamp(`[${hookId.current}] Session progress subscription status: ${status}`, 'debug');
             
             if (status === 'SUBSCRIBED') {
               setLoading(false);
             } else if (status === 'CHANNEL_ERROR') {
-              logWithTimestamp(`[${hookId}] Error with session progress subscription`, 'error');
+              logWithTimestamp(`[${hookId.current}] Error with session progress subscription`, 'error');
               setError('Error connecting to real-time updates');
               setLoading(false);
             }
@@ -221,31 +230,35 @@ export function useSessionProgress(sessionId: string | undefined) {
         setSubscription(channel);
         
       } catch (err) {
-        logWithTimestamp(`[${hookId}] Error setting up subscription: ${(err as Error).message}`, 'error');
+        logWithTimestamp(`[${hookId.current}] Error setting up subscription: ${(err as Error).message}`, 'error');
         setError(`Error setting up real-time updates: ${(err as Error).message}`);
         setLoading(false);
       }
     };
     
-    // Load initial data
-    fetchSessionProgress();
+    // Only fetch on initial mount or sessionId change
+    if (isInitialMount.current || !progress) {
+      // Load initial data
+      fetchSessionProgress();
+      isInitialMount.current = false;
+    }
     
     // Clean up subscription when unmounting or changing sessionId
     return () => {
       cleanupSubscription();
     };
     
-  }, [sessionId, hookId, cleanupSubscription]);
+  }, [sessionId, cleanupSubscription, progress]);
 
   // Function to update session progress
   const updateProgress = useCallback(async (updates: SessionProgressUpdate): Promise<boolean> => {
     if (!sessionId || !progress?.id) {
-      logWithTimestamp(`[${hookId}] Cannot update session progress - missing sessionId or progress data`, 'error');
+      logWithTimestamp(`[${hookId.current}] Cannot update session progress - missing sessionId or progress data`, 'error');
       return false;
     }
     
     try {
-      logWithTimestamp(`[${hookId}] Updating session progress with: ${JSON.stringify(updates)}`, 'info');
+      logWithTimestamp(`[${hookId.current}] Updating session progress with: ${JSON.stringify(updates)}`, 'info');
       
       const { error } = await supabase
         .from('sessions_progress')
@@ -253,14 +266,14 @@ export function useSessionProgress(sessionId: string | undefined) {
         .eq('session_id', sessionId);
         
       if (error) {
-        logWithTimestamp(`[${hookId}] Error updating session progress: ${error.message}`, 'error');
+        logWithTimestamp(`[${hookId.current}] Error updating session progress: ${error.message}`, 'error');
         return false;
       }
       
-      logWithTimestamp(`[${hookId}] Session progress updated successfully`, 'info');
+      logWithTimestamp(`[${hookId.current}] Session progress updated successfully`, 'info');
       return true;
     } catch (err) {
-      logWithTimestamp(`[${hookId}] Exception updating session progress: ${(err as Error).message}`, 'error');
+      logWithTimestamp(`[${hookId.current}] Exception updating session progress: ${(err as Error).message}`, 'error');
       return false;
     }
   }, [sessionId, progress, hookId]);

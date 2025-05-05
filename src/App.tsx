@@ -1,10 +1,9 @@
-
 import { Suspense, lazy } from "react";
 import { Route, Routes, BrowserRouter } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from "@/components/ui/theme-provider";
 import { AuthContextProvider } from "./contexts/AuthContext";
-import { NetworkProvider } from "./contexts/NetworkStatusContext";
+import { NetworkProvider } from "@/contexts/NetworkStatusContext";
 import { Spinner } from "@/components/ui/spinner";
 import { SessionProvider } from "./contexts/SessionProvider";
 
@@ -55,44 +54,41 @@ const CallerHome = () => <div className="p-8"><h1 className="text-2xl">Caller Ho
 const GameSetup = () => <div className="p-8"><h1 className="text-2xl">Game Setup</h1><p>This page is not yet implemented.</p></div>;
 const GameManagement = () => <div className="p-8"><h1 className="text-2xl">Game Management</h1><p>This page is not yet implemented.</p></div>;
 
+// Update the App component to include the NetworkProvider if it's not already there
 function App() {
   return (
-    <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
-      <NetworkProvider> 
-        <AuthContextProvider>
-          <SessionProvider>
-            <BrowserRouter>
-              <Suspense fallback={<LoadingSpinner size="lg" />}>
-                <Routes>
-                  {/* Public routes */}
-                  <Route path="/" element={<Layout><Home /></Layout>} />
-                  <Route path="/about" element={<Layout><About /></Layout>} />
-                  
-                  {/* Public auth routes (accessible only when NOT logged in) */}
-                  <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-                  <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
-                  <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
-                  
-                  {/* Protected routes (require auth) */}
-                  <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-                  
-                  {/* Admin only routes */}
-                  <Route path="/caller" element={<AdminRoute><CallerHome /></AdminRoute>} />
-                  <Route path="/caller/setup" element={<AdminRoute><GameSetup /></AdminRoute>} />
-                  <Route path="/caller/manage" element={<AdminRoute><GameManagement /></AdminRoute>} />
-                  <Route path="/caller/session/:sessionId" element={<AdminRoute><CallerSession /></AdminRoute>} />
-                  
-                  {/* Player routes (publicly accessible) */}
-                  <Route path="/player/join" element={<PlayerJoin />} />
-                  <Route path="/player/game/:playerCode?" element={<PlayerGame />} />
-                </Routes>
-              </Suspense>
-            </BrowserRouter>
-          </SessionProvider>
-        </AuthContextProvider>
-        <Toaster />
-      </NetworkProvider>
-    </ThemeProvider>
+    <NetworkProvider>
+      <SessionProvider>
+        <BrowserRouter>
+          <Suspense fallback={<LoadingSpinner size="lg" />}>
+            <Routes>
+              {/* Public routes */}
+              <Route path="/" element={<Layout><Home /></Layout>} />
+              <Route path="/about" element={<Layout><About /></Layout>} />
+              
+              {/* Public auth routes (accessible only when NOT logged in) */}
+              <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+              <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+              <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
+              
+              {/* Protected routes (require auth) */}
+              <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+              
+              {/* Admin only routes */}
+              <Route path="/caller" element={<AdminRoute><CallerHome /></AdminRoute>} />
+              <Route path="/caller/setup" element={<AdminRoute><GameSetup /></AdminRoute>} />
+              <Route path="/caller/manage" element={<AdminRoute><GameManagement /></AdminRoute>} />
+              <Route path="/caller/session/:sessionId" element={<AdminRoute><CallerSession /></AdminRoute>} />
+              
+              {/* Player routes (publicly accessible) */}
+              <Route path="/player/join" element={<PlayerJoin />} />
+              <Route path="/player/game/:playerCode?" element={<PlayerGame />} />
+            </Routes>
+          </Suspense>
+        </BrowserRouter>
+      </SessionProvider>
+      <Toaster />
+    </NetworkProvider>
   );
 }
 

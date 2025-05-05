@@ -13,11 +13,19 @@ class ConnectionManager {
   private playerListeners: Array<(players: any[]) => void> = [];
   private numberCalledListeners: Array<(number: number | null, allNumbers: number[]) => void> = [];
   private lastPing: number | null = null;
+  private isInitialized: boolean = false;
 
   initialize(sessionId: string) {
+    // Only initialize once with a specific session ID
+    if (this.isInitialized && this.sessionId === sessionId) {
+      logWithTimestamp(`ConnectionManager already initialized with session ID: ${sessionId}`);
+      return this;
+    }
+    
     this.sessionId = sessionId;
     this.connectionState = 'connected';
     this.lastPing = Date.now();
+    this.isInitialized = true;
     logWithTimestamp(`ConnectionManager initialized with session ID: ${sessionId}`);
     return this;
   }
@@ -39,6 +47,16 @@ class ConnectionManager {
     // In the database model, there's no explicit reconnection - subscriptions auto-reconnect
     this.lastPing = Date.now();
     return true;
+  }
+
+  connect(sessionId: string) {
+    // Don't reconnect if already connected to this session
+    if (this.sessionId === sessionId && this.isConnected()) {
+      logWithTimestamp(`Already connected to session: ${sessionId}`);
+      return this;
+    }
+    
+    return this.initialize(sessionId);
   }
 
   async callNumber(number: number, sessionId?: string) {
