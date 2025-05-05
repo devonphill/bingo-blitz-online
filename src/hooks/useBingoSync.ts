@@ -11,6 +11,12 @@ interface BingoSyncState {
   gameState: any;
 }
 
+/**
+ * Hook to sync bingo game state via the network connection
+ * @param playerCode The player's code
+ * @param sessionId The game session ID
+ * @returns State and methods for interacting with the game
+ */
 export function useBingoSync(playerCode: string | null, sessionId: string | undefined) {
   // State for connection and game data
   const [state, setState] = useState<BingoSyncState>({
@@ -32,6 +38,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
     // Skip if we don't have necessary data
     if (!playerCode || !sessionId) {
       setState(prev => ({ ...prev, isLoading: false }));
+      logWithTimestamp(`[${hookIdRef.current}] Missing playerCode or sessionId, skipping listener setup`, 'info');
       return;
     }
 
@@ -78,6 +85,7 @@ export function useBingoSync(playerCode: string | null, sessionId: string | unde
       removeGameStateListener();
       removeConnectionListener();
       listenersSetupRef.current = false;
+      logWithTimestamp(`[${hookIdRef.current}] Cleaning up bingo sync listeners`, 'debug');
     };
   }, [network, playerCode, sessionId]);
 

@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -163,8 +164,11 @@ export default function PlayerGameContent({
     
     // Check connection status periodically but don't reconnect here
     const checkInterval = setInterval(() => {
-      const currentStatus = connectionManager.getConnectionState();
-      debouncedSetConnectionStatus(currentStatus);
+      // Only check if we have a session
+      if (currentSession?.id) {
+        const currentStatus = connectionManager.getConnectionState();
+        debouncedSetConnectionStatus(currentStatus);
+      }
     }, 5000);
     
     // Clean up on unmount
@@ -176,12 +180,16 @@ export default function PlayerGameContent({
   
   // Log state for debugging but with reduced frequency using dependencies
   useEffect(() => {
-    logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Connection: ${connectionStatus}, Session: ${currentSession?.id}`, 'info');
-    
-    if (rtCalledNumbers.length > 0) {
-      logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Called numbers: ${rtCalledNumbers.length}, last: ${rtLastCalledNumber}`, 'info');
+    if (currentSession?.id) {
+      logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Connection: ${connectionStatus}, Session: ${currentSession?.id}`, 'info');
+      
+      if (rtCalledNumbers.length > 0) {
+        logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Called numbers: ${rtCalledNumbers.length}, last: ${rtLastCalledNumber}`, 'info');
+      }
+    } else {
+      logWithTimestamp(`[PlayerGameContent (${instanceId.current})] No active session`, 'info');
     }
-  }, [connectionStatus, currentSession?.id, rtLastCalledNumber]);
+  }, [connectionStatus, currentSession?.id, rtLastCalledNumber, rtCalledNumbers.length]);
 
   // Use the local state for win pattern if available, otherwise fall back to props
   const currentWinPattern = activeWinPattern || (activeWinPatterns.length > 0 ? activeWinPatterns[0] : null);
@@ -216,9 +224,9 @@ export default function PlayerGameContent({
     }
 
     try {
-      console.log("Attempting to claim bingo...");
+      logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Attempting to claim bingo...`, 'info');
       const result = await onClaimBingo();
-      console.log("Claim result:", result);
+      logWithTimestamp(`[PlayerGameContent (${instanceId.current})] Claim result: ${result}`, 'info');
       return result;
     } catch (error) {
       console.error("Error claiming bingo:", error);
@@ -233,7 +241,16 @@ export default function PlayerGameContent({
 
   // Function to manually trigger reconnection with improved error handling
   const handleManualReconnect = useCallback(() => {
-    logWithTimestamp(`Manual reconnection requested by user`, 'info');
+    if (!currentSession?.id) {
+      toast({
+        title: "Reconnection Failed",
+        description: "No active session to reconnect to.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    logWithTimestamp(`Manual reconnection requested by user for session ${currentSession.id}`, 'info');
     
     // Reset connection state
     setConnectionStatus('connecting');
@@ -245,7 +262,7 @@ export default function PlayerGameContent({
       title: "Reconnecting...",
       description: "Attempting to reconnect to the game server",
     });
-  }, []);
+  }, [currentSession?.id]);
 
   // Define a proper mapping function to convert between the different claim status types
   const mapClaimStatus = useCallback((status: 'none' | 'pending' | 'valid' | 'invalid'): GameTypePlayspaceClaimStatus => {

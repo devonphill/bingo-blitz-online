@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -109,17 +110,20 @@ export default function PlayerGame() {
     connectionState
   } = usePlayerGame(playerCode);
   
-  // Initialize session progress hook
+  // Initialize session progress hook - only if we have a session
   const { progress: sessionProgress } = useSessionProgress(
     currentSession?.id
   );
   
-  // Initialize tickets hook
+  // Initialize tickets hook - only if we have a player code and session
   const { tickets, refreshTickets } = useTickets(playerCode, currentSession?.id);
   
-  // Set up number called listener using the network context
+  // Set up number called listener using the network context - only if we have a session
   useEffect(() => {
-    if (!currentSession?.id) return;
+    if (!currentSession?.id) {
+      logWithTimestamp(`PlayerGame (${instanceId.current}): No session ID available for number call listener`, 'info');
+      return;
+    }
     
     // Set up listener for number called events
     const removeListener = network.addNumberCalledListener((lastCalledNumber, calledNumbers) => {
@@ -167,6 +171,7 @@ export default function PlayerGame() {
   // Handle bingo claims - select the best ticket for claiming
   const handleClaimBingo = React.useCallback(() => {
     if (!tickets || tickets.length === 0) {
+      logWithTimestamp(`PlayerGame (${instanceId.current}): Cannot claim bingo: no tickets available`, 'warn');
       console.log("Cannot claim bingo: no tickets available");
       return Promise.resolve(false);
     }
@@ -187,11 +192,11 @@ export default function PlayerGame() {
     // Use the best ticket for the claim
     const bestTicket = sortedTickets[0];
     
-    console.log("Claiming bingo with best ticket:", bestTicket);
+    logWithTimestamp(`PlayerGame (${instanceId.current}): Claiming bingo with best ticket, score: ${bestTicket.score}`, 'info');
     
     // Try to claim bingo
     return submitBingoClaim(bestTicket);
-  }, [submitBingoClaim, tickets, finalCalledNumbers]);
+  }, [submitBingoClaim, tickets, finalCalledNumbers, instanceId]);
   
   // Only consider connection issues as non-critical errors
   const effectiveErrorMessage = !playerCode && window.location.pathname.includes('/player/game')
@@ -202,6 +207,7 @@ export default function PlayerGame() {
 
   // Early return during initial loading - no conditional hooks after this point
   if (loadingPlayerCode) {
+    logWithTimestamp(`PlayerGame (${instanceId.current}): Still loading player code, showing loader`, 'info');
     return (
       <PlayerGameLoader 
         isLoading={true} 
@@ -215,6 +221,7 @@ export default function PlayerGame() {
   
   // If we're on the home page, no player code is required - just return nothing
   if (window.location.pathname === '/') {
+    logWithTimestamp(`PlayerGame (${instanceId.current}): On home page, not rendering player game interface`, 'info');
     return null;
   }
   
@@ -229,7 +236,7 @@ export default function PlayerGame() {
     !hasSession;
 
   if (shouldShowLoader) {
-    logWithTimestamp(`Showing PlayerGameLoader - isLoading: ${isLoading}, hasSession: ${hasSession}, effectiveErrorMessage: ${effectiveErrorMessage}`);
+    logWithTimestamp(`PlayerGame (${instanceId.current}): Showing loader: isLoading=${isLoading}, hasSession=${hasSession}, effectiveErrorMessage=${effectiveErrorMessage || 'none'}`, 'info');
     
     return (
       <PlayerGameLoader 
@@ -244,6 +251,7 @@ export default function PlayerGame() {
 
   // At this point, we know the game is active and we should have tickets
   if (!hasTickets) {
+    logWithTimestamp(`PlayerGame (${instanceId.current}): No tickets available for player`, 'warn');
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="bg-white shadow-lg rounded-lg p-6 max-w-md w-full">
@@ -288,12 +296,7 @@ export default function PlayerGame() {
     };
   }
 
-  logWithTimestamp("Rendering main player game interface with:");
-  logWithTimestamp(`- Called numbers: ${finalCalledNumbers.length}`);
-  logWithTimestamp(`- Last called number: ${finalLastCalledNumber}`);
-  logWithTimestamp(`- Current win pattern: ${currentWinPattern}`);
-  logWithTimestamp(`- Player name: ${playerName}`);
-  logWithTimestamp(`- Connection state: ${connectionState}`);
+  logWithTimestamp(`PlayerGame (${instanceId.current}): Rendering main player game interface`, 'info');
   
   // Map the claimStatus to the proper format expected by each component
   const layoutClaimStatus = claimStatus === 'valid' ? 'valid' : 

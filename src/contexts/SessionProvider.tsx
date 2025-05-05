@@ -5,6 +5,7 @@ import { usePlayers } from './usePlayers';
 import { useTickets } from './useTickets';
 import type { GameSession, Player, TempPlayer } from '@/types';
 import { AdminTempPlayer } from './usePlayers';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 interface SessionContextType {
   sessions: GameSession[];
@@ -57,11 +58,11 @@ export function SessionProvider({ children }: SessionProviderProps) {
   const setCurrentSession = (sessionId: string | null) => {
     // Prevent unnecessary state updates if the session is already selected
     if (currentSession?.id === sessionId) {
-      console.log("Session is already selected, skipping update");
+      logWithTimestamp("Session is already selected, skipping update", 'debug');
       return;
     }
     
-    console.log("Setting current session ID:", sessionId);
+    logWithTimestamp(`Setting current session ID: ${sessionId || 'null'}`, 'info');
     setSessionById(sessionId);
   };
 
@@ -77,12 +78,12 @@ export function SessionProvider({ children }: SessionProviderProps) {
     players: playersHook.players,
     joinSession: async (playerCode: string) => {
       try {
-        console.log("Provider: Joining session with player code", playerCode);
+        logWithTimestamp("Provider: Joining session with player code: " + playerCode, 'info');
         const result = await playersHook.joinSession(playerCode);
-        console.log("Provider: Join session result", result);
+        logWithTimestamp(`Provider: Join session result: ${JSON.stringify(result)}`, 'info');
         return result;
       } catch (error) {
-        console.error("Provider: Error joining session", error);
+        logWithTimestamp(`Provider: Error joining session: ${(error as Error).message}`, 'error');
         return { 
           success: false, 
           error: (error as Error).message 

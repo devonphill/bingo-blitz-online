@@ -29,6 +29,11 @@ export interface SessionProgressUpdate {
   current_prize_description?: string;
 }
 
+/**
+ * Hook to manage session progress data with real-time updates
+ * @param sessionId The ID of the game session to track
+ * @returns Object containing progress data, loading state, error state, and update function
+ */
 export function useSessionProgress(sessionId: string | undefined) {
   const [progress, setProgress] = useState<SessionProgress | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,10 +46,12 @@ export function useSessionProgress(sessionId: string | undefined) {
     // Abort controller to cancel fetch if component unmounts
     const abortController = new AbortController();
     let timeoutId: ReturnType<typeof setTimeout>;
+    let channel: any = null;
     
+    // If no sessionId is provided, just set loading to false and return
     if (!sessionId) {
-      logWithTimestamp(`[${hookId}] No sessionId provided to useSessionProgress`, 'warn');
       setLoading(false);
+      logWithTimestamp(`[${hookId}] No sessionId provided to useSessionProgress`, 'info'); // Changed from 'warn' to 'info'
       return;
     }
 
@@ -143,12 +150,12 @@ export function useSessionProgress(sessionId: string | undefined) {
         setError(errorMessage);
         
         // Retry once after 2 seconds if there was an error
-        timeoutId = setTimeout(() => {
-          if (!abortController.signal.aborted) {
+        if (!abortController.signal.aborted) {
+          timeoutId = setTimeout(() => {
             logWithTimestamp(`[${hookId}] Retrying session progress fetch...`, 'info');
             fetchSessionProgress();
-          }
-        }, 2000);
+          }, 2000);
+        }
       } finally {
         if (!abortController.signal.aborted) {
           setLoading(false);
@@ -159,49 +166,52 @@ export function useSessionProgress(sessionId: string | undefined) {
     fetchSessionProgress();
     
     // Set up real-time subscription for session progress updates
-    const channel = supabase
-      .channel(`session_progress_${sessionId}`)
-      .on('postgres_changes', 
-        { 
-          event: 'UPDATE', 
-          schema: 'public', 
-          table: 'sessions_progress',
-          filter: `session_id=eq.${sessionId}`
-        }, 
-        (payload) => {
-          if (payload.new) {
-            logWithTimestamp(`[${hookId}] Received real-time update for session progress`, 'debug');
-            setProgress(prev => {
-              // Only update if there are actual changes
-              const newData = payload.new as any;
-              if (JSON.stringify(prev) === JSON.stringify(newData)) {
-                return prev;
-              }
-              return {
-                id: newData.id,
-                session_id: newData.session_id,
-                current_game_number: newData.current_game_number,
-                max_game_number: newData.max_game_number,
-                current_game_type: newData.current_game_type,
-                current_win_pattern: newData.current_win_pattern,
-                called_numbers: newData.called_numbers || [],
-                game_status: newData.game_status,
-                current_prize: newData.current_prize,
-                current_prize_description: newData.current_prize_description,
-                created_at: newData.created_at,
-                updated_at: newData.updated_at
-              };
-            });
+    // Only set up if sessionId is valid
+    if (sessionId) {
+      channel = supabase
+        .channel(`session_progress_${sessionId}`)
+        .on('postgres_changes', 
+          { 
+            event: 'UPDATE', 
+            schema: 'public', 
+            table: 'sessions_progress',
+            filter: `session_id=eq.${sessionId}`
+          }, 
+          (payload) => {
+            if (payload.new) {
+              logWithTimestamp(`[${hookId}] Received real-time update for session progress`, 'debug');
+              setProgress(prev => {
+                // Only update if there are actual changes
+                const newData = payload.new as any;
+                if (JSON.stringify(prev) === JSON.stringify(newData)) {
+                  return prev;
+                }
+                return {
+                  id: newData.id,
+                  session_id: newData.session_id,
+                  current_game_number: newData.current_game_number,
+                  max_game_number: newData.max_game_number,
+                  current_game_type: newData.current_game_type,
+                  current_win_pattern: newData.current_win_pattern,
+                  called_numbers: newData.called_numbers || [],
+                  game_status: newData.game_status,
+                  current_prize: newData.current_prize,
+                  current_prize_description: newData.current_prize_description,
+                  created_at: newData.created_at,
+                  updated_at: newData.updated_at
+                };
+              });
+            }
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
+    }
     
     // Clean up function
     return () => {
       abortController.abort();
       if (timeoutId) clearTimeout(timeoutId);
-      supabase.removeChannel(channel);
+      if (channel) supabase.removeChannel(channel);
     };
   }, [sessionId, hookId]);
 
@@ -239,3 +249,4 @@ export function useSessionProgress(sessionId: string | undefined) {
     updateProgress
   };
 }
+

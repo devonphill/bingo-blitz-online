@@ -24,6 +24,8 @@ const About = lazy(() => import("./pages/Index"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Login = lazy(() => import("./pages/Login"));
 const CallerSession = lazy(() => import("./pages/CallerSession"));
+const PlayerJoin = lazy(() => import("./pages/PlayerJoin"));
+const PlayerGame = lazy(() => import("./pages/PlayerGame"));
 
 // Setup simplified pages
 const Register = () => <div className="p-8"><h1 className="text-2xl">Register Page</h1><p>This page is not yet implemented.</p></div>;
@@ -52,10 +54,6 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => <>{children
 const CallerHome = () => <div className="p-8"><h1 className="text-2xl">Caller Home</h1><p>This page is not yet implemented.</p></div>;
 const GameSetup = () => <div className="p-8"><h1 className="text-2xl">Game Setup</h1><p>This page is not yet implemented.</p></div>;
 const GameManagement = () => <div className="p-8"><h1 className="text-2xl">Game Management</h1><p>This page is not yet implemented.</p></div>;
-
-// Player game pages
-const PlayerJoin = lazy(() => import("./pages/PlayerJoin"));
-const PlayerGame = lazy(() => import("./pages/PlayerGame"));
 
 function App() {
   return (
