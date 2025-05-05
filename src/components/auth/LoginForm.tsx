@@ -51,11 +51,11 @@ export default function LoginForm() {
               id="email"
               type="email"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={(e) => setEmail(e.target.value)}
               required
               placeholder="Enter your email"
               autoComplete="username"
-              disabled={isLoading}
+              disabled={false}
             />
           </div>
           <div className="space-y-2">
@@ -64,11 +64,11 @@ export default function LoginForm() {
               id="password"
               type="password"
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={(e) => setPassword(e.target.value)}
               required
               placeholder="Enter your password"
               autoComplete="current-password"
-              disabled={isLoading}
+              disabled={false}
             />
           </div>
           {error && <div className="text-sm font-medium text-destructive">{error}</div>}
