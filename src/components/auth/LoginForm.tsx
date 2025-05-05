@@ -1,5 +1,5 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,16 +12,28 @@ export default function LoginForm() {
   const [password, setPassword] = useState("");
   const { signIn, isLoading, error } = useAuth();
   const { toast } = useToast();
+  const [loginAttempted, setLoginAttempted] = useState(false);
+
+  // Reset login attempted state when loading state changes
+  useEffect(() => {
+    if (loginAttempted && !isLoading) {
+      setLoginAttempted(false);
+      if (!error) {
+        toast({ title: "Login successful", description: "Welcome back!" });
+      }
+    }
+  }, [isLoading, loginAttempted, error, toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      setLoginAttempted(true);
+      console.log("Attempting login for:", email);
       await signIn(email, password);
-      toast({ title: "Login successful", description: "Welcome back!" });
       // Login.tsx will handle the navigation based on role
     } catch (err) {
+      console.error("Login error in form:", err);
       // Error is handled in the AuthContext
-      // No need to do anything here as it will be displayed from the error state
     }
   };
 
@@ -43,6 +55,7 @@ export default function LoginForm() {
               required
               placeholder="Enter your email"
               autoComplete="username"
+              disabled={isLoading}
             />
           </div>
           <div className="space-y-2">
@@ -55,6 +68,7 @@ export default function LoginForm() {
               required
               placeholder="Enter your password"
               autoComplete="current-password"
+              disabled={isLoading}
             />
           </div>
           {error && <div className="text-sm font-medium text-destructive">{error}</div>}

@@ -43,6 +43,8 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
           }, 0);
         } else {
           setRole(null);
+          // If no session, ensure we're not in loading state
+          setIsLoading(false);
         }
       }
     );
@@ -56,9 +58,12 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
       if (session?.user) {
         console.log("Initial session: User exists, fetching role");
         fetchUserRole(session.user.id);
+      } else {
+        // Always mark loading as complete after initial session check if no user
+        setIsLoading(false);
       }
-      
-      // Always mark loading as complete after initial session check
+    }).catch(err => {
+      console.error("Error getting initial session:", err);
       setIsLoading(false);
     });
 
@@ -68,6 +73,8 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
   async function fetchUserRole(userId: string) {
     try {
       console.log("Fetching user role for:", userId);
+      setIsLoading(true);
+      
       const { data, error } = await supabase
         .from('profiles')
         .select('role')
@@ -77,14 +84,16 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
       if (error) {
         console.error('Error fetching user role:', error);
         setRole(null);
-        return;
+      } else {
+        console.log("User role fetched:", data?.role);
+        setRole(data?.role || null);
       }
-      
-      console.log("User role fetched:", data?.role);
-      setRole(data?.role || null);
     } catch (error) {
       console.error('Exception fetching user role:', error);
       setRole(null);
+    } finally {
+      // Always complete loading after role fetch attempt
+      setIsLoading(false);
     }
   }
 
@@ -93,7 +102,7 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     setError(null);
     setIsLoading(true);
     try {
-      const { error: authError } = await supabase.auth.signInWithPassword({
+      const { error: authError, data } = await supabase.auth.signInWithPassword({
         email,
         password
       });
@@ -101,16 +110,18 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
       if (authError) {
         console.error("Sign in error:", authError.message);
         setError(authError.message);
+        setIsLoading(false);
         throw authError;
       }
-      console.log("Sign in successful");
+      
+      console.log("Sign in successful, user:", data.user?.id);
+      // Auth state change will handle updating user and role
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       console.error("Sign in exception:", errorMessage);
       setError(errorMessage);
-      throw err;
-    } finally {
       setIsLoading(false);
+      throw err;
     }
   };
 
@@ -121,6 +132,10 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     try {
       await supabase.auth.signOut();
       console.log("Sign out successful");
+      // Let auth state change handle clearing user and role
+    } catch (err) {
+      console.error("Sign out error:", err);
+      setError("Failed to sign out");
     } finally {
       setIsLoading(false);
     }
