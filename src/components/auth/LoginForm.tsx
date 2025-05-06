@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { toast } from "../../utils/toast";
@@ -6,24 +7,43 @@ const LoginForm = () => {
   const { signIn, isLoading, error } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!email || !password) {
+      toast({ 
+        title: "Validation Error", 
+        description: "Please enter both email and password", 
+        variant: "destructive" 
+      });
+      return;
+    }
+
     try {
-      await Promise.race([
-        signIn(email, password),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 5000)),
-      ]);
+      setSubmitting(true);
+      await signIn(email, password);
+      // The redirection will be handled by the useEffect in LoginPage
     } catch (err) {
       console.error("Login error:", err);
+      setSubmitting(false);
     }
   };
 
   useEffect(() => {
-    if (!isLoading && !error) {
+    // Only show success message if we've completed loading and have no errors
+    if (submitting && !isLoading && !error) {
       toast({ title: "Login successful", description: "Welcome back!" });
+    } else if (error) {
+      setSubmitting(false);
+      toast({ 
+        title: "Login failed", 
+        description: error, 
+        variant: "destructive" 
+      });
     }
-  }, [isLoading, error, toast]);
+  }, [isLoading, error, submitting]);
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -32,18 +52,24 @@ const LoginForm = () => {
         placeholder="Email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        className="input"
+        className="w-full p-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
         required
+        disabled={isLoading}
       />
       <input
         type="password"
         placeholder="Password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
-        className="input"
+        className="w-full p-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
         required
+        disabled={isLoading}
       />
-      <button type="submit" className="btn-primary" disabled={isLoading}>
+      <button 
+        type="submit" 
+        className="w-full bg-blue-600 text-white py-3 rounded-md hover:bg-blue-700 transition-colors disabled:bg-blue-400" 
+        disabled={isLoading}
+      >
         {isLoading ? "Logging in..." : "Login"}
       </button>
     </form>
