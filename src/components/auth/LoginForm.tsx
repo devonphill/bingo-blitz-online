@@ -1,89 +1,53 @@
-
 import React, { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { useAuth } from "@/contexts/AuthContext";
-import { useToast } from "@/components/ui/use-toast";
+import { useAuth } from "../../hooks/useAuth";
+import { toast } from "../../utils/toast";
 
-export default function LoginForm() {
+const LoginForm = () => {
+  const { signIn, isLoading, error } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const { signIn, isLoading, error } = useAuth();
-  const { toast } = useToast();
-  const [loginAttempted, setLoginAttempted] = useState(false);
-
-  // Reset login attempted state when loading state changes
-  useEffect(() => {
-    if (loginAttempted && !isLoading) {
-      setLoginAttempted(false);
-      if (!error) {
-        toast({ title: "Login successful", description: "Welcome back!" });
-      }
-    }
-  }, [isLoading, loginAttempted, error, toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      setLoginAttempted(true);
-      console.log("Attempting login for:", email);
-      await signIn(email, password);
-      // Login.tsx will handle the navigation based on role
+      await Promise.race([
+        signIn(email, password),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 5000)),
+      ]);
     } catch (err) {
-      console.error("Login error in form:", err);
-      // Error is handled in the AuthContext
+      console.error("Login error:", err);
     }
   };
 
+  useEffect(() => {
+    if (!isLoading && !error) {
+      toast({ title: "Login successful", description: "Welcome back!" });
+    }
+  }, [isLoading, error, toast]);
+
   return (
-    <Card className="w-full max-w-md mx-auto animate-fade-in">
-      <CardHeader className="space-y-1 text-center">
-        <CardTitle className="text-3xl font-bold tracking-tight">Bingo Blitz</CardTitle>
-        <CardDescription>Login with your email and password</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              placeholder="Enter your email"
-              autoComplete="username"
-              disabled={false}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder="Enter your password"
-              autoComplete="current-password"
-              disabled={false}
-            />
-          </div>
-          {error && <div className="text-sm font-medium text-destructive">{error}</div>}
-          <Button
-            type="submit"
-            className="w-full bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-            disabled={isLoading}
-          >
-            {isLoading ? "Logging in..." : "Sign In"}
-          </Button>
-        </form>
-      </CardContent>
-      <CardFooter>
-        <div className="w-full text-center text-sm text-gray-500">Use your CMS credentials.</div>
-      </CardFooter>
-    </Card>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <input
+        type="email"
+        placeholder="Email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        className="input"
+        required
+      />
+      <input
+        type="password"
+        placeholder="Password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        className="input"
+        required
+      />
+      <button type="submit" className="btn-primary" disabled={isLoading}>
+        {isLoading ? "Logging in..." : "Login"}
+      </button>
+    </form>
   );
-}
+};
+
+export default LoginForm;
