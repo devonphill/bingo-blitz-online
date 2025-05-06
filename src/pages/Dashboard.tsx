@@ -1,163 +1,33 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import CreateSessionForm from '@/components/dashboard/CreateSessionForm';
-import SessionCard from '@/components/dashboard/SessionCard';
-import { useAuth } from '@/contexts/AuthContext';
-import { useSessionContext } from '@/contexts/SessionProvider';
-import { Menu } from 'lucide-react';
-import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
-import DashboardSidebar from '@/components/dashboard/DashboardSidebar';
-import { supabase } from '@/integrations/supabase/client';
-import SessionDebugPanel from '@/components/dashboard/SessionDebugPanel';
+import React, { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth";
+import Spinner from "../components/ui/Spinner";
 
-export default function Dashboard() {
-  const { user, logout, isLoading: authLoading } = useAuth();
-  const { sessions, fetchSessions, isLoading: sessionsLoading } = useSessionContext();
+const DashboardPage = () => {
+  const { user, authLoading } = useAuth();
   const navigate = useNavigate();
-  const [tokenCount, setTokenCount] = useState<number | null>(null);
-  const [fetchAttempted, setFetchAttempted] = useState(false);
-  const [authCheckComplete, setAuthCheckComplete] = useState(false);
-  const isLoading = authLoading || (sessionsLoading && !fetchAttempted);
 
   useEffect(() => {
-    // Set a timeout to ensure we don't get stuck in loading state forever
-    const authTimeout = setTimeout(() => {
-      if (authLoading) {
-        console.log("Auth check timed out, proceeding with null user");
-        setAuthCheckComplete(true);
-      }
-    }, 3000); // 3 second timeout for auth check
-    
-    return () => clearTimeout(authTimeout);
-  }, []);
-
-  useEffect(() => {
-    console.log("Dashboard render - Auth loading:", authLoading, "User:", user ? "logged in" : "not logged in");
-    
-    // Mark auth check as complete when auth is no longer loading
-    if (!authLoading) {
-      setAuthCheckComplete(true);
-    }
-    
-    // If auth is not loading and user is not logged in, redirect to login
     if (!authLoading && !user) {
-      console.log("No authenticated user found, redirecting to login");
-      navigate('/login');
-      return;
+      navigate("/login");
     }
+  }, [authLoading, user, navigate]);
 
-    // Fetch sessions when the dashboard loads and user is authenticated
-    if (user && !authLoading) {
-      console.log("User is authenticated, fetching sessions for user ID:", user.id);
-      fetchSessions().then(() => {
-        setFetchAttempted(true);
-        console.log("Sessions fetch completed, sessions count:", sessions.length);
-      }).catch(err => {
-        console.error("Error fetching sessions:", err);
-        setFetchAttempted(true);
-      });
-      fetchTokenCount();
-    }
-  }, [user, authLoading, fetchSessions, navigate]);
-
-  // Debug sessions state changes
-  useEffect(() => {
-    console.log("Sessions state updated:", sessions.length, "sessions available");
-  }, [sessions]);
-
-  const fetchTokenCount = async () => {
-    if (!user) return;
-    
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('token_count')
-        .eq('id', user.id)
-        .single();
-
-      if (error) throw error;
-      setTokenCount(data?.token_count ?? 0);
-    } catch (err) {
-      console.error('Error fetching token count:', err);
-    }
-  };
-
-  const handleLogout = () => {
-    logout();
-    navigate('/');
-  };
-
-  // Show loading state while auth is being determined, but only for a reasonable time
-  if (authLoading && !authCheckComplete) {
+  if (authLoading) {
     return (
       <div className="flex justify-center items-center h-screen">
-        <p className="text-gray-500">Loading user data...</p>
+        <Spinner size="md" />
+        <p className="mt-4 text-gray-600">Loading user data...</p>
       </div>
     );
   }
 
-  // If not loading and no user, we should be redirecting to login
-  if (!user && !authLoading) {
-    return null;
-  }
-
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full bg-gray-50">
-        <DashboardSidebar />
-        <div className="flex-1">
-          <header className="bg-white shadow-sm">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-              <div className="flex items-center gap-4">
-                <SidebarTrigger className="lg:hidden">
-                  <Menu className="h-5 w-5" />
-                </SidebarTrigger>
-                <h1 className="text-2xl font-bold text-bingo-primary">Bingo Blitz</h1>
-              </div>
-              <div className="flex items-center space-x-4">
-                <div className="text-sm font-medium">
-                  Credits: {tokenCount ?? '...'}
-                </div>
-                <Button variant="outline" size="sm" onClick={handleLogout}>
-                  Logout
-                </Button>
-              </div>
-            </div>
-          </header>
-          
-          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="mb-6 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900">Game Sessions</h2>
-                <p className="text-gray-600">Manage your bingo game sessions</p>
-              </div>
-              <CreateSessionForm />
-            </div>
-            
-            {/* Add Debug Panel in development */}
-            {process.env.NODE_ENV === 'development' && <SessionDebugPanel />}
-            
-            {sessionsLoading && !fetchAttempted ? (
-              <div className="flex justify-center items-center h-48">
-                <p className="text-gray-500">Loading sessions...</p>
-              </div>
-            ) : sessions.length === 0 ? (
-              <div className="bg-white shadow rounded-lg p-6 text-center">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No Sessions Found</h3>
-                <p className="text-gray-500 mb-4">Create your first bingo session to get started</p>
-                <CreateSessionForm />
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {sessions.map(session => (
-                  <SessionCard key={session.id} session={session} />
-                ))}
-              </div>
-            )}
-          </main>
-        </div>
-      </div>
-    </SidebarProvider>
+    <div>
+      <h1>Welcome to the Dashboard</h1>
+      {/* Add your dashboard content here */}
+    </div>
   );
-}
+};
+
+export default DashboardPage;
