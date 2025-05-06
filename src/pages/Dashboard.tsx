@@ -1,9 +1,9 @@
 
 import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../hooks/useAuth";
+import { useAuth } from "@/hooks/useAuth";
 import { useSessionContext } from "../contexts/SessionProvider";
-import Spinner from "../components/ui/Spinner";
+import { Spinner } from "@/components/ui/spinner";
 import SessionDebugPanel from "../components/dashboard/SessionDebugPanel";
 
 const DashboardPage = () => {
@@ -18,11 +18,11 @@ const DashboardPage = () => {
     }
 
     // Load sessions as soon as authentication is confirmed
-    if (user && !sessionsLoading) {
+    if (user && !sessionsLoading && !sessions.length) {
       console.log("Dashboard: Loading sessions");
       fetchSessions();
     }
-  }, [authLoading, user, navigate, fetchSessions, sessionsLoading]);
+  }, [authLoading, user, navigate, fetchSessions, sessionsLoading, sessions]);
 
   // Show spinner while authentication is in progress
   if (authLoading) {

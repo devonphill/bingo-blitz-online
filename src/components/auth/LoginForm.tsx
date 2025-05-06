@@ -1,13 +1,14 @@
 
 import React, { useState, useEffect } from "react";
-import { useAuth } from "../../hooks/useAuth";
-import { toast } from "../../utils/toast";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "@/utils/toast";
 
 const LoginForm = () => {
   const { signIn, isLoading, error } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [formSubmitted, setFormSubmitted] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,11 +24,13 @@ const LoginForm = () => {
 
     try {
       setSubmitting(true);
+      setFormSubmitted(true);
       await signIn(email, password);
       // The redirection will be handled by the useEffect in LoginPage
     } catch (err) {
       console.error("Login error:", err);
       setSubmitting(false);
+      setFormSubmitted(false);
     }
   };
 
@@ -37,6 +40,7 @@ const LoginForm = () => {
       toast({ title: "Login successful", description: "Welcome back!" });
     } else if (error) {
       setSubmitting(false);
+      setFormSubmitted(false);
       toast({ 
         title: "Login failed", 
         description: error, 
@@ -54,7 +58,7 @@ const LoginForm = () => {
         onChange={(e) => setEmail(e.target.value)}
         className="w-full p-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
         required
-        disabled={isLoading}
+        disabled={formSubmitted && isLoading}
       />
       <input
         type="password"
@@ -63,14 +67,14 @@ const LoginForm = () => {
         onChange={(e) => setPassword(e.target.value)}
         className="w-full p-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
         required
-        disabled={isLoading}
+        disabled={formSubmitted && isLoading}
       />
       <button 
         type="submit" 
         className="w-full bg-blue-600 text-white py-3 rounded-md hover:bg-blue-700 transition-colors disabled:bg-blue-400" 
-        disabled={isLoading}
+        disabled={formSubmitted && isLoading}
       >
-        {isLoading ? "Logging in..." : "Login"}
+        {isLoading && formSubmitted ? "Logging in..." : "Login"}
       </button>
     </form>
   );

@@ -1,8 +1,8 @@
 
 import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../hooks/useAuth";
-import Spinner from "../components/ui/Spinner";
+import { useAuth } from "@/hooks/useAuth";
+import { Spinner } from "@/components/ui/spinner";
 import LoginForm from "../components/auth/LoginForm";
 
 const LoginPage = () => {
