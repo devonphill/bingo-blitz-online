@@ -23,6 +23,7 @@ const LoginForm = () => {
     }
 
     try {
+      console.log("Attempting to sign in with:", email);
       setSubmitting(true);
       setFormSubmitted(true);
       await signIn(email, password);
@@ -37,8 +38,10 @@ const LoginForm = () => {
   useEffect(() => {
     // Only show success message if we've completed loading and have no errors
     if (submitting && !isLoading && !error) {
+      console.log("Login successful, showing toast");
       toast({ title: "Login successful", description: "Welcome back!" });
     } else if (error) {
+      console.log("Login failed, showing error toast:", error);
       setSubmitting(false);
       setFormSubmitted(false);
       toast({ 

@@ -13,16 +13,19 @@ const DashboardPage = () => {
 
   useEffect(() => {
     if (!authLoading && !user) {
+      console.log("Dashboard: Not authenticated, redirecting to login");
       navigate("/login");
       return;
     }
 
     // Load sessions as soon as authentication is confirmed
-    if (user && !sessionsLoading && !sessions.length) {
+    if (user && !authLoading && !sessionsLoading && !sessions.length) {
       console.log("Dashboard: Loading sessions");
       fetchSessions();
     }
   }, [authLoading, user, navigate, fetchSessions, sessionsLoading, sessions]);
+
+  console.log("Dashboard rendering. Auth loading:", authLoading, "Sessions loading:", sessionsLoading, "User:", user ? "exists" : "null");
 
   // Show spinner while authentication is in progress
   if (authLoading) {

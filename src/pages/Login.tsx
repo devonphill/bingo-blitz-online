@@ -17,6 +17,8 @@ const LoginPage = () => {
     }
   }, [user, isLoading, role, navigate]);
 
+  console.log("Login page rendering. Auth loading:", isLoading, "User:", user ? "exists" : "null", "Role:", role);
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-bingo-primary/10 to-bingo-secondary/10 p-4">
       <div className="w-full max-w-md p-8 space-y-8 bg-white rounded-lg shadow-md">
