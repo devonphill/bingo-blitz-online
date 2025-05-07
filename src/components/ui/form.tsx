@@ -1,3 +1,4 @@
+
 import * as React from "react"
 import * as LabelPrimitive from "@radix-ui/react-label"
 import { Slot } from "@radix-ui/react-slot"
@@ -12,6 +13,7 @@ import {
 
 import { cn } from "@/lib/utils"
 import { Label } from "@/components/ui/label"
+import { useSafeId } from "@/utils/reactUtils"
 
 const Form = FormProvider
 
@@ -74,7 +76,8 @@ const FormItem = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => {
-  const id = React.useId()
+  // Replace React.useId() with our useSafeId() polyfill
+  const id = useSafeId()
 
   return (
     <FormItemContext.Provider value={{ id }}>

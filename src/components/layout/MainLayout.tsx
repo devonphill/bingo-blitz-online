@@ -8,6 +8,7 @@ import {
   Sidebar,
   SidebarContent,
 } from '@/components/ui/sidebar';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -15,6 +16,14 @@ interface MainLayoutProps {
 
 const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
+
+  React.useEffect(() => {
+    logWithTimestamp('MainLayout component mounted', 'debug', 'Layout');
+    
+    return () => {
+      logWithTimestamp('MainLayout component unmounted', 'debug', 'Layout');
+    };
+  }, []);
 
   return (
     <SidebarProvider>

@@ -2,6 +2,7 @@ import * as React from "react"
 import * as RechartsPrimitive from "recharts"
 
 import { cn } from "@/lib/utils"
+import { useSafeId } from "@/utils/reactUtils"
 
 // Format: { THEME_NAME: CSS_SELECTOR }
 const THEMES = { light: "", dark: ".dark" } as const
@@ -41,7 +42,8 @@ const ChartContainer = React.forwardRef<
     >["children"]
   }
 >(({ id, className, children, config, ...props }, ref) => {
-  const uniqueId = React.useId()
+  // Replace React.useId() with our useSafeId() polyfill
+  const uniqueId = useSafeId()
   const chartId = `chart-${id || uniqueId.replace(/:/g, "")}`
 
   return (
