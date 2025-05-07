@@ -1,7 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { supabase } from '@/integrations/supabase/client';
 import { Bell, RefreshCw, AlertCircle, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -10,6 +10,7 @@ import { useCallerHub } from '@/hooks/useCallerHub';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { GoLiveButton } from '@/components/ui/go-live-button';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
+import { useCallerNumbers } from '@/hooks/useCallerNumbers';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -33,12 +34,11 @@ export default function CallerControls({
   onCallNumber, 
   onEndGame,
   onGoLive,
-  remainingNumbers,
   sessionId,
   winPatterns,
   claimCount = 0,
   openClaimSheet,
-  gameType,
+  gameType = 'mainstage',
   sessionStatus = 'pending',
   onCloseGame,
   numberOfGames = 1,
@@ -46,11 +46,19 @@ export default function CallerControls({
   onForceClose, // New prop for forced game close
   gameConfigs // Added this missing prop
 }: CallerControlsProps) {
-  const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
   const [isClosingConfirmOpen, setIsClosingConfirmOpen] = useState(false);
   const [isForceCloseConfirmOpen, setIsForceCloseConfirmOpen] = useState(false);
   const { toast } = useToast();
+  
+  // Use new caller numbers hook for reliable number handling
+  const {
+    calledNumbers,
+    lastCalledNumber,
+    isCallInProgress,
+    remainingNumbers: availableNumbers,
+    callNextNumber
+  } = useCallerNumbers(sessionId, gameType);
   
   // Connect to the WebSocket hub as a caller
   const callerHub = useCallerHub(sessionId);
@@ -62,8 +70,8 @@ export default function CallerControls({
     logWithTimestamp(`CallControls connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}`);
   }, [callerHub.connectionState, callerHub.isConnected]);
 
-  const handleCallNumber = () => {
-    if (remainingNumbers.length === 0) {
+  const handleCallNumber = async () => {
+    if (availableNumbers.length === 0) {
       toast({
         title: "No more numbers",
         description: "All numbers have been called.",
@@ -72,71 +80,19 @@ export default function CallerControls({
       return;
     }
 
-    setIsCallingNumber(true);
+    // Call next number using our service
+    const number = await callNextNumber();
     
-    setTimeout(() => {
-      const randomIndex = Math.floor(Math.random() * remainingNumbers.length);
-      const number = remainingNumbers[randomIndex];
-      
-      // IMPORTANT: First broadcast the number to all clients immediately
-      try {
-        logWithTimestamp(`Broadcasting number ${number} via realtime channels`);
-        
-        // Use a dedicated broadcast channel
-        supabase.channel('number-broadcast').send({
-          type: 'broadcast',
-          event: 'number-called',
-          payload: {
-            sessionId: sessionId,
-            lastCalledNumber: number,
-            // We need to calculate the called numbers since we don't have direct access to the full list
-            // We infer it from the remaining numbers
-            calledNumbers: getCalledNumbersFromRemaining(number, remainingNumbers),
-            timestamp: new Date().toISOString()
-          }
-        }).then(() => {
-          logWithTimestamp("Number broadcast sent successfully");
-        }).catch(error => {
-          console.error("Error broadcasting number:", error);
-        });
-      } catch (err) {
-        console.error("Error sending broadcast:", err);
-      }
-      
-      // Use network context for database persistence
-      if (network) {
-        network.callNumber(number, sessionId)
-          .then(success => {
-            if (!success) {
-              console.error("Failed to call number through network context");
-            }
-          })
-          .catch(err => {
-            console.error("Error calling number through network context:", err);
-          });
-      }
-      
+    if (number) {
+      // Call the parent handler
       onCallNumber(number);
-      setIsCallingNumber(false);
-    }, 1000);
-  };
-
-  // Helper function to calculate the called numbers based on the remaining numbers
-  // and the currently called number
-  const getCalledNumbersFromRemaining = (calledNumber: number, remaining: number[]): number[] => {
-    // Create a full range of numbers based on game type (75-ball or 90-ball)
-    const maxNumber = gameType === '75-ball' ? 75 : 90;
-    const allNumbers = Array.from({ length: maxNumber }, (_, i) => i + 1);
-    
-    // Filter out the remaining numbers to get previously called numbers
-    const previouslyCalled = allNumbers.filter(n => !remaining.includes(n));
-    
-    // Add the current called number if it's not already in the list
-    if (!previouslyCalled.includes(calledNumber)) {
-      return [...previouslyCalled, calledNumber];
+    } else {
+      toast({
+        title: "Error",
+        description: "Failed to call next number. Please try again.",
+        variant: "destructive"
+      });
     }
-    
-    return previouslyCalled;
   };
 
   const handleGoLiveClick = async () => {
@@ -281,16 +237,23 @@ export default function CallerControls({
         <CardContent className="space-y-4">
           <div className="bg-gray-100 p-3 rounded-md text-center">
             <div className="text-sm text-gray-500 mb-1">Remaining Numbers</div>
-            <div className="text-2xl font-bold">{remainingNumbers.length}</div>
+            <div className="text-2xl font-bold">{availableNumbers.length}</div>
           </div>
+          
+          {lastCalledNumber && (
+            <div className="bg-gray-100 p-3 rounded-md text-center">
+              <div className="text-sm text-gray-500 mb-1">Last Called</div>
+              <div className="text-2xl font-bold">{lastCalledNumber}</div>
+            </div>
+          )}
           
           <div className="grid grid-cols-1 gap-3">
             <Button
               className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-              disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active' || !callerHub.isConnected}
+              disabled={isCallInProgress || availableNumbers.length === 0 || sessionStatus !== 'active' || !callerHub.isConnected}
               onClick={handleCallNumber}
             >
-              {isCallingNumber ? 'Calling...' : 'Call Next Number'}
+              {isCallInProgress ? 'Calling...' : 'Call Next Number'}
             </Button>
             
             {onCloseGame && (
