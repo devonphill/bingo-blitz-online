@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { logWithTimestamp } from './logUtils';
 
@@ -96,8 +97,8 @@ export function SimpleTooltip({
 
   return (
     <div 
-      className="relative inline-flex" 
-      onMouseEnter={showTooltip} 
+      className="relative inline-flex"
+      onMouseEnter={showTooltip}
       onMouseLeave={hideTooltip}
       onFocus={showTooltip}
       onBlur={hideTooltip}

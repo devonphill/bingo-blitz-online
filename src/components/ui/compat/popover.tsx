@@ -39,9 +39,7 @@ const CompatPopover: React.FC<{
   className?: string;
 }> = ({ trigger, content, className }) => {
   return (
-    <SimplePopover trigger={trigger} content={content} className={className}>
-      {content}
-    </SimplePopover>
+    <SimplePopover trigger={trigger} content={content} className={className} />
   );
 };
 
