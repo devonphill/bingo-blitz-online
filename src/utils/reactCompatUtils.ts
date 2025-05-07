@@ -65,7 +65,7 @@ export function patchReactForCompatibility() {
 export function SimpleTooltip({ 
   children, 
   content,
-  className = '',
+  className,
   delayDuration = 700
 }: { 
   children: React.ReactNode; 
@@ -105,7 +105,7 @@ export function SimpleTooltip({
     >
       {children}
       {isVisible && (
-        <div className={`absolute z-50 px-2 py-1 text-sm bg-black text-white rounded shadow-md -top-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap ${className}`}>
+        <div className={`absolute z-50 px-2 py-1 text-sm bg-black text-white rounded shadow-md -top-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap ${className || ''}`}>
           {content}
           <div className="absolute w-2 h-2 bg-black transform rotate-45 -bottom-1 left-1/2 -translate-x-1/2"></div>
         </div>

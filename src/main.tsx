@@ -18,6 +18,7 @@ import { logReactEnvironment } from './utils/reactUtils';
 import { patchReactForCompatibility } from './utils/reactCompatUtils';
 
 // Apply React compatibility patches as early as possible - before any component imports
+// This needs to run before any React components are rendered
 patchReactForCompatibility();
 
 // Log React environment information
@@ -57,13 +58,33 @@ const Root = () => {
   );
 };
 
-// Render the app
-ReactDOM.render(
-  <BrowserRouter>
-    <Root />
-  </BrowserRouter>,
-  document.getElementById('root'),
-  () => {
-    logWithTimestamp('[Initialization] Application successfully mounted to DOM', 'info');
-  }
-);
+// Make sure React is patched before rendering
+if (typeof window !== 'undefined') {
+  // Additional safety check to ensure React is patched before mounting
+  window.addEventListener('DOMContentLoaded', () => {
+    // Apply compatibility patch again right before mounting
+    patchReactForCompatibility();
+    
+    // Render the app
+    ReactDOM.render(
+      <BrowserRouter>
+        <Root />
+      </BrowserRouter>,
+      document.getElementById('root'),
+      () => {
+        logWithTimestamp('[Initialization] Application successfully mounted to DOM', 'info');
+      }
+    );
+  });
+} else {
+  // Fallback for environments without window
+  ReactDOM.render(
+    <BrowserRouter>
+      <Root />
+    </BrowserRouter>,
+    document.getElementById('root'),
+    () => {
+      logWithTimestamp('[Initialization] Application successfully mounted to DOM', 'info');
+    }
+  );
+}

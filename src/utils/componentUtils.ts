@@ -13,15 +13,17 @@ export function withReact17Compatibility<T extends React.ComponentType<any>>(
 ): T {
   const WrappedComponent = React.forwardRef((props: any, ref) => {
     try {
-      return <Component {...props} ref={ref} />;
+      return React.createElement(Component, { ...props, ref });
     } catch (error) {
       logWithTimestamp(`Error rendering ${componentName}: ${error}`, 'error');
       
       // Return a fallback component
-      return (
-        <div className="bg-red-50 text-red-500 border border-red-200 rounded p-2 text-sm">
-          Unable to render {componentName} component due to React version compatibility.
-        </div>
+      return React.createElement(
+        'div',
+        { 
+          className: "bg-red-50 text-red-500 border border-red-200 rounded p-2 text-sm" 
+        },
+        `Unable to render ${componentName} component due to React version compatibility.`
       );
     }
   });
@@ -47,7 +49,7 @@ export function safeCloneElement(
   props: Record<string, any>
 ): React.ReactElement {
   if (!React.isValidElement(element)) {
-    return <>{element}</>;
+    return React.createElement(React.Fragment, null, element);
   }
   
   try {
