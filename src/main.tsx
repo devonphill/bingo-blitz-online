@@ -5,9 +5,9 @@ import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '@/components/ui/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
-import { AuthProvider } from '@/contexts/AuthContext';
+import { AuthContextProvider } from '@/contexts/AuthContext';
 import { SessionProvider } from '@/contexts/SessionProvider';
-import { NetworkStatusProvider } from '@/contexts/NetworkStatusContext';
+import { NetworkProvider } from '@/contexts/NetworkStatusContext';
 import { GameManagerProvider } from '@/contexts/GameManager';
 
 import App from './App';
@@ -40,16 +40,16 @@ ReactDOM.render(
   <BrowserRouter>
     <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
       <QueryClientProvider client={queryClient}>
-        <NetworkStatusProvider>
-          <AuthProvider>
+        <NetworkProvider>
+          <AuthContextProvider>
             <SessionProvider>
               <GameManagerProvider>
                 <Toaster position="bottom-right" />
                 <App />
               </GameManagerProvider>
             </SessionProvider>
-          </AuthProvider>
-        </NetworkStatusProvider>
+          </AuthContextProvider>
+        </NetworkProvider>
       </QueryClientProvider>
     </ThemeProvider>
   </BrowserRouter>,
