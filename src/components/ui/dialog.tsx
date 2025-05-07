@@ -1,3 +1,4 @@
+
 import * as React from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { X } from "lucide-react"
@@ -107,18 +108,7 @@ const DialogDescription = React.forwardRef<
 ))
 DialogDescription.displayName = DialogPrimitive.Description.displayName
 
-export function Dialog({
-  children,
-  ...props
-}: DialogProps) {
-  const dialogId = useSafeId("dialog-");
-  
-  return (
-    <DialogPrimitive.Root {...props}>
-      {children}
-    </DialogPrimitive.Root>
-  )
-}
+// Removed the duplicate Dialog function declaration
 
 export {
   Dialog,

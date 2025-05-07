@@ -144,9 +144,9 @@ export function logReactEnvironment(): void {
     // Log component rendering method
     const ReactDOM = window.ReactDOM;
     if (ReactDOM) {
-      const hasCreateRoot = typeof ReactDOM.createRoot === 'function';
+      // Removed the createRoot check as it's not available in React 17
       logWithTimestamp(
-        `ReactDOM rendering: createRoot=${hasCreateRoot}, render=${typeof ReactDOM.render === 'function'}`,
+        `ReactDOM rendering: render=${typeof ReactDOM.render === 'function'}`,
         "info", 
         "ReactEnv"
       );
@@ -155,4 +155,3 @@ export function logReactEnvironment(): void {
     logWithTimestamp(`Error logging React environment: ${e}`, "error", "ReactEnv");
   }
 }
-

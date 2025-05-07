@@ -7,9 +7,6 @@ import {
   SidebarProvider,
   Sidebar,
   SidebarContent,
-  SidebarHeader,
-  SidebarInset,
-  SidebarTrigger,
 } from '@/components/ui/sidebar';
 
 interface MainLayoutProps {
@@ -17,26 +14,29 @@ interface MainLayoutProps {
 }
 
 const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
+  const [sidebarOpen, setSidebarOpen] = React.useState(true);
+
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full">
-        <Sidebar className="border-r">
-          <SidebarHeader>
-            <div className="p-4 flex flex-col">
+        <Sidebar>
+          <div className="p-4 border-b">
+            <div className="flex flex-col">
               <h2 className="text-xl font-bold">Bingo Blitz</h2>
               <p className="text-sm text-muted-foreground">Game Management</p>
             </div>
-          </SidebarHeader>
+          </div>
           <SidebarContent>
             <DashboardSidebar />
           </SidebarContent>
         </Sidebar>
         
-        <SidebarInset className="flex flex-col flex-1">
+        <div className="flex flex-col flex-1">
           <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background px-4 shadow-sm">
-            <SidebarTrigger>
-              <Menu className="h-6 w-6" />
-            </SidebarTrigger>
+            <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(!sidebarOpen)} className="h-8 w-8 p-0">
+              <Menu className="h-5 w-5" />
+              <span className="sr-only">Toggle sidebar</span>
+            </Button>
             <div className="flex-1">
               <h1 className="text-xl font-semibold">Bingo Blitz Online</h1>
             </div>
@@ -44,7 +44,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
           <main className="flex-1 p-4 overflow-auto">
             {children}
           </main>
-        </SidebarInset>
+        </div>
       </div>
     </SidebarProvider>
   );

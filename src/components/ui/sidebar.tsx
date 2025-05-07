@@ -36,18 +36,44 @@ export function useSidebar() {
 }
 
 // Sidebar component
-export function Sidebar({ children }: { children: React.ReactNode }) {
+export function Sidebar({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   const { sidebarId, open } = useSidebar();
   
   return (
     <aside
       id={sidebarId}
-      className={`border-r border-gray-200 bg-white min-w-64 ${open ? 'w-64' : 'w-0 hidden'}`}
+      className={`border-r border-gray-200 bg-white min-w-64 ${open ? 'w-64' : 'w-0 hidden'} ${className}`}
       aria-hidden={!open}
     >
       {children}
     </aside>
   );
+}
+
+// SidebarHeader component
+export function SidebarHeader({ children }: { children: React.ReactNode }) {
+  return <div className="border-b">{children}</div>;
+}
+
+// SidebarTrigger component
+export function SidebarTrigger({ children }: { children?: React.ReactNode }) {
+  const { setOpen } = useSidebar();
+  
+  return (
+    <button 
+      onClick={() => setOpen(prev => !prev)}
+      className="p-2 rounded-md hover:bg-gray-100"
+    >
+      {children || (
+        <span className="sr-only">Toggle sidebar</span>
+      )}
+    </button>
+  );
+}
+
+// SidebarInset component
+export function SidebarInset({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <div className={`flex-1 ${className}`}>{children}</div>;
 }
 
 // SidebarContent component
@@ -68,4 +94,38 @@ export function SidebarGroupLabel({ children }: { children: React.ReactNode }) {
 // SidebarGroupContent component
 export function SidebarGroupContent({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <div className={`px-4 ${className}`}>{children}</div>;
+}
+
+// SidebarMenu component
+export function SidebarMenu({ children }: { children: React.ReactNode }) {
+  return <nav className="space-y-1">{children}</nav>;
+}
+
+// SidebarMenuItem component
+export function SidebarMenuItem({ children }: { children: React.ReactNode }) {
+  return <div>{children}</div>;
+}
+
+// SidebarMenuButton component
+export function SidebarMenuButton({ 
+  children, 
+  onClick,
+  asChild
+}: { 
+  children: React.ReactNode;
+  onClick?: () => void;
+  asChild?: boolean;
+}) {
+  const Component = asChild ? React.Fragment : 'button';
+  const props = asChild ? {} : {
+    className: "flex items-center gap-3 w-full rounded-md px-3 py-2 text-sm text-left hover:bg-gray-100",
+    onClick
+  };
+  
+  return <Component {...props}>{children}</Component>;
+}
+
+// SidebarFooter component
+export function SidebarFooter({ children }: { children: React.ReactNode }) {
+  return <div className="mt-auto border-t p-4">{children}</div>;
 }
