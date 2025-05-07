@@ -1,46 +1,80 @@
+import React from 'react';
+import { SimplePopover } from '@/utils/reactCompatUtils';
 
-import React from "react";
-import { SimplePopover } from "@/utils/reactCompatUtils";
-import { cn } from "@/lib/utils";
+// This is a simplified version of the Popover component
+// that doesn't rely on Radix UI for React 17 compatibility
+export function CompatPopover({ children }: { children: React.ReactNode }) {
+  // We use a context to pass the state down to children
+  const [content, setContent] = React.useState<React.ReactNode | null>(null);
+  const [trigger, setTrigger] = React.useState<React.ReactNode | null>(null);
 
-const Popover: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Provide context so children can register themselves
+  const contextValue = React.useMemo(() => ({ 
+    registerTrigger: (node: React.ReactNode) => setTrigger(node),
+    registerContent: (node: React.ReactNode) => setContent(node)
+  }), []);
+
+  // Render the SimplePopover if we have both trigger and content
+  if (trigger && content) {
+    return <SimplePopover trigger={trigger} content={content} />;
+  }
+  
+  // Otherwise render the children directly with the context
+  return (
+    <PopoverContext.Provider value={contextValue}>
+      {children}
+    </PopoverContext.Provider>
+  );
+}
+
+// Create a context for the popover components
+const PopoverContext = React.createContext<{
+  registerTrigger: (node: React.ReactNode) => void;
+  registerContent: (node: React.ReactNode) => void;
+}>({
+  registerTrigger: () => {},
+  registerContent: () => {}
+});
+
+export function CompatPopoverTrigger({ children, ...props }: { children: React.ReactNode, [key: string]: any }) {
+  const { registerTrigger } = React.useContext(PopoverContext);
+  
+  // Register ourselves as the trigger
+  React.useEffect(() => {
+    registerTrigger(<div {...props}>{children}</div>);
+    // We intentionally only want this to run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  
+  // Render the children directly
   return <>{children}</>;
-};
+}
 
-const PopoverTrigger = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => {
-  return <div className={cn("inline-block", className)} {...props} ref={ref} />;
-});
-PopoverTrigger.displayName = "PopoverTrigger";
+export function CompatPopoverContent({ 
+  children, 
+  className 
+}: { 
+  children: React.ReactNode,
+  className?: string
+}) {
+  const { registerContent } = React.useContext(PopoverContext);
+  
+  // Register ourselves as the content
+  React.useEffect(() => {
+    registerContent(
+      <div className={className}>
+        {children}
+      </div>
+    );
+    // We intentionally only want this to run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  
+  // Don't render anything directly
+  return null;
+}
 
-const PopoverContent = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement> & { align?: "center" | "start" | "end"; sideOffset?: number }
->(({ className, align = "center", sideOffset = 4, ...props }, ref) => {
-  return (
-    <div
-      ref={ref}
-      className={cn(
-        "z-50 w-72 rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
-        className
-      )}
-      {...props}
-    />
-  );
-});
-PopoverContent.displayName = "PopoverContent";
-
-// Create a simpler compatibility component for easy usage
-const CompatPopover: React.FC<{
-  trigger: React.ReactNode;
-  content: React.ReactNode;
-  className?: string;
-}> = ({ trigger, content, className }) => {
-  return (
-    <SimplePopover trigger={trigger} content={content} className={className} />
-  );
-};
-
-export { Popover, PopoverTrigger, PopoverContent, CompatPopover };
+// Re-export for API compatibility with Radix
+export const Popover = CompatPopover;
+export const PopoverTrigger = CompatPopoverTrigger;
+export const PopoverContent = CompatPopoverContent;

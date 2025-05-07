@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { logWithTimestamp } from './logUtils';
 
@@ -95,22 +94,30 @@ export function SimpleTooltip({
     };
   }, [timeoutId]);
 
-  return (
-    <div 
-      className="relative inline-flex"
-      onMouseEnter={showTooltip}
-      onMouseLeave={hideTooltip}
-      onFocus={showTooltip}
-      onBlur={hideTooltip}
-    >
-      {children}
-      {isVisible && (
-        <div className={`absolute z-50 px-2 py-1 text-sm bg-black text-white rounded shadow-md -top-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap ${className || ''}`}>
-          {content}
-          <div className="absolute w-2 h-2 bg-black transform rotate-45 -bottom-1 left-1/2 -translate-x-1/2"></div>
-        </div>
-      )}
-    </div>
+  // Using React.createElement instead of JSX
+  return React.createElement(
+    'div',
+    {
+      className: "relative inline-flex",
+      onMouseEnter: showTooltip,
+      onMouseLeave: hideTooltip,
+      onFocus: showTooltip,
+      onBlur: hideTooltip
+    },
+    children,
+    isVisible && React.createElement(
+      'div',
+      { 
+        className: `absolute z-50 px-2 py-1 text-sm bg-black text-white rounded shadow-md -top-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap ${className || ''}` 
+      },
+      content,
+      React.createElement(
+        'div',
+        { 
+          className: "absolute w-2 h-2 bg-black transform rotate-45 -bottom-1 left-1/2 -translate-x-1/2" 
+        }
+      )
+    )
   );
 }
 
@@ -144,26 +151,28 @@ export function SimplePopover({
     return () => document.removeEventListener('click', handleOutsideClick);
   }, [isOpen]);
 
-  return (
-    <div className="relative inline-block">
-      <div 
-        onClick={togglePopover} 
-        data-popover-trigger=""
-        className="cursor-pointer"
-      >
-        {trigger}
-      </div>
-      
-      {isOpen && (
-        <div 
-          data-popover-content=""
-          className={`absolute z-50 mt-2 p-4 bg-white border rounded-md shadow-lg ${className}`}
-          style={{ minWidth: '200px' }}
-        >
-          {content}
-        </div>
-      )}
-    </div>
+  // Using React.createElement instead of JSX
+  return React.createElement(
+    'div',
+    { className: "relative inline-block" },
+    React.createElement(
+      'div',
+      {
+        onClick: togglePopover,
+        'data-popover-trigger': '',
+        className: "cursor-pointer"
+      },
+      trigger
+    ),
+    isOpen && React.createElement(
+      'div',
+      {
+        'data-popover-content': '',
+        className: `absolute z-50 mt-2 p-4 bg-white border rounded-md shadow-lg ${className}`,
+        style: { minWidth: '200px' }
+      },
+      content
+    )
   );
 }
 
@@ -188,9 +197,12 @@ export function CompatButton({
   }
   
   // Otherwise, render a regular button
-  return (
-    <button className={className} {...props}>
-      {children}
-    </button>
+  return React.createElement(
+    'button',
+    {
+      className: className,
+      ...props
+    },
+    children
   );
 }
