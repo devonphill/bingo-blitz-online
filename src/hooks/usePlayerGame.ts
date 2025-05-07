@@ -3,10 +3,24 @@ import { supabase } from '@/integrations/supabase/client';
 import { useBingoSync } from '@/hooks/useBingoSync';
 import { useTickets } from '@/hooks/useTickets';
 import { useToast } from '@/hooks/use-toast';
-import { logWithTimestamp } from '@/utils/logUtils';
+import { logWithTimestamp, logError } from '@/utils/logUtils';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
 
 export function usePlayerGame(playerCode: string | null) {
+  // Create a logger specifically for this hook
+  const logger = (message: string, level: 'debug' | 'info' | 'warn' | 'error' = 'info', data?: any) => {
+    try {
+      const instanceId = instanceIdRef.current;
+      const fullMessage = data 
+        ? `[PlayerGame ${instanceId}] ${message}: ${JSON.stringify(data, null, 2)}`
+        : `[PlayerGame ${instanceId}] ${message}`;
+      logWithTimestamp(fullMessage, level);
+    } catch (e) {
+      // If JSON stringification fails, log without the data
+      logWithTimestamp(`[PlayerGame] ${message} (data could not be stringified)`, 'error');
+    }
+  };
+
   // State for player data
   const [playerName, setPlayerName] = useState<string | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
@@ -44,20 +58,28 @@ export function usePlayerGame(playerCode: string | null) {
   const isMounted = useRef(true);
   
   // Generate a unique ID for this hook instance for better debug logging
-  const instanceId = useRef(`playerGame-${Math.random().toString(36).substring(2, 9)}`);
+  const instanceIdRef = useRef(`playerGame-${Math.random().toString(36).substring(2, 9)}`);
   
-  // Cleanup on unmount
+  // Debug log on initialization
   useEffect(() => {
+    logger('Hook initialized with player code', 'info', { playerCode });
+    
     return () => {
+      logger('Hook unmounting', 'info');
       isMounted.current = false;
     };
   }, []);
   
   // Load auto-marking preference from localStorage
   useEffect(() => {
-    const savedAutoMarking = localStorage.getItem('autoMarking');
-    if (savedAutoMarking !== null) {
-      setAutoMarking(savedAutoMarking === 'true');
+    try {
+      const savedAutoMarking = localStorage.getItem('autoMarking');
+      if (savedAutoMarking !== null) {
+        setAutoMarking(savedAutoMarking === 'true');
+        logger('Auto marking preference loaded from localStorage', 'debug', { autoMarking: savedAutoMarking === 'true' });
+      }
+    } catch (error) {
+      logger('Error loading auto marking preference', 'error', { error });
     }
   }, []);
   
@@ -78,19 +100,24 @@ export function usePlayerGame(playerCode: string | null) {
   // Update game state from real-time updates
   useEffect(() => {
     if (gameState) {
+      logger('Game state updated', 'debug', gameState);
+      
       // Update called numbers if they've changed
       if (gameState.calledNumbers && gameState.calledNumbers.length > 0) {
         setCalledItems(gameState.calledNumbers);
+        logger('Called numbers updated', 'debug', { count: gameState.calledNumbers.length });
       }
       
       // Update last called number if it's changed
       if (gameState.lastCalledNumber !== null) {
         setLastCalledItem(gameState.lastCalledNumber);
+        logger('Last called number updated', 'debug', { number: gameState.lastCalledNumber });
       }
       
       // Update win pattern if it's changed
       if (gameState.currentWinPattern) {
         setActiveWinPatterns([gameState.currentWinPattern]);
+        logger('Win pattern updated', 'debug', { pattern: gameState.currentWinPattern });
       }
       
       // Update prizes if they've changed
@@ -99,6 +126,10 @@ export function usePlayerGame(playerCode: string | null) {
           ...prev,
           [gameState.currentWinPattern]: gameState.currentPrize
         }));
+        logger('Prize updated', 'debug', { 
+          pattern: gameState.currentWinPattern, 
+          prize: gameState.currentPrize 
+        });
       }
     }
   }, [gameState]);
@@ -106,6 +137,7 @@ export function usePlayerGame(playerCode: string | null) {
   // Handle connection errors
   useEffect(() => {
     if (bingoSyncError) {
+      logger('Bingo sync connection error', 'error', { error: bingoSyncError });
       setErrorMessage(`Connection error: ${bingoSyncError}`);
     }
   }, [bingoSyncError]);
@@ -114,11 +146,13 @@ export function usePlayerGame(playerCode: string | null) {
   useEffect(() => {
     const loadPlayerData = async () => {
       if (!playerCode) {
+        logger('No player code provided', 'warn');
         setErrorMessage('Player code is required');
         setIsLoading(false);
         return;
       }
       
+      logger(`Loading player data for code: ${playerCode}`, 'info');
       setLoadingStep('loading_player');
       
       try {
@@ -130,17 +164,20 @@ export function usePlayerGame(playerCode: string | null) {
           .single();
         
         if (playerError) {
-          console.error('Error loading player:', playerError);
+          logger('Error loading player', 'error', { error: playerError });
           setErrorMessage(`Error loading player: ${playerError.message}`);
           setIsLoading(false);
           return;
         }
         
         if (!playerData) {
+          logger('Player not found', 'error', { playerCode });
           setErrorMessage('Player not found');
           setIsLoading(false);
           return;
         }
+        
+        logger('Player data loaded', 'info', { playerData });
         
         // Set player data - use nickname instead of name
         setPlayerName(playerData.nickname || playerData.player_code);
@@ -149,7 +186,7 @@ export function usePlayerGame(playerCode: string | null) {
         // Load session data
         await loadSessionData(playerData.id);
       } catch (error: any) {
-        console.error('Error in loadPlayerData:', error);
+        logger('Error in loadPlayerData', 'error', { error: error.message });
         setErrorMessage(`Error loading player data: ${error.message}`);
         setIsLoading(false);
       }
@@ -164,6 +201,7 @@ export function usePlayerGame(playerCode: string | null) {
   
   // Load session data
   const loadSessionData = async (playerId: string) => {
+    logger(`Loading session data for player ID: ${playerId}`, 'info');
     setLoadingStep('loading_session');
     
     try {
@@ -178,9 +216,10 @@ export function usePlayerGame(playerCode: string | null) {
       
       if (sessionError) {
         if (sessionError.code === 'PGRST116') {
+          logger('No active session found', 'warn');
           setErrorMessage('No active session found');
         } else {
-          console.error('Error loading session:', sessionError);
+          logger('Error loading session', 'error', { error: sessionError });
           setErrorMessage(`Error loading session: ${sessionError.message}`);
         }
         setIsLoading(false);
@@ -188,10 +227,13 @@ export function usePlayerGame(playerCode: string | null) {
       }
       
       if (!sessionData) {
+        logger('No active session data returned', 'warn');
         setErrorMessage('No active session found');
         setIsLoading(false);
         return;
       }
+      
+      logger('Session data loaded', 'info', { sessionData });
       
       // Set session data
       setCurrentSession(sessionData);
@@ -205,12 +247,12 @@ export function usePlayerGame(playerCode: string | null) {
       // THE KEY CHANGE: Connect to the session once we have the session ID
       // This single connection will be used by all components
       if (sessionData.id) {
-        logWithTimestamp(`Connecting to session ${sessionData.id} from usePlayerGame`, 'info');
+        logger(`Connecting to session ${sessionData.id}`, 'info');
         network.connect(sessionData.id);
         
         // Only track presence after a delay
         setTimeout(() => {
-          if (playerId && playerCode) {
+          if (playerId && playerCode && isMounted.current) {
             const presenceData = {
               player_id: playerId,
               player_code: playerCode,
@@ -218,17 +260,20 @@ export function usePlayerGame(playerCode: string | null) {
               last_presence_update: new Date().toISOString()
             };
             
+            logger('Updating player presence', 'debug', { presenceData });
+            
             // Use the updatePlayerPresence method directly instead of trackPlayerPresence
             network.updatePlayerPresence(presenceData)
               .catch(err => {
-                console.error('Error updating player presence:', err);
+                logger('Error updating player presence', 'error', { error: err });
               });
           }
         }, 1000);
       }
       
     } catch (error: any) {
-      console.error('Error in loadSessionData:', error);
+      logError(error as Error, 'loadSessionData', { playerId });
+      logger('Error in loadSessionData', 'error', { error: error.message });
       setErrorMessage(`Error loading session data: ${error.message}`);
       setIsLoading(false);
     }
@@ -236,6 +281,7 @@ export function usePlayerGame(playerCode: string | null) {
   
   // Load game state
   const loadGameState = async (sessionId: string) => {
+    logger(`Loading game state for session: ${sessionId}`, 'info');
     setLoadingStep('loading_game_state');
     
     try {
@@ -247,17 +293,20 @@ export function usePlayerGame(playerCode: string | null) {
         .single();
       
       if (progressError) {
-        console.error('Error loading session progress:', progressError);
+        logger('Error loading session progress', 'error', { error: progressError });
         setErrorMessage(`Error loading game state: ${progressError.message}`);
         setIsLoading(false);
         return;
       }
       
       if (!progressData) {
+        logger('No game state found', 'warn');
         setErrorMessage('No game state found');
         setIsLoading(false);
         return;
       }
+      
+      logger('Game state loaded', 'info', { progressData });
       
       // Set game state
       setCurrentGameState(progressData);
@@ -266,16 +315,25 @@ export function usePlayerGame(playerCode: string | null) {
       if (progressData.called_numbers && progressData.called_numbers.length > 0) {
         setCalledItems(progressData.called_numbers);
         setLastCalledItem(progressData.called_numbers[progressData.called_numbers.length - 1]);
+        logger('Called numbers loaded', 'debug', { 
+          count: progressData.called_numbers.length,
+          last: progressData.called_numbers[progressData.called_numbers.length - 1]
+        });
       }
       
       // Set win patterns
       if (progressData.current_win_pattern) {
         setActiveWinPatterns([progressData.current_win_pattern]);
+        logger('Win pattern loaded', 'debug', { pattern: progressData.current_win_pattern });
         
         // Set prize for this pattern
         if (progressData.current_prize) {
           setWinPrizes({
             [progressData.current_win_pattern]: progressData.current_prize
+          });
+          logger('Prize loaded', 'debug', { 
+            pattern: progressData.current_win_pattern,
+            prize: progressData.current_prize
           });
         }
       }
@@ -285,7 +343,7 @@ export function usePlayerGame(playerCode: string | null) {
       setErrorMessage(null);
       
     } catch (error: any) {
-      console.error('Error in loadGameState:', error);
+      logger('Error in loadGameState', 'error', { error: error.message });
       setErrorMessage(`Error loading game state: ${error.message}`);
       setIsLoading(false);
     }
@@ -293,32 +351,33 @@ export function usePlayerGame(playerCode: string | null) {
   
   // Reset claim status
   const resetClaimStatus = useCallback(() => {
+    logger('Resetting claim status', 'debug');
     setClaimStatus('none');
   }, []);
 
   // Handle bingo claims
   const handleClaimBingo = useCallback((ticketToSubmit?: any) => {
     if (!playerCode || !currentSession?.id) {
-      console.error('Cannot submit bingo claim: missing player code or session');
+      logger('Cannot submit bingo claim: missing player code or session', 'error');
       setErrorMessage('Missing player code or active session');
       return Promise.resolve(false);
     }
     
     if (isSubmittingClaim) {
+      logger('Bingo claim already in progress', 'warn');
       return Promise.resolve(false);
     }
 
+    logger('Submitting bingo claim', 'info', { playerCode, sessionId: currentSession.id });
     setIsSubmittingClaim(true);
     setClaimStatus('pending');
     
     try {
-      console.log(`Player ${playerCode} claiming bingo in session ${currentSession.id}`);
-      
       // If a ticket was provided, use it - otherwise, we'll let the backend handle finding a valid ticket
       const useTicket = ticketToSubmit || (tickets && tickets.length > 0 ? tickets[0] : null);
       
       if (!useTicket) {
-        console.error('No ticket available to claim bingo');
+        logger('No ticket available to claim bingo', 'error');
         setErrorMessage('No ticket available');
         setIsSubmittingClaim(false);
         setClaimStatus('none');
@@ -334,19 +393,20 @@ export function usePlayerGame(playerCode: string | null) {
         numbers: useTicket.numbers
       };
       
-      console.log("Submitting claim with ticket:", preparedTicket);
+      logger('Submitting claim with ticket', 'info', { ticket: preparedTicket });
       
       // Use the network context to submit the claim with the ticket data
       const claimSubmitted = network.submitBingoClaim(preparedTicket, playerCode, currentSession.id);
       
       if (claimSubmitted) {
         // Keep status as pending until we get a response
-        console.log('Bingo claim submitted successfully');
+        logger('Bingo claim submitted successfully', 'info');
         
         // We'll leave the claim status as pending and let the caller handle further UI feedback
         // In a real app, we might want to set a timeout to reset if we don't hear back
         setTimeout(() => {
           if (isMounted.current && claimStatus === 'pending') {
+            logger('Claim response timed out, resetting claim status', 'warn');
             setClaimStatus('none');
             setIsSubmittingClaim(false);
           }
@@ -354,14 +414,14 @@ export function usePlayerGame(playerCode: string | null) {
         
         return Promise.resolve(true);
       } else {
-        console.error('Failed to submit bingo claim');
+        logger('Failed to submit bingo claim', 'error');
         setErrorMessage('Failed to submit claim');
         setIsSubmittingClaim(false);
         setClaimStatus('none');
         return Promise.resolve(false);
       }
-    } catch (error) {
-      console.error('Error claiming bingo:', error);
+    } catch (error: any) {
+      logger('Error claiming bingo', 'error', { error: error.message });
       setErrorMessage(`Error claiming bingo: ${error}`);
       setIsSubmittingClaim(false);
       setClaimStatus('none');

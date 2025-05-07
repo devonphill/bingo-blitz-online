@@ -5,7 +5,7 @@
 
 // Configure debug levels
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-const LOG_LEVEL: LogLevel = 'info'; // Set to 'debug' to see all logs
+const LOG_LEVEL: LogLevel = 'debug'; // Set to 'debug' to see all logs
 
 /**
  * Log a message with a timestamp and component name
@@ -92,3 +92,28 @@ export function logWithParams(message: string, params: any, level: LogLevel = 'i
   // Log with the parameters
   logWithTimestamp(`${message} ${params ? JSON.stringify(params) : ''}`, level, component);
 }
+
+/**
+ * Enhanced error logging with stack trace and context
+ */
+export function logError(error: Error, context: string, additionalInfo?: any): void {
+  logWithTimestamp(
+    `ERROR in ${context}: ${error.message}\n` +
+    `Stack: ${error.stack || 'No stack trace'}\n` +
+    `Additional info: ${additionalInfo ? JSON.stringify(additionalInfo) : 'None'}`,
+    'error',
+    'ErrorHandler'
+  );
+}
+
+/**
+ * Track React component lifecycle for debugging
+ * @param componentName The name of the component
+ * @param phase The lifecycle phase (mount, render, update, unmount)
+ * @param props Optional component props to log
+ */
+export function logLifecycle(componentName: string, phase: 'mount' | 'render' | 'update' | 'unmount', props?: any): void {
+  const propsStr = props ? ` with props: ${JSON.stringify(props, null, 2)}` : '';
+  logWithTimestamp(`Component ${componentName} - ${phase}${propsStr}`, 'debug', 'Lifecycle');
+}
+

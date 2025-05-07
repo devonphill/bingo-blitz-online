@@ -1,13 +1,18 @@
+
 import React, { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { GameSession } from "@/types";
 import { AlertCircle, RefreshCw, Info, Calendar, Clock, Wifi, WifiOff } from "lucide-react";
+import { logWithTimestamp, logError } from "@/utils/logUtils";
 
-// Helper function for consistent timestamped logging
-const logWithTimestamp = (message: string) => {
-  const now = new Date();
-  const timestamp = now.toISOString();
-  console.log(`[${timestamp}] - CHANGED 18:19 - ${message}`);
+// Helper function for consistent timestamped logging with additional component info
+const logLoaderEvent = (message: string, data?: any) => {
+  try {
+    const dataStr = data ? ` - ${JSON.stringify(data, null, 2)}` : '';
+    logWithTimestamp(`PlayerGameLoader: ${message}${dataStr}`, 'info', 'PlayerGameLoader');
+  } catch (e) {
+    logWithTimestamp(`PlayerGameLoader: ${message} (Data could not be stringified)`, 'error', 'PlayerGameLoader');
+  }
 };
 
 interface Props {
@@ -25,6 +30,9 @@ export default function PlayerGameLoader({
   loadingStep = "initializing",
   sessionProgress 
 }: Props) {
+  // Log component rendering
+  logLoaderEvent("Component rendering", { isLoading, loadingStep, hasError: !!errorMessage });
+  
   // Create stable references for dependencies to prevent React error #310
   const stableSession = React.useMemo(() => currentSession, [currentSession?.id]);
   const stableProgress = React.useMemo(() => sessionProgress, [
@@ -34,12 +42,26 @@ export default function PlayerGameLoader({
   
   // Only log when there's a change to help debug flickering
   useEffect(() => {
-    if (stableSession) {
-      logWithTimestamp("PlayerGameLoader - Session data: " + JSON.stringify(stableSession));
-    }
-    logWithTimestamp("PlayerGameLoader - Loading step: " + loadingStep);
-    if (stableProgress) {
-      logWithTimestamp("PlayerGameLoader - Session progress: " + JSON.stringify(stableProgress));
+    try {
+      if (stableSession) {
+        logLoaderEvent("Session data updated", {
+          id: stableSession.id,
+          name: stableSession.name,
+          status: stableSession.status,
+          lifecycle_state: stableSession.lifecycle_state
+        });
+      }
+      
+      logLoaderEvent("Loading step changed", { step: loadingStep });
+      
+      if (stableProgress) {
+        logLoaderEvent("Session progress updated", {
+          game_status: stableProgress.game_status,
+          current_game: stableProgress.current_game_number
+        });
+      }
+    } catch (error) {
+      logError(error as Error, "PlayerGameLoader useEffect", { loadingStep });
     }
   }, [stableSession, loadingStep, stableProgress]);
 
@@ -50,6 +72,7 @@ export default function PlayerGameLoader({
       const date = new Date(dateStr);
       return date.toLocaleDateString();
     } catch (e) {
+      logLoaderEvent("Error formatting date", { dateStr, error: e });
       return dateStr;
     }
   };
@@ -65,12 +88,27 @@ export default function PlayerGameLoader({
       }
       return timeStr;
     } catch (e) {
+      logLoaderEvent("Error formatting time", { timeStr, error: e });
       return '';
     }
   };
+  
+  // Log any React errors during rendering
+  React.useEffect(() => {
+    const originalError = console.error;
+    console.error = (...args) => {
+      logLoaderEvent("React Error", { message: args.join(' ') });
+      originalError.apply(console, args);
+    };
+    
+    return () => {
+      console.error = originalError;
+    };
+  }, []);
 
   // If we're in a loading state, show the loading indicator
   if (isLoading) {
+    logLoaderEvent("Showing loading state", { step: loadingStep });
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="bg-white shadow-lg rounded-lg p-8 max-w-md w-full text-center">
@@ -85,6 +123,7 @@ export default function PlayerGameLoader({
 
   // If there's a critical error that prevents loading the session, show error message
   if (errorMessage && !currentSession) {
+    logLoaderEvent("Showing error state", { error: errorMessage });
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="bg-white shadow-lg rounded-lg p-6 max-w-md w-full">
@@ -111,6 +150,7 @@ export default function PlayerGameLoader({
 
   // If there's no session data
   if (!currentSession) {
+    logLoaderEvent("No session found");
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="bg-white shadow-lg rounded-lg p-6 max-w-md w-full">
@@ -132,8 +172,15 @@ export default function PlayerGameLoader({
     );
   }
   
-  console.log("In waiting room - Progress data:", sessionProgress);
-  console.log("Session data:", currentSession);
+  logLoaderEvent("Session and progress info", { 
+    session: {
+      id: currentSession.id,
+      name: currentSession.name,
+      status: currentSession.status,
+      lifecycle_state: currentSession.lifecycle_state
+    },
+    progress: sessionProgress
+  });
   
   // Check if the game is in an active state
   const isGameLive = currentSession?.lifecycle_state === 'live';
@@ -142,7 +189,12 @@ export default function PlayerGameLoader({
   const isGameActive = gameStatus === 'active';
   
   // Log game state info without using useEffect to avoid dependency issues
-  logWithTimestamp(`Loader state check - Session active: ${isSessionActive}, Game live: ${isGameLive}, Game status: ${gameStatus}, Game active: ${isGameActive}`);
+  logLoaderEvent(`Game state check`, { 
+    isSessionActive, 
+    isGameLive, 
+    gameStatus, 
+    isGameActive 
+  });
   
   // FIX: Get session time from appropriate fields - fixing type errors
   // Instead of using currentSession.sessionTime (which doesn't exist on type)
