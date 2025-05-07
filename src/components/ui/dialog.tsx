@@ -1,6 +1,7 @@
 import * as React from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { X } from "lucide-react"
+import { useSafeId } from "@/utils/reactUtils";
 
 import { cn } from "@/lib/utils"
 
@@ -105,6 +106,19 @@ const DialogDescription = React.forwardRef<
   />
 ))
 DialogDescription.displayName = DialogPrimitive.Description.displayName
+
+export function Dialog({
+  children,
+  ...props
+}: DialogProps) {
+  const dialogId = useSafeId("dialog-");
+  
+  return (
+    <DialogPrimitive.Root {...props}>
+      {children}
+    </DialogPrimitive.Root>
+  )
+}
 
 export {
   Dialog,

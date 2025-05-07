@@ -117,3 +117,42 @@ export function logLifecycle(componentName: string, phase: 'mount' | 'render' | 
   logWithTimestamp(`Component ${componentName} - ${phase}${propsStr}`, 'debug', 'Lifecycle');
 }
 
+/**
+ * Log React version and available APIs for debugging
+ */
+export function logReactEnvironment(): void {
+  try {
+    const React = window.React;
+    if (!React) {
+      logWithTimestamp("React not found in window object", "error", "ReactEnv");
+      return;
+    }
+    
+    logWithTimestamp(`React version: ${React.version}`, "info", "ReactEnv");
+    
+    // Check for React 18 features
+    const hasUseId = typeof React.useId === 'function';
+    const hasUseTransition = typeof React.useTransition === 'function';
+    const hasUseDeferredValue = typeof React.useDeferredValue === 'function';
+    
+    logWithTimestamp(
+      `React 18 features: useId=${hasUseId}, useTransition=${hasUseTransition}, useDeferredValue=${hasUseDeferredValue}`,
+      "info",
+      "ReactEnv"
+    );
+    
+    // Log component rendering method
+    const ReactDOM = window.ReactDOM;
+    if (ReactDOM) {
+      const hasCreateRoot = typeof ReactDOM.createRoot === 'function';
+      logWithTimestamp(
+        `ReactDOM rendering: createRoot=${hasCreateRoot}, render=${typeof ReactDOM.render === 'function'}`,
+        "info", 
+        "ReactEnv"
+      );
+    }
+  } catch (e) {
+    logWithTimestamp(`Error logging React environment: ${e}`, "error", "ReactEnv");
+  }
+}
+

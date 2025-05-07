@@ -3,7 +3,7 @@ import React, { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { GameSession } from "@/types";
 import { AlertCircle, RefreshCw, Info, Calendar, Clock, Wifi, WifiOff } from "lucide-react";
-import { logWithTimestamp, logError } from "@/utils/logUtils";
+import { logWithTimestamp, logError, logReactEnvironment } from "@/utils/logUtils";
 
 // Helper function for consistent timestamped logging with additional component info
 const logLoaderEvent = (message: string, data?: any) => {
@@ -30,6 +30,16 @@ export default function PlayerGameLoader({
   loadingStep = "initializing",
   sessionProgress 
 }: Props) {
+  // Log React environment information on mount
+  useEffect(() => {
+    logReactEnvironment();
+    logLoaderEvent("PlayerGameLoader mounted", { loadingStep });
+    
+    return () => {
+      logLoaderEvent("PlayerGameLoader unmounting");
+    };
+  }, []);
+  
   // Log component rendering
   logLoaderEvent("Component rendering", { isLoading, loadingStep, hasError: !!errorMessage });
   
