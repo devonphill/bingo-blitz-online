@@ -1,45 +1,60 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom';
-import App from './App.tsx';
+import { BrowserRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ThemeProvider } from '@/components/ui/theme-provider';
+import { Toaster } from '@/components/ui/sonner';
+import { AuthProvider } from '@/contexts/AuthContext';
+import { SessionProvider } from '@/contexts/SessionProvider';
+import { NetworkStatusProvider } from '@/contexts/NetworkStatusContext';
+import { GameManagerProvider } from '@/contexts/GameManager';
+
+import App from './App';
 import './index.css';
-import { logWithTimestamp, logReactEnvironment } from '@/utils/logUtils';
 
-// Debug logging for React initialization
-logWithTimestamp("React version: " + React.version, "info", "Initialization");
-logWithTimestamp("ReactDOM type: " + typeof ReactDOM, "info", "Initialization");
-logWithTimestamp("Initializing application with React 17 rendering method", "info", "Initialization");
+import { logWithTimestamp } from './utils/logUtils';
+import { patchReactForIdPolyfill, logReactEnvironment } from './utils/reactUtils';
 
-// Log React environment to check for React 18 hooks
+// Log React environment information
 logReactEnvironment();
 
-// Add global error handler
-window.addEventListener('error', (event) => {
-  logWithTimestamp(`Global error: ${event.message}`, "error", "Window");
-  logWithTimestamp(`Source: ${event.filename}:${event.lineno}:${event.colno}`, "error", "Window");
+// Log initialization
+logWithTimestamp('[Initialization] ReactDOM type: ' + typeof ReactDOM, 'info');
+logWithTimestamp('[Initialization] Initializing application with React 17 rendering method', 'info');
+
+// Patch React to ensure useId doesn't throw errors
+patchReactForIdPolyfill();
+
+// Create a query client
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      retry: 2,
+    },
+  },
 });
 
-// Check for React global availability
-if (typeof React === 'undefined') {
-  logWithTimestamp("React is not defined globally - this will cause compatibility issues", "error", "Initialization");
-}
-
-const rootElement = document.getElementById("root");
-
-if (rootElement) {
-  try {
-    // Use React 17's render method - do not use createRoot which is for React 18
-    ReactDOM.render(
-      <React.StrictMode>
-        <App />
-      </React.StrictMode>,
-      rootElement
-    );
-    logWithTimestamp("Application successfully mounted to DOM", "info", "Initialization");
-  } catch (error) {
-    logWithTimestamp(`Failed to render application: ${JSON.stringify(error)}`, "error", "Initialization");
-    console.error("Failed to render application:", error);
+ReactDOM.render(
+  <BrowserRouter>
+    <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
+      <QueryClientProvider client={queryClient}>
+        <NetworkStatusProvider>
+          <AuthProvider>
+            <SessionProvider>
+              <GameManagerProvider>
+                <Toaster position="bottom-right" />
+                <App />
+              </GameManagerProvider>
+            </SessionProvider>
+          </AuthProvider>
+        </NetworkStatusProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
+  </BrowserRouter>,
+  document.getElementById('root'),
+  () => {
+    logWithTimestamp('[Initialization] Application successfully mounted to DOM', 'info');
   }
-} else {
-  logWithTimestamp("Root element not found", "error", "Initialization");
-}
+);

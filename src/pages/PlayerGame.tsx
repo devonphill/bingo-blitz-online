@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -9,7 +10,10 @@ import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 import PlayerGameLayout from '@/components/game/PlayerGameLayout';
 import { logWithTimestamp, logError } from '@/utils/logUtils';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
-import { logReactEnvironment } from '@/utils/reactUtils';
+import { logReactEnvironment, patchReactForIdPolyfill } from '@/utils/reactUtils';
+
+// Try to patch React.useId as early as possible to prevent errors
+patchReactForIdPolyfill();
 
 // Wrap the entire component in an error boundary to catch rendering errors
 class PlayerGameErrorBoundary extends React.Component<{children: React.ReactNode, onError: (error: Error) => void}, {hasError: boolean}> {
@@ -52,7 +56,7 @@ class PlayerGameErrorBoundary extends React.Component<{children: React.ReactNode
 }
 
 export default function PlayerGame() {
-  // Generate a unique ID for tracking this component 
+  // Generate a unique ID for tracking this component using a ref
   const instanceId = useRef(`playerGame-${Math.random().toString(36).substring(2, 9)}`);
   const [error, setError] = useState<Error | null>(null);
   
