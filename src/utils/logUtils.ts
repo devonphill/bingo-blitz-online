@@ -1,3 +1,4 @@
+
 // Utility functions for logging
 import React from 'react';
 
@@ -93,3 +94,32 @@ export function formatObject(obj) {
     return `[Unserializable object: ${error.message}]`;
   }
 }
+
+/**
+ * Log with timestamp and optional level
+ * This is the function that was missing but is imported by many components
+ */
+export function logWithTimestamp(message, level = 'info') {
+  const timestamp = new Date().toISOString();
+  const formattedMessage = `[${timestamp}] ${message}`;
+  
+  switch(level.toLowerCase()) {
+    case 'debug':
+      logDebug(formattedMessage);
+      break;
+    case 'warn':
+    case 'warning':
+      logWarn(formattedMessage);
+      break;
+    case 'error':
+      logError(formattedMessage);
+      break;
+    case 'info':
+    default:
+      logInfo(formattedMessage);
+      break;
+  }
+  
+  return formattedMessage;
+}
+
