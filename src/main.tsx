@@ -14,12 +14,16 @@ import App from './App';
 import './index.css';
 
 import { logWithTimestamp } from './utils/logUtils';
-import { logReactEnvironment } from './utils/reactUtils';
+import { logReactEnvironment, patchReactHooks } from './utils/reactUtils';
 import { patchReactForCompatibility } from './utils/reactCompatUtils';
 
-// Apply React compatibility patches as early as possible - before any component imports
+// Apply all React compatibility patches as early as possible - before any component imports
 // This needs to run before any React components are rendered
+logWithTimestamp('[Initialization] Starting React compatibility patching', 'info');
+
+// Apply patches from both utilities to maximize compatibility
 patchReactForCompatibility();
+patchReactHooks();
 
 // Log React environment information
 logReactEnvironment();
@@ -64,6 +68,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('DOMContentLoaded', () => {
     // Apply compatibility patch again right before mounting
     patchReactForCompatibility();
+    patchReactHooks();
     
     // Render the app
     ReactDOM.render(

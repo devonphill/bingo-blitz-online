@@ -1,9 +1,11 @@
+
 import React from "react";
-import BingoCardDisplay from "./BingoCardDisplay";
+import SafeBingoTicketDisplay from "./SafeBingoTicketDisplay";
 import BingoTicketDisplay from "./BingoTicketDisplay";
 import { Button } from "@/components/ui/compat/button";
 import { useToast } from "@/hooks/use-toast";
 import { useCompatId } from "@/utils/reactCompatUtils";
+import { logWithTimestamp } from "@/utils/logUtils";
 
 interface GameTypePlayspaceProps {
   gameType: string;
@@ -15,6 +17,41 @@ interface GameTypePlayspaceProps {
   handleClaimBingo?: () => Promise<boolean>;
   isClaiming?: boolean;
   claimStatus?: 'pending' | 'validated' | 'rejected';
+}
+
+// Error boundary for the entire GameTypePlayspace
+class GameTypePlayspaceErrorBoundary extends React.Component<{children: React.ReactNode, gameType: string}, {hasError: boolean}> {
+  constructor(props: {children: React.ReactNode, gameType: string}) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  
+  componentDidCatch(error: Error) {
+    logWithTimestamp(`GameTypePlayspace Error: ${error.message} (${this.props.gameType})`, 'error');
+    console.error('GameTypePlayspace Error:', error);
+  }
+  
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="bg-white p-4 rounded-lg shadow">
+          <div className="text-red-600 font-medium mb-2">Error displaying game content</div>
+          <p className="text-gray-600 mb-4">There was a problem rendering the {this.props.gameType} game view.</p>
+          <button 
+            onClick={() => this.setState({ hasError: false })}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            Try Again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 export default function GameTypePlayspace({
@@ -34,8 +71,14 @@ export default function GameTypePlayspace({
   // Debug log to see what ticket data we're receiving
   console.log("GameTypePlayspace tickets:", tickets);
   
+  return (
+    <GameTypePlayspaceErrorBoundary gameType={gameType}>
+      {renderGameContent()}
+    </GameTypePlayspaceErrorBoundary>
+  );
+  
   // Render content based on game type
-  const renderGameContent = () => {
+  function renderGameContent() {
     switch(gameType) {
       case 'mainstage':
         return renderMainstageContent();
@@ -50,15 +93,15 @@ export default function GameTypePlayspace({
       default:
         return renderDefaultContent();
     }
-  };
+  }
   
   // Mainstage (90 Ball Bingo)
-  const renderMainstageContent = () => {
+  function renderMainstageContent() {
     return (
       <div className="grid grid-cols-1 gap-4">
         {tickets.map((ticket: any, index: number) => {
-          // Generate a stable ticket ID
-          const ticketId = useCompatId(`ticket-${ticket.serial || index}-`);
+          // Generate a stable ticket ID - not using React hooks here to avoid errors
+          const ticketId = `ticket-${ticket.serial || index}-${index}`;
           
           return (
             <div key={ticketId} className="bg-white p-4 rounded-lg shadow">
@@ -87,7 +130,7 @@ export default function GameTypePlayspace({
                 )}
               </div>
               
-              <BingoTicketDisplay
+              <SafeBingoTicketDisplay
                 numbers={ticket.numbers || []}
                 layoutMask={ticket.layoutMask || ticket.layout_mask || 0}
                 calledNumbers={calledNumbers}
@@ -109,10 +152,10 @@ export default function GameTypePlayspace({
         )}
       </div>
     );
-  };
+  }
   
   // Party (80 Ball Bingo)
-  const renderPartyContent = () => {
+  function renderPartyContent() {
     return (
       <div className="flex items-center justify-center h-full min-h-[400px] bg-white rounded-lg shadow-lg p-8">
         <div className="text-center">
@@ -132,10 +175,10 @@ export default function GameTypePlayspace({
         </div>
       </div>
     );
-  };
+  }
   
   // Quiz Bingo
-  const renderQuizContent = () => {
+  function renderQuizContent() {
     return (
       <div className="flex items-center justify-center h-full min-h-[400px] bg-white rounded-lg shadow-lg p-8">
         <div className="text-center">
@@ -147,10 +190,10 @@ export default function GameTypePlayspace({
         </div>
       </div>
     );
-  };
+  }
   
   // Logo Bingo
-  const renderLogoContent = () => {
+  function renderLogoContent() {
     return (
       <div className="flex items-center justify-center h-full min-h-[400px] bg-white rounded-lg shadow-lg p-8">
         <div className="text-center">
@@ -162,10 +205,10 @@ export default function GameTypePlayspace({
         </div>
       </div>
     );
-  };
+  }
   
   // Music Bingo
-  const renderMusicContent = () => {
+  function renderMusicContent() {
     return (
       <div className="flex items-center justify-center h-full min-h-[400px] bg-white rounded-lg shadow-lg p-8">
         <div className="text-center">
@@ -177,10 +220,10 @@ export default function GameTypePlayspace({
         </div>
       </div>
     );
-  };
+  }
   
   // Default content for unknown game types
-  const renderDefaultContent = () => {
+  function renderDefaultContent() {
     return (
       <div className="flex items-center justify-center h-full min-h-[400px] bg-white rounded-lg shadow-lg p-8">
         <div className="text-center">
@@ -189,7 +232,5 @@ export default function GameTypePlayspace({
         </div>
       </div>
     );
-  };
-
-  return renderGameContent();
+  }
 }

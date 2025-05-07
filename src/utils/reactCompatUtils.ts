@@ -18,6 +18,17 @@ export function useCompatId(prefix: string = 'id-'): string {
 }
 
 /**
+ * React 18 insertionEffect hook polyfill
+ * This uses useLayoutEffect (or useEffect as fallback) to simulate useInsertionEffect
+ */
+export function useCompatInsertionEffect(callback: () => void | (() => void), deps?: React.DependencyList): void {
+  // Try to use useLayoutEffect as it's closer to useInsertionEffect behavior
+  // Fall back to useEffect if useLayoutEffect is not available
+  const useEffectFn = React.useLayoutEffect || React.useEffect;
+  useEffectFn(callback, deps);
+}
+
+/**
  * Checks if we're running in a React 17 environment
  */
 export function isReact17(): boolean {
@@ -46,6 +57,14 @@ export function patchReactForCompatibility() {
         // @ts-ignore
         React.useId = useCompatId;
         logWithTimestamp('[ReactCompat] Successfully patched React.useId', 'info');
+      }
+      
+      // Patch useInsertionEffect if it doesn't exist (React 17)
+      // @ts-ignore - Add our polyfill to global React
+      if (!React.useInsertionEffect) {
+        // @ts-ignore
+        React.useInsertionEffect = useCompatInsertionEffect;
+        logWithTimestamp('[ReactCompat] Successfully patched React.useInsertionEffect', 'info');
       }
       
       return true;
@@ -201,7 +220,7 @@ export function CompatButton({
   return React.createElement(
     'button',
     {
-      className: className,
+      className,
       ...props
     },
     children

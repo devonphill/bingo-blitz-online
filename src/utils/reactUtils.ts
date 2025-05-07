@@ -1,6 +1,7 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { logDebug, logWithTimestamp } from './logUtils';
+import { useCompatInsertionEffect } from './reactCompatUtils';
 
 // Create a counter for unique IDs
 let idCounter = 0;
@@ -55,6 +56,32 @@ export function useSafeId(prefix: string = 'id-'): string {
 }
 
 /**
+ * Safe version of useInsertionEffect that works with both React 17 and React 18
+ * This handles the case where the app is using styled-components or emotion
+ * @param callback The effect callback
+ * @param deps The effect dependencies
+ */
+export function useSafeInsertionEffect(callback: () => void | (() => void), deps?: any[]): void {
+  try {
+    // Check if we're in a React 18 environment with native useInsertionEffect
+    // @ts-ignore - We're checking for React 18's useInsertionEffect function
+    const ReactModule = typeof React !== 'undefined' ? React : null;
+    if (ReactModule && typeof ReactModule.useInsertionEffect === 'function') {
+      logDebug('[ReactUtils] Using native React.useInsertionEffect');
+      // @ts-ignore - We've already checked that it exists
+      ReactModule.useInsertionEffect(callback, deps);
+      return;
+    }
+  } catch (error) {
+    // If any error occurs, log it and continue with the fallback
+    logWithTimestamp(`[ReactUtils] Error using React.useInsertionEffect: ${error}`, 'warn');
+  }
+
+  // Fallback to useLayoutEffect
+  useCompatInsertionEffect(callback, deps);
+}
+
+/**
  * Helper function to log React environment information
  * This can help debug React version compatibility issues
  */
@@ -66,15 +93,27 @@ export function logReactEnvironment() {
     const reactVersion = reactGlobal?.version || 'unknown';
     const isReactInWindow = !!reactGlobal;
     const hasUseId = typeof reactGlobal?.useId === 'function';
+    const hasUseInsertionEffect = typeof reactGlobal?.useInsertionEffect === 'function';
     
     logWithTimestamp(`[ReactEnv] React version: ${reactVersion}`, 'debug');
     logWithTimestamp(`[ReactEnv] React ${isReactInWindow ? 'found' : 'not found'} in global scope`, 'debug');
     logWithTimestamp(`[ReactEnv] React.useId ${hasUseId ? 'is available' : 'is NOT available'} (React 18+ only)`, 'debug');
+    logWithTimestamp(`[ReactEnv] React.useInsertionEffect ${hasUseInsertionEffect ? 'is available' : 'is NOT available'} (React 18+ only)`, 'debug');
     
-    return { reactVersion, isReactInWindow, hasUseId };
+    return { 
+      reactVersion, 
+      isReactInWindow, 
+      hasUseId, 
+      hasUseInsertionEffect 
+    };
   } catch (e) {
     logWithTimestamp(`[ReactEnv] Error checking React environment: ${e}`, 'error');
-    return { reactVersion: 'error', isReactInWindow: false, hasUseId: false };
+    return { 
+      reactVersion: 'error', 
+      isReactInWindow: false, 
+      hasUseId: false,
+      hasUseInsertionEffect: false 
+    };
   }
 }
 
@@ -159,6 +198,37 @@ export function patchReactForIdPolyfill() {
     return false;
   } catch (e) {
     logWithTimestamp(`[ReactUtils] Error patching React: ${e}`, 'error');
+    return false;
+  }
+}
+
+/**
+ * Enhanced React patcher that handles more hooks
+ * This is more thorough than patchReactForIdPolyfill
+ */
+export function patchReactHooks() {
+  try {
+    // Call the existing function to maintain backward compatibility
+    patchReactForIdPolyfill();
+    
+    // @ts-ignore - We're intentionally patching the global React object
+    if (typeof React !== 'undefined') {
+      // Patch useInsertionEffect if it doesn't exist
+      // @ts-ignore - Add our polyfill to global React
+      if (!React.useInsertionEffect) {
+        // Use useLayoutEffect as a fallback or useEffect if even that isn't available
+        // @ts-ignore
+        const fallbackEffect = React.useLayoutEffect || React.useEffect;
+        // @ts-ignore
+        React.useInsertionEffect = fallbackEffect;
+        logWithTimestamp('[ReactUtils] Successfully patched React.useInsertionEffect with fallback', 'info');
+      }
+      
+      return true;
+    }
+    return false;
+  } catch (e) {
+    logWithTimestamp(`[ReactUtils] Error patching React hooks: ${e}`, 'error');
     return false;
   }
 }
