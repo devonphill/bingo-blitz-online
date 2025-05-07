@@ -42,12 +42,12 @@ ReactDOM.render(
       <QueryClientProvider client={queryClient}>
         <NetworkProvider>
           <AuthContextProvider>
-            <SessionProvider>
-              <GameManagerProvider>
+            <GameManagerProvider>
+              <SessionProvider>
                 <Toaster position="bottom-right" />
                 <App />
-              </GameManagerProvider>
-            </SessionProvider>
+              </SessionProvider>
+            </GameManagerProvider>
           </AuthContextProvider>
         </NetworkProvider>
       </QueryClientProvider>
