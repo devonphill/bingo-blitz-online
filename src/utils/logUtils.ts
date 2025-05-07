@@ -96,12 +96,20 @@ export function formatObject(obj) {
 }
 
 /**
- * Log with timestamp and optional level
- * This is the function that was missing but is imported by many components
+ * Log with timestamp and optional level and category
+ * @param message The message to log
+ * @param level The log level ('debug', 'info', 'warn', 'error')
+ * @param category Optional category or context for the log
+ * @returns The formatted message that was logged
  */
-export function logWithTimestamp(message, level = 'info') {
+export function logWithTimestamp(message: string, level: string = 'info', category?: string): string {
   const timestamp = new Date().toISOString();
-  const formattedMessage = `[${timestamp}] ${message}`;
+  let formattedMessage = `[${timestamp}] ${message}`;
+  
+  // Add category if provided
+  if (category) {
+    formattedMessage = `[${timestamp}] [${category}] ${message}`;
+  }
   
   switch(level.toLowerCase()) {
     case 'debug':
@@ -122,4 +130,3 @@ export function logWithTimestamp(message, level = 'info') {
   
   return formattedMessage;
 }
-
