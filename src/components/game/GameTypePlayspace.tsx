@@ -1,10 +1,9 @@
-
 import React from "react";
 import BingoCardDisplay from "./BingoCardDisplay";
 import BingoTicketDisplay from "./BingoTicketDisplay";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/compat/button";
 import { useToast } from "@/hooks/use-toast";
-import { useSafeId } from "@/utils/reactUtils";
+import { useCompatId } from "@/utils/reactCompatUtils";
 
 interface GameTypePlayspaceProps {
   gameType: string;
@@ -29,8 +28,8 @@ export default function GameTypePlayspace({
   isClaiming,
   claimStatus
 }: GameTypePlayspaceProps) {
-  // Generate unique IDs for this component
-  const playspaceId = useSafeId('playspace-');
+  // Generate unique IDs for this component using our compatibility function
+  const playspaceId = useCompatId('playspace-');
   
   // Debug log to see what ticket data we're receiving
   console.log("GameTypePlayspace tickets:", tickets);
@@ -59,7 +58,7 @@ export default function GameTypePlayspace({
       <div className="grid grid-cols-1 gap-4">
         {tickets.map((ticket: any, index: number) => {
           // Generate a stable ticket ID
-          const ticketId = useSafeId(`ticket-${ticket.serial || index}-`);
+          const ticketId = useCompatId(`ticket-${ticket.serial || index}-`);
           
           return (
             <div key={ticketId} className="bg-white p-4 rounded-lg shadow">

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -220,12 +219,12 @@ export default function PlayerGameContent({
         <div className="container mx-auto px-4 py-6">
           <StatusBar
             playerName={playerName}
-            currentNumber={localCurrentNumber}
-            calledNumbers={localNumbers}
+            currentNumber={currentNumber}
+            calledNumbers={calledNumbers}
             gameType={gameType}
             showAutoMarkToggle={true}
-            autoMarkEnabled={isAutoMarkingEnabled}
-            onToggleAutoMark={toggleAutoMarking}
+            autoMarkEnabled={autoMarking}
+            onToggleAutoMark={setAutoMarking ? () => setAutoMarking(!autoMarking) : undefined}
             connectionState={connectionState}
           />
           
@@ -233,9 +232,9 @@ export default function PlayerGameContent({
             <GameTypePlayspace
               gameType={gameType}
               tickets={tickets}
-              calledNumbers={localNumbers}
-              lastCalledNumber={localCurrentNumber}
-              autoMarking={isAutoMarkingEnabled}
+              calledNumbers={calledNumbers}
+              lastCalledNumber={currentNumber}
+              autoMarking={autoMarking}
               handleClaimBingo={onClaimBingo}
               isClaiming={isClaiming}
               claimStatus={claimStatus === 'valid' ? 'validated' : claimStatus === 'invalid' ? 'rejected' : 'pending'}
@@ -257,8 +256,8 @@ export default function PlayerGameContent({
             playerCode={playerCode}
             sessionId={currentSession?.id}
             gameType={gameType}
-            calledNumbers={localNumbers}
-            lastCalledNumber={localCurrentNumber}
+            calledNumbers={calledNumbers}
+            lastCalledNumber={currentNumber}
             connectionState={network.connectionState || connectionState}
             onReconnect={onReconnect}
           />

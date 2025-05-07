@@ -1,9 +1,8 @@
-
 import React, { useMemo, useState, useEffect } from "react";
 import { processTicketLayout, getOneToGoNumbers, calculateTicketProgress } from "@/utils/ticketUtils";
 import BingoCell from "./BingoCell";
 import { logWithTimestamp } from "@/utils/logUtils";
-import { useSafeId } from "@/utils/reactUtils";
+import { useCompatId } from "@/utils/reactCompatUtils";
 
 interface BingoTicketDisplayProps {
   numbers: number[];
@@ -32,7 +31,7 @@ export default function BingoTicketDisplay({
   const [recentlyMarked, setRecentlyMarked] = useState<Set<string>>(new Set());
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
   
-  const ticketId = useSafeId(`ticket-${serial}-`);
+  const ticketId = useCompatId(`ticket-${serial}-`);
   
   // Add more detailed logging
   useEffect(() => {
@@ -132,6 +131,23 @@ export default function BingoTicketDisplay({
     });
   }, [calledNumbers, grid, autoMarking, lastCalledNumber]);
   
+  // Determines if a cell should be marked as called
+  function isCellMarked(row: number, col: number, value: number | null) {
+    if (value === null) return false;
+    if (autoMarking) return calledNumbers.includes(value);
+    return markedCells?.has(`${row},${col}`) || false;
+  }
+
+  // Checks if a number is one-to-go
+  function isCell1TG(value: number | null) {
+    return value !== null && oneTGNumbers.includes(value);
+  }
+  
+  // Checks if a cell was recently marked (for animation)
+  function isCellRecentlyMarked(row: number, col: number) {
+    return recentlyMarked.has(`${row},${col}`);
+  }
+
   // Function to handle cell clicking for manual marking
   const toggleMark = (row: number, col: number, value: number | null) => {
     if (value === null || autoMarking) return;
@@ -150,23 +166,6 @@ export default function BingoTicketDisplay({
       return next;
     });
   };
-
-  // Determines if a cell should be marked as called
-  function isCellMarked(row: number, col: number, value: number | null) {
-    if (value === null) return false;
-    if (autoMarking) return calledNumbers.includes(value);
-    return markedCells?.has(`${row},${col}`) || false;
-  }
-
-  // Checks if a number is one-to-go
-  function isCell1TG(value: number | null) {
-    return value !== null && oneTGNumbers.includes(value);
-  }
-  
-  // Checks if a cell was recently marked (for animation)
-  function isCellRecentlyMarked(row: number, col: number) {
-    return recentlyMarked.has(`${row},${col}`);
-  }
 
   // If there's an issue with the grid, show a valid empty grid
   if (!grid || grid.length !== 3) {

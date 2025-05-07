@@ -14,7 +14,11 @@ import App from './App';
 import './index.css';
 
 import { logWithTimestamp } from './utils/logUtils';
-import { patchReactForIdPolyfill, logReactEnvironment } from './utils/reactUtils';
+import { logReactEnvironment } from './utils/reactUtils';
+import { patchReactForCompatibility } from './utils/reactCompatUtils';
+
+// Apply React compatibility patches as early as possible - before any component imports
+patchReactForCompatibility();
 
 // Log React environment information
 logReactEnvironment();
@@ -22,9 +26,6 @@ logReactEnvironment();
 // Log initialization
 logWithTimestamp('[Initialization] ReactDOM type: ' + typeof ReactDOM, 'info');
 logWithTimestamp('[Initialization] Initializing application with React 17 rendering method', 'info');
-
-// Patch React to ensure useId doesn't throw errors
-patchReactForIdPolyfill();
 
 // Create a query client
 const queryClient = new QueryClient({
