@@ -4,10 +4,11 @@ import { useSessions } from './useSessions';
 import { usePlayers } from './usePlayers';
 import { TempPlayer, GameSession, Player } from '@/types';
 
-interface SessionContextProps {
+// Rename to avoid conflict with SessionProvider
+interface SessionContextLegacyProps {
   sessions: GameSession[];
   currentSession: GameSession | null;
-  fetchSessions: () => Promise<boolean>; // Changed from Promise<void> to Promise<boolean>
+  fetchSessions: () => Promise<boolean>;
   updateSession: (sessionId: string, updates: Partial<GameSession>) => Promise<boolean>;
   setCurrentSession: (sessionId: string | null) => void;
   getSessionByCode: (code: string) => GameSession | null;
@@ -23,9 +24,9 @@ interface SessionContextProps {
   isLoading: boolean;
 }
 
-const SessionContext = createContext<SessionContextProps | undefined>(undefined);
+const SessionLegacyContext = createContext<SessionContextLegacyProps | undefined>(undefined);
 
-export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const SessionLegacyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const {
     sessions,
     currentSession,
@@ -58,7 +59,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   return (
-    <SessionContext.Provider
+    <SessionLegacyContext.Provider
       value={{
         sessions,
         currentSession,
@@ -79,12 +80,12 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }}
     >
       {children}
-    </SessionContext.Provider>
+    </SessionLegacyContext.Provider>
   );
 };
 
 export const useSessionContext = () => {
-  const context = useContext(SessionContext);
+  const context = useContext(SessionLegacyContext);
   if (context === undefined) {
     throw new Error('useSessionContext must be used within a SessionProvider');
   }

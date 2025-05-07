@@ -36,8 +36,9 @@ const queryClient = new QueryClient({
   },
 });
 
-ReactDOM.render(
-  <BrowserRouter>
+// Create a root component to ensure proper context nesting
+const Root = () => {
+  return (
     <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
       <QueryClientProvider client={queryClient}>
         <NetworkProvider>
@@ -52,6 +53,13 @@ ReactDOM.render(
         </NetworkProvider>
       </QueryClientProvider>
     </ThemeProvider>
+  );
+};
+
+// Render the app
+ReactDOM.render(
+  <BrowserRouter>
+    <Root />
   </BrowserRouter>,
   document.getElementById('root'),
   () => {

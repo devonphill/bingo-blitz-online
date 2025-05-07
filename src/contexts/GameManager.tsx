@@ -20,10 +20,22 @@ type GameManagerContextType = {
   allGameTypes: GameType[];
 };
 
-const GameManagerContext = createContext<GameManagerContextType | undefined>(undefined);
+const GameManagerContext = createContext<GameManagerContextType | null>(null);
 
 export const GameManagerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentGameType, setCurrentGameType] = useState<GameType>(gameTypes[0]);
+  // Ensure we have a valid default game type
+  const defaultGameType = gameTypes && gameTypes.length > 0 ? gameTypes[0] : {
+    id: "mainstage",
+    name: "Mainstage (90 Ball)",
+    rules: {
+      maxPlayers: 100,
+      winCondition: "Complete pattern"
+    },
+    generateNumber: () => Math.floor(Math.random() * 90) + 1,
+    customButtons: []
+  };
+  
+  const [currentGameType, setCurrentGameType] = useState<GameType>(defaultGameType);
 
   const switchGameType = (gameTypeId: string) => {
     const gameType = gameTypes.find((type) => type.id === gameTypeId);
