@@ -1,30 +1,31 @@
-
-import React, { createContext, useContext, ReactNode } from 'react';
+import React, { createContext, useState, useContext, ReactNode } from 'react';
 import { useSessions } from './useSessions';
 import { usePlayers } from './usePlayers';
 import { useTickets } from './useTickets';
+import { useGameManager } from '@/contexts/GameManager'; // Import GameManager
 import type { GameSession, Player, TempPlayer } from '@/types';
 import { AdminTempPlayer } from './usePlayers';
 import { logWithTimestamp } from '@/utils/logUtils';
 
 interface SessionContextType {
+  session: GameSession | null;
   sessions: GameSession[];
   currentSession: GameSession | null;
   setCurrentSession: (sessionId: string | null) => void;
   getSessionByCode: (code: string) => GameSession | null;
-  fetchSessions: () => Promise<boolean>; // Changed from Promise<void> to Promise<boolean>
+  fetchSessions: () => Promise<boolean>;
   updateSession: (sessionId: string, updates: Partial<GameSession>) => Promise<boolean>;
   isLoading: boolean;
   error: string | null;
-  // Player methods
   players?: Player[];
   joinSession: (playerCode: string) => Promise<{ success: boolean; playerCode?: string; playerId?: string; error?: string }>;
   addPlayer: (sessionId: string, player: TempPlayer) => Promise<string | null>;
   bulkAddPlayers: (sessionId: string, newPlayers: AdminTempPlayer[]) => Promise<{ success: boolean; message?: string; count?: number; error?: string }>;
   fetchPlayers?: (sessionId: string) => Promise<void>;
-  // Ticket methods
   assignTicketsToPlayer?: (playerId: string, sessionId: string, ticketCount: number) => Promise<any>;
   getPlayerAssignedTickets?: (playerId: string, sessionId: string) => Promise<any>;
+  transitionToState: (newState: string) => void;
+  createSession: (gameTypeId: string) => void;
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
@@ -44,33 +45,64 @@ export function SessionProvider({ children }: SessionProviderProps) {
     isLoading,
     error 
   } = useSessions();
-  
+
   const ticketsHook = useTickets();
-  
-  // Initialize usePlayers with the ticketsHook.assignTicketsToPlayer function
-  // Note: We're now passing a function that returns Promise<boolean> to usePlayers
   const playersHook = usePlayers(
     sessions,
-    fetchSessions as () => Promise<any>, // Use type assertion to resolve type mismatch
+    fetchSessions as () => Promise<any>,
     ticketsHook.assignTicketsToPlayer
   );
 
-  // Create a wrapper function for setCurrentSession that accepts a string
-  const setCurrentSession = (sessionId: string | null) => {
-    // Prevent unnecessary state updates if the session is already selected
-    if (currentSession?.id === sessionId) {
-      logWithTimestamp("Session is already selected, skipping update", 'debug');
-      return;
+  const { currentGameType } = useGameManager(); // Access current game type from GameManager
+
+  const [session, setSession] = useState({
+    id: null,
+    gameType: null,
+    players: [],
+    state: "setup", // setup, lobby, live, completed
+  });
+
+  const createSession = (gameTypeId: string) => {
+    const gameType = currentGameType || { id: gameTypeId, name: "Unknown Game" };
+    setSession({
+      id: generateSessionId(),
+      gameType,
+      players: [],
+      state: "setup",
+    });
+    logWithTimestamp(`Session created with game type: ${gameType.name}`, 'info');
+  };
+
+  const addPlayer = (player: TempPlayer) => {
+    setSession((prev) => ({
+      ...prev,
+      players: [...prev.players, player],
+    }));
+    logWithTimestamp(`Player added: ${JSON.stringify(player)}`, 'info');
+  };
+
+  const transitionToState = (newState: string) => {
+    const validStates = ["setup", "lobby", "live", "completed"];
+    if (validStates.includes(newState)) {
+      setSession((prev) => ({ ...prev, state: newState }));
+      logWithTimestamp(`Session transitioned to state: ${newState}`, 'info');
+    } else {
+      console.error(`Invalid session state: ${newState}`);
     }
-    
-    logWithTimestamp(`Setting current session ID: ${sessionId || 'null'}`, 'info');
-    setSessionById(sessionId);
   };
 
   const contextValue: SessionContextType = {
+    session,
     sessions,
     currentSession,
-    setCurrentSession,
+    setCurrentSession: (sessionId: string | null) => {
+      if (currentSession?.id === sessionId) {
+        logWithTimestamp("Session is already selected, skipping update", 'debug');
+        return;
+      }
+      logWithTimestamp(`Setting current session ID: ${sessionId || 'null'}`, 'info');
+      setSessionById(sessionId);
+    },
     getSessionByCode,
     fetchSessions,
     updateSession,
@@ -96,6 +128,8 @@ export function SessionProvider({ children }: SessionProviderProps) {
     fetchPlayers: playersHook.fetchPlayers,
     assignTicketsToPlayer: ticketsHook.assignTicketsToPlayer,
     getPlayerAssignedTickets: ticketsHook.getPlayerAssignedTickets,
+    transitionToState,
+    createSession,
   };
 
   return (
@@ -112,3 +146,7 @@ export function useSessionContext(): SessionContextType {
   }
   return context;
 }
+
+const generateSessionId = () => {
+  return Math.random().toString(36).substr(2, 9); // Simple random ID generator
+};

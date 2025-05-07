@@ -1,7 +1,8 @@
-
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/utils/toast";
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
 
 const LoginForm = () => {
   const { signIn, isLoading, error } = useAuth();
@@ -9,6 +10,7 @@ const LoginForm = () => {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formSubmitted, setFormSubmitted] = useState(false);
+  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,10 +28,19 @@ const LoginForm = () => {
       console.log("Attempting to sign in with:", email);
       setSubmitting(true);
       setFormSubmitted(true);
-      await signIn(email, password);
-      // The redirection will be handled by the useEffect in LoginPage
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        throw error;
+      }
+      toast({ title: "Login successful", description: "Welcome back!" });
+      navigate("/dashboard"); // Redirect to dashboard after successful login
     } catch (err) {
-      console.error("Login error:", err);
+      console.error("Login error:", err.message);
+      toast({
+        title: "Login failed",
+        description: "Invalid credentials or server issue",
+        variant: "destructive",
+      });
       setSubmitting(false);
       setFormSubmitted(false);
     }
