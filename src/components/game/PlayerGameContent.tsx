@@ -8,6 +8,8 @@ import DebugPanel from "./DebugPanel";
 import { connectionManager } from "@/utils/connectionManager";
 import { logWithTimestamp } from "@/utils/logUtils";
 import { useNetwork } from "@/contexts/NetworkStatusContext";
+import { useGameManager } from "@/contexts/GameManager";
+import GameTypePlayspace from "./GameTypePlayspace";
 
 interface PlayerGameContentProps {
   tickets: any[];
@@ -56,11 +58,23 @@ export default function PlayerGameContent({
   onRefreshTickets,
   onReconnect
 }: PlayerGameContentProps) {
+  const { getGameTypeById } = useGameManager();
   // Local states for UI elements
   const [isAutoMarkingEnabled, setIsAutoMarkingEnabled] = useState(autoMarking);
   const [showDebug, setShowDebug] = useState(false);
   const [localNumbers, setLocalNumbers] = useState<number[]>(calledNumbers);
   const [localCurrentNumber, setLocalCurrentNumber] = useState<number | null>(currentNumber);
+  const [gameTypeDetails, setGameTypeDetails] = useState<any>(null);
+
+  // Load game type details
+  useEffect(() => {
+    if (gameType) {
+      const details = getGameTypeById(gameType);
+      if (details) {
+        setGameTypeDetails(details);
+      }
+    }
+  }, [gameType, getGameTypeById]);
 
   // Use the network context
   const network = useNetwork();
@@ -216,14 +230,15 @@ export default function PlayerGameContent({
           />
           
           <div className="mt-4">
-            <BingoCardGrid 
+            <GameTypePlayspace
+              gameType={gameType}
               tickets={tickets}
               calledNumbers={localNumbers}
-              currentCalledNumber={localCurrentNumber}
+              lastCalledNumber={localCurrentNumber}
               autoMarking={isAutoMarkingEnabled}
-              gameType={gameType}
-              winPattern={effectivePattern}
-              onRefreshTickets={onRefreshTickets}
+              handleClaimBingo={onClaimBingo}
+              isClaiming={isClaiming}
+              claimStatus={claimStatus === 'valid' ? 'validated' : claimStatus === 'invalid' ? 'rejected' : 'pending'}
             />
           </div>
         </div>

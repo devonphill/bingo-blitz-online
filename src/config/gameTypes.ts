@@ -1,4 +1,16 @@
-export const gameTypes = [
+
+export interface GameType {
+  id: string;
+  name: string;
+  rules: {
+    maxPlayers: number;
+    winCondition: string;
+  };
+  generateNumber: () => number | string;
+  customButtons: string[];
+}
+
+export const gameTypes: GameType[] = [
   {
     id: "mainstage",
     name: "Mainstage (90 Ball Bingo)",
