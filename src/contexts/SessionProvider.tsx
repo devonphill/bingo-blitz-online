@@ -1,3 +1,4 @@
+
 import React, { createContext, useState, useContext, ReactNode } from 'react';
 import { useSessions } from './useSessions';
 import { usePlayers } from './usePlayers';
@@ -6,6 +7,7 @@ import { useGameManager } from '@/contexts/GameManager'; // Import GameManager
 import type { GameSession, Player, TempPlayer } from '@/types';
 import { AdminTempPlayer } from './usePlayers';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { v4 as uuidv4 } from 'uuid';
 
 interface SessionContextType {
   session: GameSession | null;
@@ -55,36 +57,35 @@ export function SessionProvider({ children }: SessionProviderProps) {
 
   const { currentGameType } = useGameManager(); // Access current game type from GameManager
 
-  const [session, setSession] = useState({
-    id: null,
-    gameType: null,
-    players: [],
-    state: "setup", // setup, lobby, live, completed
-  });
+  const [session, setSession] = useState<GameSession | null>(null);
 
   const createSession = (gameTypeId: string) => {
     const gameType = currentGameType || { id: gameTypeId, name: "Unknown Game" };
-    setSession({
-      id: generateSessionId(),
-      gameType,
-      players: [],
-      state: "setup",
-    });
+    const newSession: GameSession = {
+      id: uuidv4(),
+      name: `Game Session ${new Date().toLocaleDateString()}`,
+      gameType: gameType.id,
+      createdBy: '',
+      accessCode: '',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      numberOfGames: 1,
+      current_game: 1,
+      lifecycle_state: 'setup',
+      games_config: []
+    };
+    
+    setSession(newSession);
     logWithTimestamp(`Session created with game type: ${gameType.name}`, 'info');
-  };
-
-  const addPlayer = (player: TempPlayer) => {
-    setSession((prev) => ({
-      ...prev,
-      players: [...prev.players, player],
-    }));
-    logWithTimestamp(`Player added: ${JSON.stringify(player)}`, 'info');
   };
 
   const transitionToState = (newState: string) => {
     const validStates = ["setup", "lobby", "live", "completed"];
     if (validStates.includes(newState)) {
-      setSession((prev) => ({ ...prev, state: newState }));
+      setSession(prev => {
+        if (!prev) return null;
+        return { ...prev, lifecycle_state: newState };
+      });
       logWithTimestamp(`Session transitioned to state: ${newState}`, 'info');
     } else {
       console.error(`Invalid session state: ${newState}`);
@@ -146,7 +147,3 @@ export function useSessionContext(): SessionContextType {
   }
   return context;
 }
-
-const generateSessionId = () => {
-  return Math.random().toString(36).substr(2, 9); // Simple random ID generator
-};

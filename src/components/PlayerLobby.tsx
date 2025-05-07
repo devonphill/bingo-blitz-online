@@ -5,7 +5,7 @@ import { useGameManager } from '@/contexts/GameManager';
 import { Button } from '@/components/ui/button';
 
 const PlayerLobby = () => {
-  const { session } = useSessionContext();
+  const { session, players } = useSessionContext();
   const { getGameTypeById } = useGameManager();
   const [ticketCount, setTicketCount] = useState(0);
   const [gameTypeDetails, setGameTypeDetails] = useState<any>(null);
@@ -39,7 +39,7 @@ const PlayerLobby = () => {
         <div className="bg-blue-50 p-4 rounded-lg">
           <p className="font-medium">Session: {session.name}</p>
           <p>Game Type: {gameTypeDetails?.name || session.gameType}</p>
-          <p>Players: {session.players?.length || 0}</p>
+          <p>Players: {players?.length || 0}</p>
           {gameTypeDetails?.rules && (
             <div className="mt-2 text-sm">
               <p>Max Players: {gameTypeDetails.rules.maxPlayers}</p>

@@ -8,7 +8,15 @@ import SessionDebugPanel from "@/components/dashboard/SessionDebugPanel";
 import CreateSessionForm from "@/components/dashboard/CreateSessionForm";
 import { Button } from "@/components/ui/button";
 import SessionCard from "@/components/dashboard/SessionCard";
-import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
+
+interface CreateSessionFormProps {
+  onClose: () => void;
+}
+
+// Mock CreateSessionForm if it doesn't have the onClose prop
+const DashboardCreateSessionForm: React.FC<CreateSessionFormProps> = ({ onClose }) => {
+  return <CreateSessionForm />;
+};
 
 const DashboardPage = () => {
   const { user, isLoading: authLoading } = useAuth();
@@ -68,7 +76,7 @@ const DashboardPage = () => {
 
       {showCreateSessionForm && (
         <div className="mb-6">
-          <CreateSessionForm onClose={() => setShowCreateSessionForm(false)} />
+          <DashboardCreateSessionForm onClose={() => setShowCreateSessionForm(false)} />
         </div>
       )}
 

@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React from 'react';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import DashboardSidebar from '@/components/dashboard/DashboardSidebar';
@@ -20,7 +20,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full">
-        <Sidebar defaultCollapsed={false}>
+        <Sidebar className="border-r">
           <SidebarHeader>
             <div className="p-4 flex flex-col">
               <h2 className="text-xl font-bold">Bingo Blitz</h2>
