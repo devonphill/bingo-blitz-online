@@ -195,7 +195,7 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
   // Set up number called listener using the network context - only if we have a session
   useEffect(() => {
     if (!currentSession?.id) {
-      logWithTimestamp(`PlayerGame (${instanceId.current}): No session ID available for number call listener`, 'info');
+      logWithTimestamp(`PlayerGame (${instanceId}): No session ID available for number call listener`, 'info');
       return;
     }
     
@@ -219,7 +219,7 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
     return () => {
       removeListener();
     };
-  }, [currentSession?.id, network, toast]);
+  }, [currentSession?.id, network, toast, instanceId]);
   
   // Update the finalCalledNumbers whenever our data sources change
   useEffect(() => {
@@ -245,7 +245,7 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
   // Handle bingo claims - select the best ticket for claiming
   const handleClaimBingo = React.useCallback(() => {
     if (!tickets || tickets.length === 0) {
-      logWithTimestamp(`PlayerGame (${instanceId.current}): Cannot claim bingo: no tickets available`, 'warn');
+      logWithTimestamp(`PlayerGame (${instanceId}): Cannot claim bingo: no tickets available`, 'warn');
       console.log("Cannot claim bingo: no tickets available");
       return Promise.resolve(false);
     }
@@ -266,7 +266,7 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
     // Use the best ticket for the claim
     const bestTicket = sortedTickets[0];
     
-    logWithTimestamp(`PlayerGame (${instanceId.current}): Claiming bingo with best ticket, score: ${bestTicket.score}`, 'info');
+    logWithTimestamp(`PlayerGame (${instanceId}): Claiming bingo with best ticket, score: ${bestTicket.score}`, 'info');
     
     // Try to claim bingo
     return submitBingoClaim(bestTicket);
@@ -281,7 +281,7 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
 
   // Early return during initial loading - no conditional hooks after this point
   if (loadingPlayerCode) {
-    logWithTimestamp(`PlayerGame (${instanceId.current}): Still loading player code, showing loader`, 'info');
+    logWithTimestamp(`PlayerGame (${instanceId}): Still loading player code, showing loader`, 'info');
     return (
       <PlayerGameLoader 
         isLoading={true} 
@@ -295,7 +295,7 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
   
   // If we're on the home page, no player code is required - just return nothing
   if (window.location.pathname === '/') {
-    logWithTimestamp(`PlayerGame (${instanceId.current}): On home page, not rendering player game interface`, 'info');
+    logWithTimestamp(`PlayerGame (${instanceId}): On home page, not rendering player game interface`, 'info');
     return null;
   }
   
@@ -310,7 +310,7 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
     !hasSession;
 
   if (shouldShowLoader) {
-    logWithTimestamp(`PlayerGame (${instanceId.current}): Showing loader: isLoading=${isLoading}, hasSession=${hasSession}, effectiveErrorMessage=${effectiveErrorMessage || 'none'}`, 'info');
+    logWithTimestamp(`PlayerGame (${instanceId}): Showing loader: isLoading=${isLoading}, hasSession=${hasSession}, effectiveErrorMessage=${effectiveErrorMessage || 'none'}`, 'info');
     
     return (
       <PlayerGameLoader 
@@ -325,7 +325,7 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
 
   // At this point, we know the game is active and we should have tickets
   if (!hasTickets) {
-    logWithTimestamp(`PlayerGame (${instanceId.current}): No tickets available for player`, 'warn');
+    logWithTimestamp(`PlayerGame (${instanceId}): No tickets available for player`, 'warn');
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="bg-white shadow-lg rounded-lg p-6 max-w-md w-full">
@@ -370,7 +370,7 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
     };
   }
 
-  logWithTimestamp(`PlayerGame (${instanceId.current}): Rendering main player game interface`, 'info');
+  logWithTimestamp(`PlayerGame (${instanceId}): Rendering main player game interface`, 'info');
   
   // Map the claimStatus to the proper format expected by each component
   const layoutClaimStatus = claimStatus === 'valid' ? 'valid' : 
