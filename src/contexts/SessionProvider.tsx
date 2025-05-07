@@ -4,7 +4,7 @@ import { useSessions } from './useSessions';
 import { usePlayers } from './usePlayers';
 import { useTickets } from './useTickets';
 import { useGameManager } from '@/contexts/GameManager'; // Import GameManager
-import type { GameSession, Player, TempPlayer } from '@/types';
+import type { GameSession, Player, TempPlayer, GameType } from '@/types';
 import { AdminTempPlayer } from './usePlayers';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { v4 as uuidv4 } from 'uuid';
@@ -64,7 +64,7 @@ export function SessionProvider({ children }: SessionProviderProps) {
     const newSession: GameSession = {
       id: uuidv4(),
       name: `Game Session ${new Date().toLocaleDateString()}`,
-      gameType: gameType.id,
+      gameType: gameTypeId as GameType, // Cast to GameType to ensure type safety
       createdBy: '',
       accessCode: '',
       status: 'pending',
@@ -80,11 +80,15 @@ export function SessionProvider({ children }: SessionProviderProps) {
   };
 
   const transitionToState = (newState: string) => {
-    const validStates = ["setup", "lobby", "live", "completed"];
-    if (validStates.includes(newState)) {
-      setSession(prev => {
+    const validStates = ["setup", "lobby", "live", "completed"] as const;
+    
+    if (validStates.includes(newState as any)) {
+      setSession((prev) => {
         if (!prev) return null;
-        return { ...prev, lifecycle_state: newState };
+        return { 
+          ...prev, 
+          lifecycle_state: newState as "setup" | "live" | "ended" | "completed" 
+        };
       });
       logWithTimestamp(`Session transitioned to state: ${newState}`, 'info');
     } else {

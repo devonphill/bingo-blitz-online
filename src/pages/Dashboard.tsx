@@ -9,12 +9,7 @@ import CreateSessionForm from "@/components/dashboard/CreateSessionForm";
 import { Button } from "@/components/ui/button";
 import SessionCard from "@/components/dashboard/SessionCard";
 
-interface CreateSessionFormProps {
-  onClose: () => void;
-}
-
-// Mock CreateSessionForm if it doesn't have the onClose prop
-const DashboardCreateSessionForm: React.FC<CreateSessionFormProps> = ({ onClose }) => {
+const DashboardCreateSessionForm = ({ onClose }: { onClose: () => void }) => {
   return <CreateSessionForm />;
 };
 
