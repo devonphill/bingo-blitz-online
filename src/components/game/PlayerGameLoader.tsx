@@ -1,9 +1,9 @@
-
 import React, { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { GameSession } from "@/types";
 import { AlertCircle, RefreshCw, Info, Calendar, Clock, Wifi, WifiOff } from "lucide-react";
-import { logWithTimestamp, logError, logReactEnvironment } from "@/utils/logUtils";
+import { logWithTimestamp, logError } from "@/utils/logUtils";
+import { logReactEnvironment } from "@/utils/reactUtils";
 
 // Helper function for consistent timestamped logging with additional component info
 const logLoaderEvent = (message: string, data?: any) => {
@@ -30,18 +30,29 @@ export default function PlayerGameLoader({
   loadingStep = "initializing",
   sessionProgress 
 }: Props) {
+  // Generate a component instance ID for debugging
+  const componentId = React.useMemo(() => `pgloader-${Math.random().toString(36).substring(2, 7)}`, []);
+  
   // Log React environment information on mount
   useEffect(() => {
     logReactEnvironment();
-    logLoaderEvent("PlayerGameLoader mounted", { loadingStep });
+    logLoaderEvent("PlayerGameLoader mounted", { loadingStep, componentId });
+    
+    // Log the React version being used
+    try {
+      const reactVersionInfo = require('react').version;
+      logLoaderEvent("Using React version", { version: reactVersionInfo });
+    } catch (e) {
+      logLoaderEvent("Could not determine React version", { error: e });
+    }
     
     return () => {
-      logLoaderEvent("PlayerGameLoader unmounting");
+      logLoaderEvent("PlayerGameLoader unmounting", { componentId });
     };
-  }, []);
+  }, [loadingStep, componentId]);
   
   // Log component rendering
-  logLoaderEvent("Component rendering", { isLoading, loadingStep, hasError: !!errorMessage });
+  logLoaderEvent("Component rendering", { isLoading, loadingStep, hasError: !!errorMessage, componentId });
   
   // Create stable references for dependencies to prevent React error #310
   const stableSession = React.useMemo(() => currentSession, [currentSession?.id]);
@@ -58,22 +69,24 @@ export default function PlayerGameLoader({
           id: stableSession.id,
           name: stableSession.name,
           status: stableSession.status,
-          lifecycle_state: stableSession.lifecycle_state
+          lifecycle_state: stableSession.lifecycle_state,
+          componentId
         });
       }
       
-      logLoaderEvent("Loading step changed", { step: loadingStep });
+      logLoaderEvent("Loading step changed", { step: loadingStep, componentId });
       
       if (stableProgress) {
         logLoaderEvent("Session progress updated", {
           game_status: stableProgress.game_status,
-          current_game: stableProgress.current_game_number
+          current_game: stableProgress.current_game_number,
+          componentId
         });
       }
     } catch (error) {
-      logError(error as Error, "PlayerGameLoader useEffect", { loadingStep });
+      logError(error as Error, "PlayerGameLoader useEffect", { loadingStep, componentId });
     }
-  }, [stableSession, loadingStep, stableProgress]);
+  }, [stableSession, loadingStep, stableProgress, componentId]);
 
   // Format date and time for display
   const formatSessionDate = (dateStr?: string) => {
@@ -82,7 +95,7 @@ export default function PlayerGameLoader({
       const date = new Date(dateStr);
       return date.toLocaleDateString();
     } catch (e) {
-      logLoaderEvent("Error formatting date", { dateStr, error: e });
+      logLoaderEvent("Error formatting date", { dateStr, error: e, componentId });
       return dateStr;
     }
   };
@@ -98,7 +111,7 @@ export default function PlayerGameLoader({
       }
       return timeStr;
     } catch (e) {
-      logLoaderEvent("Error formatting time", { timeStr, error: e });
+      logLoaderEvent("Error formatting time", { timeStr, error: e, componentId });
       return '';
     }
   };
@@ -107,18 +120,18 @@ export default function PlayerGameLoader({
   React.useEffect(() => {
     const originalError = console.error;
     console.error = (...args) => {
-      logLoaderEvent("React Error", { message: args.join(' ') });
+      logLoaderEvent("React Error", { message: args.join(' '), componentId });
       originalError.apply(console, args);
     };
     
     return () => {
       console.error = originalError;
     };
-  }, []);
+  }, [componentId]);
 
   // If we're in a loading state, show the loading indicator
   if (isLoading) {
-    logLoaderEvent("Showing loading state", { step: loadingStep });
+    logLoaderEvent("Showing loading state", { step: loadingStep, componentId });
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="bg-white shadow-lg rounded-lg p-8 max-w-md w-full text-center">
@@ -133,7 +146,7 @@ export default function PlayerGameLoader({
 
   // If there's a critical error that prevents loading the session, show error message
   if (errorMessage && !currentSession) {
-    logLoaderEvent("Showing error state", { error: errorMessage });
+    logLoaderEvent("Showing error state", { error: errorMessage, componentId });
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="bg-white shadow-lg rounded-lg p-6 max-w-md w-full">

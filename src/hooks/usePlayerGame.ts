@@ -5,6 +5,7 @@ import { useTickets } from '@/hooks/useTickets';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp, logError } from '@/utils/logUtils';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
+import { logReactEnvironment } from '@/utils/reactUtils';
 
 export function usePlayerGame(playerCode: string | null) {
   // Create a logger specifically for this hook
@@ -20,6 +21,11 @@ export function usePlayerGame(playerCode: string | null) {
       logWithTimestamp(`[PlayerGame] ${message} (data could not be stringified)`, 'error');
     }
   };
+
+  // Log React environment info on initialization
+  useEffect(() => {
+    logReactEnvironment();
+  }, []);
 
   // State for player data
   const [playerName, setPlayerName] = useState<string | null>(null);
@@ -64,8 +70,21 @@ export function usePlayerGame(playerCode: string | null) {
   useEffect(() => {
     logger('Hook initialized with player code', 'info', { playerCode });
     
+    // Add error handler for uncaught errors
+    const errorHandler = (event: ErrorEvent) => {
+      logger('Uncaught error in PlayerGame hook', 'error', {
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno
+      });
+    };
+    
+    window.addEventListener('error', errorHandler);
+    
     return () => {
       logger('Hook unmounting', 'info');
+      window.removeEventListener('error', errorHandler);
       isMounted.current = false;
     };
   }, []);
@@ -241,14 +260,25 @@ export function usePlayerGame(playerCode: string | null) {
       // Set game type
       setGameType(sessionData.game_type || 'mainstage');
       
-      // Load game state
-      await loadGameState(sessionData.id);
+      // Load game state with error handling
+      try {
+        await loadGameState(sessionData.id);
+      } catch (error: any) {
+        logger('Error in loadGameState', 'error', { error });
+        setErrorMessage(`Error loading game state: ${error.message}`);
+        setIsLoading(false);
+      }
       
       // THE KEY CHANGE: Connect to the session once we have the session ID
       // This single connection will be used by all components
       if (sessionData.id) {
         logger(`Connecting to session ${sessionData.id}`, 'info');
-        network.connect(sessionData.id);
+        try {
+          network.connect(sessionData.id);
+        } catch (error: any) {
+          logger('Error connecting to session', 'error', { error });
+          // Non-fatal error, continue loading
+        }
         
         // Only track presence after a delay
         setTimeout(() => {
@@ -273,7 +303,7 @@ export function usePlayerGame(playerCode: string | null) {
       
     } catch (error: any) {
       logError(error as Error, 'loadSessionData', { playerId });
-      logger('Error in loadSessionData', 'error', { error: error.message });
+      logger('Error in loadSessionData', 'error', { error: error.message, stack: error.stack });
       setErrorMessage(`Error loading session data: ${error.message}`);
       setIsLoading(false);
     }

@@ -1,6 +1,8 @@
+
 import React, { useMemo, useState, useEffect } from "react";
 import { processTicketLayout, getOneToGoNumbers, calculateTicketProgress } from "@/utils/ticketUtils";
 import BingoCell from "./BingoCell";
+import { logWithTimestamp } from "@/utils/logUtils";
 
 interface BingoTicketDisplayProps {
   numbers: number[];
@@ -28,6 +30,17 @@ export default function BingoTicketDisplay({
   const [markedCells, setMarkedCells] = useState<Set<string>>(new Set());
   const [recentlyMarked, setRecentlyMarked] = useState<Set<string>>(new Set());
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
+  
+  const ticketId = `ticket-${serial}`;
+  
+  // Add more detailed logging
+  useEffect(() => {
+    logWithTimestamp(`BingoTicketDisplay mounted: ${serial}`, 'debug', 'BingoTicket');
+    
+    return () => {
+      logWithTimestamp(`BingoTicketDisplay unmounting: ${serial}`, 'debug', 'BingoTicket');
+    };
+  }, [serial]);
   
   console.log(`Rendering BingoTicketDisplay:`, { 
     serial, 

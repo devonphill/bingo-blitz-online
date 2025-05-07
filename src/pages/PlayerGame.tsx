@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -8,10 +7,75 @@ import { useTickets } from '@/hooks/useTickets';
 import GameTypePlayspace from '@/components/game/GameTypePlayspace';
 import PlayerGameLoader from '@/components/game/PlayerGameLoader';
 import PlayerGameLayout from '@/components/game/PlayerGameLayout';
-import { logWithTimestamp } from '@/utils/logUtils';
+import { logWithTimestamp, logError } from '@/utils/logUtils';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
+import { logReactEnvironment } from '@/utils/reactUtils';
+
+// Wrap the entire component in an error boundary to catch rendering errors
+class PlayerGameErrorBoundary extends React.Component<{children: React.ReactNode, onError: (error: Error) => void}, {hasError: boolean}> {
+  constructor(props: {children: React.ReactNode, onError: (error: Error) => void}) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  
+  componentDidCatch(error: Error) {
+    logWithTimestamp(`PlayerGame Error Boundary caught an error: ${error.message}`, 'error', 'PlayerGameError');
+    console.error('PlayerGame Error:', error);
+    this.props.onError(error);
+  }
+  
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center p-4">
+          <div className="bg-white shadow-lg rounded-lg p-6 max-w-md w-full">
+            <h2 className="text-2xl font-bold text-red-600 mb-4 text-center">Something went wrong</h2>
+            <p className="text-gray-700 mb-6 text-center">
+              The game encountered an error. Please try refreshing the page.
+            </p>
+            <button 
+              onClick={() => window.location.reload()} 
+              className="w-full rounded-md bg-blue-500 hover:bg-blue-600 text-white px-4 py-2"
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function PlayerGame() {
+  // Generate a unique ID for tracking this component 
+  const instanceId = useRef(`playerGame-${Math.random().toString(36).substring(2, 9)}`);
+  const [error, setError] = useState<Error | null>(null);
+  
+  // Log React environment information on initial mount
+  useEffect(() => {
+    logReactEnvironment();
+    logWithTimestamp(`PlayerGame component mounted with ID: ${instanceId.current}`, 'info', 'PlayerGame');
+    
+    return () => {
+      logWithTimestamp(`PlayerGame component unmounting: ${instanceId.current}`, 'info', 'PlayerGame');
+    };
+  }, []);
+  
+  // Wrap the entire component content in the error boundary
+  return (
+    <PlayerGameErrorBoundary onError={setError}>
+      <PlayerGameContent instanceId={instanceId.current} error={error} />
+    </PlayerGameErrorBoundary>
+  );
+}
+
+// Extract the actual content to a separate component to avoid issues with hooks in error boundaries
+function PlayerGameContent({ instanceId, error }: { instanceId: string, error: Error | null }) {
   const { playerCode: urlPlayerCode } = useParams<{ playerCode: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -25,13 +89,23 @@ export default function PlayerGame() {
   const [finalCalledNumbers, setFinalCalledNumbers] = useState<number[]>([]);
   const [finalLastCalledNumber, setFinalLastCalledNumber] = useState<number | null>(null);
   
-  // Generate a unique ID for tracking this component 
-  const instanceId = useRef(`playerGame-${Math.random().toString(36).substring(2, 9)}`);
+  // If there was an error caught by the error boundary, log it and show error UI
+  if (error) {
+    logWithTimestamp(`PlayerGame (${instanceId}) rendering error state due to caught error: ${error.message}`, 'error', 'PlayerGame');
+    return (
+      <PlayerGameLoader 
+        isLoading={false} 
+        errorMessage={`An error occurred: ${error.message}`}
+        currentSession={null}
+        loadingStep="error"
+      />
+    );
+  }
   
   // Handle player code initialization - only run once on mount
   useEffect(() => {
     const initializePlayerCode = () => {
-      logWithTimestamp(`PlayerGame (${instanceId.current}) initialized with playerCode from URL: ${urlPlayerCode}`, 'info');
+      logWithTimestamp(`PlayerGame (${instanceId}) initialized with playerCode from URL: ${urlPlayerCode}`, 'info');
       
       // Priority 1: Use URL parameter if available
       if (urlPlayerCode && urlPlayerCode.trim() !== '') {
@@ -85,7 +159,7 @@ export default function PlayerGame() {
     };
 
     initializePlayerCode();
-  }, [urlPlayerCode, navigate, toast]);
+  }, [urlPlayerCode, navigate, toast, instanceId]);
 
   // Always initialize hooks with the same ordering - even if some will not be used
   const {
