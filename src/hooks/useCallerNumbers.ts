@@ -11,6 +11,7 @@ export function useCallerNumbers(sessionId: string | undefined, gameType: string
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
   const [isCallInProgress, setIsCallInProgress] = useState(false);
+  const [lastUpdateTime, setLastUpdateTime] = useState<number>(Date.now());
 
   // Calculate remaining numbers based on game type and called numbers
   const remainingNumbers = useCallback(() => {
@@ -21,20 +22,31 @@ export function useCallerNumbers(sessionId: string | undefined, gameType: string
     return allNumbers.filter(num => !calledNumbers.includes(num));
   }, [calledNumbers, gameType]);
 
-  // Subscribe to number updates from the service
+  // Subscribe to number updates from the service with improved stability
   useEffect(() => {
     if (!sessionId) return;
     
     const service = getNumberCallingService(sessionId);
     
     // Initialize with current state
-    setCalledNumbers(service.getCalledNumbers());
-    setLastCalledNumber(service.getLastCalledNumber());
+    const initialNumbers = service.getCalledNumbers();
+    const initialLastNumber = service.getLastCalledNumber();
     
-    // Subscribe to updates
+    setCalledNumbers(initialNumbers);
+    setLastCalledNumber(initialLastNumber);
+    setLastUpdateTime(Date.now());
+    
+    // Subscribe to updates with enhanced stability
     const unsubscribe = service.subscribe((numbers, last) => {
-      setCalledNumbers(numbers);
-      setLastCalledNumber(last);
+      // Only update if there's an actual change
+      const isActualUpdate = last !== lastCalledNumber || numbers.length !== calledNumbers.length;
+      
+      if (isActualUpdate) {
+        logWithTimestamp(`Caller received update: ${numbers.length} numbers, last: ${last}`, 'info');
+        setCalledNumbers([...numbers]);
+        setLastCalledNumber(last);
+        setLastUpdateTime(Date.now());
+      }
     });
     
     return () => {
@@ -44,7 +56,7 @@ export function useCallerNumbers(sessionId: string | undefined, gameType: string
 
   // Call a new number - this generates a random number from the remaining ones
   const callNextNumber = useCallback(async () => {
-    if (!sessionId || isCallInProgress) return;
+    if (!sessionId || isCallInProgress) return null;
     
     try {
       setIsCallInProgress(true);
@@ -52,7 +64,7 @@ export function useCallerNumbers(sessionId: string | undefined, gameType: string
       const remaining = remainingNumbers();
       if (remaining.length === 0) {
         logWithTimestamp('No more numbers to call', 'info');
-        return;
+        return null;
       }
       
       // Pick a random number from the remaining ones
@@ -64,7 +76,15 @@ export function useCallerNumbers(sessionId: string | undefined, gameType: string
       // Use service to call the number
       const success = await getNumberCallingService(sessionId).callNumber(number);
       
-      return success ? number : null;
+      if (success) {
+        // Update local state immediately for UI responsiveness
+        setCalledNumbers(prev => [...prev, number]);
+        setLastCalledNumber(number);
+        setLastUpdateTime(Date.now());
+        return number;
+      }
+      
+      return null;
     } catch (error) {
       logWithTimestamp(`Error calling number: ${error}`, 'error');
       return null;
@@ -78,7 +98,16 @@ export function useCallerNumbers(sessionId: string | undefined, gameType: string
     if (!sessionId) return false;
     
     try {
-      return await getNumberCallingService(sessionId).resetNumbers();
+      const success = await getNumberCallingService(sessionId).resetNumbers();
+      
+      if (success) {
+        // Update local state immediately
+        setCalledNumbers([]);
+        setLastCalledNumber(null);
+        setLastUpdateTime(Date.now());
+      }
+      
+      return success;
     } catch (error) {
       logWithTimestamp(`Error resetting numbers: ${error}`, 'error');
       return false;
@@ -91,6 +120,7 @@ export function useCallerNumbers(sessionId: string | undefined, gameType: string
     isCallInProgress,
     remainingNumbers: remainingNumbers(),
     callNextNumber,
-    resetCalledNumbers
+    resetCalledNumbers,
+    lastUpdateTime
   };
 }

@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
 const STORAGE_KEY_PREFIX = 'bingo-numbers-session-';
-const SYNC_INTERVAL = 5000; // 5 seconds between DB syncs
+const SYNC_INTERVAL = 60000; // 60 seconds between DB syncs (changed from 5 seconds)
 
 type CalledNumbersState = {
   sessionId: string;
@@ -18,6 +18,7 @@ export class NumberCallingService {
   private localState: CalledNumbersState;
   private syncInterval: number | null = null;
   private subscribers: ((numbers: number[], lastCalled: number | null) => void)[] = [];
+  private broadcastChannels: { [key: string]: any } = {};
   
   constructor(sessionId: string) {
     this.sessionId = sessionId;
@@ -57,8 +58,14 @@ export class NumberCallingService {
     // Notify subscribers
     this.notifySubscribers();
     
-    // Broadcast to other clients
-    await this.broadcastNumber(number);
+    // Broadcast to other clients with more reliable mechanism
+    try {
+      await this.broadcastNumber(number);
+      logWithTimestamp(`Successfully broadcast number ${number}`, 'info');
+    } catch (err) {
+      logWithTimestamp(`Error in broadcasting number: ${err}`, 'error');
+      // Even if broadcast fails, we continue since storage is updated
+    }
     
     // Schedule sync if not already syncing
     if (this.syncInterval === null) {
@@ -85,7 +92,12 @@ export class NumberCallingService {
     this.notifySubscribers();
     
     // Broadcast reset to other clients
-    await this.broadcastReset();
+    try {
+      await this.broadcastReset();
+      logWithTimestamp("Successfully broadcast game reset", 'info');
+    } catch (err) {
+      logWithTimestamp(`Error in broadcasting reset: ${err}`, 'error');
+    }
     
     // Force sync to database immediately
     await this.syncToDatabase();
@@ -131,6 +143,17 @@ export class NumberCallingService {
     // Final sync to make sure we don't lose data
     this.syncToDatabase().catch(err => {
       logWithTimestamp(`Error in final sync: ${err}`, 'error');
+    });
+    
+    // Clean up broadcast channels
+    Object.values(this.broadcastChannels).forEach(channel => {
+      try {
+        if (channel && channel.unsubscribe) {
+          channel.unsubscribe();
+        }
+      } catch (err) {
+        logWithTimestamp(`Error unsubscribing from channel: ${err}`, 'error');
+      }
     });
     
     this.subscribers = [];
@@ -278,8 +301,17 @@ export class NumberCallingService {
     try {
       logWithTimestamp(`Broadcasting number ${number} via realtime channels`, 'info');
       
-      // Use a dedicated broadcast channel
-      const result = await supabase.channel('number-broadcast').send({
+      // Create a channel name that's unique to this session
+      const channelName = `number-broadcast-${this.sessionId}`;
+      
+      // Create or get existing channel
+      if (!this.broadcastChannels[channelName]) {
+        this.broadcastChannels[channelName] = supabase.channel(channelName);
+        this.broadcastChannels[channelName].subscribe();
+      }
+      
+      // Use the channel to send a broadcast
+      const result = await this.broadcastChannels[channelName].send({
         type: 'broadcast',
         event: 'number-called',
         payload: {
@@ -297,6 +329,7 @@ export class NumberCallingService {
       logWithTimestamp("Number broadcast sent successfully", 'info');
     } catch (err) {
       logWithTimestamp(`Error broadcasting number: ${err}`, 'error');
+      throw err; // Re-throw the error for better error handling
     }
   }
   
@@ -304,8 +337,17 @@ export class NumberCallingService {
     try {
       logWithTimestamp(`Broadcasting game reset via realtime channels`, 'info');
       
-      // Use a dedicated broadcast channel
-      const result = await supabase.channel('game-reset-broadcast').send({
+      // Create a channel name that's unique to this session
+      const channelName = `game-reset-broadcast-${this.sessionId}`;
+      
+      // Create or get existing channel
+      if (!this.broadcastChannels[channelName]) {
+        this.broadcastChannels[channelName] = supabase.channel(channelName);
+        this.broadcastChannels[channelName].subscribe();
+      }
+      
+      // Use the channel to send a broadcast
+      const result = await this.broadcastChannels[channelName].send({
         type: 'broadcast',
         event: 'game-reset',
         payload: {
@@ -323,12 +365,17 @@ export class NumberCallingService {
       logWithTimestamp("Game reset broadcast sent successfully", 'info');
     } catch (err) {
       logWithTimestamp(`Error broadcasting reset: ${err}`, 'error');
+      throw err;
     }
   }
   
   private setupBroadcastListener(): void {
+    // Create a unique channel name for this session
+    const numberChannelName = `number-broadcast-${this.sessionId}`;
+    const resetChannelName = `game-reset-broadcast-${this.sessionId}`;
+    
     // Listen for number broadcasts from other clients
-    const numberChannel = supabase.channel('number-broadcast')
+    this.broadcastChannels[numberChannelName] = supabase.channel(numberChannelName)
       .on('broadcast', { event: 'number-called' }, (payload) => {
         // Check if this broadcast is for our session
         if (payload.payload && payload.payload.sessionId === this.sessionId) {
@@ -355,7 +402,7 @@ export class NumberCallingService {
       .subscribe();
     
     // Listen for game reset broadcasts
-    const resetChannel = supabase.channel('game-reset-broadcast')
+    this.broadcastChannels[resetChannelName] = supabase.channel(resetChannelName)
       .on('broadcast', { event: 'game-reset' }, (payload) => {
         // Check if this broadcast is for our session
         if (payload.payload && payload.payload.sessionId === this.sessionId) {

@@ -1,5 +1,5 @@
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { motion } from "framer-motion";
 
@@ -12,23 +12,24 @@ export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNu
   // Sort the numbers for easier reference
   const sortedNumbers = [...calledNumbers].sort((a, b) => a - b);
   
-  // Animated highlight for newly called number
-  const isNewNumber = useRef(false);
-  const prevNumber = useRef<number | null>(null);
-  const prevCalledCount = useRef<number>(0);
+  // Track state for animation
+  const [animatingNumber, setAnimatingNumber] = useState<number | null>(null);
+  const prevNumberRef = useRef<number | null>(null);
+  const prevCalledCountRef = useRef<number>(0);
   
   useEffect(() => {
-    // Check if we have a truly new number
+    // Check if we have a truly new number (not just a re-render)
     if (currentNumber !== null && 
-       (currentNumber !== prevNumber.current || calledNumbers.length !== prevCalledCount.current)) {
-      console.log("New number detected:", currentNumber, "Previous:", prevNumber.current);
-      isNewNumber.current = true;
-      prevNumber.current = currentNumber;
-      prevCalledCount.current = calledNumbers.length;
+       (currentNumber !== prevNumberRef.current || calledNumbers.length !== prevCalledCountRef.current)) {
       
-      // Reset animation flag after animation completes
+      console.log("New number detected:", currentNumber, "Previous:", prevNumberRef.current);
+      setAnimatingNumber(currentNumber);
+      prevNumberRef.current = currentNumber;
+      prevCalledCountRef.current = calledNumbers.length;
+      
+      // Reset animation after a delay
       const timer = setTimeout(() => {
-        isNewNumber.current = false;
+        setAnimatingNumber(null);
       }, 3000);
       
       return () => clearTimeout(timer);
@@ -44,9 +45,9 @@ export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNu
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-500">Last Called:</span>
               <motion.div
-                key={`current-${currentNumber}-${isNewNumber.current}`}
-                initial={isNewNumber.current ? { scale: 1.2, backgroundColor: "#4ade80" } : {}}
-                animate={isNewNumber.current ? 
+                key={`current-${currentNumber}`}
+                initial={animatingNumber === currentNumber ? { scale: 1.2, backgroundColor: "#4ade80" } : {}}
+                animate={animatingNumber === currentNumber ? 
                   { scale: 1, backgroundColor: "#f8fafc" } : 
                   { scale: 1 }
                 }
@@ -64,13 +65,14 @@ export default function CalledNumbers({ calledNumbers, currentNumber }: CalledNu
           {Array.from({ length: 90 }, (_, i) => i + 1).map((number) => {
             const isCalled = sortedNumbers.includes(number);
             const isLastCalled = number === currentNumber;
+            const isAnimating = number === animatingNumber;
             
             return (
               <motion.div
-                key={`${number}-${isCalled}-${isLastCalled}-${isNewNumber.current}`}
-                initial={isLastCalled && isNewNumber.current ? { scale: 1.5, backgroundColor: "#4ade80" } : {}}
+                key={`${number}-${isCalled}-${isLastCalled}`}
+                initial={isAnimating ? { scale: 1.5, backgroundColor: "#4ade80" } : {}}
                 animate={
-                  isLastCalled && isNewNumber.current 
+                  isAnimating
                     ? { scale: 1, backgroundColor: isCalled ? "#0284c7" : "#f1f5f9" }
                     : {}
                 }
