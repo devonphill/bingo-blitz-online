@@ -20,14 +20,29 @@ const buttonSizes = {
   icon: "h-10 w-10",
 };
 
-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+// Export the button props interface for use in other components
+export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: keyof typeof buttonVariants;
   size?: keyof typeof buttonSizes;
   asChild?: boolean;
 }
 
+// Helper function that creates the correct class names based on variant and size
+export function getButtonVariantClasses({ 
+  variant = "default", 
+  size = "default"
+}: { 
+  variant?: keyof typeof buttonVariants; 
+  size?: keyof typeof buttonSizes;
+}) {
+  return cn(
+    buttonVariants[variant],
+    buttonSizes[size]
+  );
+}
+
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className = "", variant = "default", size = "default", asChild = false, ...props }, ref) => {
+  ({ className = "", variant = "default", size = "default", asChild = false, children, ...props }, ref) => {
     const variantClasses = buttonVariants[variant];
     const sizeClasses = buttonSizes[size];
     const allClasses = cn(
@@ -42,6 +57,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         className={allClasses}
         asChild={asChild}
+        children={children}
         {...props}
       />
     );
