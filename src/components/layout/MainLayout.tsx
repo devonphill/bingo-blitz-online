@@ -17,15 +17,14 @@ interface MainLayoutProps {
 }
 
 const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full">
-        <Sidebar>
+        <Sidebar defaultCollapsed={false}>
           <SidebarHeader>
-            <div className="p-4">
+            <div className="p-4 flex flex-col">
               <h2 className="text-xl font-bold">Bingo Blitz</h2>
+              <p className="text-sm text-muted-foreground">Game Management</p>
             </div>
           </SidebarHeader>
           <SidebarContent>
@@ -33,14 +32,18 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
           </SidebarContent>
         </Sidebar>
         
-        <SidebarInset>
+        <SidebarInset className="flex flex-col flex-1">
           <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background px-4 shadow-sm">
-            <SidebarTrigger />
+            <SidebarTrigger>
+              <Menu className="h-6 w-6" />
+            </SidebarTrigger>
             <div className="flex-1">
               <h1 className="text-xl font-semibold">Bingo Blitz Online</h1>
             </div>
           </header>
-          <main className="flex-1">{children}</main>
+          <main className="flex-1 p-4 overflow-auto">
+            {children}
+          </main>
         </SidebarInset>
       </div>
     </SidebarProvider>
