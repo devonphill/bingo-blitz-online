@@ -1,17 +1,17 @@
 
 import React from 'react';
-import { createRoot } from 'react-dom/client';
+import ReactDOM from 'react-dom';
 import App from './App.tsx';
 import './index.css';
 
 const rootElement = document.getElementById("root");
 
 if (rootElement) {
-  // Use createRoot for React 18
-  const root = createRoot(rootElement);
-  root.render(
+  // Use render method for React 17
+  ReactDOM.render(
     <React.StrictMode>
       <App />
-    </React.StrictMode>
+    </React.StrictMode>,
+    rootElement
   );
 }
