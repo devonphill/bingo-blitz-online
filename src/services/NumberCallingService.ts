@@ -12,6 +12,7 @@ type CalledNumbersState = {
   lastCalledNumber: number | null;
   timestamp: string;
   synced: boolean;
+  saveToDatabase: boolean; // New field for toggle
 };
 
 export class NumberCallingService {
@@ -44,6 +45,24 @@ export class NumberCallingService {
   }
   
   /**
+   * Get save to database setting
+   */
+  public getSaveToDatabase(): boolean {
+    return this.localState.saveToDatabase !== false; // Default to true if not set
+  }
+  
+  /**
+   * Set save to database setting
+   */
+  public setSaveToDatabase(value: boolean): void {
+    if (this.localState.saveToDatabase !== value) {
+      this.localState.saveToDatabase = value;
+      this.saveLocalState();
+      logWithTimestamp(`Save to database setting changed to: ${value}`, 'info');
+    }
+  }
+  
+  /**
    * Call a new number as the caller
    */
   public async callNumber(number: number): Promise<boolean> {
@@ -68,8 +87,16 @@ export class NumberCallingService {
       // Even if broadcast fails, we continue since storage is updated
     }
     
-    // Schedule sync if not already syncing
-    if (this.syncInterval === null) {
+    // If saveToDatabase is enabled, sync immediately instead of waiting
+    if (this.getSaveToDatabase()) {
+      try {
+        await this.syncToDatabase();
+        logWithTimestamp(`Number ${number} saved to database`, 'info');
+      } catch (err) {
+        logWithTimestamp(`Error saving number to database: ${err}`, 'error');
+      }
+    } else if (this.syncInterval === null) {
+      // Only schedule periodic sync if not already syncing and saveToDatabase is false
       this.startPeriodicSync();
     }
     
@@ -100,8 +127,10 @@ export class NumberCallingService {
       logWithTimestamp(`Error in broadcasting reset: ${err}`, 'error');
     }
     
-    // Force sync to database immediately
-    await this.syncToDatabase();
+    // Force sync to database immediately if saveToDatabase is enabled
+    if (this.getSaveToDatabase()) {
+      await this.syncToDatabase();
+    }
     
     return true;
   }
@@ -128,8 +157,10 @@ export class NumberCallingService {
     // First try to fetch latest state from database
     await this.fetchDatabaseState();
     
-    // Start periodic sync
-    this.startPeriodicSync();
+    // Start periodic sync if saveToDatabase is enabled
+    if (this.getSaveToDatabase()) {
+      this.startPeriodicSync();
+    }
   }
   
   /**
@@ -141,10 +172,12 @@ export class NumberCallingService {
       this.syncInterval = null;
     }
     
-    // Final sync to make sure we don't lose data
-    this.syncToDatabase().catch(err => {
-      logWithTimestamp(`Error in final sync: ${err}`, 'error');
-    });
+    // Final sync to make sure we don't lose data if saveToDatabase is enabled
+    if (this.getSaveToDatabase()) {
+      this.syncToDatabase().catch(err => {
+        logWithTimestamp(`Error in final sync: ${err}`, 'error');
+      });
+    }
     
     // Clean up broadcast channels
     Object.values(this.broadcastChannels).forEach(channel => {
@@ -182,12 +215,18 @@ export class NumberCallingService {
         calledNumbers: [],
         lastCalledNumber: null,
         timestamp: new Date().toISOString(),
-        synced: true
+        synced: true,
+        saveToDatabase: true // Default to true for backward compatibility
       };
     }
     
     try {
-      return JSON.parse(stored) as CalledNumbersState;
+      const parsed = JSON.parse(stored) as CalledNumbersState;
+      // Ensure the saveToDatabase field exists (backward compatibility)
+      if (parsed.saveToDatabase === undefined) {
+        parsed.saveToDatabase = true;
+      }
+      return parsed;
     } catch (err) {
       logWithTimestamp(`Error parsing stored number state: ${err}`, 'error');
       return {
@@ -195,7 +234,8 @@ export class NumberCallingService {
         calledNumbers: [],
         lastCalledNumber: null,
         timestamp: new Date().toISOString(),
-        synced: true
+        synced: true,
+        saveToDatabase: true
       };
     }
   }
@@ -211,17 +251,25 @@ export class NumberCallingService {
       window.clearInterval(this.syncInterval);
     }
     
+    // Only set up sync interval if saveToDatabase is true
+    if (!this.getSaveToDatabase()) {
+      this.syncInterval = null;
+      return;
+    }
+    
     // Set up new sync interval
     this.syncInterval = window.setInterval(() => {
-      this.syncToDatabase().catch(err => {
-        logWithTimestamp(`Error in periodic sync: ${err}`, 'error');
-      });
+      if (this.getSaveToDatabase()) {
+        this.syncToDatabase().catch(err => {
+          logWithTimestamp(`Error in periodic sync: ${err}`, 'error');
+        });
+      }
     }, SYNC_INTERVAL);
   }
   
   private async syncToDatabase(): Promise<void> {
-    // Skip if already synced
-    if (this.localState.synced) {
+    // Skip if already synced or saveToDatabase is disabled
+    if (this.localState.synced || !this.getSaveToDatabase()) {
       return;
     }
     
@@ -286,8 +334,8 @@ export class NumberCallingService {
           this.notifySubscribers();
         } else {
           logWithTimestamp('Local state is newer than database state, keeping local state', 'info');
-          // Sync local state to database if it's newer
-          if (!this.localState.synced) {
+          // Sync local state to database if it's newer and saveToDatabase is enabled
+          if (!this.localState.synced && this.getSaveToDatabase()) {
             await this.syncToDatabase();
           }
         }
@@ -457,6 +505,7 @@ export function getNumberCallingService(sessionId: string): NumberCallingService
 export function useNumberCalling(sessionId: string | undefined) {
   const [calledNumbers, setCalledNumbers] = React.useState<number[]>([]);
   const [lastCalledNumber, setLastCalledNumber] = React.useState<number | null>(null);
+  const [saveToDatabase, setSaveToDatabase] = React.useState<boolean>(true);
   
   React.useEffect(() => {
     if (!sessionId) return;
@@ -467,6 +516,7 @@ export function useNumberCalling(sessionId: string | undefined) {
     // Initial state
     setCalledNumbers(service.getCalledNumbers());
     setLastCalledNumber(service.getLastCalledNumber());
+    setSaveToDatabase(service.getSaveToDatabase());
     
     // Subscribe to updates
     const unsubscribe = service.subscribe((numbers, last) => {
@@ -494,10 +544,21 @@ export function useNumberCalling(sessionId: string | undefined) {
     return service.resetNumbers();
   }, [sessionId]);
   
+  // Function to toggle save to database setting
+  const toggleSaveToDatabase = React.useCallback(() => {
+    if (!sessionId) return;
+    const service = getNumberCallingService(sessionId);
+    const newValue = !service.getSaveToDatabase();
+    service.setSaveToDatabase(newValue);
+    setSaveToDatabase(newValue);
+  }, [sessionId]);
+  
   return {
     calledNumbers,
     lastCalledNumber,
     callNumber,
-    resetNumbers
+    resetNumbers,
+    saveToDatabase,
+    toggleSaveToDatabase
   };
 }

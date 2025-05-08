@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Bell, RefreshCw, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Bell, RefreshCw, AlertCircle, AlertTriangle, Database } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -11,6 +10,7 @@ import { logWithTimestamp } from '@/utils/logUtils';
 import { GoLiveButton } from '@/components/ui/go-live-button';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
 import { useCallerNumbers } from '@/hooks/useCallerNumbers';
+import { Switch } from '@/components/ui/switch';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -57,7 +57,9 @@ export default function CallerControls({
     lastCalledNumber,
     isCallInProgress,
     remainingNumbers: availableNumbers,
-    callNextNumber
+    callNextNumber,
+    saveToDatabase, // Get the save to database setting
+    toggleSaveToDatabase // Get the toggle function
   } = useCallerNumbers(sessionId, gameType);
   
   // Connect to the WebSocket hub as a caller
@@ -93,6 +95,17 @@ export default function CallerControls({
         variant: "destructive"
       });
     }
+  };
+
+  const handleSaveToggle = () => {
+    toggleSaveToDatabase();
+    toast({
+      title: saveToDatabase ? "Database Saves Disabled" : "Database Saves Enabled",
+      description: saveToDatabase 
+        ? "Numbers will no longer be saved to the database" 
+        : "Numbers will now be saved to the database",
+      duration: 3000
+    });
   };
 
   const handleGoLiveClick = async () => {
@@ -246,6 +259,18 @@ export default function CallerControls({
               <div className="text-2xl font-bold">{lastCalledNumber}</div>
             </div>
           )}
+          
+          {/* New: Add Save to Database toggle */}
+          <div className="flex items-center justify-between p-3 rounded-md bg-gray-100">
+            <div className="flex items-center gap-2">
+              <Database className={`h-4 w-4 ${saveToDatabase ? 'text-green-500' : 'text-gray-400'}`} />
+              <span className="text-sm">Save to Database</span>
+            </div>
+            <Switch
+              checked={saveToDatabase}
+              onCheckedChange={handleSaveToggle}
+            />
+          </div>
           
           <div className="grid grid-cols-1 gap-3">
             <Button

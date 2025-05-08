@@ -12,6 +12,7 @@ export function useCallerNumbers(sessionId: string | undefined, gameType: string
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
   const [isCallInProgress, setIsCallInProgress] = useState(false);
   const [lastUpdateTime, setLastUpdateTime] = useState<number>(Date.now());
+  const [saveToDatabase, setSaveToDatabase] = useState(true);
 
   // Calculate remaining numbers based on game type and called numbers
   const remainingNumbers = useCallback(() => {
@@ -35,6 +36,7 @@ export function useCallerNumbers(sessionId: string | undefined, gameType: string
     setCalledNumbers(initialNumbers);
     setLastCalledNumber(initialLastNumber);
     setLastUpdateTime(Date.now());
+    setSaveToDatabase(service.getSaveToDatabase());
     
     // Subscribe to updates with enhanced stability
     const unsubscribe = service.subscribe((numbers, last) => {
@@ -114,6 +116,18 @@ export function useCallerNumbers(sessionId: string | undefined, gameType: string
     }
   }, [sessionId]);
 
+  // Toggle the save to database setting
+  const toggleSaveToDatabase = useCallback(() => {
+    if (!sessionId) return;
+    
+    const service = getNumberCallingService(sessionId);
+    const currentValue = service.getSaveToDatabase();
+    service.setSaveToDatabase(!currentValue);
+    setSaveToDatabase(!currentValue);
+    
+    logWithTimestamp(`Save to database toggled to: ${!currentValue}`, 'info');
+  }, [sessionId]);
+
   return {
     calledNumbers,
     lastCalledNumber,
@@ -121,6 +135,8 @@ export function useCallerNumbers(sessionId: string | undefined, gameType: string
     remainingNumbers: remainingNumbers(),
     callNextNumber,
     resetCalledNumbers,
-    lastUpdateTime
+    lastUpdateTime,
+    saveToDatabase,
+    toggleSaveToDatabase
   };
 }

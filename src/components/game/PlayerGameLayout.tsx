@@ -1,224 +1,172 @@
-import React from 'react';
-import CurrentNumberDisplay from '@/components/game/CurrentNumberDisplay';
-import GameHeader from '@/components/game/GameHeader';
-import BingoClaim from '@/components/game/BingoClaim';
-import {
-  SidebarProvider,
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupLabel,
-  SidebarGroupContent
-} from "@/components/ui/sidebar";
+
+import React, { useState } from "react";
+import PlayerGameContent from "./PlayerGameContent";
+import { Menu, X } from "lucide-react";
+import { Button } from "../ui/button";
 
 interface PlayerGameLayoutProps {
+  children?: React.ReactNode;
   tickets: any[];
-  calledNumbers: number[];
-  currentNumber: number | null;
-  currentSession: any;
-  autoMarking: boolean;
-  setAutoMarking: (value: boolean) => void;
-  playerCode: string;
-  playerName: string;
-  winPrizes: Record<string, string>;
-  activeWinPatterns: string[];
-  currentWinPattern: string | null;
-  onClaimBingo: () => Promise<boolean>;
-  errorMessage: string;
-  isLoading: boolean;
-  isClaiming: boolean;
-  claimStatus: 'none' | 'pending' | 'valid' | 'invalid';
-  gameType: string;
-  children: React.ReactNode;
-  currentGameNumber: number; 
-  numberOfGames: number;
+  calledNumbers?: number[];
+  currentNumber?: number | null;
+  currentSession?: any;
+  autoMarking?: boolean;
+  setAutoMarking?: (value: boolean) => void;
+  playerCode?: string;
+  playerName?: string;
+  winPrizes?: Record<string, string>;
+  activeWinPatterns?: string[];
+  onClaimBingo?: () => Promise<boolean>;
+  claimStatus?: 'none' | 'pending' | 'valid' | 'invalid';
+  isClaiming?: boolean;
+  errorMessage?: string;
+  isLoading?: boolean;
+  gameType?: string;
+  currentWinPattern?: string | null;
+  currentGameNumber?: number;
+  numberOfGames?: number;
   connectionState?: 'disconnected' | 'connecting' | 'connected' | 'error';
   onRefreshTickets?: () => void;
   sessionId?: string;
 }
 
 export default function PlayerGameLayout({
-  tickets,
-  calledNumbers,
-  currentNumber,
+  children,
+  tickets = [],
+  calledNumbers = [],
+  currentNumber = null,
   currentSession,
-  autoMarking,
+  autoMarking = true,
   setAutoMarking,
   playerCode,
   playerName,
-  winPrizes,
-  activeWinPatterns,
-  currentWinPattern,
+  winPrizes = {},
+  activeWinPatterns = [],
   onClaimBingo,
+  claimStatus = 'none',
+  isClaiming = false,
   errorMessage,
   isLoading,
-  isClaiming,
-  claimStatus,
-  gameType,
-  children,
-  currentGameNumber,
-  numberOfGames,
+  gameType = 'mainstage',
+  currentWinPattern = null,
+  currentGameNumber = 1,
+  numberOfGames = 1,
   connectionState = 'connected',
   onRefreshTickets,
   sessionId
 }: PlayerGameLayoutProps) {
-  const resetClaimStatus = () => {}; // This is handled by the usePlayerGame hook
-  
+  // Add state for sidebar visibility - closed by default
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
   return (
-    <SidebarProvider defaultOpen={true}>
-      <div className="w-full flex min-h-screen bg-gray-100">
-        <Sidebar>
-          <SidebarContent>
-            {/* Game Information */}
-            <SidebarGroup>
-              <SidebarGroupLabel>Game Information</SidebarGroupLabel>
-              <SidebarGroupContent className="space-y-3 px-1">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Game Type:</span>
-                  <span className="font-medium">{gameType === 'mainstage' ? '90-Ball' : gameType}</span>
-                </div>
-                
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Game:</span>
-                  <span className="font-medium">{currentGameNumber} of {numberOfGames}</span>
-                </div>
-                
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Called Numbers:</span>
-                  <span className="font-medium">{calledNumbers.length}</span>
-                </div>
-                
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Win Pattern:</span>
-                  <span className="font-medium">{currentWinPattern || 'Full House'}</span>
-                </div>
-              </SidebarGroupContent>
-            </SidebarGroup>
-
-            {/* Connection Status */}
-            <SidebarGroup>
-              <SidebarGroupLabel>Connection</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <div className={`rounded-md py-2 px-4 mb-4 text-center text-sm ${
-                  connectionState === 'connected' ? 'bg-green-50 text-green-700' :
-                  connectionState === 'connecting' ? 'bg-blue-50 text-blue-700' :
-                  'bg-red-50 text-red-700'
-                }`}>
-                  <div className="flex items-center justify-center">
-                    <div className={`h-2 w-2 rounded-full mr-2 ${
-                      connectionState === 'connected' ? 'bg-green-500' :
-                      connectionState === 'connecting' ? 'bg-blue-500' :
-                      'bg-red-500'
-                    }`}></div>
-                    <span>
-                      {connectionState === 'connected' ? 'Connected' :
-                      connectionState === 'connecting' ? 'Connecting...' :
-                      'Disconnected'}
-                    </span>
-                  </div>
-                </div>
-              </SidebarGroupContent>
-            </SidebarGroup>
-
-            {/* Recent Numbers */}
-            <SidebarGroup>
-              <SidebarGroupLabel>Recent Numbers</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <div className="grid grid-cols-5 gap-2">
-                  {calledNumbers.slice(-10).reverse().map((number, index) => (
-                    <div 
-                      key={`recent-${index}`}
-                      className="bg-gray-100 rounded-full h-8 w-8 flex items-center justify-center text-sm font-medium"
-                    >
-                      {number}
-                    </div>
-                  ))}
-                </div>
-              </SidebarGroupContent>
-            </SidebarGroup>
-
-            {/* Current Number */}
-            <SidebarGroup>
-              <SidebarGroupContent className="flex flex-col items-center">
-                <CurrentNumberDisplay 
-                  number={currentNumber}
-                  sizePx={120}
-                  className="mb-4"
-                />
-                
-                {/* Bingo Claim Button */}
-                <div className="w-full max-w-xs mb-4">
-                  <BingoClaim
-                    onClaimBingo={onClaimBingo}
-                    claimStatus={claimStatus}
-                    isClaiming={isClaiming}
-                    resetClaimStatus={() => {}}
-                  />
-                </div>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          </SidebarContent>
-        </Sidebar>
-
-        <main className="flex-1">
-          <div className="w-full bg-white shadow-sm py-4">
-            <div className="container mx-auto px-4">
-              <GameHeader 
-                gameNumber={currentGameNumber} 
-                totalGames={numberOfGames}
-                pattern={currentWinPattern || 'Full House'}
-                prize={currentWinPattern && winPrizes[currentWinPattern] || 'Prize to be announced'}
-                gameType={gameType} 
-                playerName={playerName} 
-                playerCode={playerCode}
-                currentGameNumber={currentGameNumber}
-                numberOfGames={numberOfGames}
-                claimStatus={claimStatus}
-                isClaiming={isClaiming}
-                onClaimBingo={onClaimBingo}
-              />
+    <div className="min-h-screen flex relative">
+      {/* Sidebar toggle button - fixed position */}
+      <Button 
+        variant="outline" 
+        size="icon"
+        className="fixed top-4 left-4 z-50 bg-white shadow-md rounded-full"
+        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+      >
+        {isSidebarOpen ? <X size={18} /> : <Menu size={18} />}
+      </Button>
+      
+      {/* Sidebar - hidden by default */}
+      <div 
+        className={`fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-300 ease-in-out 
+          ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
+          bg-white shadow-lg`}
+      >
+        <div className="p-4 pt-16 h-full overflow-y-auto">
+          <h3 className="font-bold text-lg mb-4">Game Info</h3>
+          <div className="space-y-4">
+            <div className="border-b pb-2">
+              <p className="text-sm text-gray-500">Player</p>
+              <p className="font-medium">{playerName || 'Guest'}</p>
+            </div>
+            
+            <div className="border-b pb-2">
+              <p className="text-sm text-gray-500">Game</p>
+              <p className="font-medium">{currentGameNumber} of {numberOfGames}</p>
+            </div>
+            
+            <div className="border-b pb-2">
+              <p className="text-sm text-gray-500">Game Type</p>
+              <p className="font-medium">{gameType === 'mainstage' ? '90 Ball Bingo' : gameType}</p>
+            </div>
+            
+            <div className="border-b pb-2">
+              <p className="text-sm text-gray-500">Pattern</p>
+              <p className="font-medium">{currentWinPattern || 'Not set'}</p>
+            </div>
+            
+            <div className="border-b pb-2">
+              <p className="text-sm text-gray-500">Tickets</p>
+              <p className="font-medium">{tickets.length}</p>
+            </div>
+            
+            <div className="border-b pb-2">
+              <p className="text-sm text-gray-500">Called Numbers</p>
+              <p className="font-medium">{calledNumbers.length}</p>
+            </div>
+            
+            <div className="border-b pb-2">
+              <p className="text-sm text-gray-500">Last Called</p>
+              <p className="font-medium">{currentNumber || '-'}</p>
+            </div>
+            
+            <div className="border-b pb-2">
+              <p className="text-sm text-gray-500">Connection</p>
+              <div className="flex items-center">
+                <div className={`w-2 h-2 rounded-full mr-2 ${
+                  connectionState === 'connected' ? 'bg-green-500' : 
+                  connectionState === 'connecting' ? 'bg-amber-500' : 'bg-red-500'
+                }`}></div>
+                <p className="font-medium capitalize">{connectionState}</p>
+              </div>
             </div>
           </div>
           
-          <div className="container mx-auto px-4 py-8">
-            {/* Only show error message if it's not a connection-related error and we have a real error */}
-            {errorMessage && !errorMessage.toLowerCase().includes('connection') && 
-             !errorMessage.toLowerCase().includes('player code is required') && (
-              <div className="bg-red-50 p-4 rounded-md text-red-800 mb-6">
-                <p className="font-medium">Error: {errorMessage}</p>
-                <p className="text-sm mt-1">Please try refreshing the page or re-join using your player code.</p>
-              </div>
-            )}
-            
-            {/* Auto marking toggle */}
-            <div className="bg-white rounded-lg shadow-sm p-4 mb-6 flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold">Auto Marking</h3>
-                <p className="text-sm text-gray-500">Automatically mark numbers on your tickets</p>
-              </div>
-              <div className="flex items-center">
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="sr-only peer"
-                    checked={autoMarking}
-                    onChange={(e) => {
-                      setAutoMarking(e.target.checked);
-                      localStorage.setItem('autoMarking', e.target.checked.toString());
-                    }}
-                  />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
-              </div>
-            </div>
-            
-            {/* Game content */}
-            <div className="bg-white rounded-lg shadow-sm p-4">
-              {children}
-            </div>
-          </div>
-        </main>
+          {onRefreshTickets && (
+            <Button 
+              onClick={onRefreshTickets}
+              variant="outline" 
+              size="sm"
+              className="mt-4 w-full"
+            >
+              Refresh Tickets
+            </Button>
+          )}
+        </div>
       </div>
-    </SidebarProvider>
+      
+      {/* Main content - full width */}
+      <div className="flex-1">
+        <PlayerGameContent 
+          tickets={tickets}
+          calledNumbers={calledNumbers}
+          currentNumber={currentNumber}
+          currentSession={currentSession}
+          autoMarking={autoMarking}
+          setAutoMarking={setAutoMarking}
+          playerCode={playerCode}
+          playerName={playerName}
+          winPrizes={winPrizes}
+          activeWinPatterns={activeWinPatterns}
+          onClaimBingo={onClaimBingo}
+          claimStatus={claimStatus}
+          isClaiming={isClaiming}
+          gameType={gameType}
+          currentWinPattern={currentWinPattern}
+          currentGameNumber={currentGameNumber}
+          numberOfGames={numberOfGames}
+          backgroundColor="white"
+          connectionState={connectionState}
+          onRefreshTickets={onRefreshTickets}
+          onReconnect={onRefreshTickets}
+        >
+          {children}
+        </PlayerGameContent>
+      </div>
+    </div>
   );
 }

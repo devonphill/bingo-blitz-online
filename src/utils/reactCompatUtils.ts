@@ -216,13 +216,10 @@ export function CompatButton({
     });
   }
   
-  // Fix: Remove className from the createElement call since it's already in props
+  // Fix: TypeScript was complaining about className not existing in the props type
   return React.createElement(
     'button',
-    {
-      ...props,
-      className
-    },
+    Object.assign({}, props, { className }) as React.ButtonHTMLAttributes<HTMLButtonElement>,
     children
   );
 }
