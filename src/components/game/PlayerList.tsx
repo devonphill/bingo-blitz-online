@@ -81,7 +81,11 @@ export default function PlayerList({
 
   // Function to check if a player has a pending claim
   const hasPlayerClaim = (playerId: string): boolean => {
-    return claimsData?.some(claim => claim.playerId === playerId) || false;
+    const hasClaim = claimsData?.some(claim => claim.playerId === playerId) || false;
+    if (hasClaim) {
+      logWithTimestamp(`Player ${playerId} has a pending claim`, 'info');
+    }
+    return hasClaim;
   };
 
   if (loading) {

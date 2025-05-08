@@ -46,6 +46,10 @@ export function useCallerClaimManagement(sessionId: string | null) {
           // Force refetch claims 
           fetchClaims();
           
+          // Also try to add the claim directly from the broadcast data
+          // This provides a backup mechanism if the claim isn't in the service yet
+          tryAddClaimFromBroadcast(payload.payload);
+          
           // Show toast to alert the caller
           toast({
             title: "New Bingo Claim!",
@@ -64,44 +68,69 @@ export function useCallerClaimManagement(sessionId: string | null) {
           // Force refetch claims
           fetchClaims();
           
-          // If we don't already have this claim, use submitClaim method instead of addClaim
-          if (!claims.some(claim => claim.id === payload.payload.id)) {
-            // Create claim data in expected format
-            const claimData = {
-              playerId: payload.payload.playerId,
-              playerName: payload.payload.playerName || "Unknown Player",
-              sessionId: sessionId,
-              gameNumber: payload.payload.gameNumber || 1,
-              winPattern: payload.payload.winPattern || "Unknown Pattern",
-              gameType: payload.payload.gameType || "mainstage",
-              ticket: payload.payload.ticket || {
-                serial: "unknown",
-                perm: 0,
-                position: 0,
-                layoutMask: 0,
-                numbers: []
-              },
-              calledNumbers: payload.payload.calledNumbers || [],
-              lastCalledNumber: payload.payload.lastCalledNumber || null
-            };
-            
-            // Use submitClaim instead of addClaim
-            claimService.submitClaim(claimData);
-            
-            // Refetch to get the new claim
-            fetchClaims();
-          }
+          // Also try to add the claim directly from the broadcast data
+          tryAddClaimFromBroadcast(payload.payload);
         }
       })
       .subscribe();
+      
+    // Also attempt a database fetch for pending claims
+    fetchPendingClaimsFromDatabase();
+    
+    // Set up periodic database check as an additional backup
+    const dbInterval = setInterval(() => {
+      fetchPendingClaimsFromDatabase();
+    }, 15000); // Every 15 seconds
       
     return () => {
       logWithTimestamp(`Cleaning up claim listener for session ${sessionId}`, 'info');
       unsubscribe();
       supabase.removeChannel(channel);
       supabase.removeChannel(bingoClaimChannel);
+      clearInterval(dbInterval);
     };
   }, [sessionId, toast, claims.length]);
+
+  // Helper to attempt to add a claim directly from broadcast data
+  const tryAddClaimFromBroadcast = useCallback((payload: any) => {
+    if (!sessionId || !payload) return;
+    
+    try {
+      logWithTimestamp(`Attempting to add claim directly from broadcast data: ${JSON.stringify(payload)}`, 'info');
+      
+      // Create a claim object with all necessary fields
+      const claimData = {
+        playerId: payload.playerId,
+        playerName: payload.playerName || "Unknown Player",
+        sessionId: sessionId,
+        gameNumber: payload.gameNumber || 1,
+        winPattern: payload.winPattern || "Unknown Pattern",
+        gameType: payload.gameType || "mainstage",
+        ticket: payload.ticket || {
+          serial: payload.ticketSerial || "unknown",
+          perm: payload.ticketPerm || 0,
+          position: payload.ticketPosition || 0,
+          layoutMask: payload.ticketLayoutMask || 0,
+          numbers: payload.ticketNumbers || []
+        },
+        calledNumbers: payload.calledNumbers || [],
+        lastCalledNumber: payload.lastCalledNumber || null
+      };
+      
+      // Submit the claim to the service
+      const success = claimService.submitClaim(claimData);
+      
+      if (success) {
+        logWithTimestamp(`Successfully added claim from broadcast for player ${payload.playerName || payload.playerId}`, 'info');
+        // Refetch to update UI
+        fetchClaims();
+      } else {
+        logWithTimestamp(`Failed to add claim from broadcast`, 'warn');
+      }
+    } catch (error) {
+      console.error('Error processing broadcast claim:', error);
+    }
+  }, [sessionId]);
 
   // Fetch claims manually (can be called to refresh)
   const fetchClaims = useCallback(() => {
@@ -123,6 +152,68 @@ export function useCallerClaimManagement(sessionId: string | null) {
     
     return sessionClaims;
   }, [sessionId]);
+
+  // Backup mechanism: Fetch pending claims from database
+  const fetchPendingClaimsFromDatabase = useCallback(async () => {
+    if (!sessionId) return;
+    
+    try {
+      logWithTimestamp(`Fetching pending claims from database for session ${sessionId}`, 'info');
+      
+      // Query universal_game_logs table for unvalidated claims
+      const { data, error } = await supabase
+        .from('universal_game_logs')
+        .select('*')
+        .eq('session_id', sessionId)
+        .is('validated_at', null)
+        .not('claimed_at', 'is', null);  // Make sure we only get claims
+      
+      if (error) {
+        console.error('Error fetching pending claims from DB:', error);
+        return;
+      }
+      
+      if (data && Array.isArray(data) && data.length > 0) {
+        logWithTimestamp(`Found ${data.length} pending claims in database`, 'info');
+        
+        // Convert database claims to BingoClaim format and submit to service
+        data.forEach(dbClaim => {
+          const claimData = {
+            playerId: dbClaim.player_id,
+            playerName: dbClaim.player_name || "Unknown Player",
+            sessionId: sessionId,
+            gameNumber: dbClaim.game_number || 1,
+            winPattern: dbClaim.win_pattern || "Unknown Pattern",
+            gameType: dbClaim.game_type || "mainstage",
+            ticket: {
+              serial: dbClaim.ticket_serial || "unknown",
+              perm: dbClaim.ticket_perm || 0,
+              position: dbClaim.ticket_position || 0,
+              layoutMask: dbClaim.ticket_layout_mask || 0,
+              numbers: dbClaim.ticket_numbers || []
+            },
+            calledNumbers: dbClaim.called_numbers || [],
+            lastCalledNumber: dbClaim.last_called_number || null
+          };
+          
+          // Submit to claim service if we don't already have it
+          if (!claims.some(claim => 
+            claim.playerId === dbClaim.player_id && 
+            claim.gameNumber === dbClaim.game_number &&
+            claim.winPattern === dbClaim.win_pattern)) {
+            
+            logWithTimestamp(`Adding claim from DB for player ${dbClaim.player_name}`, 'info');
+            claimService.submitClaim(claimData);
+          }
+        });
+        
+        // Refresh claims
+        fetchClaims();
+      }
+    } catch (err) {
+      console.error('Error in fetchPendingClaimsFromDatabase:', err);
+    }
+  }, [sessionId, claims, fetchClaims]);
 
   // Validate a claim (approve or reject)
   const validateClaim = useCallback(async (claim: BingoClaim, isValid: boolean) => {

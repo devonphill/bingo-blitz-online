@@ -61,9 +61,10 @@ class ClaimManagementService {
       }
       
       logWithTimestamp(`Submitting claim for session ${claimData.sessionId}`, 'info');
+      logWithTimestamp(`Claim data details: ${JSON.stringify(claimData)}`, 'debug');
       
       // Generate a unique ID for the claim
-      const claimId = uuidv4();
+      const claimId = claimData.id || uuidv4();
       
       // Create the claim object
       const claim: BingoClaim = {
@@ -92,6 +93,20 @@ class ClaimManagementService {
         claimQueues.set(claim.sessionId, []);
       }
       
+      // Check if we already have this claim
+      const existingQueue = claimQueues.get(claim.sessionId) || [];
+      const isDuplicate = existingQueue.some(existing => 
+        (existing.id === claim.id) || 
+        (existing.playerId === claim.playerId && 
+         existing.gameNumber === claim.gameNumber && 
+         existing.winPattern === claim.winPattern)
+      );
+      
+      if (isDuplicate) {
+        logWithTimestamp(`Skipping duplicate claim for player ${claim.playerName}`, 'info');
+        return false;
+      }
+      
       // Add ticket validation metrics
       if (claim.ticket && claim.ticket.numbers && claim.calledNumbers) {
         // Calculate "to go" count - how many numbers on the ticket aren't called yet
@@ -118,10 +133,51 @@ class ClaimManagementService {
       // Also broadcast the claim event for real-time updates
       this.broadcastClaimEvent(claim);
       
+      // Also persist to database as backup
+      this.persistClaimToDatabase(claim).catch(err => {
+        console.error("Error persisting claim to database:", err);
+      });
+      
       return true;
     } catch (error) {
       console.error("Error submitting claim:", error);
       return false;
+    }
+  }
+  
+  // Persist claim to database as backup
+  private async persistClaimToDatabase(claim: BingoClaim): Promise<void> {
+    try {
+      logWithTimestamp(`Persisting claim to database for player ${claim.playerName}`, 'info');
+      
+      const { error } = await supabase
+        .from('universal_game_logs')
+        .insert({
+          session_id: claim.sessionId,
+          player_id: claim.playerId,
+          player_name: claim.playerName,
+          game_number: claim.gameNumber,
+          game_type: claim.gameType,
+          win_pattern: claim.winPattern,
+          ticket_serial: claim.ticket.serial,
+          ticket_perm: claim.ticket.perm,
+          ticket_position: claim.ticket.position,
+          ticket_layout_mask: claim.ticket.layoutMask,
+          ticket_numbers: claim.ticket.numbers,
+          called_numbers: claim.calledNumbers,
+          last_called_number: claim.lastCalledNumber,
+          total_calls: claim.calledNumbers.length,
+          claimed_at: claim.claimedAt.toISOString(),
+          validated_at: null  // Will be set when processed
+        });
+      
+      if (error) {
+        logWithTimestamp(`Error persisting claim: ${error.message}`, 'error');
+      } else {
+        logWithTimestamp(`Claim successfully persisted to database`, 'info');
+      }
+    } catch (err) {
+      console.error("Error in persistClaimToDatabase:", err);
     }
   }
   
@@ -288,7 +344,13 @@ class ClaimManagementService {
           sessionId: claim.sessionId,
           claimId: claim.id,
           playerId: claim.playerId,
-          playerName: claim.playerName
+          playerName: claim.playerName,
+          gameNumber: claim.gameNumber,
+          winPattern: claim.winPattern,
+          gameType: claim.gameType,
+          ticket: claim.ticket,
+          calledNumbers: claim.calledNumbers,
+          lastCalledNumber: claim.lastCalledNumber
         }
       });
       

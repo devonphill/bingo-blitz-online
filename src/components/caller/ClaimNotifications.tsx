@@ -17,6 +17,7 @@ export default function ClaimNotifications({
 }: ClaimNotificationsProps) {
   const { claims, claimsCount, fetchClaims } = useCallerClaimManagement(sessionId);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [previousCount, setPreviousCount] = useState(0);
 
   // Refresh claims initially and periodically
   useEffect(() => {
@@ -42,7 +43,13 @@ export default function ClaimNotifications({
         logWithTimestamp(`Claim ${i+1}: Player=${claim.playerName || claim.playerId}`, 'info');
       });
     }
-  }, [claims]);
+    
+    // Detect new claims
+    if (claimsCount > previousCount) {
+      logWithTimestamp(`ClaimNotifications: New claims detected (${previousCount} → ${claimsCount})`, 'info');
+      setPreviousCount(claimsCount);
+    }
+  }, [claims, claimsCount, previousCount]);
 
   // Animate when new claims arrive
   useEffect(() => {
