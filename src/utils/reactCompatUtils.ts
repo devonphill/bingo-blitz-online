@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { logWithTimestamp } from './logUtils';
 
@@ -15,6 +16,9 @@ export function useCompatId(prefix: string = 'id-'): string {
   });
   return id;
 }
+
+// For backward compatibility
+export const useSafeId = useCompatId;
 
 /**
  * React 18 insertionEffect hook polyfill
@@ -196,9 +200,7 @@ export function SimplePopover({
 }
 
 // Simple button component that replicates Radix Slot functionality
-// Fix: Properly type the button props to include className and ref
 interface CompatButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  className?: string;
   asChild?: boolean;
   children: React.ReactNode;
 }
@@ -210,21 +212,18 @@ export const CompatButton = React.forwardRef<HTMLButtonElement, CompatButtonProp
       return React.cloneElement(children, {
         ...props,
         className: `${children.props.className || ''} ${className}`.trim(),
-        ref: ref
+        ref
       });
     }
     
-    // Return a button element with all props properly passed
-    // Using type assertion to satisfy TypeScript
-    const buttonProps: React.ButtonHTMLAttributes<HTMLButtonElement> & { ref?: React.Ref<HTMLButtonElement>, className?: string } = {
-      className,
-      ref,
-      ...props
-    };
-    
+    // Fixed: Return a button element with props correctly typed
     return React.createElement(
       'button',
-      buttonProps,
+      {
+        className,
+        ref,
+        ...props
+      },
       children
     );
   }

@@ -1,4 +1,3 @@
-
 import * as React from "react";
 import { useSafeId } from "@/utils/reactUtils";
 import { logWithTimestamp } from "@/utils/logUtils";
@@ -45,6 +44,11 @@ export function useSidebar() {
 export function Sidebar({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   const { sidebarId, open } = useSidebar();
   
+  // Log sidebar rendering with open state
+  React.useEffect(() => {
+    logWithTimestamp(`Sidebar rendered with open=${open}`, 'debug', 'Sidebar');
+  }, [open]);
+  
   return (
     <aside
       id={sidebarId}
@@ -63,12 +67,21 @@ export function SidebarHeader({ children }: { children: React.ReactNode }) {
 
 // SidebarTrigger component
 export function SidebarTrigger({ children }: { children?: React.ReactNode }) {
-  const { setOpen } = useSidebar();
+  const { setOpen, open } = useSidebar();
+  
+  const toggleSidebar = React.useCallback(() => {
+    setOpen(prev => {
+      const newState = !prev;
+      logWithTimestamp(`Sidebar toggle clicked, new state: ${newState ? 'open' : 'closed'}`, 'debug', 'Sidebar');
+      return newState;
+    });
+  }, [setOpen]);
   
   return (
     <button 
-      onClick={() => setOpen(prev => !prev)}
+      onClick={toggleSidebar}
       className="p-2 rounded-md hover:bg-gray-100"
+      aria-label={open ? "Close sidebar" : "Open sidebar"}
     >
       {children || (
         <span className="sr-only">Toggle sidebar</span>

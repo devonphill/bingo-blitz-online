@@ -20,16 +20,17 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
 
   React.useEffect(() => {
     logWithTimestamp('MainLayout component mounted', 'debug', 'Layout');
+    logWithTimestamp(`Sidebar initial state: ${sidebarOpen ? 'open' : 'closed'}`, 'debug', 'Layout');
     
     return () => {
       logWithTimestamp('MainLayout component unmounted', 'debug', 'Layout');
     };
-  }, []);
+  }, [sidebarOpen]);
 
   return (
     <SidebarProvider defaultOpen={false}>
       <div className="flex min-h-screen w-full">
-        <Sidebar className={`transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-0'}`}>
+        <Sidebar className="transition-all duration-300 w-0 md:w-0">
           <div className="p-4 border-b">
             <div className="flex flex-col">
               <h2 className="text-xl font-bold">Bingo Blitz</h2>

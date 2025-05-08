@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getNumberCallingService } from '@/services/NumberCallingService';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -13,12 +12,15 @@ export function usePlayerNumbers(sessionId: string | undefined) {
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [lastUpdateTime, setLastUpdateTime] = useState<number>(Date.now());
+  const [lastBroadcastId, setLastBroadcastId] = useState<string | null>(null);
   
   // Use refs to track real-time data without triggering re-renders
   const calledNumbersRef = useRef<number[]>([]);
   const lastCalledNumberRef = useRef<number | null>(null);
   const lastCheckedLocalStorage = useRef<number>(Date.now());
   const pollingInterval = useRef<number | null>(null);
+  const channelRefs = useRef<any[]>([]);
+  const listenerActive = useRef<boolean>(false);
   
   // Function to check for local storage updates
   const checkLocalStorage = useCallback(() => {
@@ -33,13 +35,23 @@ export function usePlayerNumbers(sessionId: string | undefined) {
         const storedNumbers = parsedData.calledNumbers || [];
         const storedLastNumber = parsedData.lastCalledNumber;
         const timestamp = new Date(parsedData.timestamp).getTime();
+        const broadcastId = parsedData.broadcastId || null;
+        
+        logWithTimestamp(`[PlayerNumbers] Checking local storage: found ${storedNumbers.length} numbers, last: ${storedLastNumber}, broadcastId: ${broadcastId}`, 'debug');
+        
+        // Skip if we've already processed this broadcast
+        if (broadcastId && broadcastId === lastBroadcastId) {
+          logWithTimestamp(`[PlayerNumbers] Skipping already processed broadcast: ${broadcastId}`, 'debug');
+          return;
+        }
         
         // Only update if the data is newer or different
         const hasNewNumbers = storedNumbers.length !== calledNumbersRef.current.length;
         const hasNewLastNumber = storedLastNumber !== lastCalledNumberRef.current;
+        const isNewer = timestamp > lastUpdateTime;
         
-        if (hasNewNumbers || hasNewLastNumber) {
-          logWithTimestamp(`Local storage poll found updates: ${storedNumbers.length} numbers, last: ${storedLastNumber}`, 'info');
+        if (hasNewNumbers || hasNewLastNumber || isNewer) {
+          logWithTimestamp(`[PlayerNumbers] Local storage poll found updates: ${storedNumbers.length} numbers, last: ${storedLastNumber}`, 'info');
           
           // Update our refs first
           calledNumbersRef.current = storedNumbers;
@@ -51,21 +63,75 @@ export function usePlayerNumbers(sessionId: string | undefined) {
           setLastUpdateTime(timestamp);
           setIsConnected(true);
           
+          if (broadcastId) {
+            setLastBroadcastId(broadcastId);
+          }
+          
           // Update last checked time
           lastCheckedLocalStorage.current = Date.now();
         }
       }
     } catch (error) {
-      logWithTimestamp(`Error checking local storage: ${error}`, 'error');
+      logWithTimestamp(`[PlayerNumbers] Error checking local storage: ${error}`, 'error');
     }
-  }, [sessionId]);
+  }, [sessionId, lastUpdateTime, lastBroadcastId]);
+  
+  // Storage event listener for cross-tab communication
+  const handleStorageEvent = useCallback((event: StorageEvent) => {
+    if (!sessionId) return;
+    
+    const storageKey = `bingo-numbers-session-${sessionId}`;
+    
+    if (event.key === storageKey && event.newValue) {
+      try {
+        const parsedData = JSON.parse(event.newValue);
+        const storedNumbers = parsedData.calledNumbers || [];
+        const storedLastNumber = parsedData.lastCalledNumber;
+        const timestamp = new Date(parsedData.timestamp).getTime();
+        const broadcastId = parsedData.broadcastId || null;
+        
+        logWithTimestamp(`[PlayerNumbers] Storage event detected with ${storedNumbers.length} numbers, last: ${storedLastNumber}`, 'debug');
+        
+        // Skip if we've already processed this broadcast
+        if (broadcastId && broadcastId === lastBroadcastId) {
+          logWithTimestamp(`[PlayerNumbers] Skipping already processed broadcast from storage event: ${broadcastId}`, 'debug');
+          return;
+        }
+        
+        // Only update if the data is newer or different
+        const hasNewNumbers = storedNumbers.length !== calledNumbersRef.current.length;
+        const hasNewLastNumber = storedLastNumber !== lastCalledNumberRef.current;
+        const isNewer = timestamp > lastUpdateTime;
+        
+        if (hasNewNumbers || hasNewLastNumber || isNewer) {
+          logWithTimestamp(`[PlayerNumbers] Storage event updating numbers: ${storedNumbers.length} numbers, last: ${storedLastNumber}`, 'info');
+          
+          // Update our refs first
+          calledNumbersRef.current = storedNumbers;
+          lastCalledNumberRef.current = storedLastNumber;
+          
+          // Then update state to trigger a re-render
+          setCalledNumbers([...storedNumbers]);
+          setLastCalledNumber(storedLastNumber);
+          setLastUpdateTime(timestamp);
+          setIsConnected(true);
+          
+          if (broadcastId) {
+            setLastBroadcastId(broadcastId);
+          }
+        }
+      } catch (error) {
+        logWithTimestamp(`[PlayerNumbers] Error handling storage event: ${error}`, 'error');
+      }
+    }
+  }, [sessionId, lastUpdateTime, lastBroadcastId]);
   
   // Function to fetch data from the database as a fallback
   const fetchFromDatabase = useCallback(async () => {
     if (!sessionId) return;
     
     try {
-      logWithTimestamp('Fetching called numbers from database...', 'info');
+      logWithTimestamp('[PlayerNumbers] Fetching called numbers from database...', 'info');
       
       const { data, error } = await supabase
         .from('sessions_progress')
@@ -80,12 +146,14 @@ export function usePlayerNumbers(sessionId: string | undefined) {
         const lastNumber = dbNumbers.length > 0 ? dbNumbers[dbNumbers.length - 1] : null;
         const dbTimestamp = new Date(data.updated_at).getTime();
         
+        logWithTimestamp(`[PlayerNumbers] Database has ${dbNumbers.length} numbers, last: ${lastNumber}`, 'debug');
+        
         // Only update if database data is newer
         const isNewer = dbTimestamp > lastUpdateTime;
         const hasMoreNumbers = dbNumbers.length > calledNumbersRef.current.length;
         
         if (isNewer || hasMoreNumbers) {
-          logWithTimestamp(`Database fetch found updates: ${dbNumbers.length} numbers, last: ${lastNumber}`, 'info');
+          logWithTimestamp(`[PlayerNumbers] Database fetch found updates: ${dbNumbers.length} numbers, last: ${lastNumber}`, 'info');
           
           // Update refs
           calledNumbersRef.current = dbNumbers;
@@ -96,22 +164,84 @@ export function usePlayerNumbers(sessionId: string | undefined) {
           setLastCalledNumber(lastNumber);
           setLastUpdateTime(dbTimestamp);
           setIsConnected(true);
+          
+          // Also update local storage to keep it in sync
+          const storageKey = `bingo-numbers-session-${sessionId}`;
+          localStorage.setItem(storageKey, JSON.stringify({
+            sessionId,
+            calledNumbers: dbNumbers,
+            lastCalledNumber: lastNumber,
+            timestamp: new Date(data.updated_at).toISOString(),
+            synced: true
+          }));
         }
       }
     } catch (error) {
-      logWithTimestamp(`Error fetching from database: ${error}`, 'error');
+      logWithTimestamp(`[PlayerNumbers] Error fetching from database: ${error}`, 'error');
     }
   }, [sessionId, lastUpdateTime]);
 
+  // Handles received broadcasts from caller
+  const handleBroadcastEvent = useCallback((payload: any) => {
+    // Check if it's for our session
+    if (payload.payload && payload.payload.sessionId === sessionId) {
+      const { lastCalledNumber, calledNumbers, timestamp, broadcastId } = payload.payload;
+      
+      // Skip if we've already processed this broadcast
+      if (broadcastId && broadcastId === lastBroadcastId) {
+        logWithTimestamp(`[PlayerNumbers] Skipping duplicate broadcast: ${broadcastId}`, 'debug');
+        return;
+      }
+      
+      const broadcastTime = new Date(timestamp).getTime();
+      
+      // Check if this is newer than what we have
+      if (broadcastTime > lastUpdateTime || calledNumbers.length > calledNumbersRef.current.length) {
+        logWithTimestamp(`[PlayerNumbers] Received broadcast update: ${calledNumbers.length} numbers, last: ${lastCalledNumber}, broadcastId: ${broadcastId}`, 'info');
+        
+        // Update refs
+        calledNumbersRef.current = calledNumbers;
+        lastCalledNumberRef.current = lastCalledNumber;
+        
+        // Update state
+        setCalledNumbers([...calledNumbers]);
+        setLastCalledNumber(lastCalledNumber);
+        setLastUpdateTime(broadcastTime);
+        setIsConnected(true);
+        
+        if (broadcastId) {
+          setLastBroadcastId(broadcastId);
+        }
+        
+        // Also update local storage
+        const storageKey = `bingo-numbers-session-${sessionId}`;
+        localStorage.setItem(storageKey, JSON.stringify({
+          sessionId,
+          calledNumbers,
+          lastCalledNumber,
+          timestamp,
+          broadcastId,
+          synced: true
+        }));
+      }
+    }
+  }, [sessionId, lastUpdateTime, lastBroadcastId]);
+  
   // Subscribe to broadcast channels for real-time updates
   useEffect(() => {
     if (!sessionId) {
-      logWithTimestamp('No session ID provided to usePlayerNumbers', 'info');
+      logWithTimestamp('[PlayerNumbers] No session ID provided to usePlayerNumbers', 'info');
       return;
     }
     
-    logWithTimestamp(`Setting up player number subscription for session ${sessionId}`, 'info');
+    if (listenerActive.current) {
+      logWithTimestamp('[PlayerNumbers] Listener already active, skipping setup', 'debug');
+      return;
+    }
+    
+    logWithTimestamp(`[PlayerNumbers] Setting up player number subscription for session ${sessionId}`, 'info');
     setIsConnected(true);
+    listenerActive.current = true;
     
     try {
       // Get or create service for this session
@@ -120,6 +250,8 @@ export function usePlayerNumbers(sessionId: string | undefined) {
       // Initial state
       const initialNumbers = service.getCalledNumbers();
       const initialLastNumber = service.getLastCalledNumber();
+      
+      logWithTimestamp(`[PlayerNumbers] Initial state from service: ${initialNumbers.length} numbers, last: ${initialLastNumber}`, 'debug');
       
       // Update refs first
       calledNumbersRef.current = initialNumbers;
@@ -130,44 +262,61 @@ export function usePlayerNumbers(sessionId: string | undefined) {
       setLastCalledNumber(initialLastNumber);
       setLastUpdateTime(Date.now());
       
-      // Subscribe to broadcast channel updates
-      const numberChannelName = `number-broadcast-${sessionId}`;
-      const resetChannelName = `game-reset-broadcast-${sessionId}`;
+      // Set up multiple broadcast channel listeners for reliability
+      const channelNames = [
+        `number-broadcast-${sessionId}`,
+        `number-broadcast-backup-${sessionId}`,
+        `game-reset-broadcast-${sessionId}`,
+        `game-reset-backup-${sessionId}`
+      ];
       
-      // Listen for number broadcasts
-      const numberChannel = supabase.channel(numberChannelName)
-        .on('broadcast', { event: 'number-called' }, (payload) => {
-          if (payload.payload && payload.payload.sessionId === sessionId) {
-            const { lastCalledNumber, calledNumbers, timestamp } = payload.payload;
-            const broadcastTime = new Date(timestamp).getTime();
-            
-            // Check if this is newer than what we have
-            if (broadcastTime > lastUpdateTime || calledNumbers.length > calledNumbersRef.current.length) {
-              logWithTimestamp(`Received broadcast update: ${calledNumbers.length} numbers, last: ${lastCalledNumber}`, 'info');
-              
-              // Update refs
-              calledNumbersRef.current = calledNumbers;
-              lastCalledNumberRef.current = lastCalledNumber;
-              
-              // Update state
-              setCalledNumbers([...calledNumbers]);
-              setLastCalledNumber(lastCalledNumber);
-              setLastUpdateTime(broadcastTime);
-              setIsConnected(true);
-            }
+      // Clear any previous channels
+      channelRefs.current.forEach(channel => {
+        try {
+          if (channel) {
+            supabase.removeChannel(channel);
           }
-        })
-        .subscribe();
+        } catch (e) {
+          // Ignore errors when cleaning up
+        }
+      });
+      channelRefs.current = [];
+      
+      // Listen for number broadcasts (primary channel)
+      const numberChannel = supabase.channel(`number-broadcast-${sessionId}`)
+        .on('broadcast', { event: 'number-called' }, handleBroadcastEvent)
+        .subscribe(status => {
+          logWithTimestamp(`[PlayerNumbers] Number broadcast channel status: ${status}`, 'debug');
+          setIsConnected(status === 'SUBSCRIBED');
+        });
+      
+      channelRefs.current.push(numberChannel);
+      
+      // Listen for number broadcasts (backup channel)
+      const backupNumberChannel = supabase.channel(`number-broadcast-backup-${sessionId}`)
+        .on('broadcast', { event: 'number-called-backup' }, handleBroadcastEvent)
+        .subscribe(status => {
+          logWithTimestamp(`[PlayerNumbers] Backup number broadcast channel status: ${status}`, 'debug');
+        });
+      
+      channelRefs.current.push(backupNumberChannel);
       
       // Listen for game reset broadcasts
-      const resetChannel = supabase.channel(resetChannelName)
+      const resetChannel = supabase.channel(`game-reset-broadcast-${sessionId}`)
         .on('broadcast', { event: 'game-reset' }, (payload) => {
           if (payload.payload && payload.payload.sessionId === sessionId) {
-            const { timestamp } = payload.payload;
+            const { timestamp, broadcastId } = payload.payload;
+            
+            // Skip if we've already processed this broadcast
+            if (broadcastId && broadcastId === lastBroadcastId) {
+              logWithTimestamp(`[PlayerNumbers] Skipping duplicate reset broadcast: ${broadcastId}`, 'debug');
+              return;
+            }
+            
             const broadcastTime = new Date(timestamp).getTime();
             
             if (broadcastTime > lastUpdateTime) {
-              logWithTimestamp(`Received game reset broadcast`, 'info');
+              logWithTimestamp(`[PlayerNumbers] Received game reset broadcast, id: ${broadcastId}`, 'info');
               
               // Update refs
               calledNumbersRef.current = [];
@@ -177,18 +326,63 @@ export function usePlayerNumbers(sessionId: string | undefined) {
               setCalledNumbers([]);
               setLastCalledNumber(null);
               setLastUpdateTime(broadcastTime);
+              
+              if (broadcastId) {
+                setLastBroadcastId(broadcastId);
+              }
             }
           }
         })
         .subscribe();
       
-      // Set up local storage polling for backup
+      channelRefs.current.push(resetChannel);
+      
+      // Listen for backup reset broadcasts
+      const backupResetChannel = supabase.channel(`game-reset-backup-${sessionId}`)
+        .on('broadcast', { event: 'game-reset-backup' }, (payload) => {
+          if (payload.payload && payload.payload.sessionId === sessionId) {
+            const { timestamp, broadcastId } = payload.payload;
+            
+            // Skip if we've already processed this broadcast
+            if (broadcastId && broadcastId === lastBroadcastId) {
+              logWithTimestamp(`[PlayerNumbers] Skipping duplicate reset backup broadcast: ${broadcastId}`, 'debug');
+              return;
+            }
+            
+            const broadcastTime = new Date(timestamp).getTime();
+            
+            if (broadcastTime > lastUpdateTime) {
+              logWithTimestamp(`[PlayerNumbers] Received backup game reset broadcast, id: ${broadcastId}`, 'info');
+              
+              // Update refs
+              calledNumbersRef.current = [];
+              lastCalledNumberRef.current = null;
+              
+              // Update state
+              setCalledNumbers([]);
+              setLastCalledNumber(null);
+              setLastUpdateTime(broadcastTime);
+              
+              if (broadcastId) {
+                setLastBroadcastId(broadcastId);
+              }
+            }
+          }
+        })
+        .subscribe();
+      
+      channelRefs.current.push(backupResetChannel);
+      
+      // Add storage event listener
+      window.addEventListener('storage', handleStorageEvent);
+      
+      // Set up local storage polling
       if (pollingInterval.current) {
         clearInterval(pollingInterval.current);
       }
       
       pollingInterval.current = window.setInterval(() => {
-        // Only check local storage if it's been more than 1 second since last check
+        // Check local storage on a regular basis as a backup mechanism
         const now = Date.now();
         if (now - lastCheckedLocalStorage.current > 1000) {
           checkLocalStorage();
@@ -209,7 +403,7 @@ export function usePlayerNumbers(sessionId: string | undefined) {
           numbers.length !== calledNumbersRef.current.length;
         
         if (isActualUpdate) {
-          logWithTimestamp(`Service subscription update: ${numbers.length} numbers, last: ${last}`, 'info');
+          logWithTimestamp(`[PlayerNumbers] Service subscription update: ${numbers.length} numbers, last: ${last}`, 'info');
           
           // Update refs
           calledNumbersRef.current = numbers;
@@ -224,20 +418,35 @@ export function usePlayerNumbers(sessionId: string | undefined) {
       
       // Cleanup
       return () => {
-        logWithTimestamp(`Cleaning up player number subscription for session ${sessionId}`, 'info');
-        supabase.removeChannel(numberChannel);
-        supabase.removeChannel(resetChannel);
+        logWithTimestamp(`[PlayerNumbers] Cleaning up player number subscription for session ${sessionId}`, 'info');
+        listenerActive.current = false;
+        
+        // Clean up all channels
+        channelRefs.current.forEach(channel => {
+          try {
+            supabase.removeChannel(channel);
+          } catch (e) {
+            // Ignore errors when cleaning up
+          }
+        });
+        channelRefs.current = [];
+        
+        // Remove storage event listener
+        window.removeEventListener('storage', handleStorageEvent);
+        
         if (pollingInterval.current) {
           clearInterval(pollingInterval.current);
           pollingInterval.current = null;
         }
+        
         unsubscribe();
       };
     } catch (error) {
       setIsConnected(false);
-      logWithTimestamp(`Error in usePlayerNumbers: ${error}`, 'error');
+      logWithTimestamp(`[PlayerNumbers] Error in usePlayerNumbers: ${error}`, 'error');
+      listenerActive.current = false;
     }
-  }, [sessionId, fetchFromDatabase, checkLocalStorage]);
+  }, [sessionId, fetchFromDatabase, checkLocalStorage, handleBroadcastEvent, handleStorageEvent, lastBroadcastId]);
 
   // Immediately perform initial fetch from db
   useEffect(() => {
@@ -248,6 +457,7 @@ export function usePlayerNumbers(sessionId: string | undefined) {
 
   // Manual refresh function
   const refreshNumbers = useCallback(() => {
+    logWithTimestamp('[PlayerNumbers] Manually refreshing numbers', 'info');
     checkLocalStorage();
     fetchFromDatabase();
   }, [checkLocalStorage, fetchFromDatabase]);

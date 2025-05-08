@@ -1,10 +1,10 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import React from 'react';
 
 const STORAGE_KEY_PREFIX = 'bingo-numbers-session-';
 const SYNC_INTERVAL = 60000; // 60 seconds between DB syncs (changed from 5 seconds)
+const LOCAL_STORAGE_SYNC_INTERVAL = 2000; // 2 seconds for local storage polling
 
 type CalledNumbersState = {
   sessionId: string;
@@ -14,14 +14,17 @@ type CalledNumbersState = {
   synced: boolean;
   saveToDatabase: boolean; // Field for toggle
   broadcastSuccess?: boolean; // New field to track broadcast success
+  broadcastId?: string; // Add unique ID for broadcast tracking
 };
 
 export class NumberCallingService {
   private sessionId: string;
   private localState: CalledNumbersState;
   private syncInterval: number | null = null;
+  private localStorageSyncInterval: number | null = null;
   private subscribers: ((numbers: number[], lastCalled: number | null) => void)[] = [];
   private broadcastChannels: { [key: string]: any } = {};
+  private broadcastReceived: { [key: string]: boolean } = {};
   
   constructor(sessionId: string) {
     this.sessionId = sessionId;
@@ -29,6 +32,9 @@ export class NumberCallingService {
     
     // Setup broadcast channel listener for real-time updates
     this.setupBroadcastListener();
+    
+    // Start local storage sync interval for backup communication
+    this.startLocalStorageSyncInterval();
     
     logWithTimestamp(`[NumberCallingService] Initialized for session ${sessionId} with ${this.localState.calledNumbers.length} numbers`, 'info');
   }
@@ -62,6 +68,16 @@ export class NumberCallingService {
       this.localState.saveToDatabase = value;
       this.saveLocalState();
       logWithTimestamp(`[NumberCallingService] Save to database setting changed to: ${value}`, 'info');
+      
+      // If we're turning saving back on and there are unsynced changes, sync now
+      if (value && !this.localState.synced) {
+        this.syncToDatabase().catch(err => {
+          logWithTimestamp(`[NumberCallingService] Error syncing after enabling save: ${err}`, 'error');
+        });
+      }
+      
+      // Update sync interval based on new setting
+      this.updateSyncInterval();
     }
   }
   
@@ -71,46 +87,63 @@ export class NumberCallingService {
   public async callNumber(number: number): Promise<boolean> {
     logWithTimestamp(`[NumberCallingService] Calling number ${number} for session ${this.sessionId}`, 'info');
     
+    // Generate a unique broadcast ID for this call
+    const broadcastId = `${this.sessionId}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    
     // Update local state
-    this.localState.calledNumbers.push(number);
+    const newCalledNumbers = [...this.localState.calledNumbers];
+    if (!newCalledNumbers.includes(number)) {
+      newCalledNumbers.push(number);
+    }
+    
+    this.localState.calledNumbers = newCalledNumbers;
     this.localState.lastCalledNumber = number;
     this.localState.timestamp = new Date().toISOString();
     this.localState.synced = false;
     this.localState.broadcastSuccess = false; // Reset broadcast status
+    this.localState.broadcastId = broadcastId;
     
-    // Save to local storage
+    // Save to local storage immediately
     this.saveLocalState();
     
     // Notify subscribers
     this.notifySubscribers();
     
     // Broadcast to other clients with more reliable mechanism
+    let broadcastSuccess = false;
+    
     try {
-      await this.broadcastNumber(number);
-      this.localState.broadcastSuccess = true;
-      this.saveLocalState();
-      logWithTimestamp(`[NumberCallingService] Successfully broadcast number ${number} for session ${this.sessionId}`, 'info');
+      // Try primary broadcast
+      await this.broadcastNumber(number, broadcastId);
+      broadcastSuccess = true;
+      logWithTimestamp(`[NumberCallingService] Successfully broadcast number ${number} for session ${this.sessionId} (ID: ${broadcastId})`, 'info');
     } catch (err) {
-      logWithTimestamp(`[NumberCallingService] Error in broadcasting number: ${err}`, 'error');
+      logWithTimestamp(`[NumberCallingService] Error in primary broadcasting for number ${number}: ${err}`, 'error');
       
-      // Try alternate broadcast method as backup
+      // Try backup broadcast method
       try {
-        await this.backupBroadcastNumber(number);
-        this.localState.broadcastSuccess = true;
-        this.saveLocalState();
-        logWithTimestamp(`[NumberCallingService] Successfully used backup broadcast for number ${number}`, 'info');
+        await this.backupBroadcastNumber(number, broadcastId);
+        broadcastSuccess = true;
+        logWithTimestamp(`[NumberCallingService] Successfully used backup broadcast for number ${number} (ID: ${broadcastId})`, 'info');
       } catch (backupErr) {
-        logWithTimestamp(`[NumberCallingService] Backup broadcast also failed: ${backupErr}`, 'error');
+        logWithTimestamp(`[NumberCallingService] Backup broadcast also failed for number ${number}: ${backupErr}`, 'error');
+        
+        // As last resort, make sure it's saved to local storage
+        this.saveLocalState();
       }
     }
     
-    // If saveToDatabase is enabled, sync immediately instead of waiting
+    // Update broadcast success status
+    this.localState.broadcastSuccess = broadcastSuccess;
+    this.saveLocalState();
+    
+    // Always synchronize to database if save is enabled, regardless of broadcast success
     if (this.getSaveToDatabase()) {
       try {
         await this.syncToDatabase();
         logWithTimestamp(`[NumberCallingService] Number ${number} saved to database for session ${this.sessionId}`, 'info');
       } catch (err) {
-        logWithTimestamp(`[NumberCallingService] Error saving number to database: ${err}`, 'error');
+        logWithTimestamp(`[NumberCallingService] Error saving number ${number} to database: ${err}`, 'error');
       }
     } else if (this.syncInterval === null) {
       // Only schedule periodic sync if not already syncing and saveToDatabase is false
@@ -126,11 +159,15 @@ export class NumberCallingService {
   public async resetNumbers(): Promise<boolean> {
     logWithTimestamp(`[NumberCallingService] Resetting all numbers for session ${this.sessionId}`, 'info');
     
+    // Generate a unique broadcast ID for this reset
+    const broadcastId = `reset-${this.sessionId}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    
     // Update local state
     this.localState.calledNumbers = [];
     this.localState.lastCalledNumber = null;
     this.localState.timestamp = new Date().toISOString();
     this.localState.synced = false;
+    this.localState.broadcastId = broadcastId;
     
     // Save to local storage
     this.saveLocalState();
@@ -139,20 +176,31 @@ export class NumberCallingService {
     this.notifySubscribers();
     
     // Broadcast reset to other clients
+    let broadcastSuccess = false;
+    
     try {
-      await this.broadcastReset();
-      logWithTimestamp(`[NumberCallingService] Successfully broadcast game reset for session ${this.sessionId}`, 'info');
+      await this.broadcastReset(broadcastId);
+      broadcastSuccess = true;
+      logWithTimestamp(`[NumberCallingService] Successfully broadcast game reset for session ${this.sessionId} (ID: ${broadcastId})`, 'info');
     } catch (err) {
       logWithTimestamp(`[NumberCallingService] Error in broadcasting reset: ${err}`, 'error');
       
       // Try alternate broadcast method as backup
       try {
-        await this.backupBroadcastReset();
-        logWithTimestamp(`[NumberCallingService] Successfully used backup broadcast for reset`, 'info');
+        await this.backupBroadcastReset(broadcastId);
+        broadcastSuccess = true;
+        logWithTimestamp(`[NumberCallingService] Successfully used backup broadcast for reset (ID: ${broadcastId})`, 'info');
       } catch (backupErr) {
         logWithTimestamp(`[NumberCallingService] Backup broadcast for reset also failed: ${backupErr}`, 'error');
+        
+        // As last resort, make sure it's saved to local storage
+        this.saveLocalState();
       }
     }
+    
+    // Update broadcast success status
+    this.localState.broadcastSuccess = broadcastSuccess;
+    this.saveLocalState();
     
     // Force sync to database immediately if saveToDatabase is enabled
     if (this.getSaveToDatabase()) {
@@ -192,6 +240,9 @@ export class NumberCallingService {
     if (this.getSaveToDatabase()) {
       this.startPeriodicSync();
     }
+    
+    // Always start local storage sync for cross-tab communication
+    this.startLocalStorageSyncInterval();
   }
   
   /**
@@ -203,6 +254,11 @@ export class NumberCallingService {
     if (this.syncInterval !== null) {
       window.clearInterval(this.syncInterval);
       this.syncInterval = null;
+    }
+    
+    if (this.localStorageSyncInterval !== null) {
+      window.clearInterval(this.localStorageSyncInterval);
+      this.localStorageSyncInterval = null;
     }
     
     // Final sync to make sure we don't lose data if saveToDatabase is enabled
@@ -280,7 +336,10 @@ export class NumberCallingService {
   
   private saveLocalState(): void {
     const storageKey = `${STORAGE_KEY_PREFIX}${this.sessionId}`;
-    localStorage.setItem(storageKey, JSON.stringify(this.localState));
+    localStorage.setItem(storageKey, JSON.stringify({
+      ...this.localState,
+      timestamp: new Date().toISOString() // Ensure timestamp is always fresh
+    }));
     
     // Dispatch a storage event to notify other tabs/windows
     try {
@@ -298,18 +357,20 @@ export class NumberCallingService {
     }
   }
   
-  private startPeriodicSync(): void {
+  private updateSyncInterval(): void {
     // Clear any existing interval
     if (this.syncInterval !== null) {
       window.clearInterval(this.syncInterval);
+      this.syncInterval = null;
     }
     
     // Only set up sync interval if saveToDatabase is true
-    if (!this.getSaveToDatabase()) {
-      this.syncInterval = null;
-      return;
+    if (this.getSaveToDatabase()) {
+      this.startPeriodicSync();
     }
-    
+  }
+  
+  private startPeriodicSync(): void {
     // Set up new sync interval
     this.syncInterval = window.setInterval(() => {
       if (this.getSaveToDatabase()) {
@@ -321,6 +382,75 @@ export class NumberCallingService {
     
     logWithTimestamp(`[NumberCallingService] Started periodic sync every ${SYNC_INTERVAL/1000} seconds`, 'debug');
   }
+  
+  private startLocalStorageSyncInterval(): void {
+    // Start a shorter interval for local storage sync for cross-tab communication
+    if (this.localStorageSyncInterval !== null) {
+      window.clearInterval(this.localStorageSyncInterval);
+    }
+    
+    this.localStorageSyncInterval = window.setInterval(() => {
+      this.checkLocalStorage();
+    }, LOCAL_STORAGE_SYNC_INTERVAL);
+    
+    logWithTimestamp(`[NumberCallingService] Started local storage sync every ${LOCAL_STORAGE_SYNC_INTERVAL/1000} seconds`, 'debug');
+    
+    // Also add event listener for storage events
+    window.addEventListener('storage', this.handleStorageChange);
+  }
+  
+  private checkLocalStorage = () => {
+    const storageKey = `${STORAGE_KEY_PREFIX}${this.sessionId}`;
+    const stored = localStorage.getItem(storageKey);
+    
+    if (!stored) return;
+    
+    try {
+      const parsedState = JSON.parse(stored) as CalledNumbersState;
+      const storedTime = new Date(parsedState.timestamp).getTime();
+      const currentTime = new Date(this.localState.timestamp).getTime();
+      
+      // If stored state is newer or has different content
+      if (storedTime > currentTime || 
+          parsedState.calledNumbers.length !== this.localState.calledNumbers.length ||
+          parsedState.lastCalledNumber !== this.localState.lastCalledNumber) {
+        
+        logWithTimestamp(`[NumberCallingService] Found newer state in localStorage: ${parsedState.calledNumbers.length} numbers, last: ${parsedState.lastCalledNumber}`, 'debug');
+        
+        this.localState = parsedState;
+        this.notifySubscribers();
+      }
+    } catch (err) {
+      logWithTimestamp(`[NumberCallingService] Error checking local storage: ${err}`, 'error');
+    }
+  };
+  
+  private handleStorageChange = (event: StorageEvent) => {
+    const storageKey = `${STORAGE_KEY_PREFIX}${this.sessionId}`;
+    
+    if (event.key === storageKey && event.newValue) {
+      try {
+        const parsedState = JSON.parse(event.newValue) as CalledNumbersState;
+        const storedTime = new Date(parsedState.timestamp).getTime();
+        const currentTime = new Date(this.localState.timestamp).getTime();
+        
+        logWithTimestamp(`[NumberCallingService] Storage event detected for session ${this.sessionId}`, 'debug');
+        
+        // If stored state is newer or has different content
+        if (storedTime > currentTime || 
+            parsedState.calledNumbers.length !== this.localState.calledNumbers.length ||
+            parsedState.lastCalledNumber !== this.localState.lastCalledNumber) {
+          
+          logWithTimestamp(`[NumberCallingService] Updating state from storage event: ${parsedState.calledNumbers.length} numbers, last: ${parsedState.lastCalledNumber}`, 'debug');
+          
+          this.localState = parsedState;
+          this.notifySubscribers();
+        }
+      } catch (err) {
+        logWithTimestamp(`[NumberCallingService] Error handling storage event: ${err}`, 'error');
+      }
+    }
+  };
   
   private async syncToDatabase(): Promise<void> {
     // Skip if already synced or saveToDatabase is disabled
@@ -401,9 +531,9 @@ export class NumberCallingService {
     }
   }
   
-  private async broadcastNumber(number: number): Promise<void> {
+  private async broadcastNumber(number: number, broadcastId: string): Promise<void> {
     try {
-      logWithTimestamp(`[NumberCallingService] Broadcasting number ${number} via realtime channels for session ${this.sessionId}`, 'info');
+      logWithTimestamp(`[NumberCallingService] Broadcasting number ${number} via realtime channels for session ${this.sessionId} (ID: ${broadcastId})`, 'info');
       
       // Create a channel name that's unique to this session
       const channelName = `number-broadcast-${this.sessionId}`;
@@ -425,7 +555,7 @@ export class NumberCallingService {
           lastCalledNumber: number,
           calledNumbers: this.localState.calledNumbers,
           timestamp: this.localState.timestamp,
-          broadcast_id: Date.now() // Add unique ID to track broadcast
+          broadcastId: broadcastId
         }
       });
       
@@ -441,9 +571,9 @@ export class NumberCallingService {
   }
   
   // Added backup broadcast method using a different channel name
-  private async backupBroadcastNumber(number: number): Promise<void> {
+  private async backupBroadcastNumber(number: number, broadcastId: string): Promise<void> {
     try {
-      logWithTimestamp(`[NumberCallingService] Using backup broadcast for number ${number}`, 'info');
+      logWithTimestamp(`[NumberCallingService] Using backup broadcast for number ${number} (ID: ${broadcastId})`, 'info');
       
       // Create a channel name that's unique to this session but different from primary
       const channelName = `number-broadcast-backup-${this.sessionId}`;
@@ -465,7 +595,7 @@ export class NumberCallingService {
           lastCalledNumber: number,
           calledNumbers: this.localState.calledNumbers,
           timestamp: this.localState.timestamp,
-          broadcast_id: Date.now(),
+          broadcastId: broadcastId,
           is_backup: true
         }
       });
@@ -481,9 +611,9 @@ export class NumberCallingService {
     }
   }
   
-  private async broadcastReset(): Promise<void> {
+  private async broadcastReset(broadcastId: string): Promise<void> {
     try {
-      logWithTimestamp(`[NumberCallingService] Broadcasting game reset via realtime channels for session ${this.sessionId}`, 'info');
+      logWithTimestamp(`[NumberCallingService] Broadcasting game reset via realtime channels for session ${this.sessionId} (ID: ${broadcastId})`, 'info');
       
       // Create a channel name that's unique to this session
       const channelName = `game-reset-broadcast-${this.sessionId}`;
@@ -505,7 +635,7 @@ export class NumberCallingService {
           lastCalledNumber: null,
           calledNumbers: [],
           timestamp: this.localState.timestamp,
-          broadcast_id: Date.now()
+          broadcastId: broadcastId
         }
       });
       
@@ -521,9 +651,9 @@ export class NumberCallingService {
   }
   
   // Added backup broadcast reset method
-  private async backupBroadcastReset(): Promise<void> {
+  private async backupBroadcastReset(broadcastId: string): Promise<void> {
     try {
-      logWithTimestamp(`[NumberCallingService] Using backup broadcast for reset in session ${this.sessionId}`, 'info');
+      logWithTimestamp(`[NumberCallingService] Using backup broadcast for reset in session ${this.sessionId} (ID: ${broadcastId})`, 'info');
       
       // Create a channel name that's unique to this session
       const channelName = `game-reset-backup-${this.sessionId}`;
@@ -545,7 +675,7 @@ export class NumberCallingService {
           lastCalledNumber: null,
           calledNumbers: [],
           timestamp: this.localState.timestamp,
-          broadcast_id: Date.now(),
+          broadcastId: broadcastId,
           is_backup: true
         }
       });
@@ -575,15 +705,21 @@ export class NumberCallingService {
       .on('broadcast', { event: 'number-called' }, (payload) => {
         // Check if this broadcast is for our session
         if (payload.payload && payload.payload.sessionId === this.sessionId) {
-          const { lastCalledNumber, calledNumbers, timestamp, broadcast_id } = payload.payload;
+          const { lastCalledNumber, calledNumbers, timestamp, broadcastId } = payload.payload;
           
-          logWithTimestamp(`[NumberCallingService] Received number broadcast: ${lastCalledNumber}, broadcast_id: ${broadcast_id}`, 'debug');
+          // Skip if we've already processed this broadcast
+          if (this.broadcastReceived[broadcastId]) {
+            logWithTimestamp(`[NumberCallingService] Skipping already processed broadcast: ${broadcastId}`, 'debug');
+            return;
+          }
+          
+          logWithTimestamp(`[NumberCallingService] Received number broadcast: ${lastCalledNumber}, broadcast_id: ${broadcastId}`, 'debug');
           
           // Check if the broadcast is newer than our local state
           const broadcastTime = new Date(timestamp).getTime();
           const localTime = new Date(this.localState.timestamp).getTime();
           
-          if (broadcastTime > localTime) {
+          if (broadcastTime > localTime || calledNumbers.length > this.localState.calledNumbers.length) {
             logWithTimestamp(`[NumberCallingService] Received newer broadcast with ${calledNumbers.length} numbers for session ${this.sessionId}`, 'info');
             
             // Update local state with the broadcast
@@ -591,6 +727,9 @@ export class NumberCallingService {
             this.localState.lastCalledNumber = lastCalledNumber;
             this.localState.timestamp = timestamp;
             this.localState.synced = true; // Consider it synced since it came from server
+            
+            // Mark this broadcast as received
+            this.broadcastReceived[broadcastId] = true;
             
             this.saveLocalState();
             this.notifySubscribers();
@@ -605,20 +744,29 @@ export class NumberCallingService {
     this.broadcastChannels[backupNumberChannelName] = supabase.channel(backupNumberChannelName)
       .on('broadcast', { event: 'number-called-backup' }, (payload) => {
         if (payload.payload && payload.payload.sessionId === this.sessionId) {
-          const { lastCalledNumber, calledNumbers, timestamp, broadcast_id } = payload.payload;
+          const { lastCalledNumber, calledNumbers, timestamp, broadcastId } = payload.payload;
           
-          logWithTimestamp(`[NumberCallingService] Received backup number broadcast: ${lastCalledNumber}, broadcast_id: ${broadcast_id}`, 'debug');
+          // Skip if we've already processed this broadcast
+          if (this.broadcastReceived[broadcastId]) {
+            logWithTimestamp(`[NumberCallingService] Skipping already processed backup broadcast: ${broadcastId}`, 'debug');
+            return;
+          }
+          
+          logWithTimestamp(`[NumberCallingService] Received backup number broadcast: ${lastCalledNumber}, broadcast_id: ${broadcastId}`, 'debug');
           
           const broadcastTime = new Date(timestamp).getTime();
           const localTime = new Date(this.localState.timestamp).getTime();
           
-          if (broadcastTime > localTime) {
+          if (broadcastTime > localTime || calledNumbers.length > this.localState.calledNumbers.length) {
             logWithTimestamp(`[NumberCallingService] Applying backup broadcast with ${calledNumbers.length} numbers`, 'info');
             
             this.localState.calledNumbers = calledNumbers;
             this.localState.lastCalledNumber = lastCalledNumber;
             this.localState.timestamp = timestamp;
             this.localState.synced = true;
+            
+            // Mark this broadcast as received
+            this.broadcastReceived[broadcastId] = true;
             
             this.saveLocalState();
             this.notifySubscribers();
@@ -634,9 +782,15 @@ export class NumberCallingService {
       .on('broadcast', { event: 'game-reset' }, (payload) => {
         // Check if this broadcast is for our session
         if (payload.payload && payload.payload.sessionId === this.sessionId) {
-          const { timestamp, broadcast_id } = payload.payload;
+          const { timestamp, broadcastId } = payload.payload;
           
-          logWithTimestamp(`[NumberCallingService] Received game reset broadcast, id: ${broadcast_id}`, 'info');
+          // Skip if we've already processed this broadcast
+          if (this.broadcastReceived[broadcastId]) {
+            logWithTimestamp(`[NumberCallingService] Skipping already processed reset broadcast: ${broadcastId}`, 'debug');
+            return;
+          }
+          
+          logWithTimestamp(`[NumberCallingService] Received game reset broadcast, id: ${broadcastId}`, 'info');
           
           // Check if the broadcast is newer than our local state
           const broadcastTime = new Date(timestamp).getTime();
@@ -651,6 +805,9 @@ export class NumberCallingService {
             this.localState.timestamp = timestamp;
             this.localState.synced = true; // Consider it synced since it came from server
             
+            // Mark this broadcast as received
+            this.broadcastReceived[broadcastId] = true;
+            
             this.saveLocalState();
             this.notifySubscribers();
           }
@@ -664,9 +821,15 @@ export class NumberCallingService {
     this.broadcastChannels[backupResetChannelName] = supabase.channel(backupResetChannelName)
       .on('broadcast', { event: 'game-reset-backup' }, (payload) => {
         if (payload.payload && payload.payload.sessionId === this.sessionId) {
-          const { timestamp, broadcast_id } = payload.payload;
+          const { timestamp, broadcastId } = payload.payload;
           
-          logWithTimestamp(`[NumberCallingService] Received backup reset broadcast, id: ${broadcast_id}`, 'info');
+          // Skip if we've already processed this broadcast
+          if (this.broadcastReceived[broadcastId]) {
+            logWithTimestamp(`[NumberCallingService] Skipping already processed backup reset broadcast: ${broadcastId}`, 'debug');
+            return;
+          }
+          
+          logWithTimestamp(`[NumberCallingService] Received backup reset broadcast, id: ${broadcastId}`, 'info');
           
           const broadcastTime = new Date(timestamp).getTime();
           const localTime = new Date(this.localState.timestamp).getTime();
@@ -678,6 +841,9 @@ export class NumberCallingService {
             this.localState.lastCalledNumber = null;
             this.localState.timestamp = timestamp;
             this.localState.synced = true;
+            
+            // Mark this broadcast as received
+            this.broadcastReceived[broadcastId] = true;
             
             this.saveLocalState();
             this.notifySubscribers();
