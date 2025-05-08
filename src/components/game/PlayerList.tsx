@@ -21,7 +21,7 @@ export default function PlayerList({
   claimsData = []
 }: PlayerProps) {
   const [players, setPlayers] = useState<any[]>(initialPlayers || []);
-  const [loading, setLoading] = useState(isLoading || true);
+  const [loading, setLoading] = useState<boolean>(isLoading || true);
   const [error, setError] = useState<string | null>(null);
 
   // Load players when component mounts or session changes
@@ -35,7 +35,7 @@ export default function PlayerList({
           .from('players')
           .select('*')
           .eq('session_id', sessionId)
-          .order('joined_at', { ascending: false }); // Changed from created_at to joined_at
+          .order('joined_at', { ascending: false }); // Using joined_at instead of created_at
 
         if (error) {
           throw error;

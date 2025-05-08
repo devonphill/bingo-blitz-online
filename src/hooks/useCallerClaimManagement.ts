@@ -64,18 +64,29 @@ export function useCallerClaimManagement(sessionId: string | null) {
           // Force refetch claims
           fetchClaims();
           
-          // If we don't already have this claim, add it to our local state
+          // If we don't already have this claim, use submitClaim method instead of addClaim
           if (!claims.some(claim => claim.id === payload.payload.id)) {
-            claimService.addClaim(sessionId, {
-              id: payload.payload.id || `temp-${Date.now()}`,
-              sessionId: sessionId,
+            // Create claim data in expected format
+            const claimData = {
               playerId: payload.payload.playerId,
               playerName: payload.payload.playerName || "Unknown Player",
+              sessionId: sessionId,
               gameNumber: payload.payload.gameNumber || 1,
               winPattern: payload.payload.winPattern || "Unknown Pattern",
-              claimedAt: new Date().toISOString(),
-              ticket: payload.payload.ticket || null
-            });
+              gameType: payload.payload.gameType || "mainstage",
+              ticket: payload.payload.ticket || {
+                serial: "unknown",
+                perm: 0,
+                position: 0,
+                layoutMask: 0,
+                numbers: []
+              },
+              calledNumbers: payload.payload.calledNumbers || [],
+              lastCalledNumber: payload.payload.lastCalledNumber || null
+            };
+            
+            // Use submitClaim instead of addClaim
+            claimService.submitClaim(claimData);
             
             // Refetch to get the new claim
             fetchClaims();
