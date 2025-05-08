@@ -216,12 +216,12 @@ export function CompatButton({
     });
   }
   
-  // Otherwise, render a regular button
+  // Fix: Remove className from the createElement call since it's already in props
   return React.createElement(
     'button',
     {
-      className,
-      ...props
+      ...props,
+      className
     },
     children
   );

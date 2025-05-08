@@ -1,6 +1,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
+import React from 'react'; // Add React import at the top
 
 const STORAGE_KEY_PREFIX = 'bingo-numbers-session-';
 const SYNC_INTERVAL = 60000; // 60 seconds between DB syncs (changed from 5 seconds)
