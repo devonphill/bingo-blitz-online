@@ -22,6 +22,9 @@ export function useCallerClaimManagement(sessionId: string | null) {
     // Subscribe to claim updates
     const unsubscribe = claimService.subscribeToClaimQueue(sessionId, (updatedClaims) => {
       logWithTimestamp(`Received claim update: ${updatedClaims.length} claims`, 'info');
+      if (updatedClaims.length > 0) {
+        logWithTimestamp(`First claim details: ${JSON.stringify(updatedClaims[0])}`, 'debug');
+      }
       setClaims(updatedClaims);
       
       // Show toast for new claims
@@ -38,10 +41,45 @@ export function useCallerClaimManagement(sessionId: string | null) {
     // Also listen for broadcast claim events as a backup
     const channel = supabase.channel('game-updates')
       .on('broadcast', { event: 'new-claim' }, payload => {
+        logWithTimestamp(`Received new claim broadcast: ${JSON.stringify(payload.payload)}`, 'info');
         if (payload.payload && payload.payload.sessionId === sessionId) {
-          logWithTimestamp(`Received new claim broadcast for session ${sessionId}`, 'info');
           // Force refetch claims 
           fetchClaims();
+          
+          // Show toast to alert the caller
+          toast({
+            title: "New Bingo Claim!",
+            description: `A player has claimed bingo! Check the claims panel.`,
+            variant: "destructive",
+          });
+        }
+      })
+      .subscribe();
+      
+    // Also listen for the bingo-claim event (alternate format)
+    const bingoClaimChannel = supabase.channel('bingo-claim-channel')
+      .on('broadcast', { event: 'bingo-claim' }, payload => {
+        logWithTimestamp(`Received bingo-claim broadcast: ${JSON.stringify(payload.payload)}`, 'info');
+        if (payload.payload && payload.payload.sessionId === sessionId) {
+          // Force refetch claims
+          fetchClaims();
+          
+          // If we don't already have this claim, add it to our local state
+          if (!claims.some(claim => claim.id === payload.payload.id)) {
+            claimService.addClaim(sessionId, {
+              id: payload.payload.id || `temp-${Date.now()}`,
+              sessionId: sessionId,
+              playerId: payload.payload.playerId,
+              playerName: payload.payload.playerName || "Unknown Player",
+              gameNumber: payload.payload.gameNumber || 1,
+              winPattern: payload.payload.winPattern || "Unknown Pattern",
+              claimedAt: new Date().toISOString(),
+              ticket: payload.payload.ticket || null
+            });
+            
+            // Refetch to get the new claim
+            fetchClaims();
+          }
         }
       })
       .subscribe();
@@ -50,6 +88,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
       logWithTimestamp(`Cleaning up claim listener for session ${sessionId}`, 'info');
       unsubscribe();
       supabase.removeChannel(channel);
+      supabase.removeChannel(bingoClaimChannel);
     };
   }, [sessionId, toast, claims.length]);
 
@@ -62,6 +101,13 @@ export function useCallerClaimManagement(sessionId: string | null) {
     
     logWithTimestamp(`Manually fetching claims for session ${sessionId}`, 'info');
     const sessionClaims = claimService.getClaimsForSession(sessionId);
+    
+    // Debug log the claims we found
+    logWithTimestamp(`Found ${sessionClaims.length} claims in service`, 'info');
+    if (sessionClaims.length > 0) {
+      logWithTimestamp(`Claims: ${JSON.stringify(sessionClaims)}`, 'debug');
+    }
+    
     setClaims(sessionClaims);
     
     return sessionClaims;

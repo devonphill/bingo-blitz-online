@@ -35,7 +35,7 @@ export default function PlayerList({
           .from('players')
           .select('*')
           .eq('session_id', sessionId)
-          .order('created_at', { ascending: false });
+          .order('joined_at', { ascending: false }); // Changed from created_at to joined_at
 
         if (error) {
           throw error;

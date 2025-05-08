@@ -45,6 +45,18 @@ export default function ClaimVerificationSheet({
   
   const { toast } = useToast();
 
+  // Debug log when sheet is opened/closed
+  useEffect(() => {
+    logWithTimestamp(`ClaimVerificationSheet: isOpen=${isOpen}`, 'info');
+    if (isOpen) {
+      logWithTimestamp(`Session ID: ${sessionId}`, 'info');
+      logWithTimestamp(`Claims count: ${claims?.length || 0}`, 'info');
+      if (claims?.length > 0) {
+        logWithTimestamp(`First claim: ${JSON.stringify(claims[0])}`, 'debug');
+      }
+    }
+  }, [isOpen, sessionId, claims]);
+
   // Fetch claims on open
   useEffect(() => {
     if (isOpen && sessionId) {
@@ -57,7 +69,7 @@ export default function ClaimVerificationSheet({
   const handleVerify = useCallback((claim: any) => {
     if (!claim) return;
     
-    logWithTimestamp(`Verifying claim: ${claim.id}`);
+    logWithTimestamp(`Verifying claim: ${JSON.stringify(claim)}`, 'info');
     validateClaim(claim, true);
   }, [validateClaim]);
   
@@ -65,7 +77,7 @@ export default function ClaimVerificationSheet({
   const handleReject = useCallback((claim: any) => {
     if (!claim) return;
     
-    logWithTimestamp(`Rejecting claim: ${claim.id}`);
+    logWithTimestamp(`Rejecting claim: ${JSON.stringify(claim)}`, 'info');
     validateClaim(claim, false);
   }, [validateClaim]);
 
@@ -73,6 +85,7 @@ export default function ClaimVerificationSheet({
   const handleRefresh = useCallback(() => {
     if (!sessionId) return;
     
+    logWithTimestamp(`Manually refreshing claims for session ${sessionId}`, 'info');
     fetchClaims();
     toast({
       title: "Refreshed",
@@ -91,7 +104,12 @@ export default function ClaimVerificationSheet({
         </SheetHeader>
         
         <div className="grid gap-4 py-4">
-          <div className="flex justify-end">
+          <div className="flex justify-between items-center">
+            <div className="text-sm text-gray-500">
+              {claims && claims.length > 0 
+                ? `${claims.length} pending claims` 
+                : 'No pending claims'}
+            </div>
             <Button 
               variant="outline" 
               size="sm" 
@@ -103,7 +121,7 @@ export default function ClaimVerificationSheet({
             </Button>
           </div>
           
-          {claims.length === 0 ? (
+          {claims?.length === 0 ? (
             <div className="text-center text-gray-500 p-8">
               <p className="mb-2">No claims to review at this time.</p>
               <p className="text-sm text-muted-foreground mb-4">
@@ -111,10 +129,10 @@ export default function ClaimVerificationSheet({
               </p>
             </div>
           ) : (
-            claims.map((claim, index) => (
-              <div key={claim.id} className="border rounded-md p-4">
+            claims?.map((claim, index) => (
+              <div key={claim.id || index} className="border rounded-md p-4">
                 <div className="font-bold">Claim Details</div>
-                <div>Player: {claim.playerName}</div>
+                <div>Player: {claim.playerName || claim.playerId}</div>
                 <div>Session: {claim.sessionId?.substring(0, 8)}...</div>
                 <div>Game: {claim.gameNumber || gameNumber}</div>
                 <div>Pattern: {claim.winPattern || currentWinPattern}</div>

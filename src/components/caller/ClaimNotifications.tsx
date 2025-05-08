@@ -27,11 +27,22 @@ export default function ClaimNotifications({
     
     // Set up periodic refresh
     const interval = setInterval(() => {
+      logWithTimestamp("ClaimNotifications: Periodic refresh", 'debug');
       fetchClaims();
-    }, 10000); // Check every 10 seconds
+    }, 5000); // Check every 5 seconds
     
     return () => clearInterval(interval);
   }, [sessionId, fetchClaims]);
+
+  // Enhanced debugging for claims data
+  useEffect(() => {
+    if (claims?.length > 0) {
+      logWithTimestamp(`ClaimNotifications: ${claims.length} claims found:`, 'info');
+      claims.forEach((claim, i) => {
+        logWithTimestamp(`Claim ${i+1}: Player=${claim.playerName || claim.playerId}`, 'info');
+      });
+    }
+  }, [claims]);
 
   // Animate when new claims arrive
   useEffect(() => {
