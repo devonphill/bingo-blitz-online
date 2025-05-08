@@ -9,6 +9,8 @@ interface GameSheetControlsProps {
   claimStatus?: 'none' | 'pending' | 'valid' | 'invalid';
   isClaiming?: boolean;
   isRefreshing?: boolean;
+  winningTickets?: number;
+  totalTickets?: number;
 }
 
 export default function GameSheetControls({
@@ -16,7 +18,9 @@ export default function GameSheetControls({
   onRefreshTickets,
   claimStatus = 'none',
   isClaiming = false,
-  isRefreshing = false
+  isRefreshing = false,
+  winningTickets = 0,
+  totalTickets = 0
 }: GameSheetControlsProps) {
   
   // Determine button appearance based on claim status
@@ -69,7 +73,10 @@ export default function GameSheetControls({
             ) : (
               <>
                 <Trophy className="h-5 w-5" />
-                <span>BINGO!</span>
+                <span>
+                  BINGO!
+                  {winningTickets > 0 && ` (${winningTickets} winning tickets)`}
+                </span>
               </>
             )}
           </Button>
@@ -95,7 +102,15 @@ export default function GameSheetControls({
           )}
         </div>
         
-        <div>
+        <div className="flex flex-col items-end">
+          {totalTickets > 0 && (
+            <div className="text-xs text-gray-500 mb-1">
+              {winningTickets > 0 ? 
+                `${winningTickets} of ${totalTickets} tickets complete` : 
+                `${totalTickets} active tickets`}
+            </div>
+          )}
+          
           {onClaimBingo && getClaimButton()}
         </div>
       </div>

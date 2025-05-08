@@ -60,8 +60,8 @@ export function usePlayerClaimManagement(
     };
   }, [playerId, toast]);
 
-  // Handle submitting a bingo claim
-  const submitClaim = useCallback(async (ticket: any) => {
+  // Handle submitting a bingo claim - organized by ticket status
+  const submitClaim = useCallback(async (tickets: any[]) => {
     if (!playerCode || !playerId || !sessionId || !playerName) {
       logWithTimestamp('Cannot submit claim - missing required information', 'error');
       return false;
@@ -72,8 +72,8 @@ export function usePlayerClaimManagement(
       return false;
     }
     
-    if (!ticket) {
-      logWithTimestamp('No ticket provided for claim', 'error');
+    if (!tickets || tickets.length === 0) {
+      logWithTimestamp('No tickets provided for claim', 'error');
       return false;
     }
     
@@ -81,26 +81,76 @@ export function usePlayerClaimManagement(
     setClaimStatus('pending');
     
     try {
-      const claimData = {
-        playerId,
-        playerName,
-        sessionId,
-        gameNumber, 
-        winPattern: currentWinPattern || 'oneLine',
-        ticket: {
-          serial: ticket.serial,
-          perm: ticket.perm,
-          position: ticket.position,
-          layoutMask: ticket.layoutMask || ticket.layout_mask,
-          numbers: ticket.numbers
-        },
-        calledNumbers: ticket.calledNumbers || [],
-        lastCalledNumber: ticket.lastCalledNumber || null,
-        gameType
-      };
+      // First, process tickets to determine which need to be submitted as claims
+      // Calculate "to-go" count for each ticket
+      const ticketsWithCounts = tickets.map(ticket => {
+        const toGoCount = ticket.numbers.filter(n => !ticket.calledNumbers.includes(n)).length;
+        return {
+          ...ticket,
+          toGoCount
+        };
+      });
       
-      logWithTimestamp('Submitting bingo claim', 'info');
-      const success = claimService.submitClaim(claimData);
+      // Find tickets with 0 "to-go" (winning tickets)
+      const winningTickets = ticketsWithCounts.filter(t => t.toGoCount === 0);
+      
+      // Determine if we should submit individual claims for winning tickets
+      let success = false;
+      
+      if (winningTickets.length > 0) {
+        logWithTimestamp(`Found ${winningTickets.length} winning tickets with 0 to-go. Submitting individual claims.`);
+        
+        // Submit each winning ticket as a separate claim
+        for (const ticket of winningTickets) {
+          const claimData = {
+            playerId,
+            playerName,
+            sessionId,
+            gameNumber,
+            winPattern: currentWinPattern || 'oneLine',
+            ticket: {
+              serial: ticket.serial,
+              perm: ticket.perm,
+              position: ticket.position,
+              layoutMask: ticket.layoutMask || ticket.layout_mask,
+              numbers: ticket.numbers
+            },
+            calledNumbers: ticket.calledNumbers || [],
+            lastCalledNumber: ticket.lastCalledNumber || null,
+            gameType,
+            toGoCount: 0
+          };
+          
+          const result = claimService.submitClaim(claimData);
+          if (result) success = true;
+        }
+      } else {
+        logWithTimestamp('No winning tickets found. Submitting all tickets as a single claim.');
+        
+        // No winning tickets - sort by fewest numbers to go and submit the best one
+        const bestTicket = [...ticketsWithCounts].sort((a, b) => a.toGoCount - b.toGoCount)[0];
+        
+        const claimData = {
+          playerId,
+          playerName,
+          sessionId,
+          gameNumber,
+          winPattern: currentWinPattern || 'oneLine',
+          ticket: {
+            serial: bestTicket.serial,
+            perm: bestTicket.perm,
+            position: bestTicket.position,
+            layoutMask: bestTicket.layoutMask || bestTicket.layout_mask,
+            numbers: bestTicket.numbers
+          },
+          calledNumbers: bestTicket.calledNumbers || [],
+          lastCalledNumber: bestTicket.lastCalledNumber || null,
+          gameType,
+          toGoCount: bestTicket.toGoCount
+        };
+        
+        success = claimService.submitClaim(claimData);
+      }
       
       if (success) {
         toast({

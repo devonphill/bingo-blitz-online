@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useCallback } from 'react';
 import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import CallerControls from '@/components/game/CallerControls';
@@ -137,6 +138,31 @@ export function LiveGameView({
     // Also call through the traditional method for backward compatibility
     onCallNumber(number);
   };
+
+  // Handle game progression after a valid claim
+  const handleGameProgress = useCallback(() => {
+    // This function will be called when a valid claim is verified
+    if (currentGameNumber < numberOfGames) {
+      toast({
+        title: "Game Completed",
+        description: "Advancing to next game...",
+        duration: 5000,
+      });
+      
+      // Add a delay to ensure user sees the success message before progression
+      setTimeout(() => {
+        if (onCloseGame) {
+          onCloseGame();
+        }
+      }, 3000); // Wait 3 seconds before progressing to next game
+    } else {
+      toast({
+        title: "Final Game Completed",
+        description: "All games have been completed!",
+        duration: 5000,
+      });
+    }
+  }, [currentGameNumber, numberOfGames, onCloseGame, toast]);
 
   const handleForceClose = async () => {
     if (!sessionId) return;
@@ -307,6 +333,7 @@ export function LiveGameView({
         gameType={gameType}
         currentNumber={lastCalledNumber}
         currentWinPattern={currentWinPattern}
+        onGameProgress={handleGameProgress}
       />
     </div>
   );

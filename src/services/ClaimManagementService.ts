@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { v4 as uuidv4 } from 'uuid';
@@ -29,6 +30,9 @@ export interface BingoClaim {
 const claimQueues: Map<string, BingoClaim[]> = new Map();
 const sessionSubscribers: Map<string, Set<(claims: BingoClaim[]) => void>> = new Map();
 
+// Track recently validated claims to prevent re-adding them
+const recentlyProcessedClaims = new Map<string, number>();
+
 class ClaimManagementService {
   // Register a session to track claims
   registerSession(sessionId: string): void {
@@ -51,7 +55,7 @@ class ClaimManagementService {
     sessionSubscribers.delete(sessionId);
   }
   
-  // Submit a new claim
+  // Submit a new claim - MEMORY ONLY, NO DATABASE WRITE
   submitClaim(claimData: any): boolean {
     try {
       if (!claimData.sessionId) {
@@ -92,16 +96,22 @@ class ClaimManagementService {
         claimQueues.set(claim.sessionId, []);
       }
       
-      // Check if we already have this claim
+      // Check if this player already has a pending claim with this win pattern in this session
       const existingQueue = claimQueues.get(claim.sessionId) || [];
       const isDuplicate = existingQueue.some(existing => 
         (existing.id === claim.id) || 
         (existing.playerId === claim.playerId && 
          existing.gameNumber === claim.gameNumber && 
-         existing.winPattern === claim.winPattern)
+         existing.winPattern === claim.winPattern &&
+         existing.ticket.serial === claim.ticket.serial)
       );
       
-      if (isDuplicate) {
+      // Also check if this claim was recently processed
+      const wasRecentlyProcessed = recentlyProcessedClaims.has(
+        `${claim.playerId}-${claim.sessionId}-${claim.gameNumber}-${claim.winPattern}-${claim.ticket.serial}`
+      );
+      
+      if (isDuplicate || wasRecentlyProcessed) {
         logWithTimestamp(`Skipping duplicate claim for player ${claim.playerName}`, 'info');
         return false;
       }
@@ -132,72 +142,10 @@ class ClaimManagementService {
       // Also broadcast the claim event for real-time updates
       this.broadcastClaimEvent(claim);
       
-      // Also persist to database as backup
-      this.persistClaimToDatabase(claim).catch(err => {
-        console.error("Error persisting claim to database:", err);
-      });
-      
       return true;
     } catch (error) {
       console.error("Error submitting claim:", error);
       return false;
-    }
-  }
-  
-  // Persist claim to database as backup
-  private async persistClaimToDatabase(claim: BingoClaim): Promise<void> {
-    try {
-      logWithTimestamp(`Persisting claim to database for player ${claim.playerName}`, 'info');
-      
-      // First check if this claim already exists in the database
-      const { data: existingClaims, error: checkError } = await supabase
-        .from('universal_game_logs')
-        .select('id')
-        .eq('session_id', claim.sessionId)
-        .eq('player_id', claim.playerId)
-        .eq('game_number', claim.gameNumber)
-        .eq('win_pattern', claim.winPattern)
-        .is('validated_at', null);
-      
-      if (checkError) {
-        logWithTimestamp(`Error checking for existing claim: ${checkError.message}`, 'error');
-        return;
-      }
-      
-      // If the claim already exists, don't add a duplicate
-      if (existingClaims && existingClaims.length > 0) {
-        logWithTimestamp(`Claim already exists in database, skipping duplicate`, 'info');
-        return;
-      }
-      
-      const { error } = await supabase
-        .from('universal_game_logs')
-        .insert({
-          session_id: claim.sessionId,
-          player_id: claim.playerId,
-          player_name: claim.playerName,
-          game_number: claim.gameNumber,
-          game_type: claim.gameType,
-          win_pattern: claim.winPattern,
-          ticket_serial: claim.ticket.serial,
-          ticket_perm: claim.ticket.perm,
-          ticket_position: claim.ticket.position,
-          ticket_layout_mask: claim.ticket.layoutMask,
-          ticket_numbers: claim.ticket.numbers,
-          called_numbers: claim.calledNumbers,
-          last_called_number: claim.lastCalledNumber,
-          total_calls: claim.calledNumbers.length,
-          claimed_at: claim.claimedAt.toISOString(),
-          validated_at: null  // Will be set when processed
-        });
-      
-      if (error) {
-        logWithTimestamp(`Error persisting claim: ${error.message}`, 'error');
-      } else {
-        logWithTimestamp(`Claim successfully persisted to database`, 'info');
-      }
-    } catch (err) {
-      console.error("Error in persistClaimToDatabase:", err);
     }
   }
   
@@ -241,8 +189,8 @@ class ClaimManagementService {
     };
   }
   
-  // Process a claim (valid or invalid)
-  async processClaim(claimId: string, sessionId: string, isValid: boolean): Promise<boolean> {
+  // Process a claim (valid or invalid) - this is when we write to the database
+  async processClaim(claimId: string, sessionId: string, isValid: boolean, onGameProgress?: () => void): Promise<boolean> {
     try {
       if (!sessionId) {
         logWithTimestamp("Cannot process claim: sessionId is null or undefined", 'error');
@@ -259,73 +207,43 @@ class ClaimManagementService {
       }
       
       const claim = queue[claimIndex];
+      const claimKey = `${claim.playerId}-${claim.sessionId}-${claim.gameNumber}-${claim.winPattern}-${claim.ticket.serial}`;
       
       logWithTimestamp(`Processing claim ${claimId} as ${isValid ? 'valid' : 'invalid'}`, 'info');
       
-      // Find if there's an existing entry in the database
-      const { data: existingClaims, error: checkError } = await supabase
+      // Now write to the database - this is the only place we write claims to the database
+      const { error: insertError } = await supabase
         .from('universal_game_logs')
-        .select('id')
-        .eq('session_id', claim.sessionId)
-        .eq('player_id', claim.playerId)
-        .eq('game_number', claim.gameNumber)
-        .eq('win_pattern', claim.winPattern)
-        .is('validated_at', null);
-        
-      if (checkError) {
-        console.error("Error checking for existing claim:", checkError);
-      }
+        .insert({
+          session_id: claim.sessionId,
+          player_id: claim.playerId,
+          player_name: claim.playerName,
+          game_number: claim.gameNumber || 1,
+          game_type: claim.gameType || 'mainstage',
+          win_pattern: claim.winPattern || 'oneLine',
+          ticket_serial: claim.ticket.serial,
+          ticket_perm: claim.ticket.perm,
+          ticket_position: claim.ticket.position,
+          ticket_layout_mask: claim.ticket.layoutMask,
+          ticket_numbers: claim.ticket.numbers,
+          called_numbers: claim.calledNumbers,
+          last_called_number: claim.lastCalledNumber,
+          total_calls: claim.calledNumbers.length,
+          claimed_at: claim.claimedAt.toISOString(),
+          validated_at: new Date().toISOString(), // Set timestamp when validated
+          prize_shared: isValid // Set prize shared to true only if valid
+        });
       
-      // If we found an existing claim, update it
-      if (existingClaims && existingClaims.length > 0) {
-        logWithTimestamp(`Updating existing claim in database with id ${existingClaims[0].id}`, 'info');
-        
-        const { error: updateError } = await supabase
-          .from('universal_game_logs')
-          .update({
-            validated_at: new Date().toISOString(),
-            prize_shared: isValid
-          })
-          .eq('id', existingClaims[0].id);
-          
-        if (updateError) {
-          console.error("Error updating existing claim:", updateError);
-          return false;
-        }
-      } else {
-        // Otherwise create a new validated entry
-        logWithTimestamp(`Creating new validated claim entry in database`, 'info');
-        
-        const { error: insertError } = await supabase
-          .from('universal_game_logs')
-          .insert({
-            session_id: claim.sessionId,
-            player_id: claim.playerId,
-            player_name: claim.playerName,
-            game_number: claim.gameNumber || 1,
-            game_type: claim.gameType || 'mainstage',
-            win_pattern: claim.winPattern || 'oneLine',
-            ticket_serial: claim.ticket.serial,
-            ticket_perm: claim.ticket.perm,
-            ticket_position: claim.ticket.position,
-            ticket_layout_mask: claim.ticket.layoutMask,
-            ticket_numbers: claim.ticket.numbers,
-            called_numbers: claim.calledNumbers,
-            last_called_number: claim.lastCalledNumber,
-            total_calls: claim.calledNumbers.length,
-            claimed_at: claim.claimedAt.toISOString(),
-            validated_at: new Date().toISOString(),
-            prize_shared: isValid
-          });
-        
-        if (insertError) {
-          console.error("Error creating validated claim:", insertError);
-          return false;
-        }
+      if (insertError) {
+        console.error("Error creating validated claim:", insertError);
+        return false;
       }
       
       // Broadcast the result to the player
       await this.broadcastClaimResult(claim.playerId, isValid ? 'valid' : 'invalid');
+      
+      // Add to recently processed claims to prevent re-adding
+      recentlyProcessedClaims.set(claimKey, Date.now());
       
       // Remove from queue
       queue.splice(claimIndex, 1);
@@ -333,6 +251,17 @@ class ClaimManagementService {
       
       // Notify subscribers about the updated queue
       this.notifySubscribers(sessionId);
+      
+      // Clean up old processed claims after 10 seconds
+      setTimeout(() => {
+        recentlyProcessedClaims.delete(claimKey);
+      }, 10000);
+      
+      // Call game progress callback if provided and claim was valid
+      if (isValid && onGameProgress) {
+        logWithTimestamp('Valid claim processed, triggering game progress callback', 'info');
+        onGameProgress();
+      }
       
       logWithTimestamp(`Successfully processed claim ${claimId} as ${isValid ? 'valid' : 'invalid'}. ${queue.length} claims remaining.`, 'info');
       return true;

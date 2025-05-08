@@ -23,6 +23,7 @@ interface ClaimVerificationSheetProps {
   gameType?: string;
   currentNumber?: number | null;
   currentWinPattern?: string | null;
+  onGameProgress?: () => void;
 }
 
 export default function ClaimVerificationSheet({
@@ -33,7 +34,8 @@ export default function ClaimVerificationSheet({
   currentCalledNumbers = [],
   gameType = 'mainstage',
   currentNumber,
-  currentWinPattern
+  currentWinPattern,
+  onGameProgress
 }: ClaimVerificationSheetProps) {
   // Use the improved claim management hook
   const { 
@@ -44,6 +46,7 @@ export default function ClaimVerificationSheet({
   } = useCallerClaimManagement(sessionId || null);
   
   const { toast } = useToast();
+  const [autoClose, setAutoClose] = useState(true);
 
   // Debug log when sheet is opened/closed
   useEffect(() => {
@@ -70,7 +73,7 @@ export default function ClaimVerificationSheet({
     if (!claim) return;
     
     logWithTimestamp(`Verifying claim: ${JSON.stringify(claim)}`, 'info');
-    const success = await validateClaim(claim, true);
+    const success = await validateClaim(claim, true, onGameProgress);
     
     if (success) {
       toast({
@@ -82,15 +85,15 @@ export default function ClaimVerificationSheet({
       // Refresh claims to update UI
       fetchClaims();
       
-      // If no claims left, close the sheet after a short delay
+      // If no claims left and autoClose is enabled, close the sheet after a short delay
       setTimeout(() => {
         const remainingClaims = claims.filter(c => c.id !== claim.id);
-        if (remainingClaims.length === 0) {
+        if (remainingClaims.length === 0 && autoClose) {
           onClose();
         }
       }, 1500);
     }
-  }, [validateClaim, toast, fetchClaims, claims, onClose]);
+  }, [validateClaim, toast, fetchClaims, claims, onClose, autoClose, onGameProgress]);
   
   // Handle rejecting a claim
   const handleReject = useCallback(async (claim: any) => {
@@ -149,6 +152,16 @@ export default function ClaimVerificationSheet({
               <RefreshCw className="h-4 w-4" />
               Refresh Claims
             </Button>
+          </div>
+          
+          <div className="flex items-center justify-end mb-2">
+            <label className="text-sm mr-2">Auto-close after verification:</label>
+            <input 
+              type="checkbox" 
+              checked={autoClose} 
+              onChange={(e) => setAutoClose(e.target.checked)} 
+              className="rounded"
+            />
           </div>
           
           {claims?.length === 0 ? (
