@@ -61,7 +61,7 @@ export function usePlayerClaimManagement(
   }, [playerId, toast]);
 
   // Handle submitting a bingo claim
-  const submitClaim = useCallback(async (ticket: any, calledNumbers: number[], lastCalledNumber: number | null) => {
+  const submitClaim = useCallback(async (ticket: any) => {
     if (!playerCode || !playerId || !sessionId || !playerName) {
       logWithTimestamp('Cannot submit claim - missing required information', 'error');
       return false;
@@ -81,7 +81,7 @@ export function usePlayerClaimManagement(
     setClaimStatus('pending');
     
     try {
-      const claim = {
+      const claimData = {
         playerId,
         playerName,
         sessionId,
@@ -94,13 +94,13 @@ export function usePlayerClaimManagement(
           layoutMask: ticket.layoutMask || ticket.layout_mask,
           numbers: ticket.numbers
         },
-        calledNumbers,
-        lastCalledNumber,
+        calledNumbers: ticket.calledNumbers || [],
+        lastCalledNumber: ticket.lastCalledNumber || null,
         gameType
       };
       
-      logWithTimestamp('Submitting bingo claim', 'info', { claim });
-      const success = claimService.submitClaim(claim);
+      logWithTimestamp('Submitting bingo claim', 'info');
+      const success = claimService.submitClaim(claimData);
       
       if (success) {
         toast({

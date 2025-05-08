@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -64,10 +65,13 @@ export default function PlayerGameContent({
   children // Added children to destructuring
 }: PlayerGameContentProps) {
   const { getGameTypeById } = useGameManager();
+  
   // Local states for UI elements
   const [isAutoMarkingEnabled, setIsAutoMarkingEnabled] = useState(autoMarking);
   const [showDebug, setShowDebug] = useState(false);
   const [gameTypeDetails, setGameTypeDetails] = useState<any>(null);
+  const [localNumbers, setLocalNumbers] = useState<number[]>(calledNumbers || []); 
+  const [localCurrentNumber, setLocalCurrentNumber] = useState<number | null>(currentNumber);
 
   // Use the network context
   const network = useNetwork();
@@ -238,6 +242,14 @@ export default function PlayerGameContent({
     };
   }, [currentWinPattern, activeWinPatterns, winPrizes]);
 
+  // Handle claim bingo
+  const handleLocalClaimBingo = async () => {
+    if (onClaimBingo) {
+      return await onClaimBingo();
+    }
+    return false;
+  };
+
   return (
     <div className={`min-h-full flex flex-col`} style={{ backgroundColor }}>
       <GameHeader 
@@ -247,7 +259,7 @@ export default function PlayerGameContent({
         prize={effectivePrize || 'Prize to be announced'}
         claimStatus={effectiveClaimStatus}
         isClaiming={effectiveIsClaiming}
-        onClaimBingo={handleClaimBingo}
+        onClaimBingo={handleLocalClaimBingo}
       />
       
       <div className="flex-grow overflow-y-auto">
@@ -271,7 +283,7 @@ export default function PlayerGameContent({
                 calledNumbers={effectiveCalledNumbers}
                 lastCalledNumber={effectiveLastCalledNumber}
                 autoMarking={autoMarking}
-                handleClaimBingo={handleClaimBingo}
+                handleClaimBingo={handleLocalClaimBingo}
                 isClaiming={effectiveIsClaiming}
                 claimStatus={effectiveClaimStatus === 'valid' ? 'validated' : effectiveClaimStatus === 'invalid' ? 'rejected' : 'pending'}
               />
@@ -281,7 +293,7 @@ export default function PlayerGameContent({
       </div>
       
       <GameSheetControls
-        onClaimBingo={handleClaimBingo}
+        onClaimBingo={handleLocalClaimBingo}
         claimStatus={effectiveClaimStatus}
         isClaiming={effectiveIsClaiming}
         onRefreshTickets={onRefreshTickets}

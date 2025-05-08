@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { v4 as uuidv4 } from 'uuid';
 
+// Define BingoClaim type
 export interface BingoClaim {
   id: string;
   playerId: string;
@@ -10,7 +11,7 @@ export interface BingoClaim {
   sessionId: string;
   gameNumber: number;
   winPattern: string;
-  claimedAt: Date;
+  gameType: string;
   ticket: {
     serial: string;
     perm: number;
@@ -20,193 +21,142 @@ export interface BingoClaim {
   };
   calledNumbers: number[];
   lastCalledNumber: number | null;
-  toGoCount?: number; // Number of numbers still needed
-  hasLastCalledNumber?: boolean; // Whether the ticket contains the last called number
-  gameType?: string;
+  claimedAt: Date;
+  toGoCount?: number;
+  hasLastCalledNumber?: boolean;
 }
 
+// In-memory storage for pending claims by session
+const claimQueues: Map<string, BingoClaim[]> = new Map();
+const sessionSubscribers: Map<string, Set<(claims: BingoClaim[]) => void>> = new Map();
+
 class ClaimManagementService {
-  private static instance: ClaimManagementService;
-  private activeClaimQueue: Map<string, BingoClaim[]> = new Map();
-  private listeners: Map<string, Set<(claims: BingoClaim[]) => void>> = new Map();
-
-  private constructor() {
-    // Initialize broadcast channel listener
-    this.setupBroadcastListener();
-  }
-
-  public static getInstance(): ClaimManagementService {
-    if (!ClaimManagementService.instance) {
-      ClaimManagementService.instance = new ClaimManagementService();
-    }
-    return ClaimManagementService.instance;
-  }
-
-  private setupBroadcastListener(): void {
-    logWithTimestamp('Setting up claim broadcast listener', 'info', 'ClaimService');
-    
-    // Listen for incoming claim broadcasts
-    const channel = supabase.channel('bingo-claims-channel')
-      .on('broadcast', { event: 'bingo-claim' }, (payload) => {
-        if (payload.payload) {
-          const { sessionId } = payload.payload;
-          logWithTimestamp(`Received claim broadcast for session ${sessionId}`, 'info', 'ClaimService');
-          
-          // If the claim is for a session we're tracking, add it to the queue
-          if (this.activeClaimQueue.has(sessionId)) {
-            this.addClaimToQueue(payload.payload);
-          }
-        }
-      })
-      .subscribe((status) => {
-        logWithTimestamp(`Claim broadcast channel status: ${status}`, 'info', 'ClaimService');
-      });
-  }
-
-  // Add a claim to the queue
-  private addClaimToQueue(claimData: any): void {
-    if (!claimData.sessionId) {
-      logWithTimestamp('Invalid claim data - missing sessionId', 'error', 'ClaimService');
-      return;
-    }
-
-    // Generate a unique ID if not provided
-    const claim: BingoClaim = {
-      id: claimData.id || uuidv4(),
-      playerId: claimData.playerId,
-      playerName: claimData.playerName,
-      sessionId: claimData.sessionId,
-      gameNumber: claimData.gameNumber || 1,
-      winPattern: claimData.winPattern || 'oneLine',
-      claimedAt: new Date(claimData.claimedAt || Date.now()),
-      ticket: claimData.ticket,
-      calledNumbers: claimData.calledNumbers || [],
-      lastCalledNumber: claimData.lastCalledNumber || null,
-      gameType: claimData.gameType || 'mainstage'
-    };
-
-    // Calculate toGoCount and hasLastCalledNumber if ticket exists
-    if (claim.ticket && claim.calledNumbers) {
-      // Count how many numbers are left to be called on this ticket
-      const ticketNumbers = new Set(claim.ticket.numbers);
-      const calledSet = new Set(claim.calledNumbers);
-      
-      let toGo = 0;
-      ticketNumbers.forEach(num => {
-        if (!calledSet.has(num)) {
-          toGo++;
-        }
-      });
-      
-      claim.toGoCount = toGo;
-      claim.hasLastCalledNumber = claim.lastCalledNumber !== null && 
-                                 ticketNumbers.has(claim.lastCalledNumber);
-    }
-
-    // Add to queue
-    const sessionClaims = this.activeClaimQueue.get(claim.sessionId) || [];
-    sessionClaims.push(claim);
-    this.activeClaimQueue.set(claim.sessionId, sessionClaims);
-    
-    // Notify listeners
-    this.notifyListeners(claim.sessionId);
-  }
-
-  // Register to track claims for a session
-  public registerSession(sessionId: string): void {
-    if (!this.activeClaimQueue.has(sessionId)) {
-      this.activeClaimQueue.set(sessionId, []);
+  // Register a session to track claims
+  registerSession(sessionId: string): void {
+    if (!claimQueues.has(sessionId)) {
+      claimQueues.set(sessionId, []);
     }
   }
-
-  // Unregister a session
-  public unregisterSession(sessionId: string): void {
-    this.activeClaimQueue.delete(sessionId);
-    this.listeners.delete(sessionId);
+  
+  // Unregister a session when done
+  unregisterSession(sessionId: string): void {
+    claimQueues.delete(sessionId);
+    sessionSubscribers.delete(sessionId);
   }
-
-  // Get claims for a session
-  public getClaimsForSession(sessionId: string): BingoClaim[] {
-    return [...(this.activeClaimQueue.get(sessionId) || [])].sort((a, b) => {
-      // Sort by toGoCount first (0TG first)
-      if (a.toGoCount !== b.toGoCount) {
-        return (a.toGoCount || 0) - (b.toGoCount || 0);
-      }
-      
-      // Then prioritize tickets with the last called number
-      if (a.hasLastCalledNumber !== b.hasLastCalledNumber) {
-        return a.hasLastCalledNumber ? -1 : 1;
-      }
-      
-      // Then by claim time (oldest first)
-      return a.claimedAt.getTime() - b.claimedAt.getTime();
-    });
-  }
-
+  
   // Submit a new claim
-  public submitClaim(claim: Omit<BingoClaim, 'id' | 'claimedAt'>): boolean {
+  submitClaim(claimData: any): boolean {
     try {
-      const fullClaim: BingoClaim = {
-        ...claim,
-        id: uuidv4(),
-        claimedAt: new Date(),
-      };
-
-      // Broadcast the claim
-      supabase.channel('bingo-claims-channel').send({
-        type: 'broadcast',
-        event: 'bingo-claim',
-        payload: fullClaim
-      }).then(() => {
-        logWithTimestamp('Claim broadcast sent successfully', 'info', 'ClaimService');
-        
-        // Also add to our local queue if we're tracking this session
-        if (this.activeClaimQueue.has(fullClaim.sessionId)) {
-          this.addClaimToQueue(fullClaim);
-        }
-      }).catch(error => {
-        logWithTimestamp(`Error broadcasting claim: ${error}`, 'error', 'ClaimService');
-      });
-      
-      return true;
-    } catch (error) {
-      logWithTimestamp(`Error submitting claim: ${error}`, 'error', 'ClaimService');
-      return false;
-    }
-  }
-
-  // Process a claim (mark as valid or invalid)
-  public async processClaim(
-    claimId: string, 
-    sessionId: string, 
-    isValid: boolean
-  ): Promise<boolean> {
-    try {
-      // Find the claim in our queue
-      const sessionClaims = this.activeClaimQueue.get(sessionId) || [];
-      const claimIndex = sessionClaims.findIndex(claim => claim.id === claimId);
-      
-      if (claimIndex === -1) {
-        logWithTimestamp(`Claim ${claimId} not found in queue for session ${sessionId}`, 'error', 'ClaimService');
+      if (!claimData.sessionId) {
+        console.error("Missing sessionId in claim data");
         return false;
       }
       
-      const claim = sessionClaims[claimIndex];
+      // Generate a unique ID for the claim
+      const claimId = uuidv4();
       
-      // Now write to database
+      // Create the claim object
+      const claim: BingoClaim = {
+        id: claimId,
+        playerId: claimData.playerId,
+        playerName: claimData.playerName || 'Unknown Player',
+        sessionId: claimData.sessionId,
+        gameNumber: claimData.gameNumber || 1,
+        winPattern: claimData.winPattern || 'oneLine',
+        gameType: claimData.gameType || 'mainstage',
+        ticket: claimData.ticket || { 
+          serial: 'unknown',
+          perm: 0,
+          position: 0,
+          layoutMask: 0,
+          numbers: []
+        },
+        calledNumbers: claimData.calledNumbers || [],
+        lastCalledNumber: claimData.lastCalledNumber || null,
+        claimedAt: new Date()
+      };
+      
+      // Add the claim to the queue for this session
+      if (!claimQueues.has(claim.sessionId)) {
+        claimQueues.set(claim.sessionId, []);
+      }
+      
+      // Add ticket validation metrics
+      if (claim.ticket && claim.ticket.numbers && claim.calledNumbers) {
+        // Calculate "to go" count - how many numbers on the ticket aren't called yet
+        const uncalledNumbers = claim.ticket.numbers.filter(n => !claim.calledNumbers.includes(n));
+        claim.toGoCount = uncalledNumbers.length;
+        
+        // Check if the last called number is on this ticket
+        claim.hasLastCalledNumber = claim.lastCalledNumber !== null && 
+                                   claim.ticket.numbers.includes(claim.lastCalledNumber);
+      }
+      
+      // Add to queue
+      const queue = claimQueues.get(claim.sessionId) || [];
+      queue.push(claim);
+      claimQueues.set(claim.sessionId, queue);
+      
+      // Notify subscribers
+      this.notifySubscribers(claim.sessionId);
+      
+      // Also broadcast the claim event for real-time updates
+      this.broadcastClaimEvent(claim);
+      
+      logWithTimestamp(`Claim submitted for session ${claim.sessionId} by player ${claim.playerName}`, 'info');
+      return true;
+    } catch (error) {
+      console.error("Error submitting claim:", error);
+      return false;
+    }
+  }
+  
+  // Subscribe to claim queue updates for a session
+  subscribeToClaimQueue(sessionId: string, callback: (claims: BingoClaim[]) => void): () => void {
+    if (!sessionSubscribers.has(sessionId)) {
+      sessionSubscribers.set(sessionId, new Set());
+    }
+    
+    const subscribers = sessionSubscribers.get(sessionId)!;
+    subscribers.add(callback);
+    
+    // Initial callback with current claims
+    const currentClaims = claimQueues.get(sessionId) || [];
+    callback(currentClaims);
+    
+    // Return unsubscribe function
+    return () => {
+      const subs = sessionSubscribers.get(sessionId);
+      if (subs) {
+        subs.delete(callback);
+      }
+    };
+  }
+  
+  // Process a claim (valid or invalid)
+  async processClaim(claimId: string, sessionId: string, isValid: boolean): Promise<boolean> {
+    try {
+      // Find the claim in the queue
+      const queue = claimQueues.get(sessionId) || [];
+      const claimIndex = queue.findIndex(c => c.id === claimId);
+      
+      if (claimIndex === -1) {
+        console.error(`Claim ${claimId} not found in session ${sessionId}`);
+        return false;
+      }
+      
+      const claim = queue[claimIndex];
+      
+      // Process the claim in the database
       const { error } = await supabase
         .from('universal_game_logs')
         .insert({
-          id: claim.id, // Use the same ID for traceability
           session_id: claim.sessionId,
           player_id: claim.playerId,
           player_name: claim.playerName,
-          game_number: claim.gameNumber,
+          game_number: claim.gameNumber || 1,
           game_type: claim.gameType || 'mainstage',
-          win_pattern: claim.winPattern,
-          claimed_at: claim.claimedAt.toISOString(),
-          validated_at: new Date().toISOString(),
-          prize_shared: isValid,
+          win_pattern: claim.winPattern || 'oneLine',
           ticket_serial: claim.ticket.serial,
           ticket_perm: claim.ticket.perm,
           ticket_position: claim.ticket.position,
@@ -215,79 +165,107 @@ class ClaimManagementService {
           called_numbers: claim.calledNumbers,
           last_called_number: claim.lastCalledNumber,
           total_calls: claim.calledNumbers.length,
-          validation_result: isValid ? 'valid' : 'invalid'
+          claimed_at: claim.claimedAt.toISOString(),
+          validated_at: new Date().toISOString(),
+          prize_shared: isValid
         });
-        
+      
       if (error) {
-        logWithTimestamp(`Error writing claim to database: ${error.message}`, 'error', 'ClaimService');
+        console.error("Error processing claim:", error);
         return false;
       }
       
+      // Broadcast the result to the player
+      await this.broadcastClaimResult(claim.playerId, isValid ? 'valid' : 'invalid');
+      
       // Remove from queue
-      sessionClaims.splice(claimIndex, 1);
-      this.activeClaimQueue.set(sessionId, sessionClaims);
+      queue.splice(claimIndex, 1);
+      claimQueues.set(sessionId, queue);
       
-      // Broadcast the result
-      await supabase.channel('claim-results-channel').send({
-        type: 'broadcast',
-        event: 'claim-result',
-        payload: {
-          claimId,
-          sessionId,
-          playerId: claim.playerId,
-          result: isValid ? 'valid' : 'rejected',
-          timestamp: new Date().toISOString()
-        }
-      });
-      
-      // Notify listeners that the queue has changed
-      this.notifyListeners(sessionId);
+      // Notify subscribers
+      this.notifySubscribers(sessionId);
       
       return true;
     } catch (error) {
-      logWithTimestamp(`Error processing claim: ${error}`, 'error', 'ClaimService');
+      console.error("Error processing claim:", error);
       return false;
     }
   }
-
-  // Subscribe to changes in the claim queue for a session
-  public subscribeToClaimQueue(
-    sessionId: string, 
-    callback: (claims: BingoClaim[]) => void
-  ): () => void {
-    if (!this.listeners.has(sessionId)) {
-      this.listeners.set(sessionId, new Set());
-    }
-    
-    const sessionListeners = this.listeners.get(sessionId)!;
-    sessionListeners.add(callback);
-    
-    // Immediately call with current state
-    callback(this.getClaimsForSession(sessionId));
-    
-    // Return unsubscribe function
-    return () => {
-      const listeners = this.listeners.get(sessionId);
-      if (listeners) {
-        listeners.delete(callback);
-      }
-    };
-  }
-
-  private notifyListeners(sessionId: string): void {
-    const listeners = this.listeners.get(sessionId);
-    if (!listeners) return;
-    
-    const claims = this.getClaimsForSession(sessionId);
-    listeners.forEach(callback => callback(claims));
+  
+  // Clear all claims for a session
+  clearClaimsForSession(sessionId: string): void {
+    claimQueues.set(sessionId, []);
+    this.notifySubscribers(sessionId);
   }
   
-  // Clear all claims for a session (e.g. when game ends)
-  public clearClaimsForSession(sessionId: string): void {
-    this.activeClaimQueue.set(sessionId, []);
-    this.notifyListeners(sessionId);
+  // Private helper methods
+  private notifySubscribers(sessionId: string): void {
+    const subscribers = sessionSubscribers.get(sessionId);
+    if (!subscribers) return;
+    
+    const claims = claimQueues.get(sessionId) || [];
+    
+    // Sort claims - 0TG first, then by whether they have the last called number
+    const sortedClaims = [...claims].sort((a, b) => {
+      // First priority: 0TG claims
+      if ((a.toGoCount === 0) !== (b.toGoCount === 0)) {
+        return (a.toGoCount === 0) ? -1 : 1;
+      }
+      
+      // Second priority: Has last called number
+      if (a.hasLastCalledNumber !== b.hasLastCalledNumber) {
+        return a.hasLastCalledNumber ? -1 : 1;
+      }
+      
+      // Third priority: Lower TG count
+      if (a.toGoCount !== b.toGoCount) {
+        return (a.toGoCount || 0) - (b.toGoCount || 0);
+      }
+      
+      // Fourth priority: Submission time (earlier first)
+      return a.claimedAt.getTime() - b.claimedAt.getTime();
+    });
+    
+    // Notify all subscribers
+    subscribers.forEach(callback => callback(sortedClaims));
+  }
+  
+  // Broadcast claim to all listeners in session
+  private async broadcastClaimEvent(claim: BingoClaim): Promise<void> {
+    try {
+      const channel = supabase.channel('game-updates');
+      await channel.send({
+        type: 'broadcast',
+        event: 'new-claim',
+        payload: {
+          sessionId: claim.sessionId,
+          claimId: claim.id,
+          playerId: claim.playerId,
+          playerName: claim.playerName
+        }
+      });
+    } catch (err) {
+      console.error("Error broadcasting claim:", err);
+    }
+  }
+  
+  // Broadcast claim result to the player
+  private async broadcastClaimResult(playerId: string, result: 'valid' | 'invalid'): Promise<void> {
+    try {
+      const channel = supabase.channel('claim-results-channel');
+      await channel.send({
+        type: 'broadcast',
+        event: 'claim-result',
+        payload: {
+          playerId,
+          result
+        }
+      });
+    } catch (err) {
+      console.error("Error broadcasting claim result:", err);
+    }
   }
 }
 
-// Export singleton instance
-export const claimService = ClaimManagementService.getInstance();
+// Export a singleton instance
+export const claimService = new ClaimManagementService();

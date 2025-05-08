@@ -1,14 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Trophy, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
+import { Trophy, CheckCircle2, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface BingoClaimProps {
   onClaimBingo: () => Promise<boolean>;
   claimStatus: 'none' | 'pending' | 'valid' | 'invalid';
   isClaiming: boolean;
-  resetClaimStatus: () => void;
+  resetClaimStatus?: () => void;
 }
 
 export default function BingoClaim({
@@ -24,7 +24,9 @@ export default function BingoClaim({
     if (claimStatus === 'valid' || claimStatus === 'invalid') {
       // After a delay, allow claiming again
       const timer = setTimeout(() => {
-        resetClaimStatus();
+        if (resetClaimStatus) {
+          resetClaimStatus();
+        }
       }, 5000);
       
       return () => clearTimeout(timer);
