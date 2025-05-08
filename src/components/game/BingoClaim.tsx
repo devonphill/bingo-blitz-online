@@ -17,8 +17,6 @@ export default function BingoClaim({
   isClaiming,
   resetClaimStatus
 }: BingoClaimProps) {
-  const [canClaim, setCanClaim] = useState(true);
-  
   // Reset claim ability based on status changes
   useEffect(() => {
     if (claimStatus === 'valid' || claimStatus === 'invalid') {
@@ -27,7 +25,7 @@ export default function BingoClaim({
         if (resetClaimStatus) {
           resetClaimStatus();
         }
-      }, 5000); // Reduced from longer durations
+      }, 5000); // 5 second timeout for showing claim result
       
       return () => clearTimeout(timer);
     }

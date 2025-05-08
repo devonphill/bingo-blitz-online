@@ -219,6 +219,22 @@ export default function CallerSession() {
       
       console.log("Going live with session:", session.id, "and game configs:", gameConfigs);
       
+      // Get the current game config (default to first game)
+      const currentGameConfig = gameConfigs.find(config => config.gameNumber === 1) || gameConfigs[0];
+      
+      // Find the first active pattern in the current game config
+      let firstActivePattern = null;
+      if (currentGameConfig && currentGameConfig.patterns) {
+        // Find first active pattern
+        const activePatternEntry = Object.entries(currentGameConfig.patterns)
+          .find(([patternId, pattern]) => pattern.active === true);
+        
+        if (activePatternEntry) {
+          firstActivePattern = activePatternEntry[0]; // This is the pattern ID
+          console.log("First active pattern found:", firstActivePattern);
+        }
+      }
+      
       const { error } = await supabase
         .from('game_sessions')
         .update({ status: 'active' })
@@ -230,11 +246,14 @@ export default function CallerSession() {
 
       setSessionStatus('active');
 
+      // Update the session progress with the initial win pattern
       await updateSessionProgress(session.id, {
-        game_status: 'active'
+        game_status: 'active',
+        current_win_pattern: firstActivePattern || 'oneLine', // Default to oneLine if no active pattern found
+        current_game_number: 1
       });
       
-      console.log("Session is now live");
+      console.log(`Session is now live with initial win pattern: ${firstActivePattern || 'oneLine'}`);
     } catch (err) {
       console.error('Error going live:', err);
       toast({
@@ -251,20 +270,49 @@ export default function CallerSession() {
     if (!session) return;
 
     try {
-      const { error } = await supabase
-        .from('game_sessions')
-        .update({ status: 'completed' })
-        .eq('id', session.id);
-
-      if (error) {
-        throw error;
+      // Check if this is truly the final game and pattern before marking as completed
+      const isFinalGame = session.current_game >= session.numberOfGames;
+      const currentGameConfig = gameConfigs.find(config => config.gameNumber === session.current_game);
+      
+      let activePatterns = [];
+      if (currentGameConfig && currentGameConfig.patterns) {
+        activePatterns = Object.entries(currentGameConfig.patterns)
+          .filter(([_, pattern]) => pattern.active === true)
+          .map(([patternId]) => patternId);
       }
+      
+      // Get the index of the current win pattern
+      const currentPatternIndex = activePatterns.indexOf(currentWinPattern || '');
+      const isFinalPattern = currentPatternIndex === activePatterns.length - 1;
+      
+      // Only mark as completed if we're at the final game and final pattern
+      if (isFinalGame && isFinalPattern) {
+        const { error } = await supabase
+          .from('game_sessions')
+          .update({ status: 'completed' })
+          .eq('id', session.id);
 
-      setSessionStatus('completed');
+        if (error) {
+          throw error;
+        }
 
-      await updateSessionProgress(session.id, {
-        game_status: 'completed'
-      });
+        setSessionStatus('completed');
+
+        await updateSessionProgress(session.id, {
+          game_status: 'completed'
+        });
+        
+        console.log("Final game and pattern completed - session marked as completed");
+      } else {
+        // Otherwise, we're just advancing to the next pattern or game
+        console.log("Game not yet complete - only moving to next pattern/game");
+        
+        toast({
+          title: "Next Pattern",
+          description: "Moving to next pattern or game",
+          duration: 3000
+        });
+      }
     } catch (err) {
       console.error('Error ending game:', err);
       toast({

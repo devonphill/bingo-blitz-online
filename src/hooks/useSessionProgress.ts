@@ -59,22 +59,12 @@ export function useSessionProgress(sessionId: string | undefined) {
 
   // Setup subscription and initial data load
   useEffect(() => {
-    // Guard against multiple initializations
-    if (initialized.current) {
-      return;
-    }
-
     // If no sessionId is provided, just set loading to false and return
     if (!sessionId) {
       setLoading(false);
       logWithTimestamp(`[${hookId.current}] No sessionId provided to useSessionProgress`, 'info');
       return;
     }
-
-    initialized.current = true;
-    
-    // Cleanup any existing subscription
-    cleanupSubscription();
 
     // Set loading state
     setLoading(true);
@@ -118,6 +108,10 @@ export function useSessionProgress(sessionId: string | undefined) {
             created_at: data.created_at,
             updated_at: data.updated_at
           });
+          
+          // Log the current win pattern and game status
+          logWithTimestamp(`[${hookId.current}] Current win pattern: ${data.current_win_pattern}`, 'info');
+          logWithTimestamp(`[${hookId.current}] Game status: ${data.game_status}`, 'info');
         } else {
           // Check if we need to create a new sessions_progress entry
           logWithTimestamp(`[${hookId.current}] No session progress found, checking if we need to create one`, 'info');
@@ -125,12 +119,34 @@ export function useSessionProgress(sessionId: string | undefined) {
           // Get session information first
           const { data: sessionData } = await supabase
             .from('game_sessions')
-            .select('number_of_games, game_type')
+            .select('number_of_games, game_type, games_config')
             .eq('id', sessionId)
             .single();
             
           if (sessionData) {
             logWithTimestamp(`[${hookId.current}] Creating new session progress for session ${sessionId}`, 'info');
+            
+            // Try to determine initial win pattern from games_config
+            let initialWinPattern = 'oneLine'; // Default
+            
+            try {
+              if (sessionData.games_config && Array.isArray(sessionData.games_config) && sessionData.games_config.length > 0) {
+                const firstGameConfig = sessionData.games_config[0];
+                if (firstGameConfig && firstGameConfig.patterns) {
+                  // Find first active pattern
+                  for (const [patternId, pattern] of Object.entries(firstGameConfig.patterns)) {
+                    if (pattern.active === true) {
+                      initialWinPattern = patternId;
+                      break;
+                    }
+                  }
+                }
+              }
+            } catch (configError) {
+              logWithTimestamp(`[${hookId.current}] Error reading games_config: ${configError}`, 'error');
+              // Continue with default win pattern
+            }
+            
             // Create a new session progress entry
             const { data: newProgress, error: createError } = await supabase
               .from('sessions_progress')
@@ -139,6 +155,7 @@ export function useSessionProgress(sessionId: string | undefined) {
                 current_game_number: 1,
                 max_game_number: sessionData.number_of_games || 1,
                 current_game_type: sessionData.game_type,
+                current_win_pattern: initialWinPattern, // Set initial win pattern
                 called_numbers: [],
                 game_status: 'pending'
               })
@@ -151,6 +168,7 @@ export function useSessionProgress(sessionId: string | undefined) {
             
             if (newProgress) {
               logWithTimestamp(`[${hookId.current}] New session progress created successfully`, 'info');
+              logWithTimestamp(`[${hookId.current}] Initial win pattern: ${initialWinPattern}`, 'info');
               setProgress({
                 id: newProgress.id,
                 session_id: newProgress.session_id,
@@ -198,6 +216,20 @@ export function useSessionProgress(sessionId: string | undefined) {
               
               if (payload.new) {
                 const newData = payload.new as any;
+                
+                // Log important updates for debugging
+                if (newData.current_win_pattern !== progress?.current_win_pattern) {
+                  logWithTimestamp(`[${hookId.current}] Win pattern changed: ${progress?.current_win_pattern} -> ${newData.current_win_pattern}`, 'info');
+                }
+                
+                if (newData.game_status !== progress?.game_status) {
+                  logWithTimestamp(`[${hookId.current}] Game status changed: ${progress?.game_status} -> ${newData.game_status}`, 'info');
+                }
+                
+                if (newData.current_game_number !== progress?.current_game_number) {
+                  logWithTimestamp(`[${hookId.current}] Game number changed: ${progress?.current_game_number} -> ${newData.current_game_number}`, 'info');
+                }
+                
                 setProgress({
                   id: newData.id,
                   session_id: newData.session_id,
@@ -236,11 +268,12 @@ export function useSessionProgress(sessionId: string | undefined) {
       }
     };
     
-    // Only fetch on initial mount or sessionId change
-    if (isInitialMount.current || !progress) {
+    // Only re-fetch data if needed
+    if (!progress || progress.session_id !== sessionId) {
       // Load initial data
       fetchSessionProgress();
-      isInitialMount.current = false;
+    } else {
+      setLoading(false);
     }
     
     // Clean up subscription when unmounting or changing sessionId
@@ -252,8 +285,8 @@ export function useSessionProgress(sessionId: string | undefined) {
 
   // Function to update session progress
   const updateProgress = useCallback(async (updates: SessionProgressUpdate): Promise<boolean> => {
-    if (!sessionId || !progress?.id) {
-      logWithTimestamp(`[${hookId.current}] Cannot update session progress - missing sessionId or progress data`, 'error');
+    if (!sessionId) {
+      logWithTimestamp(`[${hookId.current}] Cannot update session progress - missing sessionId`, 'error');
       return false;
     }
     
@@ -276,7 +309,7 @@ export function useSessionProgress(sessionId: string | undefined) {
       logWithTimestamp(`[${hookId.current}] Exception updating session progress: ${(err as Error).message}`, 'error');
       return false;
     }
-  }, [sessionId, progress, hookId]);
+  }, [sessionId, hookId]);
 
   return { 
     progress, 

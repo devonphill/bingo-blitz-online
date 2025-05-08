@@ -53,17 +53,6 @@ export default function BingoWinProgress({
     }
   }, [claimStatus]);
   
-  // Log claim-related props for debugging
-  console.log("BingoWinProgress props:", {
-    hasTickets: !!tickets && tickets.length > 0,
-    hasNumbers: !!numbers,
-    calledNumbersCount: calledNumbers.length,
-    currentWinPattern,
-    isClaiming,
-    claimStatus,
-    activeWinPatterns
-  });
-  
   // If we still don't have ticket data, just show the claim button if provided
   if (!numbers || !layoutMask) {
     return (
@@ -119,9 +108,6 @@ export default function BingoWinProgress({
   if (gameType === 'mainstage' && !actualWinPattern.startsWith('MAINSTAGE_')) {
     actualWinPattern = `MAINSTAGE_${actualWinPattern}`;
   }
-  
-  // Debug log the pattern being used
-  console.log(`Using win pattern for check: ${actualWinPattern}`);
   
   // Use the properly formatted pattern for win checking
   const result = checkMainstageWinPattern(

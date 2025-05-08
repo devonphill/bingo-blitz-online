@@ -54,11 +54,13 @@ export default function ClaimVerificationSheet({
     if (isOpen) {
       logWithTimestamp(`Session ID: ${sessionId}`, 'info');
       logWithTimestamp(`Claims count: ${claims?.length || 0}`, 'info');
+      logWithTimestamp(`Current win pattern: ${currentWinPattern}`, 'info');
+      logWithTimestamp(`Current game number: ${gameNumber}`, 'info');
       if (claims?.length > 0) {
         logWithTimestamp(`First claim: ${JSON.stringify(claims[0])}`, 'debug');
       }
     }
-  }, [isOpen, sessionId, claims]);
+  }, [isOpen, sessionId, claims, currentWinPattern, gameNumber]);
 
   // Fetch claims on open
   useEffect(() => {
@@ -73,13 +75,15 @@ export default function ClaimVerificationSheet({
     if (!claim) return;
     
     logWithTimestamp(`Verifying claim: ${JSON.stringify(claim)}`, 'info');
+    
+    // We'll pass onGameProgress callback if it exists for game progression
     const success = await validateClaim(claim, true, onGameProgress);
     
     if (success) {
       toast({
         title: "Claim Verified",
         description: `The claim by ${claim.playerName} has been verified successfully.`,
-        duration: 3000,
+        duration: 3000, // Reduced to 3 seconds
       });
       
       // Refresh claims to update UI
@@ -92,6 +96,11 @@ export default function ClaimVerificationSheet({
           onClose();
         }
       }, 1500);
+      
+      // Log that game progression callback was called
+      if (onGameProgress) {
+        logWithTimestamp("Game progression callback was triggered after claim verification", 'info');
+      }
     }
   }, [validateClaim, toast, fetchClaims, claims, onClose, autoClose, onGameProgress]);
   
@@ -106,7 +115,7 @@ export default function ClaimVerificationSheet({
       toast({
         title: "Claim Rejected",
         description: `The claim by ${claim.playerName} has been rejected.`,
-        duration: 3000,
+        duration: 3000, // Reduced to 3 seconds
       });
       
       // Refresh claims to update UI
@@ -123,7 +132,7 @@ export default function ClaimVerificationSheet({
     toast({
       title: "Refreshed",
       description: "Claim list has been refreshed",
-      duration: 3000,
+      duration: 2000, // Even shorter for this minor notification
     });
   }, [sessionId, fetchClaims, toast]);
 
@@ -188,7 +197,7 @@ export default function ClaimVerificationSheet({
                     {claim.toGoCount === 0 ? (
                       <span className="text-green-600 font-bold">Complete (0TG)</span>
                     ) : claim.toGoCount < 0 ? (
-                      <span className="text-orange-600 font-bold">Missed claim ({claim.toGoCount} numbers ago)</span>
+                      <span className="text-orange-600 font-bold">Missed claim ({-claim.toGoCount} numbers ago)</span>
                     ) : (
                       <span className="text-red-600 font-bold">{claim.toGoCount} numbers to go</span>
                     )}
