@@ -39,10 +39,19 @@ export default function ClaimVerificationSheet({
   const { 
     claims, 
     validateClaim, 
-    isProcessingClaim 
+    isProcessingClaim,
+    fetchClaims
   } = useCallerClaimManagement(sessionId || null);
   
   const { toast } = useToast();
+
+  // Fetch claims on open
+  useEffect(() => {
+    if (isOpen && sessionId) {
+      logWithTimestamp(`ClaimVerificationSheet: Fetching claims for session ${sessionId}`);
+      fetchClaims();
+    }
+  }, [isOpen, sessionId, fetchClaims]);
   
   // Handle verifying a claim
   const handleVerify = useCallback((claim: any) => {
@@ -60,6 +69,17 @@ export default function ClaimVerificationSheet({
     validateClaim(claim, false);
   }, [validateClaim]);
 
+  // Manual refresh function
+  const handleRefresh = useCallback(() => {
+    if (!sessionId) return;
+    
+    fetchClaims();
+    toast({
+      title: "Refreshed",
+      description: "Claim list has been refreshed",
+    });
+  }, [sessionId, fetchClaims, toast]);
+
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
       <SheetContent className="sm:max-w-lg overflow-y-auto">
@@ -71,6 +91,18 @@ export default function ClaimVerificationSheet({
         </SheetHeader>
         
         <div className="grid gap-4 py-4">
+          <div className="flex justify-end">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="flex items-center gap-1"
+              onClick={handleRefresh}
+            >
+              <RefreshCw className="h-4 w-4" />
+              Refresh Claims
+            </Button>
+          </div>
+          
           {claims.length === 0 ? (
             <div className="text-center text-gray-500 p-8">
               <p className="mb-2">No claims to review at this time.</p>

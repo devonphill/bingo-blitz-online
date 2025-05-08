@@ -1,92 +1,148 @@
 
 import React, { useEffect, useState } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { RefreshCw, User } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { BingoClaim } from '@/services/ClaimManagementService';
+import { logWithTimestamp } from '@/utils/logUtils';
 
-interface PlayerListProps {
-  players: any[];
+interface PlayerProps {
+  players?: any[];
   isLoading?: boolean;
   onReconnect?: () => void;
   sessionId?: string;
-  claimsData?: BingoClaim[];
+  claimsData?: any[];
 }
 
 export default function PlayerList({ 
-  players = [], 
+  players: initialPlayers, 
   isLoading = false, 
-  onReconnect,
+  onReconnect, 
   sessionId,
   claimsData = []
-}: PlayerListProps) {
-  const [playersList, setPlayersList] = useState<any[]>([]);
-  
-  // Merge players with claims data
+}: PlayerProps) {
+  const [players, setPlayers] = useState<any[]>(initialPlayers || []);
+  const [loading, setLoading] = useState(isLoading || true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Load players when component mounts or session changes
   useEffect(() => {
-    // Create a map of player IDs with claims
-    const playerClaimsMap = new Map();
-    if (claimsData && claimsData.length > 0) {
-      claimsData.forEach(claim => {
-        playerClaimsMap.set(claim.playerId, claim);
-      });
+    if (!sessionId) return;
+    
+    const fetchPlayers = async () => {
+      try {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from('players')
+          .select('*')
+          .eq('session_id', sessionId)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          throw error;
+        }
+
+        if (data) {
+          logWithTimestamp(`PlayerList: Loaded ${data.length} players for session ${sessionId}`, 'info');
+          setPlayers(data);
+        }
+      } catch (err) {
+        setError(`Failed to load players: ${(err as Error).message}`);
+        console.error('Error fetching players:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPlayers();
+    
+    // Set up subscription for player updates
+    const channel = supabase.channel('player-list')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'players',
+        filter: `session_id=eq.${sessionId}`
+      }, (payload) => {
+        logWithTimestamp('Player list change detected, refreshing players', 'info');
+        fetchPlayers();
+      })
+      .subscribe();
+      
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [sessionId]);
+
+  const handleRefresh = () => {
+    if (onReconnect) {
+      onReconnect();
     }
-    
-    // Update players with claim status
-    const updatedPlayers = players.map(player => ({
-      ...player,
-      hasClaim: playerClaimsMap.has(player.id),
-      claim: playerClaimsMap.get(player.id)
-    }));
-    
-    setPlayersList(updatedPlayers);
-  }, [players, claimsData]);
-  
-  if (isLoading) {
+  };
+
+  // Function to check if a player has a pending claim
+  const hasPlayerClaim = (playerId: string): boolean => {
+    return claimsData?.some(claim => claim.playerId === playerId) || false;
+  };
+
+  if (loading) {
     return (
-      <div className="animate-pulse space-y-2">
-        <div className="h-5 bg-gray-200 rounded w-3/4"></div>
-        <div className="h-5 bg-gray-200 rounded w-full"></div>
-        <div className="h-5 bg-gray-200 rounded w-2/3"></div>
+      <div className="space-y-2">
+        <div className="animate-pulse bg-gray-200 h-8 w-full rounded"></div>
+        <div className="animate-pulse bg-gray-200 h-8 w-full rounded"></div>
+        <div className="animate-pulse bg-gray-200 h-8 w-full rounded"></div>
       </div>
     );
   }
-  
-  if (players.length === 0) {
+
+  if (error) {
     return (
-      <div className="text-center text-gray-500 py-4">
-        <p className="mb-2">No players connected</p>
-        {onReconnect && (
-          <button 
-            onClick={onReconnect}
-            className="text-sm text-blue-500 hover:underline"
-          >
-            Refresh players
-          </button>
-        )}
+      <div className="text-sm text-red-500 p-2">
+        <p>{error}</p>
+        <button 
+          className="mt-2 text-blue-500 hover:text-blue-700" 
+          onClick={handleRefresh}
+        >
+          Retry
+        </button>
       </div>
     );
   }
-  
+
+  if (!players?.length) {
+    return (
+      <div className="text-sm text-gray-500 p-2 text-center">
+        <p>No players connected</p>
+        <button 
+          className="mt-2 text-sm text-blue-500 hover:text-blue-700 flex items-center justify-center gap-1 mx-auto" 
+          onClick={handleRefresh}
+        >
+          <RefreshCw className="h-3 w-3" />
+          <span>Refresh</span>
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-h-48 overflow-y-auto">
-      <ul className="space-y-1">
-        {playersList.map((player, index) => (
-          <li key={player.id || index} className="text-sm flex items-center justify-between">
-            <div className="truncate">
-              {player.nickname || player.player_code || player.name || 'Unknown player'}
+    <div className="text-sm">
+      <div className="max-h-[200px] overflow-y-auto">
+        {players.map((player) => (
+          <div 
+            key={player.id} 
+            className={`flex items-center justify-between p-1.5 border-b border-gray-100 ${hasPlayerClaim(player.id) ? 'bg-red-50' : ''}`}
+          >
+            <div className="flex items-center">
+              <User className="h-3 w-3 text-gray-400 mr-2" />
+              <span>{player.nickname || player.player_code}</span>
             </div>
-            <div className="flex items-center gap-1">
-              {player.hasClaim && (
-                <Badge variant="destructive" className="animate-pulse">
-                  CLAIM
-                </Badge>
+            <div>
+              {hasPlayerClaim(player.id) && (
+                <Badge variant="destructive" className="text-xs">CLAIM</Badge>
               )}
-              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                Online
-              </Badge>
             </div>
-          </li>
+          </div>
         ))}
-      </ul>
+      </div>
     </div>
   );
 }

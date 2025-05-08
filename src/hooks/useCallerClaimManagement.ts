@@ -10,7 +10,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
   const [isProcessingClaim, setIsProcessingClaim] = useState(false);
   const { toast } = useToast();
 
-  // Listen for claims in this session
+  // Register session with claim service on mount
   useEffect(() => {
     if (!sessionId) return;
     
@@ -21,6 +21,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
     
     // Subscribe to claim updates
     const unsubscribe = claimService.subscribeToClaimQueue(sessionId, (updatedClaims) => {
+      logWithTimestamp(`Received claim update: ${updatedClaims.length} claims`, 'info');
       setClaims(updatedClaims);
       
       // Show toast for new claims
@@ -39,17 +40,32 @@ export function useCallerClaimManagement(sessionId: string | null) {
       .on('broadcast', { event: 'new-claim' }, payload => {
         if (payload.payload && payload.payload.sessionId === sessionId) {
           logWithTimestamp(`Received new claim broadcast for session ${sessionId}`, 'info');
-          // Force refetch claims - this is just a backup, the subscription should handle it
-          claimService.subscribeToClaimQueue(sessionId, () => {});
+          // Force refetch claims 
+          fetchClaims();
         }
       })
       .subscribe();
       
     return () => {
+      logWithTimestamp(`Cleaning up claim listener for session ${sessionId}`, 'info');
       unsubscribe();
       supabase.removeChannel(channel);
     };
-  }, [sessionId, claims.length, toast]);
+  }, [sessionId, toast, claims.length]);
+
+  // Fetch claims manually (can be called to refresh)
+  const fetchClaims = useCallback(() => {
+    if (!sessionId) {
+      logWithTimestamp('Cannot fetch claims - missing sessionId', 'warn');
+      return;
+    }
+    
+    logWithTimestamp(`Manually fetching claims for session ${sessionId}`, 'info');
+    const sessionClaims = claimService.getClaimsForSession(sessionId);
+    setClaims(sessionClaims);
+    
+    return sessionClaims;
+  }, [sessionId]);
 
   // Validate a claim (approve or reject)
   const validateClaim = useCallback(async (claim: BingoClaim, isValid: boolean) => {
@@ -76,6 +92,9 @@ export function useCallerClaimManagement(sessionId: string | null) {
           description: `The claim by player ${claim.playerName} has been ${isValid ? 'validated' : 'rejected'}.`,
           duration: 3000,
         });
+        
+        // Re-fetch claims to update the UI
+        fetchClaims();
       } else {
         toast({
           title: "Processing Failed",
@@ -97,7 +116,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
     } finally {
       setIsProcessingClaim(false);
     }
-  }, [sessionId, isProcessingClaim, toast]);
+  }, [sessionId, isProcessingClaim, toast, fetchClaims]);
 
   // Get the count of pending claims
   const claimsCount = claims.length;
@@ -106,6 +125,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
     claims,
     claimsCount,
     validateClaim,
-    isProcessingClaim
+    isProcessingClaim,
+    fetchClaims
   };
 }

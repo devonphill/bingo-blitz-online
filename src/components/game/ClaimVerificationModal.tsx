@@ -228,6 +228,7 @@ export default function ClaimVerificationModal({
                     ticket={ticket}
                     calledNumbers={calledNumbers}
                     lastCalledNumber={currentNumber}
+                    gameType="mainstage" // Add missing gameType prop
                   />
                   {ticket.layoutMask && (
                     <div className="mt-1 text-sm">

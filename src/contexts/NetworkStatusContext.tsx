@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { connectionManager } from '@/utils/connectionManager';
@@ -173,7 +174,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, []);
   
-  // Add implementation for submitBingoClaim
+  // Add implementation for submitBingoClaim - UPDATED to use claim service
   const submitBingoClaim = useCallback((ticket: any, playerCode: string, sessionId: string): boolean => {
     try {
       logWithTimestamp(`Submitting bingo claim for player ${playerCode} in session ${sessionId}`, 'info');
@@ -221,7 +222,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, []);
   
-  // Add implementation for validateClaim
+  // Add implementation for validateClaim - UPDATED to use claim service
   const validateClaim = useCallback(async (claim: any, isValid: boolean): Promise<boolean> => {
     try {
       if (!claim || !claim.id) {

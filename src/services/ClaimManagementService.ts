@@ -33,6 +33,13 @@ const sessionSubscribers: Map<string, Set<(claims: BingoClaim[]) => void>> = new
 class ClaimManagementService {
   // Register a session to track claims
   registerSession(sessionId: string): void {
+    if (!sessionId) {
+      console.error("Cannot register session: sessionId is null or undefined");
+      return;
+    }
+    
+    logWithTimestamp(`Registering session for claim tracking: ${sessionId}`, 'info');
+    
     if (!claimQueues.has(sessionId)) {
       claimQueues.set(sessionId, []);
     }
@@ -40,6 +47,7 @@ class ClaimManagementService {
   
   // Unregister a session when done
   unregisterSession(sessionId: string): void {
+    logWithTimestamp(`Unregistering session from claim tracking: ${sessionId}`, 'info');
     claimQueues.delete(sessionId);
     sessionSubscribers.delete(sessionId);
   }
@@ -52,13 +60,15 @@ class ClaimManagementService {
         return false;
       }
       
+      logWithTimestamp(`Submitting claim for session ${claimData.sessionId}`, 'info');
+      
       // Generate a unique ID for the claim
       const claimId = uuidv4();
       
       // Create the claim object
       const claim: BingoClaim = {
         id: claimId,
-        playerId: claimData.playerId,
+        playerId: claimData.playerId || 'unknown-player',
         playerName: claimData.playerName || 'Unknown Player',
         sessionId: claimData.sessionId,
         gameNumber: claimData.gameNumber || 1,
@@ -78,6 +88,7 @@ class ClaimManagementService {
       
       // Add the claim to the queue for this session
       if (!claimQueues.has(claim.sessionId)) {
+        logWithTimestamp(`Creating new claim queue for session ${claim.sessionId}`, 'info');
         claimQueues.set(claim.sessionId, []);
       }
       
@@ -90,6 +101,8 @@ class ClaimManagementService {
         // Check if the last called number is on this ticket
         claim.hasLastCalledNumber = claim.lastCalledNumber !== null && 
                                    claim.ticket.numbers.includes(claim.lastCalledNumber);
+                                   
+        logWithTimestamp(`Claim metrics: ${claim.toGoCount} to go, has last called number: ${claim.hasLastCalledNumber}`, 'info');
       }
       
       // Add to queue
@@ -97,13 +110,14 @@ class ClaimManagementService {
       queue.push(claim);
       claimQueues.set(claim.sessionId, queue);
       
+      logWithTimestamp(`Added claim to queue. Queue now has ${queue.length} claims for session ${claim.sessionId}`, 'info');
+      
       // Notify subscribers
       this.notifySubscribers(claim.sessionId);
       
       // Also broadcast the claim event for real-time updates
       this.broadcastClaimEvent(claim);
       
-      logWithTimestamp(`Claim submitted for session ${claim.sessionId} by player ${claim.playerName}`, 'info');
       return true;
     } catch (error) {
       console.error("Error submitting claim:", error);
@@ -111,8 +125,24 @@ class ClaimManagementService {
     }
   }
   
+  // Get all claims for a session
+  getClaimsForSession(sessionId: string): BingoClaim[] {
+    if (!sessionId) {
+      return [];
+    }
+    
+    return claimQueues.get(sessionId) || [];
+  }
+  
   // Subscribe to claim queue updates for a session
   subscribeToClaimQueue(sessionId: string, callback: (claims: BingoClaim[]) => void): () => void {
+    if (!sessionId) {
+      logWithTimestamp("Cannot subscribe to claim queue: sessionId is null or undefined", 'error');
+      return () => {}; // Return empty unsubscribe function
+    }
+    
+    logWithTimestamp(`Setting up claim queue subscription for session ${sessionId}`, 'info');
+    
     if (!sessionSubscribers.has(sessionId)) {
       sessionSubscribers.set(sessionId, new Set());
     }
@@ -122,10 +152,12 @@ class ClaimManagementService {
     
     // Initial callback with current claims
     const currentClaims = claimQueues.get(sessionId) || [];
+    logWithTimestamp(`Initial claim subscription callback with ${currentClaims.length} claims`, 'info');
     callback(currentClaims);
     
     // Return unsubscribe function
     return () => {
+      logWithTimestamp(`Unsubscribing from claim queue for session ${sessionId}`, 'info');
       const subs = sessionSubscribers.get(sessionId);
       if (subs) {
         subs.delete(callback);
@@ -136,6 +168,11 @@ class ClaimManagementService {
   // Process a claim (valid or invalid)
   async processClaim(claimId: string, sessionId: string, isValid: boolean): Promise<boolean> {
     try {
+      if (!sessionId) {
+        logWithTimestamp("Cannot process claim: sessionId is null or undefined", 'error');
+        return false;
+      }
+      
       // Find the claim in the queue
       const queue = claimQueues.get(sessionId) || [];
       const claimIndex = queue.findIndex(c => c.id === claimId);
@@ -147,7 +184,9 @@ class ClaimManagementService {
       
       const claim = queue[claimIndex];
       
-      // Process the claim in the database
+      logWithTimestamp(`Processing claim ${claimId} as ${isValid ? 'valid' : 'invalid'}`, 'info');
+      
+      // Process the claim in the database - THIS IS WHERE WE WRITE TO DATABASE
       const { error } = await supabase
         .from('universal_game_logs')
         .insert({
@@ -185,6 +224,7 @@ class ClaimManagementService {
       // Notify subscribers
       this.notifySubscribers(sessionId);
       
+      logWithTimestamp(`Successfully processed claim ${claimId} as ${isValid ? 'valid' : 'invalid'}. ${queue.length} claims remaining.`, 'info');
       return true;
     } catch (error) {
       console.error("Error processing claim:", error);
@@ -194,6 +234,9 @@ class ClaimManagementService {
   
   // Clear all claims for a session
   clearClaimsForSession(sessionId: string): void {
+    if (!sessionId) return;
+    
+    logWithTimestamp(`Clearing all claims for session ${sessionId}`, 'info');
     claimQueues.set(sessionId, []);
     this.notifySubscribers(sessionId);
   }
@@ -226,6 +269,8 @@ class ClaimManagementService {
       return a.claimedAt.getTime() - b.claimedAt.getTime();
     });
     
+    logWithTimestamp(`Notifying ${subscribers.size} subscribers about ${sortedClaims.length} claims for session ${sessionId}`, 'info');
+    
     // Notify all subscribers
     subscribers.forEach(callback => callback(sortedClaims));
   }
@@ -233,6 +278,8 @@ class ClaimManagementService {
   // Broadcast claim to all listeners in session
   private async broadcastClaimEvent(claim: BingoClaim): Promise<void> {
     try {
+      logWithTimestamp(`Broadcasting claim ${claim.id} for player ${claim.playerName} in session ${claim.sessionId}`, 'info');
+      
       const channel = supabase.channel('game-updates');
       await channel.send({
         type: 'broadcast',
@@ -244,6 +291,9 @@ class ClaimManagementService {
           playerName: claim.playerName
         }
       });
+      
+      // Always remove the channel after broadcasting
+      supabase.removeChannel(channel);
     } catch (err) {
       console.error("Error broadcasting claim:", err);
     }
@@ -252,6 +302,8 @@ class ClaimManagementService {
   // Broadcast claim result to the player
   private async broadcastClaimResult(playerId: string, result: 'valid' | 'invalid'): Promise<void> {
     try {
+      logWithTimestamp(`Broadcasting claim result (${result}) to player ${playerId}`, 'info');
+      
       const channel = supabase.channel('claim-results-channel');
       await channel.send({
         type: 'broadcast',
@@ -261,6 +313,9 @@ class ClaimManagementService {
           result
         }
       });
+      
+      // Always remove the channel after broadcasting
+      supabase.removeChannel(channel);
     } catch (err) {
       console.error("Error broadcasting claim result:", err);
     }
