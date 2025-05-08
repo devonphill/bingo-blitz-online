@@ -197,31 +197,37 @@ export function SimplePopover({
 }
 
 // Simple button component that replicates Radix Slot functionality
-// Fix: Properly type the button props to include className
+// Fix: Properly type the button props to include className and ref
 interface CompatButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   className?: string;
   asChild?: boolean;
   children: React.ReactNode;
 }
 
-export function CompatButton({
-  className = '',
-  asChild = false,
-  children,
-  ...props
-}: CompatButtonProps) {
-  // If asChild is true, clone the first child and pass the props
-  if (asChild && React.isValidElement(children)) {
-    return React.cloneElement(children, {
-      ...props,
-      className: `${children.props.className || ''} ${className}`.trim()
-    });
+export const CompatButton = React.forwardRef<HTMLButtonElement, CompatButtonProps>(
+  ({ className = '', asChild = false, children, ...props }, ref) => {
+    // If asChild is true, clone the first child and pass the props
+    if (asChild && React.isValidElement(children)) {
+      return React.cloneElement(children, {
+        ...props,
+        className: `${children.props.className || ''} ${className}`.trim(),
+        ref: ref
+      });
+    }
+    
+    // Return a button element with all props properly passed
+    return React.createElement(
+      'button',
+      {
+        className,
+        ref,
+        ...props
+      },
+      children
+    );
   }
-  
-  // Fixed: TypeScript now understands that className is a valid prop for the button
-  return React.createElement(
-    'button',
-    { className, ...props } as React.ButtonHTMLAttributes<HTMLButtonElement>,
-    children
-  );
-}
+);
+
+// Adding display name to help with debugging
+CompatButton.displayName = 'CompatButton';
+

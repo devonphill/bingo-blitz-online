@@ -52,14 +52,16 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       className
     );
 
+    // Pass the ref to our CompatButton
     return (
       <CompatButton
         ref={ref}
         className={allClasses}
         asChild={asChild}
-        children={children}
         {...props}
-      />
+      >
+        {children}
+      </CompatButton>
     );
   }
 );
