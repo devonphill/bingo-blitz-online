@@ -1,7 +1,8 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { GameConfig } from '@/types';
+import { parseJson } from '@/types/json';
 
 export interface SessionProgress {
   id: string;
@@ -131,11 +132,13 @@ export function useSessionProgress(sessionId: string | undefined) {
             
             try {
               if (sessionData.games_config && Array.isArray(sessionData.games_config) && sessionData.games_config.length > 0) {
-                const firstGameConfig = sessionData.games_config[0];
-                if (firstGameConfig && firstGameConfig.patterns) {
+                // Fixed: Properly type and access the games_config data
+                const firstGameConfig = sessionData.games_config[0] as unknown as GameConfig;
+                
+                if (firstGameConfig && typeof firstGameConfig === 'object' && firstGameConfig.patterns) {
                   // Find first active pattern
                   for (const [patternId, pattern] of Object.entries(firstGameConfig.patterns)) {
-                    if (pattern.active === true) {
+                    if (pattern && typeof pattern === 'object' && pattern.active === true) {
                       initialWinPattern = patternId;
                       break;
                     }
