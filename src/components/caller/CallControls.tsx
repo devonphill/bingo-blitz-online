@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,10 +26,10 @@ interface CallerControlsProps {
   onCloseGame?: () => void;
   numberOfGames?: number;
   currentGameNumber?: number;
-  onForceClose?: () => void; // New prop for forced game close
+  onForceClose?: () => void;
 }
 
-export default function CallerControls({ 
+export default function CallControls({ 
   onCallNumber, 
   onEndGame,
   onGoLive,
@@ -42,7 +43,7 @@ export default function CallerControls({
   onCloseGame,
   numberOfGames = 1,
   currentGameNumber = 1,
-  onForceClose // New prop handling
+  onForceClose
 }: CallerControlsProps) {
   const [isCallingNumber, setIsCallingNumber] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
@@ -62,6 +63,16 @@ export default function CallerControls({
       toast({
         title: "No more numbers",
         description: "All numbers have been called.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Don't call numbers if there are pending claims
+    if (claimCount > 0) {
+      toast({
+        title: "Pending claims",
+        description: "Please verify all pending claims before calling more numbers.",
         variant: "destructive"
       });
       return;
@@ -282,11 +293,17 @@ export default function CallerControls({
           <div className="grid grid-cols-1 gap-3">
             <Button
               className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-              disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active' || !callerHub.isConnected}
+              disabled={isCallingNumber || remainingNumbers.length === 0 || sessionStatus !== 'active' || !callerHub.isConnected || claimCount > 0}
               onClick={handleCallNumber}
             >
-              {isCallingNumber ? 'Calling...' : 'Call Next Number'}
+              {claimCount > 0 ? 'Review Claims First' : (isCallingNumber ? 'Calling...' : 'Call Next Number')}
             </Button>
+            
+            {claimCount > 0 && (
+              <p className="text-xs text-red-600 text-center">
+                You must verify all pending claims before calling more numbers
+              </p>
+            )}
             
             {onCloseGame && (
               <Button

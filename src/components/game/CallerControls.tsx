@@ -1,8 +1,7 @@
 
 import React, { useState, useRef } from 'react';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import NumberPad from './NumberPad';
 import { X, AlertOctagon } from 'lucide-react';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
 
@@ -19,7 +18,7 @@ interface CallerControlsProps {
   sessionStatus?: string;
   gameConfigs?: any[];
   onForceClose?: () => void;
-  disableCallButton?: boolean; // Add prop to disable call button when claims are pending
+  disableCallButton?: boolean;
 }
 
 export default function CallerControls({
@@ -37,39 +36,26 @@ export default function CallerControls({
   onForceClose,
   disableCallButton = false
 }: CallerControlsProps) {
-  const [isRandom, setIsRandom] = useState(true);
-  const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   
   // Get the network context to help with calling numbers
   const network = useNetwork();
   
-  // Handle manually selecting a number
-  const handleNumberSelect = (number: number) => {
-    setSelectedNumber(number);
-    setIsRandom(false);
-  };
-  
-  // Handle calling the selected number
+  // Handle calling a random number
   const handleCallNumber = async () => {
     setIsLoading(true);
     try {
-      if (isRandom) {
-        if (remainingNumbers.length === 0) {
-          console.error("No remaining numbers to call");
-          return;
-        }
-        
-        // Select a random number from the remaining numbers
-        const randomIndex = Math.floor(Math.random() * remainingNumbers.length);
-        const randomNumber = remainingNumbers[randomIndex];
-        
-        onCallNumber(randomNumber);
-      } else if (selectedNumber !== null) {
-        onCallNumber(selectedNumber);
-        setSelectedNumber(null);
+      if (remainingNumbers.length === 0) {
+        console.error("No remaining numbers to call");
+        return;
       }
+      
+      // Select a random number from the remaining numbers
+      const randomIndex = Math.floor(Math.random() * remainingNumbers.length);
+      const randomNumber = remainingNumbers[randomIndex];
+      
+      onCallNumber(randomNumber);
     } finally {
       setIsLoading(false);
     }
@@ -78,7 +64,7 @@ export default function CallerControls({
   // Determine if the button should be disabled
   const isCallButtonDisabled = isLoading || 
                               remainingNumbers.length === 0 ||
-                              disableCallButton || // Disable when claims are pending
+                              disableCallButton || 
                               sessionStatus !== 'active';
 
   return (
@@ -105,36 +91,6 @@ export default function CallerControls({
           <div className="bg-gray-100 p-4 rounded-md">
             <h3 className="text-sm font-medium mb-3">Next Number</h3>
             
-            <div className="flex space-x-2 mb-4">
-              <Button
-                variant={isRandom ? "default" : "outline"}
-                size="sm"
-                className="flex-1"
-                onClick={() => setIsRandom(true)}
-              >
-                Random
-              </Button>
-              <Button
-                variant={!isRandom ? "default" : "outline"}
-                size="sm"
-                className="flex-1"
-                onClick={() => setIsRandom(false)}
-              >
-                Manual
-              </Button>
-            </div>
-            
-            {!isRandom && (
-              <div className="mb-4">
-                <NumberPad
-                  onNumberSelect={handleNumberSelect}
-                  selectedNumber={selectedNumber}
-                  availableNumbers={remainingNumbers}
-                  gameType={gameType}
-                />
-              </div>
-            )}
-            
             <Button
               className="w-full"
               onClick={handleCallNumber}
@@ -145,10 +101,8 @@ export default function CallerControls({
                   <X className="h-4 w-4 mr-2" />
                   Review Claims First
                 </>
-              ) : isRandom ? (
-                isLoading ? 'Calling...' : 'Call Next Number'
               ) : (
-                isLoading ? 'Calling...' : selectedNumber ? `Call ${selectedNumber}` : 'Select a Number'
+                isLoading ? 'Calling...' : 'Call Next Number'
               )}
             </Button>
             
