@@ -1,6 +1,7 @@
 
 import * as React from "react";
 import { useSafeId } from "@/utils/reactUtils";
+import { logWithTimestamp } from "@/utils/logUtils";
 
 interface SidebarProviderProps {
   defaultOpen?: boolean;
@@ -15,10 +16,15 @@ interface SidebarContextType {
 
 const SidebarContext = React.createContext<SidebarContextType | undefined>(undefined);
 
-export function SidebarProvider({ defaultOpen = true, children }: SidebarProviderProps) {
+export function SidebarProvider({ defaultOpen = false, children }: SidebarProviderProps) {
   const [open, setOpen] = React.useState(defaultOpen);
   // Use our polyfill instead of React.useId()
   const sidebarId = useSafeId("sidebar-");
+  
+  // Log when the sidebar state changes
+  React.useEffect(() => {
+    logWithTimestamp(`Sidebar state changed: ${open ? 'open' : 'closed'}`, 'debug', 'Sidebar');
+  }, [open]);
 
   return (
     <SidebarContext.Provider value={{ open, setOpen, sidebarId }}>
@@ -42,7 +48,7 @@ export function Sidebar({ children, className = "" }: { children: React.ReactNod
   return (
     <aside
       id={sidebarId}
-      className={`border-r border-gray-200 bg-white min-w-64 ${open ? 'w-64' : 'w-0 hidden'} ${className}`}
+      className={`border-r border-gray-200 bg-white transition-all duration-300 ease-in-out ${open ? 'min-w-64 w-64' : 'w-0 overflow-hidden'} ${className}`}
       aria-hidden={!open}
     >
       {children}

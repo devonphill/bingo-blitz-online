@@ -15,7 +15,8 @@ interface MainLayoutProps {
 }
 
 const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
-  const [sidebarOpen, setSidebarOpen] = React.useState(true);
+  // Default to false to start with sidebar closed
+  const [sidebarOpen, setSidebarOpen] = React.useState(false);
 
   React.useEffect(() => {
     logWithTimestamp('MainLayout component mounted', 'debug', 'Layout');
@@ -26,9 +27,9 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   }, []);
 
   return (
-    <SidebarProvider>
+    <SidebarProvider defaultOpen={false}>
       <div className="flex min-h-screen w-full">
-        <Sidebar>
+        <Sidebar className={`transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-0'}`}>
           <div className="p-4 border-b">
             <div className="flex flex-col">
               <h2 className="text-xl font-bold">Bingo Blitz</h2>
@@ -42,7 +43,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         
         <div className="flex flex-col flex-1">
           <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background px-4 shadow-sm">
-            <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(!sidebarOpen)} className="h-8 w-8 p-0">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => setSidebarOpen(!sidebarOpen)} 
+              className="h-8 w-8 p-0"
+              aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
+            >
               <Menu className="h-5 w-5" />
               <span className="sr-only">Toggle sidebar</span>
             </Button>

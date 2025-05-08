@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { logWithTimestamp } from './logUtils';
 
@@ -216,13 +215,16 @@ export const CompatButton = React.forwardRef<HTMLButtonElement, CompatButtonProp
     }
     
     // Return a button element with all props properly passed
+    // Using type assertion to satisfy TypeScript
+    const buttonProps: React.ButtonHTMLAttributes<HTMLButtonElement> & { ref?: React.Ref<HTMLButtonElement>, className?: string } = {
+      className,
+      ref,
+      ...props
+    };
+    
     return React.createElement(
       'button',
-      {
-        className,
-        ref,
-        ...props
-      },
+      buttonProps,
       children
     );
   }
@@ -230,4 +232,3 @@ export const CompatButton = React.forwardRef<HTMLButtonElement, CompatButtonProp
 
 // Adding display name to help with debugging
 CompatButton.displayName = 'CompatButton';
-
