@@ -26,12 +26,15 @@ export function GoLiveButton({ sessionId, className, onSuccess, disabled, childr
     
     try {
       // First, check if we have game configs with active patterns
-      let initialWinPattern = 'oneLine'; // Default
+      let initialWinPattern = null; // Changed from string to null for better checking
       let currentGameType = 'mainstage';
       
       if (gameConfigs && gameConfigs.length > 0) {
         const firstGameConfig = gameConfigs[0];
         currentGameType = firstGameConfig.gameType;
+        
+        // Add detailed logging to see the win patterns
+        logWithTimestamp(`Going live - First game config: ${JSON.stringify(firstGameConfig)}`);
         
         if (firstGameConfig.patterns) {
           // Find first active pattern
@@ -45,8 +48,17 @@ export function GoLiveButton({ sessionId, className, onSuccess, disabled, childr
         }
       }
       
+      // Ensure we have a valid pattern before proceeding
+      if (!initialWinPattern) {
+        logWithTimestamp("No active win pattern found in game configs, defaulting to oneLine");
+        initialWinPattern = 'oneLine';
+      }
+      
+      // Explicitly log the update we're about to make
+      logWithTimestamp(`Updating sessions_progress with win pattern: ${initialWinPattern}, game type: ${currentGameType}`);
+      
       // Start by updating the sessions_progress table with the initial win pattern
-      const { error: progressError } = await supabase
+      const { data: progressData, error: progressError } = await supabase
         .from('sessions_progress')
         .update({
           current_win_pattern: initialWinPattern,
@@ -54,12 +66,16 @@ export function GoLiveButton({ sessionId, className, onSuccess, disabled, childr
           current_game_type: currentGameType,
           game_status: 'active'
         })
-        .eq('session_id', sessionId);
+        .eq('session_id', sessionId)
+        .select();
       
       if (progressError) {
         console.error("Error updating session progress:", progressError);
         throw new Error(`Failed to update session progress: ${progressError.message}`);
       }
+      
+      // Log the result of the update
+      logWithTimestamp(`Update result: ${progressData ? JSON.stringify(progressData) : 'No data returned'}`);
       
       // Now call the regular goLive function
       const success = await goLive();

@@ -33,6 +33,7 @@ export default function BingoClaim({
   
   const handleClick = async () => {
     try {
+      console.log("BingoClaim: Submitting bingo claim");
       await onClaimBingo();
     } catch (error) {
       console.error("Error claiming bingo:", error);

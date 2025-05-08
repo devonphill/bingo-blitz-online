@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -95,6 +96,8 @@ export function useSessionProgress(sessionId: string | undefined) {
 
         if (data) {
           logWithTimestamp(`[${hookId.current}] Loaded session progress successfully`, 'info');
+          logWithTimestamp(`[${hookId.current}] Current win pattern from database: ${data.current_win_pattern}`, 'info');
+          
           setProgress({
             id: data.id,
             session_id: data.session_id,
@@ -149,6 +152,8 @@ export function useSessionProgress(sessionId: string | undefined) {
               logWithTimestamp(`[${hookId.current}] Error reading games_config: ${configError}`, 'error');
               // Continue with default win pattern
             }
+
+            logWithTimestamp(`[${hookId.current}] Determined initial win pattern: ${initialWinPattern}`, 'info');
             
             // Create a new session progress entry
             const { data: newProgress, error: createError } = await supabase

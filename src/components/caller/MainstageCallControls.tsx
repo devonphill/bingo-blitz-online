@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Loader, RefreshCw, AlertCircle, AlertTriangle } from 'lucide-react';
@@ -45,6 +44,8 @@ export function MainstageCallControls({
   
   // Display the current win pattern in a more human-readable format
   const formatWinPattern = (patternId: string): string => {
+    if (!patternId) return 'Not Set';
+    
     switch(patternId.replace('MAINSTAGE_', '')) {
       case 'oneLine': return 'One Line';
       case 'twoLines': return 'Two Lines';

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -77,6 +76,11 @@ export function LiveGameView({
   
   // Use our new claim management hook
   const { claims, claimsCount } = useCallerClaimManagement(sessionId || null);
+
+  // Log when currentWinPattern changes
+  React.useEffect(() => {
+    logWithTimestamp(`LiveGameView: Current win pattern updated to ${currentWinPattern}`);
+  }, [currentWinPattern]);
   
   // Set up connection when component mounts
   useEffect(() => {
