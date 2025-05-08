@@ -9,11 +9,10 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle, XCircle, Loader } from 'lucide-react';
+import { CheckCircle, XCircle, Loader, RefreshCw } from 'lucide-react';
 import { logWithTimestamp } from '@/utils/logUtils';
 import CallerTicketDisplay from './CallerTicketDisplay';
 import { useCallerClaimManagement } from '@/hooks/useCallerClaimManagement';
-import { useNetwork } from '@/contexts/NetworkStatusContext';
 
 interface ClaimVerificationSheetProps {
   isOpen: boolean;
@@ -22,7 +21,6 @@ interface ClaimVerificationSheetProps {
   gameNumber?: number;
   currentCalledNumbers?: number[];
   gameType?: string;
-  playerName?: string;
   currentNumber?: number | null;
   currentWinPattern?: string | null;
 }
@@ -34,11 +32,10 @@ export default function ClaimVerificationSheet({
   gameNumber,
   currentCalledNumbers = [],
   gameType = 'mainstage',
-  playerName,
   currentNumber,
   currentWinPattern
 }: ClaimVerificationSheetProps) {
-  // Use the claim management hook for handling claims
+  // Use the improved claim management hook
   const { 
     claims, 
     validateClaim, 
@@ -47,35 +44,11 @@ export default function ClaimVerificationSheet({
   
   const { toast } = useToast();
   
-  // Use the network context
-  const network = useNetwork();
-  
-  // Force fetch claims when sheet opens
-  useEffect(() => {
-    if (isOpen && sessionId) {
-      logWithTimestamp(`Fetching latest claims for session ${sessionId}`);
-      try {
-        // Fetch claims directly using the network context
-        network.fetchClaims(sessionId)
-          .then(claims => {
-            logWithTimestamp(`Found ${claims?.length || 0} pending claims`);
-          })
-          .catch(e => {
-            console.error('Exception fetching claims:', e);
-          });
-      } catch (e) {
-        console.error('Exception fetching claims:', e);
-      }
-    }
-  }, [isOpen, network, sessionId]);
-  
   // Handle verifying a claim
   const handleVerify = useCallback((claim: any) => {
     if (!claim) return;
     
     logWithTimestamp(`Verifying claim: ${claim.id}`);
-    
-    // Use the validateClaim function from the hook
     validateClaim(claim, true);
   }, [validateClaim]);
   
@@ -84,8 +57,6 @@ export default function ClaimVerificationSheet({
     if (!claim) return;
     
     logWithTimestamp(`Rejecting claim: ${claim.id}`);
-    
-    // Use the validateClaim function from the hook
     validateClaim(claim, false);
   }, [validateClaim]);
 
@@ -103,51 +74,52 @@ export default function ClaimVerificationSheet({
           {claims.length === 0 ? (
             <div className="text-center text-gray-500 p-8">
               <p className="mb-2">No claims to review at this time.</p>
-              <Button 
-                variant="outline" 
-                onClick={() => {
-                  if (sessionId) {
-                    network.fetchClaims(sessionId);
-                    toast({
-                      title: "Refreshing",
-                      description: "Checking for new claims...",
-                      duration: 2000
-                    });
-                  }
-                }}
-                className="inline-flex items-center gap-2"
-                size="sm"
-              >
-                <RefreshCw className="h-3 w-3" /> 
-                Refresh
-              </Button>
+              <p className="text-sm text-muted-foreground mb-4">
+                Claims will appear here automatically when players submit them.
+              </p>
             </div>
           ) : (
             claims.map((claim, index) => (
-              <div key={index} className="border rounded-md p-4">
+              <div key={claim.id} className="border rounded-md p-4">
                 <div className="font-bold">Claim Details</div>
-                <div>Player: {claim.player_name}</div>
-                <div>Session: {claim.session_id?.substring(0, 8)}...</div>
-                <div>Game: {claim.game_number || gameNumber}</div>
-                <div>Pattern: {claim.win_pattern || currentWinPattern}</div>
-                <div>Claimed at: {new Date(claim.claimed_at).toLocaleTimeString()}</div>
+                <div>Player: {claim.playerName}</div>
+                <div>Session: {claim.sessionId?.substring(0, 8)}...</div>
+                <div>Game: {claim.gameNumber || gameNumber}</div>
+                <div>Pattern: {claim.winPattern || currentWinPattern}</div>
+                <div>Claimed at: {new Date(claim.claimedAt).toLocaleTimeString()}</div>
+                
+                {claim.toGoCount !== undefined && (
+                  <div className="mt-2 bg-yellow-50 p-2 rounded">
+                    <span className="font-semibold">Ticket Status: </span>
+                    {claim.toGoCount === 0 ? (
+                      <span className="text-green-600 font-bold">Complete (0TG)</span>
+                    ) : (
+                      <span className="text-red-600 font-bold">{claim.toGoCount} numbers to go</span>
+                    )}
+                    {claim.hasLastCalledNumber && (
+                      <span className="ml-2 bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded">
+                        Has last called number
+                      </span>
+                    )}
+                  </div>
+                )}
                 
                 {/* Display the ticket information */}
-                {claim.ticket_numbers && claim.ticket_layout_mask && (
+                {claim.ticket && (
                   <div className="mt-4 border-t pt-3">
                     <h3 className="font-medium text-sm mb-2">Claimed Ticket:</h3>
                     <CallerTicketDisplay
                       ticket={{
-                        numbers: claim.ticket_numbers,
-                        layoutMask: claim.ticket_layout_mask,
-                        serial: claim.ticket_serial || "Unknown",
-                        perm: claim.ticket_perm,
-                        position: claim.ticket_position
+                        numbers: claim.ticket.numbers,
+                        layoutMask: claim.ticket.layoutMask,
+                        serial: claim.ticket.serial || "Unknown",
+                        perm: claim.ticket.perm,
+                        position: claim.ticket.position
                       }}
-                      calledNumbers={currentCalledNumbers || claim.called_numbers || []}
-                      lastCalledNumber={currentNumber}
+                      calledNumbers={currentCalledNumbers || claim.calledNumbers || []}
+                      lastCalledNumber={currentNumber || claim.lastCalledNumber}
                       gameType={gameType}
-                      winPattern={currentWinPattern || claim.win_pattern}
+                      winPattern={currentWinPattern || claim.winPattern}
                     />
                   </div>
                 )}
@@ -186,27 +158,5 @@ export default function ClaimVerificationSheet({
         </div>
       </SheetContent>
     </Sheet>
-  );
-}
-
-function RefreshCw(props: any) {
-  return (
-    <svg 
-      xmlns="http://www.w3.org/2000/svg" 
-      width="24" 
-      height="24" 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2" 
-      strokeLinecap="round" 
-      strokeLinejoin="round"
-      {...props}
-    >
-      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
-      <path d="M21 3v5h-5"></path>
-      <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
-      <path d="M8 16H3v5"></path>
-    </svg>
   );
 }

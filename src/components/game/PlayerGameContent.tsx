@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -10,6 +9,8 @@ import { logWithTimestamp } from "@/utils/logUtils";
 import { useNetwork } from "@/contexts/NetworkStatusContext";
 import { useGameManager } from "@/contexts/GameManager";
 import GameTypePlayspace from "./GameTypePlayspace";
+import { usePlayerClaimManagement } from "@/hooks/usePlayerClaimManagement";
+import { usePlayerWebSocketNumbers } from "@/hooks/usePlayerWebSocketNumbers";
 
 interface PlayerGameContentProps {
   tickets: any[];
@@ -20,6 +21,7 @@ interface PlayerGameContentProps {
   setAutoMarking?: (value: boolean) => void;
   playerCode?: string;
   playerName?: string;
+  playerId?: string;
   winPrizes?: Record<string, string>;
   activeWinPatterns?: string[];
   onClaimBingo?: () => Promise<boolean>;
@@ -45,6 +47,7 @@ export default function PlayerGameContent({
   setAutoMarking,
   playerCode,
   playerName,
+  playerId,
   winPrizes = {},
   activeWinPatterns = [],
   onClaimBingo,
@@ -64,9 +67,41 @@ export default function PlayerGameContent({
   // Local states for UI elements
   const [isAutoMarkingEnabled, setIsAutoMarkingEnabled] = useState(autoMarking);
   const [showDebug, setShowDebug] = useState(false);
-  const [localNumbers, setLocalNumbers] = useState<number[]>(calledNumbers);
-  const [localCurrentNumber, setLocalCurrentNumber] = useState<number | null>(currentNumber);
   const [gameTypeDetails, setGameTypeDetails] = useState<any>(null);
+
+  // Use the network context
+  const network = useNetwork();
+  
+  // Use our WebSocket numbers hook for reliable number reception
+  const {
+    calledNumbers: wsCalledNumbers,
+    lastCalledNumber: wsLastCalledNumber,
+    isConnected: wsConnected
+  } = usePlayerWebSocketNumbers(currentSession?.id);
+  
+  // Use our new claim management hook
+  const {
+    claimStatus: claimStatusFromHook,
+    isSubmittingClaim,
+    submitClaim,
+    resetClaimStatus
+  } = usePlayerClaimManagement(
+    playerCode || null,
+    playerId || null,
+    currentSession?.id || null,
+    playerName || null,
+    gameType,
+    currentWinPattern || null,
+    currentGameNumber
+  );
+  
+  // Use the WebSocket called numbers if available, otherwise use props
+  const effectiveCalledNumbers = wsCalledNumbers.length > 0 ? wsCalledNumbers : calledNumbers;
+  const effectiveLastCalledNumber = wsLastCalledNumber !== null ? wsLastCalledNumber : currentNumber;
+  
+  // Use claim status from hook if available, otherwise use props
+  const effectiveClaimStatus = claimStatusFromHook || claimStatus;
+  const effectiveIsClaiming = isSubmittingClaim || isClaiming;
 
   // Load game type details
   useEffect(() => {
@@ -77,9 +112,6 @@ export default function PlayerGameContent({
       }
     }
   }, [gameType, getGameTypeById]);
-
-  // Use the network context
-  const network = useNetwork();
 
   // Handle changes to external props
   useEffect(() => {
@@ -213,22 +245,22 @@ export default function PlayerGameContent({
         totalGames={numberOfGames}
         pattern={effectivePatternDisplay || 'Not set'}
         prize={effectivePrize || 'Prize to be announced'}
-        claimStatus={claimStatus}
-        isClaiming={isClaiming}
-        onClaimBingo={onClaimBingo}
+        claimStatus={effectiveClaimStatus}
+        isClaiming={effectiveIsClaiming}
+        onClaimBingo={handleClaimBingo}
       />
       
       <div className="flex-grow overflow-y-auto">
         <div className="container mx-auto px-4 py-6">
           <StatusBar
             playerName={playerName}
-            currentNumber={currentNumber}
-            calledNumbers={calledNumbers}
+            currentNumber={effectiveLastCalledNumber}
+            calledNumbers={effectiveCalledNumbers}
             gameType={gameType}
             showAutoMarkToggle={true}
             autoMarkEnabled={autoMarking}
-            onToggleAutoMark={setAutoMarking ? () => setAutoMarking(!autoMarking) : undefined}
-            connectionState={connectionState}
+            onToggleAutoMark={toggleAutoMarking}
+            connectionState={wsConnected ? 'connected' : connectionState}
           />
           
           <div className="mt-4">
@@ -236,12 +268,12 @@ export default function PlayerGameContent({
               <GameTypePlayspace
                 gameType={gameType}
                 tickets={tickets}
-                calledNumbers={calledNumbers}
-                lastCalledNumber={currentNumber}
+                calledNumbers={effectiveCalledNumbers}
+                lastCalledNumber={effectiveLastCalledNumber}
                 autoMarking={autoMarking}
-                handleClaimBingo={onClaimBingo}
-                isClaiming={isClaiming}
-                claimStatus={claimStatus === 'valid' ? 'validated' : claimStatus === 'invalid' ? 'rejected' : 'pending'}
+                handleClaimBingo={handleClaimBingo}
+                isClaiming={effectiveIsClaiming}
+                claimStatus={effectiveClaimStatus === 'valid' ? 'validated' : effectiveClaimStatus === 'invalid' ? 'rejected' : 'pending'}
               />
             )}
           </div>
@@ -249,9 +281,9 @@ export default function PlayerGameContent({
       </div>
       
       <GameSheetControls
-        onClaimBingo={onClaimBingo}
-        claimStatus={claimStatus}
-        isClaiming={isClaiming}
+        onClaimBingo={handleClaimBingo}
+        claimStatus={effectiveClaimStatus}
+        isClaiming={effectiveIsClaiming}
         onRefreshTickets={onRefreshTickets}
       />
       
@@ -261,9 +293,9 @@ export default function PlayerGameContent({
             playerCode={playerCode}
             sessionId={currentSession?.id}
             gameType={gameType}
-            calledNumbers={calledNumbers}
-            lastCalledNumber={currentNumber}
-            connectionState={network.connectionState || connectionState}
+            calledNumbers={effectiveCalledNumbers}
+            lastCalledNumber={effectiveLastCalledNumber}
+            connectionState={wsConnected ? 'connected' : network.connectionState || connectionState}
             onReconnect={onReconnect}
           />
         </div>

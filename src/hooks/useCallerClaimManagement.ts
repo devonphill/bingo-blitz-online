@@ -1,134 +1,65 @@
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useToast } from './use-toast';
+import { useState, useEffect, useCallback } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import { claimService, BingoClaim } from '@/services/ClaimManagementService';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { useNetwork } from '@/contexts/NetworkStatusContext';
 
-/**
- * Hook to manage bingo claims for a caller
- * @param sessionId The game session ID
- * @returns The claims and methods to validate them
- */
 export function useCallerClaimManagement(sessionId: string | null) {
-  const [claims, setClaims] = useState<any[]>([]);
+  const [claims, setClaims] = useState<BingoClaim[]>([]);
   const [isProcessingClaim, setIsProcessingClaim] = useState(false);
+  const [claimsCount, setClaimsCount] = useState(0);
   const { toast } = useToast();
-  
-  // Reference to check if component is mounted
-  const isMounted = useRef(true);
-  
-  // Use the network context
-  const network = useNetwork();
-  
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
-  
-  // Set up listener for new claims
+
+  // Listen to claim queue changes
   useEffect(() => {
     if (!sessionId) return;
     
-    // Initial fetch of claims
-    const fetchClaims = async () => {
-      if (!sessionId) return;
+    // Register to track this session
+    claimService.registerSession(sessionId);
+    
+    // Subscribe to claim queue updates
+    const unsubscribe = claimService.subscribeToClaimQueue(sessionId, (sessionClaims) => {
+      setClaims(sessionClaims);
+      setClaimsCount(sessionClaims.length);
       
-      try {
-        setIsProcessingClaim(true);
-        logWithTimestamp(`Fetching claims for session ${sessionId}`, 'info');
-        
-        // Use the fetch claims method from our network context
-        const fetched = await network.fetchClaims(sessionId);
-        
-        if (isMounted.current) {
-          logWithTimestamp(`Found ${fetched?.length || 0} claims for session ${sessionId}`, 'info');
-          setClaims(fetched || []);
-          setIsProcessingClaim(false);
-        }
-      } catch (error) {
-        console.error('Error fetching claims:', error);
-        if (isMounted.current) {
-          setIsProcessingClaim(false);
-        }
-      }
-    };
-    
-    // Run initial fetch
-    fetchClaims();
-    
-    // Set up real-time listener through our network context
-    const removeListener = network.addGameStateUpdateListener((gameState) => {
-      // Re-fetch claims when game state changes
-      fetchClaims();
-    });
-    
-    return () => {
-      removeListener();
-    };
-  }, [sessionId, network]);
-  
-  // For new claims specifically, set up a broadcast listener
-  useEffect(() => {
-    if (!sessionId) return;
-    
-    // Subscribe to broadcast channel for new claims
-    const channel = network.addConnectionStatusListener((isConnected) => {
-      // When connection state changes, refetch claims if connected
-      if (isConnected) {
-        // Use the fetch claims method from our network context
-        network.fetchClaims(sessionId)
-          .then(fetched => {
-            if (isMounted.current) {
-              setClaims(fetched || []);
-            }
-          })
-          .catch(error => {
-            console.error('Error fetching claims after connection change:', error);
-          });
+      // Show toast notification when new claims arrive
+      if (sessionClaims.length > 0 && sessionClaims.length > claims.length) {
+        toast({
+          title: "New Bingo Claim",
+          description: `${sessionClaims[0].playerName} is claiming bingo!`,
+          duration: 5000
+        });
       }
     });
     
     return () => {
-      channel();
+      unsubscribe();
+      // Unregister session when component unmounts
+      claimService.unregisterSession(sessionId);
     };
-  }, [sessionId, network]);
-  
-  // Validate a claim (approve or reject)
-  const validateClaim = useCallback(async (claim: any, isValid: boolean) => {
-    if (!claim || !claim.id) {
-      toast({
-        title: "Error",
-        description: "Invalid claim data",
-        variant: "destructive"
-      });
-      return false;
-    }
+  }, [sessionId, toast, claims.length]);
+
+  // Handle validating a claim
+  const validateClaim = useCallback(async (claim: BingoClaim, isValid: boolean) => {
+    if (!sessionId) return false;
     
+    setIsProcessingClaim(true);
     try {
-      setIsProcessingClaim(true);
+      logWithTimestamp(`Processing claim ${claim.id} as ${isValid ? 'valid' : 'invalid'}`, 'info');
       
-      // Use the network context to validate the claim
-      const success = await network.validateClaim(claim, isValid);
+      const success = await claimService.processClaim(claim.id, sessionId, isValid);
       
       if (success) {
-        // Remove the claim from the local state to avoid showing it again
-        if (isMounted.current) {
-          setClaims(prev => prev.filter(c => c.id !== claim.id));
-        }
-        
         toast({
-          title: isValid ? "Claim Verified" : "Claim Rejected",
-          description: isValid 
-            ? `The bingo claim for ${claim.player_name || ''} has been verified.` 
-            : `The bingo claim for ${claim.player_name || ''} has been rejected.`,
-          variant: isValid ? "default" : "destructive",
+          title: isValid ? "Claim Validated" : "Claim Rejected",
+          description: `${claim.playerName}'s claim has been ${isValid ? 'validated' : 'rejected'}.`,
+          duration: 3000
         });
       } else {
         toast({
-          title: "Error",
-          description: "Failed to process the claim",
-          variant: "destructive"
+          title: "Error Processing Claim",
+          description: "Failed to process the claim. Please try again.",
+          variant: "destructive",
         });
       }
       
@@ -137,20 +68,26 @@ export function useCallerClaimManagement(sessionId: string | null) {
       console.error('Error validating claim:', error);
       toast({
         title: "Error",
-        description: "An error occurred while processing the claim",
-        variant: "destructive"
+        description: "An unexpected error occurred while processing the claim.",
+        variant: "destructive",
       });
       return false;
     } finally {
-      if (isMounted.current) {
-        setIsProcessingClaim(false);
-      }
+      setIsProcessingClaim(false);
     }
-  }, [toast, network]);
-  
+  }, [sessionId, toast]);
+
+  // Clear all claims for the session
+  const clearClaims = useCallback(() => {
+    if (!sessionId) return;
+    claimService.clearClaimsForSession(sessionId);
+  }, [sessionId]);
+
   return {
     claims,
+    claimsCount,
     validateClaim,
+    clearClaims,
     isProcessingClaim
   };
 }

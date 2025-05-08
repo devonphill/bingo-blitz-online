@@ -11,6 +11,8 @@ import PlayerList from '../game/PlayerList';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { supabase } from '@/integrations/supabase/client';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
+import { useCallerClaimManagement } from '@/hooks/useCallerClaimManagement';
+import ClaimNotifications from './ClaimNotifications';
 
 interface WinPattern {
   id: string;
@@ -47,8 +49,6 @@ export function LiveGameView({
   onRecall,
   lastCalledNumber,
   calledNumbers,
-  pendingClaims,
-  onViewClaims,
   sessionStatus,
   onCloseGame,
   currentGameNumber,
@@ -60,7 +60,6 @@ export function LiveGameView({
   const { getCurrentGamePatterns } = useGameData(sessionId);
   const { toast } = useToast();
   const [connectedPlayers, setConnectedPlayers] = useState<any[]>([]);
-  const [claims, setClaims] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
   // Track component mount state
@@ -75,6 +74,9 @@ export function LiveGameView({
   // Use the network context
   const network = useNetwork();
   
+  // Use our new claim management hook
+  const { claims, claimsCount } = useCallerClaimManagement(sessionId || null);
+  
   // Set up connection when component mounts
   useEffect(() => {
     console.log('LiveGameView: Setting up network connection');
@@ -88,50 +90,11 @@ export function LiveGameView({
     network.connect(sessionId);
     
     // When the component mounts, reconnect to make sure we're in sync
-    // This is a no-op if already connected
     setTimeout(() => {
       network.connect(sessionId);
     }, 500);
     
   }, [sessionId, network]);
-  
-  // Set up claims polling
-  useEffect(() => {
-    if (!sessionId) return;
-    
-    const pollClaims = async () => {
-      try {
-        // Fetch claims through the network context
-        const fetchedClaims = await network.fetchClaims(sessionId);
-        
-        if (Array.isArray(fetchedClaims) && isMounted.current) {
-          setClaims(fetchedClaims);
-          
-          // Auto-open claims sheet if new claims arrive
-          if (fetchedClaims.length > 0 && fetchedClaims.length !== claims.length) {
-            logWithTimestamp(`Found ${fetchedClaims.length} pending claims, was ${claims.length} before`);
-            
-            if (fetchedClaims.length > claims.length) {
-              toast({
-                title: "New Bingo Claim!",
-                description: `A new bingo claim has been submitted. Check the claims panel to verify.`,
-                variant: "default",
-              });
-            }
-          }
-        }
-      } catch (error) {
-        console.error("Error fetching claims during polling:", error);
-      }
-    };
-    
-    // Poll for claims every 5 seconds
-    const interval = setInterval(pollClaims, 5000);
-    
-    return () => {
-      clearInterval(interval);
-    };
-  }, [sessionId, claims.length, toast, network]);
   
   const handleReconnect = () => {
     // Simple reconnect using network context
@@ -231,8 +194,14 @@ export function LiveGameView({
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       <div className="md:col-span-2 space-y-6">
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row justify-between items-center">
             <CardTitle className="text-xl font-bold">Current Game Status</CardTitle>
+            <div className="flex items-center gap-2">
+              <ClaimNotifications 
+                sessionId={sessionId || null}
+                onOpenClaimSheet={openClaimSheet}
+              />
+            </div>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -270,6 +239,7 @@ export function LiveGameView({
                     isLoading={isLoading} 
                     onReconnect={handleReconnect}
                     sessionId={sessionId}
+                    claimsData={claims} // Pass claims data to highlight players with pending claims
                   />
                 </div>
                 
@@ -288,18 +258,18 @@ export function LiveGameView({
               <div className="bg-gray-100 p-4 rounded-md">
                 <div className="text-sm text-gray-500 mb-2">Pending Claims</div>
                 <div className="text-lg font-bold">
-                  {claims.length} {claims.length === 1 ? 'claim' : 'claims'} pending
+                  {claimsCount} {claimsCount === 1 ? 'claim' : 'claims'} pending
                 </div>
                 <div className="mt-2 text-sm text-gray-500">
-                  {claims.length > 0 
+                  {claimsCount > 0 
                     ? 'Review claims by clicking the button below'
                     : 'No claims to review at this time'}
                 </div>
                 
                 <Button 
                   size="sm" 
-                  variant={claims.length > 0 ? "default" : "outline"}
-                  className="w-full mt-4"
+                  variant={claimsCount > 0 ? "default" : "outline"}
+                  className={`w-full mt-4 ${claimsCount > 0 ? 'animate-pulse bg-red-600 hover:bg-red-700' : ''}`}
                   onClick={openClaimSheet}
                 >
                   Review Claims
@@ -318,12 +288,13 @@ export function LiveGameView({
           remainingNumbers={remainingNumbers}
           sessionId={sessionId || ''}
           winPatterns={selectedPatterns}
-          claimCount={claims.length}
+          claimCount={claimsCount}
           openClaimSheet={openClaimSheet}
           gameType={gameType}
           sessionStatus={sessionStatus}
           gameConfigs={gameConfigs}
           onForceClose={handleForceClose}
+          disableCallButton={claimsCount > 0} // Disable call button when there are pending claims
         />
       </div>
       
@@ -334,7 +305,6 @@ export function LiveGameView({
         gameNumber={currentGameNumber}
         currentCalledNumbers={calledNumbers}
         gameType={gameType}
-        playerName={claims[0]?.playerName}
         currentNumber={lastCalledNumber}
         currentWinPattern={currentWinPattern}
       />

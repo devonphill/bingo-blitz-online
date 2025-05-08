@@ -1,16 +1,10 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useRef } from 'react';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Bell, RefreshCw, AlertCircle, AlertTriangle, Database } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { useToast } from '@/hooks/use-toast';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { useCallerHub } from '@/hooks/useCallerHub';
-import { logWithTimestamp } from '@/utils/logUtils';
-import { GoLiveButton } from '@/components/ui/go-live-button';
+import NumberPad from './NumberPad';
+import { X, AlertOctagon } from 'lucide-react';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
-import { useCallerNumbers } from '@/hooks/useCallerNumbers';
-import { Switch } from '@/components/ui/switch';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -19,368 +13,193 @@ interface CallerControlsProps {
   remainingNumbers: number[];
   sessionId: string;
   winPatterns: string[];
-  claimCount?: number;
+  claimCount: number;
   openClaimSheet: () => void;
   gameType?: string;
   sessionStatus?: string;
-  onCloseGame?: () => void;
-  numberOfGames?: number;
-  currentGameNumber?: number;
+  gameConfigs?: any[];
   onForceClose?: () => void;
-  gameConfigs?: any[]; // Added this missing prop
+  disableCallButton?: boolean; // Add prop to disable call button when claims are pending
 }
 
-export default function CallerControls({ 
-  onCallNumber, 
+export default function CallerControls({
+  onCallNumber,
   onEndGame,
   onGoLive,
+  remainingNumbers,
   sessionId,
   winPatterns,
-  claimCount = 0,
+  claimCount,
   openClaimSheet,
   gameType = 'mainstage',
-  sessionStatus = 'pending',
-  onCloseGame,
-  numberOfGames = 1,
-  currentGameNumber = 1,
-  onForceClose, // New prop for forced game close
-  gameConfigs // Added this missing prop
+  sessionStatus,
+  gameConfigs,
+  onForceClose,
+  disableCallButton = false
 }: CallerControlsProps) {
-  const [isGoingLive, setIsGoingLive] = useState(false);
-  const [isClosingConfirmOpen, setIsClosingConfirmOpen] = useState(false);
-  const [isForceCloseConfirmOpen, setIsForceCloseConfirmOpen] = useState(false);
-  const { toast } = useToast();
+  const [isRandom, setIsRandom] = useState(true);
+  const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
   
-  // Use new caller numbers hook for reliable number handling
-  const {
-    calledNumbers,
-    lastCalledNumber,
-    isCallInProgress,
-    remainingNumbers: availableNumbers,
-    callNextNumber,
-    saveToDatabase, // Get the save to database setting
-    toggleSaveToDatabase // Get the toggle function
-  } = useCallerNumbers(sessionId, gameType);
-  
-  // Connect to the WebSocket hub as a caller
-  const callerHub = useCallerHub(sessionId);
-
-  // Use the network context instead of connectionManager
+  // Get the network context to help with calling numbers
   const network = useNetwork();
-
-  useEffect(() => {
-    logWithTimestamp(`CallControls connection state: ${callerHub.connectionState}, isConnected: ${callerHub.isConnected}`);
-  }, [callerHub.connectionState, callerHub.isConnected]);
-
+  
+  // Handle manually selecting a number
+  const handleNumberSelect = (number: number) => {
+    setSelectedNumber(number);
+    setIsRandom(false);
+  };
+  
+  // Handle calling the selected number
   const handleCallNumber = async () => {
-    if (availableNumbers.length === 0) {
-      toast({
-        title: "No more numbers",
-        description: "All numbers have been called.",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    // Call next number using our service
-    const number = await callNextNumber();
-    
-    if (number) {
-      // Call the parent handler
-      onCallNumber(number);
-    } else {
-      toast({
-        title: "Error",
-        description: "Failed to call next number. Please try again.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleSaveToggle = () => {
-    toggleSaveToDatabase();
-    toast({
-      title: saveToDatabase ? "Database Saves Disabled" : "Database Saves Enabled",
-      description: saveToDatabase 
-        ? "Numbers will no longer be saved to the database" 
-        : "Numbers will now be saved to the database",
-      duration: 3000
-    });
-  };
-
-  const handleGoLiveClick = async () => {
-    setIsGoingLive(true);
+    setIsLoading(true);
     try {
-      if (callerHub.isConnected) {
-        logWithTimestamp("Broadcasting game start via realtime");
-        callerHub.startGame();
+      if (isRandom) {
+        if (remainingNumbers.length === 0) {
+          console.error("No remaining numbers to call");
+          return;
+        }
+        
+        // Select a random number from the remaining numbers
+        const randomIndex = Math.floor(Math.random() * remainingNumbers.length);
+        const randomNumber = remainingNumbers[randomIndex];
+        
+        onCallNumber(randomNumber);
+      } else if (selectedNumber !== null) {
+        onCallNumber(selectedNumber);
+        setSelectedNumber(null);
       }
-      
-      await onGoLive();
-    } catch (error) {
-      console.error('Error going live:', error);
-      toast({
-        title: "Error",
-        description: "Failed to start the game. Please try again.",
-        variant: "destructive"
-      });
     } finally {
-      setIsGoingLive(false);
+      setIsLoading(false);
     }
-  };
-
-  const handleBellClick = () => {
-    openClaimSheet();
-  };
-
-  const handleCloseGame = () => {
-    setIsClosingConfirmOpen(true);
-  };
-
-  const confirmCloseGame = () => {
-    if (onCloseGame) {
-      onCloseGame();
-    }
-    setIsClosingConfirmOpen(false);
   };
   
-  const handleForceClose = () => {
-    setIsForceCloseConfirmOpen(true);
-  };
-  
-  const confirmForceClose = () => {
-    if (onForceClose) {
-      onForceClose();
-    }
-    setIsForceCloseConfirmOpen(false);
-  };
-  
-  const handleReconnectClick = () => {
-    if (callerHub.reconnect) {
-      callerHub.reconnect();
-      toast({
-        title: "Reconnecting",
-        description: "Attempting to reconnect to the game server...",
-      });
-    }
-  };
-
-  const isLastGame = currentGameNumber >= numberOfGames;
-  
-  // CRITICAL: Remove ALL conditions that would disable the Go Live button
-  // We are setting this to false to ensure it's always enabled
-  const isGoLiveDisabled = false;
-
-  // Connection status indicator                        
-  const renderConnectionStatus = () => {
-    if (callerHub.connectionState !== 'connected') {
-      return (
-        <div className="bg-amber-50 border border-amber-200 rounded-md p-2 mt-2">
-          <div className="flex items-center">
-            <AlertCircle className="h-4 w-4 text-amber-500 mr-2" />
-            <div className="text-xs text-amber-700">
-              {callerHub.connectionState === 'connecting' 
-                ? 'Connecting to game server...' 
-                : callerHub.connectionState === 'error' 
-                  ? 'Failed to connect to game server' 
-                  : 'Disconnected from game server'}
-            </div>
-          </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="mt-2 w-full text-xs flex items-center gap-1"
-            onClick={handleReconnectClick}
-          >
-            <RefreshCw className="h-3 w-3" />
-            Reconnect
-          </Button>
-        </div>
-      );
-    }
-    return null;
-  };
+  // Determine if the button should be disabled
+  const isCallButtonDisabled = isLoading || 
+                              remainingNumbers.length === 0 ||
+                              disableCallButton || // Disable when claims are pending
+                              sessionStatus !== 'active';
 
   return (
-    <>
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-xl font-bold flex items-center justify-between">
-            <div className="flex items-center">
-              <span>Caller Controls</span>
-              <Badge className="ml-2" variant={sessionStatus === 'active' ? 'default' : 'outline'}>
-                {sessionStatus === 'active' ? 'Live' : 'Pending'}
-              </Badge>
-              {currentGameNumber && numberOfGames && (
-                <Badge className="ml-2" variant="outline">
-                  Game {currentGameNumber} of {numberOfGames}
-                </Badge>
-              )}
-              {callerHub.isConnected && (
-                <Badge className="ml-2 bg-green-500 text-white">
-                  Connected
-                </Badge>
-              )}
-            </div>
-            {claimCount > 0 && (
-              <Button 
-                size="sm" 
-                variant="outline" 
-                className="relative"
-                onClick={handleBellClick}
-              >
-                <Bell className="h-4 w-4 text-amber-500" />
-                <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center bg-amber-500">
-                  {claimCount}
-                </Badge>
-              </Button>
-            )}
-            {claimCount === 0 && (
-              <Button 
-                size="sm" 
-                variant="outline" 
-                className="relative"
-                onClick={handleBellClick}
-              >
-                <Bell className="h-4 w-4 text-gray-500" />
-              </Button>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="bg-gray-100 p-3 rounded-md text-center">
-            <div className="text-sm text-gray-500 mb-1">Remaining Numbers</div>
-            <div className="text-2xl font-bold">{availableNumbers.length}</div>
-          </div>
-          
-          {lastCalledNumber && (
-            <div className="bg-gray-100 p-3 rounded-md text-center">
-              <div className="text-sm text-gray-500 mb-1">Last Called</div>
-              <div className="text-2xl font-bold">{lastCalledNumber}</div>
-            </div>
-          )}
-          
-          {/* New: Add Save to Database toggle */}
-          <div className="flex items-center justify-between p-3 rounded-md bg-gray-100">
-            <div className="flex items-center gap-2">
-              <Database className={`h-4 w-4 ${saveToDatabase ? 'text-green-500' : 'text-gray-400'}`} />
-              <span className="text-sm">Save to Database</span>
-            </div>
-            <Switch
-              checked={saveToDatabase}
-              onCheckedChange={handleSaveToggle}
-            />
-          </div>
-          
-          <div className="grid grid-cols-1 gap-3">
-            <Button
-              className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
-              disabled={isCallInProgress || availableNumbers.length === 0 || sessionStatus !== 'active' || !callerHub.isConnected}
-              onClick={handleCallNumber}
+    <Card ref={cardRef}>
+      <CardHeader>
+        <CardTitle className="flex justify-between items-center">
+          <span>Caller Controls</span>
+          {claimCount > 0 && (
+            <Button 
+              size="sm" 
+              variant="destructive" 
+              className="animate-pulse flex items-center gap-1"
+              onClick={openClaimSheet}
             >
-              {isCallInProgress ? 'Calling...' : 'Call Next Number'}
+              <AlertOctagon className="h-4 w-4" />
+              <span>{claimCount} {claimCount === 1 ? 'Claim' : 'Claims'}</span>
+            </Button>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          {/* Next number controls */}
+          <div className="bg-gray-100 p-4 rounded-md">
+            <h3 className="text-sm font-medium mb-3">Next Number</h3>
+            
+            <div className="flex space-x-2 mb-4">
+              <Button
+                variant={isRandom ? "default" : "outline"}
+                size="sm"
+                className="flex-1"
+                onClick={() => setIsRandom(true)}
+              >
+                Random
+              </Button>
+              <Button
+                variant={!isRandom ? "default" : "outline"}
+                size="sm"
+                className="flex-1"
+                onClick={() => setIsRandom(false)}
+              >
+                Manual
+              </Button>
+            </div>
+            
+            {!isRandom && (
+              <div className="mb-4">
+                <NumberPad
+                  onNumberSelect={handleNumberSelect}
+                  selectedNumber={selectedNumber}
+                  availableNumbers={remainingNumbers}
+                  gameType={gameType}
+                />
+              </div>
+            )}
+            
+            <Button
+              className="w-full"
+              onClick={handleCallNumber}
+              disabled={isCallButtonDisabled}
+            >
+              {disableCallButton && claimCount > 0 ? (
+                <>
+                  <X className="h-4 w-4 mr-2" />
+                  Review Claims First
+                </>
+              ) : isRandom ? (
+                isLoading ? 'Calling...' : 'Call Next Number'
+              ) : (
+                isLoading ? 'Calling...' : selectedNumber ? `Call ${selectedNumber}` : 'Select a Number'
+              )}
             </Button>
             
-            {onCloseGame && (
-              <Button
-                variant="secondary"
-                onClick={handleCloseGame}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                {isLastGame ? 'Complete Session' : 'Close Game'}
-              </Button>
+            {disableCallButton && claimCount > 0 && (
+              <p className="text-xs text-red-600 mt-2 text-center">
+                You must verify all pending claims before calling more numbers
+              </p>
             )}
             
-            {/* Add FORCE close button */}
-            {onForceClose && (
+            <p className="text-xs text-gray-500 mt-2 text-center">
+              {remainingNumbers.length} numbers remaining
+            </p>
+          </div>
+          
+          {/* Game controls */}
+          <div className="bg-gray-100 p-4 rounded-md">
+            <h3 className="text-sm font-medium mb-3">Game Controls</h3>
+            
+            <div className="space-y-2">
               <Button
                 variant="outline"
-                onClick={handleForceClose}
-                className="bg-amber-600 hover:bg-amber-700 text-white flex items-center gap-2"
+                size="sm"
+                className="w-full"
+                onClick={onEndGame}
               >
-                <AlertTriangle className="h-4 w-4" />
-                {isLastGame ? 'FORCE Complete Session' : 'FORCE Close Game'}
+                End Game
               </Button>
-            )}
-            
-            <Button 
-              variant="destructive"
-              onClick={onEndGame}
-            >
-              End Game
-            </Button>
-            
-            <GoLiveButton
-              sessionId={sessionId}
-              disabled={false}
-              className="w-full"
-              onSuccess={() => {
-                handleGoLiveClick();
-              }}
-            >
-              Go Live
-            </GoLiveButton>
+              
+              {onForceClose && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="w-full"
+                  onClick={onForceClose}
+                >
+                  Force Close &amp; Next Game
+                </Button>
+              )}
+              
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={openClaimSheet}
+              >
+                View Claims
+              </Button>
+            </div>
           </div>
-          
-          {renderConnectionStatus()}
-        </CardContent>
-      </Card>
-
-      <AlertDialog 
-        open={isClosingConfirmOpen} 
-        onOpenChange={setIsClosingConfirmOpen}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {isLastGame ? 'Complete Session?' : 'Close Game?'}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {isLastGame 
-                ? 'This will mark the session as completed. This action cannot be undone.' 
-                : 'This will close the current game and advance to the next one. This action cannot be undone.'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={confirmCloseGame}
-              className={isLastGame ? "bg-purple-600 hover:bg-purple-700" : "bg-blue-600 hover:bg-blue-700"}
-            >
-              {isLastGame ? 'Complete Session' : 'Close Game'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      
-      {/* Force Close Confirmation Dialog */}
-      <AlertDialog 
-        open={isForceCloseConfirmOpen} 
-        onOpenChange={setIsForceCloseConfirmOpen}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-amber-600">
-              <AlertTriangle className="h-5 w-5" />
-              {isLastGame ? 'FORCE Complete Session?' : 'FORCE Close Game?'}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {isLastGame 
-                ? 'This will FORCE complete the session, resetting all game data. This action cannot be undone and may disrupt active players.' 
-                : 'This will FORCE close the current game, reset all numbers, and advance to the next one. This action cannot be undone and may disrupt active players.'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={confirmForceClose}
-              className="bg-amber-600 hover:bg-amber-700"
-            >
-              {isLastGame ? 'FORCE Complete' : 'FORCE Close'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
