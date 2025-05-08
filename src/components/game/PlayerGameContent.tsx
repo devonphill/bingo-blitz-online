@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -32,6 +33,7 @@ interface PlayerGameContentProps {
   connectionState?: 'disconnected' | 'connecting' | 'connected' | 'error';
   onRefreshTickets?: () => void;
   onReconnect?: () => void;
+  children?: React.ReactNode; // Added children prop
 }
 
 export default function PlayerGameContent({
@@ -55,7 +57,8 @@ export default function PlayerGameContent({
   backgroundColor = 'transparent',
   connectionState = 'connected',
   onRefreshTickets,
-  onReconnect
+  onReconnect,
+  children // Added children to destructuring
 }: PlayerGameContentProps) {
   const { getGameTypeById } = useGameManager();
   // Local states for UI elements
@@ -229,16 +232,18 @@ export default function PlayerGameContent({
           />
           
           <div className="mt-4">
-            <GameTypePlayspace
-              gameType={gameType}
-              tickets={tickets}
-              calledNumbers={calledNumbers}
-              lastCalledNumber={currentNumber}
-              autoMarking={autoMarking}
-              handleClaimBingo={onClaimBingo}
-              isClaiming={isClaiming}
-              claimStatus={claimStatus === 'valid' ? 'validated' : claimStatus === 'invalid' ? 'rejected' : 'pending'}
-            />
+            {children || (
+              <GameTypePlayspace
+                gameType={gameType}
+                tickets={tickets}
+                calledNumbers={calledNumbers}
+                lastCalledNumber={currentNumber}
+                autoMarking={autoMarking}
+                handleClaimBingo={onClaimBingo}
+                isClaiming={isClaiming}
+                claimStatus={claimStatus === 'valid' ? 'validated' : claimStatus === 'invalid' ? 'rejected' : 'pending'}
+              />
+            )}
           </div>
         </div>
       </div>

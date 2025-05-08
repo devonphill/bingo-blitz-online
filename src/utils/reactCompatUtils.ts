@@ -197,17 +197,19 @@ export function SimplePopover({
 }
 
 // Simple button component that replicates Radix Slot functionality
+// Fix: Properly type the button props to include className
+interface CompatButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  className?: string;
+  asChild?: boolean;
+  children: React.ReactNode;
+}
+
 export function CompatButton({
   className = '',
   asChild = false,
   children,
   ...props
-}: {
-  className?: string;
-  asChild?: boolean;
-  children: React.ReactNode;
-  [key: string]: any;
-}) {
+}: CompatButtonProps) {
   // If asChild is true, clone the first child and pass the props
   if (asChild && React.isValidElement(children)) {
     return React.cloneElement(children, {
@@ -216,10 +218,10 @@ export function CompatButton({
     });
   }
   
-  // Fix: TypeScript was complaining about className not existing in the props type
+  // Fixed: TypeScript now understands that className is a valid prop for the button
   return React.createElement(
     'button',
-    Object.assign({}, props, { className }) as React.ButtonHTMLAttributes<HTMLButtonElement>,
+    { className, ...props } as React.ButtonHTMLAttributes<HTMLButtonElement>,
     children
   );
 }
