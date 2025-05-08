@@ -1,4 +1,3 @@
-
 import { toast } from 'sonner';
 
 /**
@@ -264,4 +263,83 @@ export function getOneToGoNumbers(
   }
   
   return oneToGoNumbers;
+}
+
+/**
+ * Calculate a score for a ticket based on how close it is to winning
+ * Negative scores indicate missed claims (should have claimed earlier)
+ */
+export function calculateTicketScore(
+  grid: (number | null)[][],
+  calledNumbers: number[],
+  winPattern: string,
+  lastCalledNumber: number | null = null
+): number {
+  const progress = calculateTicketProgress(grid, calledNumbers, winPattern);
+  
+  // If this is a winner, check if it's a "missed claim"
+  if (progress.isWinner) {
+    // Find the number that completed the winning pattern
+    let completingNumberIndex = -1;
+    
+    // For a winning ticket, simulate removing the last few numbers to find when it became a winner
+    for (let i = calledNumbers.length - 1; i >= 0; i--) {
+      const testNumbers = calledNumbers.slice(0, i);
+      const testProgress = calculateTicketProgress(grid, testNumbers, winPattern);
+      
+      if (!testProgress.isWinner) {
+        // We found the number that completed the winning pattern
+        completingNumberIndex = i;
+        break;
+      }
+    }
+    
+    // If the completing number is not the last called number, this is a missed claim
+    if (completingNumberIndex >= 0 && completingNumberIndex < calledNumbers.length - 1) {
+      // Calculate how many calls were missed (negative score)
+      return -(calledNumbers.length - completingNumberIndex - 1);
+    }
+    
+    return 0; // Perfect timing on the claim
+  }
+  
+  // Not a winner, return positive to-go count (lower is better)
+  return progress.numbersToGo;
+}
+
+/**
+ * Sort tickets by win proximity, handling both positive and negative scores
+ */
+export function sortTicketsByWinProximity(
+  tickets: any[],
+  calledNumbers: number[],
+  currentWinPattern: string | null
+): any[] {
+  if (!tickets || tickets.length === 0 || !currentWinPattern) {
+    return tickets;
+  }
+  
+  return [...tickets].sort((a, b) => {
+    // Process ticket A
+    const gridA = processTicketLayout(a.numbers, a.layoutMask || a.layout_mask);
+    const scoreA = calculateTicketScore(gridA, calledNumbers, currentWinPattern, a.lastCalledNumber);
+    
+    // Process ticket B
+    const gridB = processTicketLayout(b.numbers, b.layoutMask || b.layout_mask);
+    const scoreB = calculateTicketScore(gridB, calledNumbers, currentWinPattern, b.lastCalledNumber);
+    
+    // Prioritize tickets with score 0 (perfect claim time)
+    if (scoreA === 0 && scoreB !== 0) return -1;
+    if (scoreB === 0 && scoreA !== 0) return 1;
+    
+    // Then prioritize positive scores (closer to winning) over negative scores (missed claims)
+    if (scoreA >= 0 && scoreB < 0) return -1;
+    if (scoreB >= 0 && scoreA < 0) return 1;
+    
+    // For two positive scores, smaller is better (closer to winning)
+    if (scoreA >= 0 && scoreB >= 0) return scoreA - scoreB;
+    
+    // For two negative scores, larger (less negative) is better (missed by less)
+    return scoreB - scoreA;
+  });
 }

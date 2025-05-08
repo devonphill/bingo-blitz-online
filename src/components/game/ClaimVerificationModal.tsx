@@ -45,6 +45,7 @@ export default function ClaimVerificationModal({
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [actionType, setActionType] = useState<'valid' | 'false' | null>(null);
   const [validTickets, setValidTickets] = useState<any[]>([]);
+  const [missedClaims, setMissedClaims] = useState<any[]>([]);
   
   console.log("ClaimVerificationModal rendered with isOpen:", isOpen, "playerName:", playerName, "currentWinPattern:", currentWinPattern);
   
@@ -65,31 +66,22 @@ export default function ClaimVerificationModal({
     
     console.log("Calculating ticket scores with called numbers:", calledNumbers.length);
     
+    // Array to collect valid tickets and missed claims
+    const validTicketsFound: any[] = [];
+    const missedClaimsFound: any[] = [];
+    
     // Calculate score for each ticket (number of matched called numbers)
     const ticketsWithScore = tickets.map(ticket => {
       const matchedNumbers = ticket.numbers.filter(num => calledNumbers.includes(num));
-      return { 
-        ...ticket, 
-        score: matchedNumbers.length,
-        percentMatched: Math.round((matchedNumbers.length / ticket.numbers.length) * 100),
-      };
-    });
-    
-    // Sort tickets by score (highest first)
-    const sortedTickets = [...ticketsWithScore].sort((a, b) => b.score - a.score);
-    setRankedTickets(sortedTickets);
-    
-    // Array to collect valid tickets
-    const validTicketsFound: any[] = [];
-    
-    // Check claim validity based on the current win pattern
-    let valid = false;
-    
-    // Convert each ticket to check against the current win pattern
-    if (currentWinPattern === "oneLine") {
-      // For one line, we need to check if any row is complete
-      sortedTickets.forEach(ticket => {
-        // Use layoutMask consistently
+      const percentMatched = Math.round((matchedNumbers.length / ticket.numbers.length) * 100);
+      
+      // Check if this ticket is a valid winner
+      let isValid = false;
+      let missedBy = 0;
+      
+      // Convert ticket to check against the current win pattern
+      if (currentWinPattern === "oneLine" || !currentWinPattern) {
+        // For one line, check if any row is complete
         const layoutMask = ticket.layoutMask || 0;
         const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
         const rows: number[][] = [[], [], []];
@@ -105,19 +97,28 @@ export default function ClaimVerificationModal({
         }
         
         // Check if any row is complete
-        const isValid = rows.some(row => 
+        isValid = rows.some(row => 
           row.length > 0 && row.every(num => calledNumbers.includes(num))
         );
         
+        // Check for missed claim 
         if (isValid) {
-          valid = true;
-          validTicketsFound.push({...ticket, validPattern: 'oneLine'});
+          // Find when this ticket became a winner by removing numbers one at a time
+          for (let i = calledNumbers.length - 1; i >= 0; i--) {
+            const testNumbers = calledNumbers.slice(0, i);
+            const isStillValid = rows.some(row => 
+              row.length > 0 && row.every(num => testNumbers.includes(num))
+            );
+            
+            if (!isStillValid) {
+              // We've found the point when this ticket became a winner
+              missedBy = calledNumbers.length - i - 1;
+              break;
+            }
+          }
         }
-      });
-    } else if (currentWinPattern === "twoLines") {
-      // For two lines, we need to check if any two rows are complete
-      sortedTickets.forEach(ticket => {
-        // Use layoutMask consistently
+      } else if (currentWinPattern === "twoLines") {
+        // For two lines, we need to check if any two rows are complete
         const layoutMask = ticket.layoutMask || 0;
         const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
         const rows: number[][] = [[], [], []];
@@ -137,34 +138,91 @@ export default function ClaimVerificationModal({
           row.length > 0 && row.every(num => calledNumbers.includes(num))
         ).length;
         
-        if (completeRows >= 2) {
-          valid = true;
-          validTicketsFound.push({...ticket, validPattern: 'twoLines'});
-        }
-      });
-    } else {
-      // For full house or default, check if all numbers in any ticket have been called
-      sortedTickets.forEach(ticket => {
-        const isValid = ticket.numbers.every(number => calledNumbers.includes(number));
+        isValid = completeRows >= 2;
+        
+        // Check for missed claim
         if (isValid) {
-          valid = true;
-          validTicketsFound.push({...ticket, validPattern: 'fullHouse'});
+          for (let i = calledNumbers.length - 1; i >= 0; i--) {
+            const testNumbers = calledNumbers.slice(0, i);
+            const completedRows = rows.filter(row => 
+              row.length > 0 && row.every(num => testNumbers.includes(num))
+            ).length;
+            
+            if (completedRows < 2) {
+              // We've found when this ticket became valid
+              missedBy = calledNumbers.length - i - 1;
+              break;
+            }
+          }
         }
-      });
-    }
+      } else {
+        // For full house or default, check if all numbers have been called
+        isValid = ticket.numbers.every(number => calledNumbers.includes(number));
+        
+        // Check for missed claim
+        if (isValid) {
+          for (let i = calledNumbers.length - 1; i >= 0; i--) {
+            const testNumbers = calledNumbers.slice(0, i);
+            const stillValid = ticket.numbers.every(number => testNumbers.includes(number));
+            
+            if (!stillValid) {
+              // We've found when this ticket became valid
+              missedBy = calledNumbers.length - i - 1;
+              break;
+            }
+          }
+        }
+      }
+      
+      // Add to appropriate collection
+      if (isValid) {
+        const enrichedTicket = {
+          ...ticket,
+          score: matchedNumbers.length,
+          percentMatched,
+          validPattern: currentWinPattern || 'oneLine',
+          missedBy
+        };
+        
+        if (missedBy > 0) {
+          missedClaimsFound.push(enrichedTicket);
+        } else {
+          validTicketsFound.push(enrichedTicket);
+        }
+      }
+      
+      return { 
+        ...ticket, 
+        score: matchedNumbers.length,
+        percentMatched,
+        isValid,
+        missedBy
+      };
+    });
     
-    console.log("Claim validity for pattern", currentWinPattern, ":", valid);
+    // Sort tickets by score (highest first)
+    const sortedTickets = [...ticketsWithScore].sort((a, b) => {
+      // Perfect claims (valid with missedBy = 0) go first
+      if (a.isValid && !a.missedBy && (!b.isValid || b.missedBy > 0)) return -1;
+      if (b.isValid && !b.missedBy && (!a.isValid || a.missedBy > 0)) return 1;
+      
+      // Then missed claims (valid but missedBy > 0)
+      if (a.isValid && a.missedBy > 0 && !b.isValid) return -1;
+      if (b.isValid && b.missedBy > 0 && !a.isValid) return 1;
+      
+      // Then sort by score
+      return b.score - a.score;
+    });
+    
+    console.log("Claim validity for pattern", currentWinPattern, ":", validTicketsFound.length > 0);
     console.log("Valid tickets found:", validTicketsFound.length);
+    console.log("Missed claims found:", missedClaimsFound.length);
     
-    setIsClaimValid(valid);
+    setIsClaimValid(validTicketsFound.length > 0 || missedClaimsFound.length > 0);
     setValidTickets(validTicketsFound);
+    setMissedClaims(missedClaimsFound);
+    setRankedTickets(sortedTickets);
     
-    // If valid tickets are found, prioritize displaying them
-    if (validTicketsFound.length > 0) {
-      setRankedTickets([...validTicketsFound, ...sortedTickets.filter(
-        ticket => !validTicketsFound.some(vt => vt.serial === ticket.serial)
-      )]);
-    }
   }, [tickets, calledNumbers, currentWinPattern]);
 
   const handleValidClaim = () => {
@@ -208,6 +266,11 @@ export default function ClaimVerificationModal({
                 Found {validTickets.length} valid winning ticket{validTickets.length > 1 ? 's' : ''}
               </div>
             )}
+            {missedClaims.length > 0 && (
+              <div className="text-sm text-orange-500 font-medium mt-1">
+                Found {missedClaims.length} missed claim{missedClaims.length > 1 ? 's' : ''}
+              </div>
+            )}
           </DialogHeader>
 
           <ScrollArea className="mt-4 h-[50vh]">
@@ -215,13 +278,28 @@ export default function ClaimVerificationModal({
               {rankedTickets.map((ticket) => (
                 <div 
                   key={ticket.serial} 
-                  className={`p-2 border rounded-md ${validTickets.some(vt => vt.serial === ticket.serial) ? 'border-green-500 bg-green-50' : 'border-gray-200'}`}
+                  className={`p-2 border rounded-md ${
+                    validTickets.some(vt => vt.serial === ticket.serial) 
+                      ? 'border-green-500 bg-green-50' 
+                      : missedClaims.some(mc => mc.serial === ticket.serial)
+                        ? 'border-orange-500 bg-orange-50'
+                        : 'border-gray-200'
+                  }`}
                 >
                   <div className="flex justify-between text-sm text-gray-500 mb-1">
                     <span>Ticket: {ticket.serial}</span>
-                    <span className={`font-bold ${validTickets.some(vt => vt.serial === ticket.serial) ? 'text-green-600' : ''}`}>
+                    <span className={`font-bold ${
+                      validTickets.some(vt => vt.serial === ticket.serial) 
+                        ? 'text-green-600' 
+                        : missedClaims.some(mc => mc.serial === ticket.serial)
+                          ? 'text-orange-600'
+                          : ''
+                    }`}>
                       Score: {ticket.score}/{ticket.numbers.length} numbers ({ticket.percentMatched}%)
                       {validTickets.some(vt => vt.serial === ticket.serial) && ' - WINNING TICKET'}
+                      {missedClaims.some(mc => mc.serial === ticket.serial) && (
+                        ` - MISSED BY ${ticket.missedBy} CALL${ticket.missedBy > 1 ? 'S' : ''}`
+                      )}
                     </span>
                   </div>
                   <CallerTicketDisplay

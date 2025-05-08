@@ -123,6 +123,7 @@ export default function ClaimVerificationSheet({
     toast({
       title: "Refreshed",
       description: "Claim list has been refreshed",
+      duration: 3000,
     });
   }, [sessionId, fetchClaims, toast]);
 
@@ -186,6 +187,8 @@ export default function ClaimVerificationSheet({
                     <span className="font-semibold">Ticket Status: </span>
                     {claim.toGoCount === 0 ? (
                       <span className="text-green-600 font-bold">Complete (0TG)</span>
+                    ) : claim.toGoCount < 0 ? (
+                      <span className="text-orange-600 font-bold">Missed claim ({claim.toGoCount} numbers ago)</span>
                     ) : (
                       <span className="text-red-600 font-bold">{claim.toGoCount} numbers to go</span>
                     )}

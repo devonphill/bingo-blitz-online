@@ -27,7 +27,7 @@ export default function BingoClaim({
         if (resetClaimStatus) {
           resetClaimStatus();
         }
-      }, 5000);
+      }, 5000); // Reduced from longer durations
       
       return () => clearTimeout(timer);
     }

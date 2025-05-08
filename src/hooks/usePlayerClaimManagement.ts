@@ -37,6 +37,7 @@ export function usePlayerClaimManagement(
               title: "Bingo Validated!",
               description: "Your bingo claim has been verified. Congratulations!",
               variant: "default",
+              duration: 5000, // 5 seconds duration
             });
           } else {
             setClaimStatus('invalid');
@@ -44,13 +45,14 @@ export function usePlayerClaimManagement(
               title: "Claim Rejected",
               description: "Your bingo claim was not verified.",
               variant: "destructive",
+              duration: 5000, // 5 seconds duration
             });
           }
           
           // Reset status after a delay
           setTimeout(() => {
             setClaimStatus('none');
-          }, 10000);
+          }, 5000); // Shorter timeout to match toast duration
         }
       })
       .subscribe();
@@ -156,14 +158,14 @@ export function usePlayerClaimManagement(
         toast({
           title: "Bingo Claim Submitted",
           description: "Your claim has been submitted and is waiting for verification.",
-          duration: 5000,
+          duration: 5000, // 5 seconds duration
         });
       } else {
         toast({
           title: "Claim Submission Failed",
           description: "Failed to submit your claim. Please try again.",
           variant: "destructive",
-          duration: 5000,
+          duration: 5000, // 5 seconds duration
         });
         setClaimStatus('none');
       }
@@ -175,16 +177,17 @@ export function usePlayerClaimManagement(
         title: "Error",
         description: "An unexpected error occurred while submitting your claim.",
         variant: "destructive",
+        duration: 5000, // 5 seconds duration
       });
       setClaimStatus('none');
       return false;
     } finally {
       setIsSubmittingClaim(false);
       
-      // Auto-reset back to 'none' after 30 seconds if still pending
+      // Auto-reset back to 'none' after 15 seconds if still pending (reduced from 30)
       setTimeout(() => {
         setClaimStatus(prev => prev === 'pending' ? 'none' : prev);
-      }, 30000);
+      }, 15000);
     }
   }, [playerCode, playerId, sessionId, playerName, gameNumber, currentWinPattern, gameType, isSubmittingClaim, toast]);
 

@@ -83,7 +83,8 @@ export default function BingoWinProgress({
                 toast({
                   title: "Claim Error",
                   description: "There was a problem submitting your claim.",
-                  variant: "destructive"
+                  variant: "destructive",
+                  duration: 5000, // 5 seconds duration
                 });
               }
             }}
@@ -132,21 +133,47 @@ export default function BingoWinProgress({
   const canClaim = result.isWinner;
   const minTG = result.tg;
   
+  // Check for missed claim
+  let missedBy = 0;
+  if (canClaim) {
+    // Simulate removing numbers one by one from the end
+    for (let i = calledNumbers.length - 1; i >= 0; i--) {
+      const testNumbers = calledNumbers.slice(0, i);
+      const testResult = checkMainstageWinPattern(
+        card,
+        testNumbers,
+        actualWinPattern as any
+      );
+      
+      if (!testResult.isWinner) {
+        // We've found when this ticket became a winner
+        missedBy = calledNumbers.length - i - 1;
+        break;
+      }
+    }
+  }
+  
   return (
     <div className="flex items-center justify-between px-4 py-3 bg-white rounded-lg shadow-sm border border-gray-200">
       <div className="flex flex-col">
         <span className="text-sm text-gray-600">Current Pattern: <span className="font-semibold">{actualWinPattern.replace('MAINSTAGE_', '')}</span></span>
-        <span className={minTG <= 3 ? "font-bold text-green-600" : "font-medium text-gray-700"}>
-          {minTG === 0 
-            ? "Bingo!" 
-            : minTG === 1 
-              ? "1TG" 
-              : minTG === 2 
-                ? "2TG" 
-                : minTG === 3 
-                  ? "3TG" 
-                  : `${minTG} to go`}
-        </span>
+        {missedBy > 0 ? (
+          <span className="font-medium text-orange-600">
+            Missed claim by {missedBy} number{missedBy > 1 ? 's' : ''}!
+          </span>
+        ) : (
+          <span className={minTG <= 3 ? "font-bold text-green-600" : "font-medium text-gray-700"}>
+            {minTG === 0 
+              ? "Bingo!" 
+              : minTG === 1 
+                ? "1TG" 
+                : minTG === 2 
+                  ? "2TG" 
+                  : minTG === 3 
+                    ? "3TG" 
+                    : `${minTG} to go`}
+          </span>
+        )}
       </div>
       
       {handleClaimBingo && (
@@ -160,7 +187,8 @@ export default function BingoWinProgress({
               toast({
                 title: "Claim Error",
                 description: "There was a problem submitting your claim.",
-                variant: "destructive"
+                variant: "destructive",
+                duration: 5000, // 5 seconds duration
               });
             }
           }}
@@ -176,7 +204,7 @@ export default function BingoWinProgress({
           {claimStatus === 'validated' ? 'Win Verified!' : 
            claimStatus === 'rejected' ? 'Claim Rejected' :
            isClaiming ? 'Verifying...' : 
-           canClaim ? 'Claim Bingo!' : 'Not Bingo Yet'}
+           missedBy > 0 ? 'Claim Late Win!' : 'Claim Bingo!'}
         </button>
       )}
     </div>

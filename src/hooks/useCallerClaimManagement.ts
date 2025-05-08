@@ -34,6 +34,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
           title: `${newCount} New Claim${newCount > 1 ? 's' : ''}`,
           description: "Please review pending bingo claims",
           variant: "default",
+          duration: 5000, // 5 seconds duration
         });
       }
     });
@@ -54,6 +55,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
             title: "New Bingo Claim!",
             description: `A player has claimed bingo! Check the claims panel.`,
             variant: "destructive",
+            duration: 5000, // 5 seconds duration
           });
         }
       })
@@ -166,7 +168,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
         toast({
           title: isValid ? "Claim Validated" : "Claim Rejected",
           description: `The claim by player ${claim.playerName} has been ${isValid ? 'validated' : 'rejected'}.`,
-          duration: 3000,
+          duration: 3000, // Shorter duration
         });
         
         // Re-fetch claims to update the UI
@@ -178,7 +180,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
           title: "Processing Failed",
           description: "Failed to process the claim. Please try again.",
           variant: "destructive",
-          duration: 5000,
+          duration: 5000, // 5 seconds duration
         });
         
         return false;
@@ -189,6 +191,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
         title: "Error",
         description: "An unexpected error occurred during claim validation.",
         variant: "destructive",
+        duration: 5000, // 5 seconds duration
       });
       return false;
     } finally {
