@@ -52,7 +52,7 @@ export function Sidebar({ children, className = "" }: { children: React.ReactNod
   return (
     <aside
       id={sidebarId}
-      className={`border-r border-gray-200 bg-white transition-all duration-300 ease-in-out ${open ? 'min-w-64 w-64' : 'w-0 overflow-hidden'} ${className}`}
+      className={`border-r border-gray-200 bg-white ${open ? 'w-64' : 'w-0'} overflow-hidden transition-all duration-300 ease-in-out ${className}`}
       aria-hidden={!open}
     >
       {children}

@@ -209,14 +209,16 @@ export const CompatButton = React.forwardRef<HTMLButtonElement, CompatButtonProp
   ({ className = '', asChild = false, children, ...props }, ref) => {
     // If asChild is true, clone the first child and pass the props
     if (asChild && React.isValidElement(children)) {
-      return React.cloneElement(children, {
+      // Fixed: Pass props properly without including className directly in the spreading
+      const childProps = {
         ...props,
         className: `${children.props.className || ''} ${className}`.trim(),
         ref
-      });
+      };
+      return React.cloneElement(children, childProps);
     }
     
-    // Fixed: Return a button element with props correctly typed
+    // Return a button element with props correctly typed
     return React.createElement(
       'button',
       {

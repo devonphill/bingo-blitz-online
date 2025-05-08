@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import DashboardSidebar from '@/components/dashboard/DashboardSidebar';
@@ -18,7 +18,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   // Default to false to start with sidebar closed
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     logWithTimestamp('MainLayout component mounted', 'debug', 'Layout');
     logWithTimestamp(`Sidebar initial state: ${sidebarOpen ? 'open' : 'closed'}`, 'debug', 'Layout');
     
@@ -30,7 +30,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   return (
     <SidebarProvider defaultOpen={false}>
       <div className="flex min-h-screen w-full">
-        <Sidebar className="transition-all duration-300 w-0 md:w-0">
+        <Sidebar className="transition-all duration-300">
           <div className="p-4 border-b">
             <div className="flex flex-col">
               <h2 className="text-xl font-bold">Bingo Blitz</h2>

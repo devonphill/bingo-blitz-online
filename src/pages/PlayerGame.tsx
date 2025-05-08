@@ -11,6 +11,7 @@ import PlayerGameLayout from '@/components/game/PlayerGameLayout';
 import { logWithTimestamp, logError } from '@/utils/logUtils';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
 import { logReactEnvironment, patchReactForIdPolyfill } from '@/utils/reactUtils';
+import { usePlayerWebSocketNumbers } from '@/hooks/usePlayerWebSocketNumbers';
 
 // Try to patch React.useId as early as possible to prevent errors
 patchReactForIdPolyfill();
@@ -196,6 +197,13 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
   // Initialize tickets hook - only if we have a player code and session
   const { tickets, refreshTickets } = useTickets(playerCode, currentSession?.id);
   
+  // NEW: Use our WebSocket-based numbers hook
+  const { 
+    calledNumbers: wsCalledNumbers, 
+    lastCalledNumber: wsLastCalledNumber,
+    isConnected: wsIsConnected
+  } = usePlayerWebSocketNumbers(currentSession?.id);
+  
   // Set up number called listener using the network context - only if we have a session
   useEffect(() => {
     if (!currentSession?.id) {
@@ -206,7 +214,7 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
     // Set up listener for number called events
     const removeListener = network.addNumberCalledListener((lastCalledNumber, calledNumbers) => {
       if (lastCalledNumber && calledNumbers.length > 0) {
-        logWithTimestamp(`Received number call update: ${lastCalledNumber}, total: ${calledNumbers.length}`);
+        logWithTimestamp(`Received number call update via network context: ${lastCalledNumber}, total: ${calledNumbers.length}`);
         setFinalCalledNumbers(calledNumbers);
         setFinalLastCalledNumber(lastCalledNumber);
         
@@ -227,7 +235,15 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
   
   // Update the finalCalledNumbers whenever our data sources change
   useEffect(() => {
-    // Use the latest data from any source
+    // NEW: Prioritize WebSocket data if available
+    if (wsCalledNumbers && wsCalledNumbers.length > 0) {
+      setFinalCalledNumbers(wsCalledNumbers);
+      setFinalLastCalledNumber(wsLastCalledNumber);
+      logWithTimestamp(`Updated called numbers from WebSocket: ${wsCalledNumbers.length} numbers, last: ${wsLastCalledNumber}`);
+      return;
+    }
+    
+    // Fallback to other sources
     const latestCalledNumbers = sessionProgress?.called_numbers || 
                               currentGameState?.calledNumbers || 
                               calledItems || [];
@@ -242,9 +258,9 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
       setFinalLastCalledNumber(latestLastCalledNumber);
       
       // Log for debugging
-      logWithTimestamp(`Updated called numbers: ${latestCalledNumbers.length} numbers, last: ${latestLastCalledNumber}`);
+      logWithTimestamp(`Updated called numbers from fallback sources: ${latestCalledNumbers.length} numbers, last: ${latestLastCalledNumber}`);
     }
-  }, [sessionProgress, calledItems, lastCalledItem, currentGameState]);
+  }, [sessionProgress, calledItems, lastCalledItem, currentGameState, wsCalledNumbers, wsLastCalledNumber]);
   
   // Handle bingo claims - select the best ticket for claiming
   const handleClaimBingo = React.useCallback(() => {
@@ -387,6 +403,9 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
     claimStatus === 'valid' ? 'validated' : 
     claimStatus === 'invalid' ? 'rejected' : 
     'pending';
+    
+  // Show connection status based on WebSocket connection if that's active
+  const effectiveConnectionState = wsIsConnected ? 'connected' : connectionState;
 
   return (
     <React.Fragment>
@@ -410,7 +429,7 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
         gameType={gameType}
         currentGameNumber={currentGameNumber}
         numberOfGames={numberOfGames}
-        connectionState={connectionState}
+        connectionState={effectiveConnectionState}
         onRefreshTickets={refreshTickets}
         sessionId={currentSession?.id}
       >
