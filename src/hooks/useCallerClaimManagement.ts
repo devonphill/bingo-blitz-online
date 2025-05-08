@@ -242,7 +242,15 @@ export function useCallerClaimManagement(sessionId: string | null) {
         });
         
         // Re-fetch claims to update the UI
-        fetchClaims();
+        const updatedClaims = claimService.getClaimsForSession(sessionId);
+        setClaims(updatedClaims);
+        
+        // Force refresh claims after a short delay to ensure UI is updated
+        setTimeout(() => {
+          fetchClaims();
+        }, 500);
+        
+        return true;
       } else {
         toast({
           title: "Processing Failed",
@@ -250,9 +258,9 @@ export function useCallerClaimManagement(sessionId: string | null) {
           variant: "destructive",
           duration: 5000,
         });
+        
+        return false;
       }
-      
-      return success;
     } catch (error) {
       console.error('Error validating claim:', error);
       toast({

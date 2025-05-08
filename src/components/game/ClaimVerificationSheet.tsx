@@ -66,20 +66,50 @@ export default function ClaimVerificationSheet({
   }, [isOpen, sessionId, fetchClaims]);
   
   // Handle verifying a claim
-  const handleVerify = useCallback((claim: any) => {
+  const handleVerify = useCallback(async (claim: any) => {
     if (!claim) return;
     
     logWithTimestamp(`Verifying claim: ${JSON.stringify(claim)}`, 'info');
-    validateClaim(claim, true);
-  }, [validateClaim]);
+    const success = await validateClaim(claim, true);
+    
+    if (success) {
+      toast({
+        title: "Claim Verified",
+        description: `The claim by ${claim.playerName} has been verified successfully.`,
+        duration: 3000,
+      });
+      
+      // Refresh claims to update UI
+      fetchClaims();
+      
+      // If no claims left, close the sheet after a short delay
+      setTimeout(() => {
+        const remainingClaims = claims.filter(c => c.id !== claim.id);
+        if (remainingClaims.length === 0) {
+          onClose();
+        }
+      }, 1500);
+    }
+  }, [validateClaim, toast, fetchClaims, claims, onClose]);
   
   // Handle rejecting a claim
-  const handleReject = useCallback((claim: any) => {
+  const handleReject = useCallback(async (claim: any) => {
     if (!claim) return;
     
     logWithTimestamp(`Rejecting claim: ${JSON.stringify(claim)}`, 'info');
-    validateClaim(claim, false);
-  }, [validateClaim]);
+    const success = await validateClaim(claim, false);
+    
+    if (success) {
+      toast({
+        title: "Claim Rejected",
+        description: `The claim by ${claim.playerName} has been rejected.`,
+        duration: 3000,
+      });
+      
+      // Refresh claims to update UI
+      fetchClaims();
+    }
+  }, [validateClaim, toast, fetchClaims]);
 
   // Manual refresh function
   const handleRefresh = useCallback(() => {

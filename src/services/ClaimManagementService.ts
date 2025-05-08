@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { v4 as uuidv4 } from 'uuid';
@@ -150,6 +149,27 @@ class ClaimManagementService {
     try {
       logWithTimestamp(`Persisting claim to database for player ${claim.playerName}`, 'info');
       
+      // First check if this claim already exists in the database
+      const { data: existingClaims, error: checkError } = await supabase
+        .from('universal_game_logs')
+        .select('id')
+        .eq('session_id', claim.sessionId)
+        .eq('player_id', claim.playerId)
+        .eq('game_number', claim.gameNumber)
+        .eq('win_pattern', claim.winPattern)
+        .is('validated_at', null);
+      
+      if (checkError) {
+        logWithTimestamp(`Error checking for existing claim: ${checkError.message}`, 'error');
+        return;
+      }
+      
+      // If the claim already exists, don't add a duplicate
+      if (existingClaims && existingClaims.length > 0) {
+        logWithTimestamp(`Claim already exists in database, skipping duplicate`, 'info');
+        return;
+      }
+      
       const { error } = await supabase
         .from('universal_game_logs')
         .insert({
@@ -242,32 +262,66 @@ class ClaimManagementService {
       
       logWithTimestamp(`Processing claim ${claimId} as ${isValid ? 'valid' : 'invalid'}`, 'info');
       
-      // Process the claim in the database - THIS IS WHERE WE WRITE TO DATABASE
-      const { error } = await supabase
+      // Find if there's an existing entry in the database
+      const { data: existingClaims, error: checkError } = await supabase
         .from('universal_game_logs')
-        .insert({
-          session_id: claim.sessionId,
-          player_id: claim.playerId,
-          player_name: claim.playerName,
-          game_number: claim.gameNumber || 1,
-          game_type: claim.gameType || 'mainstage',
-          win_pattern: claim.winPattern || 'oneLine',
-          ticket_serial: claim.ticket.serial,
-          ticket_perm: claim.ticket.perm,
-          ticket_position: claim.ticket.position,
-          ticket_layout_mask: claim.ticket.layoutMask,
-          ticket_numbers: claim.ticket.numbers,
-          called_numbers: claim.calledNumbers,
-          last_called_number: claim.lastCalledNumber,
-          total_calls: claim.calledNumbers.length,
-          claimed_at: claim.claimedAt.toISOString(),
-          validated_at: new Date().toISOString(),
-          prize_shared: isValid
-        });
+        .select('id')
+        .eq('session_id', claim.sessionId)
+        .eq('player_id', claim.playerId)
+        .eq('game_number', claim.gameNumber)
+        .eq('win_pattern', claim.winPattern)
+        .is('validated_at', null);
+        
+      if (checkError) {
+        console.error("Error checking for existing claim:", checkError);
+      }
       
-      if (error) {
-        console.error("Error processing claim:", error);
-        return false;
+      // If we found an existing claim, update it
+      if (existingClaims && existingClaims.length > 0) {
+        logWithTimestamp(`Updating existing claim in database with id ${existingClaims[0].id}`, 'info');
+        
+        const { error: updateError } = await supabase
+          .from('universal_game_logs')
+          .update({
+            validated_at: new Date().toISOString(),
+            prize_shared: isValid
+          })
+          .eq('id', existingClaims[0].id);
+          
+        if (updateError) {
+          console.error("Error updating existing claim:", updateError);
+          return false;
+        }
+      } else {
+        // Otherwise create a new validated entry
+        logWithTimestamp(`Creating new validated claim entry in database`, 'info');
+        
+        const { error: insertError } = await supabase
+          .from('universal_game_logs')
+          .insert({
+            session_id: claim.sessionId,
+            player_id: claim.playerId,
+            player_name: claim.playerName,
+            game_number: claim.gameNumber || 1,
+            game_type: claim.gameType || 'mainstage',
+            win_pattern: claim.winPattern || 'oneLine',
+            ticket_serial: claim.ticket.serial,
+            ticket_perm: claim.ticket.perm,
+            ticket_position: claim.ticket.position,
+            ticket_layout_mask: claim.ticket.layoutMask,
+            ticket_numbers: claim.ticket.numbers,
+            called_numbers: claim.calledNumbers,
+            last_called_number: claim.lastCalledNumber,
+            total_calls: claim.calledNumbers.length,
+            claimed_at: claim.claimedAt.toISOString(),
+            validated_at: new Date().toISOString(),
+            prize_shared: isValid
+          });
+        
+        if (insertError) {
+          console.error("Error creating validated claim:", insertError);
+          return false;
+        }
       }
       
       // Broadcast the result to the player
@@ -277,7 +331,7 @@ class ClaimManagementService {
       queue.splice(claimIndex, 1);
       claimQueues.set(sessionId, queue);
       
-      // Notify subscribers
+      // Notify subscribers about the updated queue
       this.notifySubscribers(sessionId);
       
       logWithTimestamp(`Successfully processed claim ${claimId} as ${isValid ? 'valid' : 'invalid'}. ${queue.length} claims remaining.`, 'info');
