@@ -1,49 +1,70 @@
 
 import { useState, useEffect, useCallback } from 'react';
-import { useToast } from '@/hooks/use-toast';
 import { claimService, BingoClaim } from '@/services/ClaimManagementService';
+import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
 export function useCallerClaimManagement(sessionId: string | null) {
   const [claims, setClaims] = useState<BingoClaim[]>([]);
   const [isProcessingClaim, setIsProcessingClaim] = useState(false);
-  const [claimsCount, setClaimsCount] = useState(0);
   const { toast } = useToast();
 
-  // Listen to claim queue changes
+  // Listen for claims in this session
   useEffect(() => {
     if (!sessionId) return;
     
-    // Register to track this session
+    logWithTimestamp(`Setting up claim listener for session ${sessionId}`, 'info');
+    
+    // Register the session with the claim service
     claimService.registerSession(sessionId);
     
-    // Subscribe to claim queue updates
-    const unsubscribe = claimService.subscribeToClaimQueue(sessionId, (sessionClaims) => {
-      setClaims(sessionClaims);
-      setClaimsCount(sessionClaims.length);
+    // Subscribe to claim updates
+    const unsubscribe = claimService.subscribeToClaimQueue(sessionId, (updatedClaims) => {
+      setClaims(updatedClaims);
       
-      // Show toast notification when new claims arrive
-      if (sessionClaims.length > 0 && sessionClaims.length > claims.length) {
+      // Show toast for new claims
+      if (updatedClaims.length > 0 && claims.length < updatedClaims.length) {
+        const newCount = updatedClaims.length - claims.length;
         toast({
-          title: "New Bingo Claim",
-          description: `${sessionClaims[0].playerName} is claiming bingo!`,
-          duration: 5000
+          title: `${newCount} New Claim${newCount > 1 ? 's' : ''}`,
+          description: "Please review pending bingo claims",
+          variant: "default",
         });
       }
     });
     
+    // Also listen for broadcast claim events as a backup
+    const channel = supabase.channel('game-updates')
+      .on('broadcast', { event: 'new-claim' }, payload => {
+        if (payload.payload && payload.payload.sessionId === sessionId) {
+          logWithTimestamp(`Received new claim broadcast for session ${sessionId}`, 'info');
+          // Force refetch claims - this is just a backup, the subscription should handle it
+          claimService.subscribeToClaimQueue(sessionId, () => {});
+        }
+      })
+      .subscribe();
+      
     return () => {
       unsubscribe();
-      // Unregister session when component unmounts
-      claimService.unregisterSession(sessionId);
+      supabase.removeChannel(channel);
     };
-  }, [sessionId, toast, claims.length]);
+  }, [sessionId, claims.length, toast]);
 
-  // Handle validating a claim
+  // Validate a claim (approve or reject)
   const validateClaim = useCallback(async (claim: BingoClaim, isValid: boolean) => {
-    if (!sessionId) return false;
+    if (!sessionId || !claim || !claim.id) {
+      logWithTimestamp('Cannot validate claim - missing required information', 'error');
+      return false;
+    }
+    
+    if (isProcessingClaim) {
+      logWithTimestamp('Claim validation already in progress', 'warn');
+      return false;
+    }
     
     setIsProcessingClaim(true);
+    
     try {
       logWithTimestamp(`Processing claim ${claim.id} as ${isValid ? 'valid' : 'invalid'}`, 'info');
       
@@ -52,14 +73,15 @@ export function useCallerClaimManagement(sessionId: string | null) {
       if (success) {
         toast({
           title: isValid ? "Claim Validated" : "Claim Rejected",
-          description: `${claim.playerName}'s claim has been ${isValid ? 'validated' : 'rejected'}.`,
-          duration: 3000
+          description: `The claim by player ${claim.playerName} has been ${isValid ? 'validated' : 'rejected'}.`,
+          duration: 3000,
         });
       } else {
         toast({
-          title: "Error Processing Claim",
+          title: "Processing Failed",
           description: "Failed to process the claim. Please try again.",
           variant: "destructive",
+          duration: 5000,
         });
       }
       
@@ -68,26 +90,22 @@ export function useCallerClaimManagement(sessionId: string | null) {
       console.error('Error validating claim:', error);
       toast({
         title: "Error",
-        description: "An unexpected error occurred while processing the claim.",
+        description: "An unexpected error occurred during claim validation.",
         variant: "destructive",
       });
       return false;
     } finally {
       setIsProcessingClaim(false);
     }
-  }, [sessionId, toast]);
+  }, [sessionId, isProcessingClaim, toast]);
 
-  // Clear all claims for the session
-  const clearClaims = useCallback(() => {
-    if (!sessionId) return;
-    claimService.clearClaimsForSession(sessionId);
-  }, [sessionId]);
+  // Get the count of pending claims
+  const claimsCount = claims.length;
 
   return {
     claims,
     claimsCount,
     validateClaim,
-    clearClaims,
     isProcessingClaim
   };
 }

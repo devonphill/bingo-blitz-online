@@ -1,8 +1,8 @@
-
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { connectionManager } from '@/utils/connectionManager';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { claimService } from '@/services/ClaimManagementService';
 
 // Export the ConnectionState type so it can be used by other components
 // Fix: Use 'export type' for re-exporting when isolatedModules is enabled
@@ -178,34 +178,43 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       logWithTimestamp(`Submitting bingo claim for player ${playerCode} in session ${sessionId}`, 'info');
       
-      // FIX: Update the fields to match the universal_game_logs table schema
-      // According to the error, action and ticket_data don't exist, and we need to use the proper required fields
+      // First, we need to fetch the actual player ID
       supabase
-        .from('universal_game_logs')
-        .insert({
-          session_id: sessionId,
-          player_name: playerCode,
-          game_type: 'unknown', // Required field
-          game_number: 1, // Required field
-          win_pattern: 'unknown', // Required field
-          claimed_at: new Date().toISOString(),
-          player_id: '00000000-0000-0000-0000-000000000000', // Required field, using a placeholder
-          ticket_perm: ticket.perm || 0, // Required field
-          ticket_layout_mask: ticket.layout_mask || 0, // Required field
-          ticket_numbers: ticket.numbers || [], // Required field
-          total_calls: 0, // Required field
-          ticket_serial: ticket.serial || 'unknown', // Required field
-          called_numbers: [] // Required field
-        })
-        .then(({ error }) => {
+        .from('players')
+        .select('id, nickname')
+        .eq('player_code', playerCode)
+        .eq('session_id', sessionId)
+        .single()
+        .then(({ data, error }) => {
           if (error) {
-            logWithTimestamp(`Error submitting bingo claim: ${error.message}`, 'error');
-          } else {
-            logWithTimestamp(`Bingo claim submitted successfully`, 'info');
+            logWithTimestamp(`Error finding player by code: ${error.message}`, 'error');
+            return false;
           }
+          
+          if (!data) {
+            logWithTimestamp(`No player found with code ${playerCode}`, 'error');
+            return false;
+          }
+          
+          // Submit the claim using the claim service
+          return claimService.submitClaim({
+            playerId: data.id,
+            playerName: data.nickname || playerCode,
+            sessionId: sessionId,
+            ticket: {
+              serial: ticket.serial,
+              perm: ticket.perm,
+              position: ticket.position,
+              layoutMask: ticket.layout_mask || ticket.layoutMask,
+              numbers: ticket.numbers
+            },
+            gameType: 'mainstage', // Default, can be changed later
+            calledNumbers: ticket.calledNumbers || [],
+            lastCalledNumber: ticket.lastCalledNumber || null
+          });
         });
-        
-      return true;
+      
+      return true; // Return true to indicate claim submission attempt started
     } catch (err) {
       logWithTimestamp(`Exception submitting bingo claim: ${(err as Error).message}`, 'error');
       return false;
@@ -220,23 +229,8 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return false;
       }
       
-      // Update the claim record with validation status
-      const { error } = await supabase
-        .from('universal_game_logs')
-        .update({
-          validated_at: new Date().toISOString(),
-          validated_by: 'caller',
-          validation_result: isValid ? 'valid' : 'invalid'
-        })
-        .eq('id', claim.id);
-        
-      if (error) {
-        logWithTimestamp(`Error validating claim: ${error.message}`, 'error');
-        return false;
-      }
-      
-      logWithTimestamp(`Claim ${claim.id} validated as ${isValid ? 'valid' : 'invalid'}`, 'info');
-      return true;
+      // Use claim service to validate
+      return await claimService.processClaim(claim.id, claim.sessionId, isValid);
     } catch (err) {
       logWithTimestamp(`Exception validating claim: ${(err as Error).message}`, 'error');
       return false;
