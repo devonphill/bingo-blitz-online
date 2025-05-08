@@ -19,6 +19,7 @@ export function usePlayerWebSocketNumbers(sessionId: string | undefined) {
       return;
     }
 
+    logWithTimestamp(`[usePlayerWebSocketNumbers] Setting up connection for session ${sessionId}`, 'info');
     setIsConnected(true);
     
     // Get initial state

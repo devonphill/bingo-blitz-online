@@ -107,6 +107,27 @@ class PlayerNumbersWebSocketService {
       // Also fetch latest state from database as a backup
       this.fetchStateFromDatabase(sessionId);
 
+      // Add a listener for the generic 'number-broadcast' channel too
+      const genericChannel = supabase.channel('number-broadcast')
+        .on('broadcast', { event: 'number-called' }, payload => {
+          try {
+            if (payload.payload && payload.payload.sessionId === sessionId) {
+              const { lastCalledNumber, calledNumbers, timestamp, broadcastId } = payload.payload;
+              
+              logWithTimestamp(`[PlayerNumbersWebSocket] Received number update from generic channel: ${lastCalledNumber}, sessionId: ${sessionId}`, 'info');
+              
+              this.handleNumberCalledEvent(sessionId, payload.payload);
+            }
+          } catch (error) {
+            logWithTimestamp(`[PlayerNumbersWebSocket] Error handling generic broadcast: ${error}`, 'error');
+          }
+        })
+        .subscribe(status => {
+          logWithTimestamp(`[PlayerNumbersWebSocket] Generic channel status: ${status}`, 'debug');
+        });
+      
+      this.channels.set('number-broadcast', genericChannel);
+
     } catch (error) {
       logWithTimestamp(`[PlayerNumbersWebSocket] Error initializing connection: ${error}`, 'error');
     }
