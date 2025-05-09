@@ -9,12 +9,12 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle, XCircle, Loader, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { logWithTimestamp } from '@/utils/logUtils';
-import CallerTicketDisplay from './CallerTicketDisplay';
 import { useCallerClaimManagement } from '@/hooks/useCallerClaimManagement';
-import { supabase } from '@/integrations/supabase/client';
-import { validateChannelType } from '@/utils/typeUtils';
+import { usePatternProgression } from '@/hooks/usePatternProgression';
+import ClaimsList from './ClaimsList';
+import { ClaimData } from '@/types/claim';
 
 interface ClaimVerificationSheetProps {
   isOpen: boolean;
@@ -51,6 +51,9 @@ export default function ClaimVerificationSheet({
   const { toast } = useToast();
   const [autoClose, setAutoClose] = useState(true);
 
+  // Use the pattern progression hook
+  const { findNextWinPattern, progressToNextPattern } = usePatternProgression(sessionId || null);
+
   // Debug log when sheet is opened/closed
   useEffect(() => {
     logWithTimestamp(`ClaimVerificationSheet: isOpen=${isOpen}`, 'info');
@@ -73,79 +76,8 @@ export default function ClaimVerificationSheet({
     }
   }, [isOpen, sessionId, fetchClaims]);
   
-  // Find the next win pattern after the current one
-  const findNextWinPattern = useCallback(async () => {
-    if (!sessionId || !gameNumber) return null;
-    
-    try {
-      logWithTimestamp(`Finding next win pattern after ${currentWinPattern} for game ${gameNumber}`, 'info');
-      
-      const { data: gameSessionData, error: fetchError } = await supabase
-        .from('game_sessions')
-        .select('games_config')
-        .eq('id', sessionId)
-        .single();
-        
-      if (fetchError) {
-        console.error("Error fetching game config:", fetchError);
-        return null;
-      }
-      
-      if (!gameSessionData?.games_config) {
-        logWithTimestamp(`No game configs found for session ${sessionId}`, 'warn');
-        return null;
-      }
-      
-      // Parse game configs if needed
-      const configs = typeof gameSessionData.games_config === 'string'
-        ? JSON.parse(gameSessionData.games_config)
-        : gameSessionData.games_config;
-        
-      // Find config for current game
-      const currentConfig = configs.find((config: any) => 
-        config.gameNumber === gameNumber || config.game_number === gameNumber
-      );
-      
-      if (!currentConfig || !currentConfig.patterns) {
-        logWithTimestamp(`No pattern config found for game ${gameNumber}`, 'warn');
-        return null;
-      }
-      
-      // Get all active patterns
-      const activePatterns = Object.entries(currentConfig.patterns)
-        .filter(([_, pattern]: [string, any]) => pattern.active === true)
-        .map(([id, pattern]: [string, any]) => ({
-          id,
-          ...pattern
-        }));
-      
-      logWithTimestamp(`Found ${activePatterns.length} active patterns: ${activePatterns.map(p => p.id).join(', ')}`, 'info');
-      
-      // If no currentWinPattern, return the first active pattern
-      if (!currentWinPattern && activePatterns.length > 0) {
-        return activePatterns[0];
-      }
-      
-      // Find index of current pattern
-      const currentIndex = activePatterns.findIndex(p => p.id === currentWinPattern);
-      if (currentIndex < 0 || currentIndex >= activePatterns.length - 1) {
-        logWithTimestamp(`Current pattern is the last one or not found: ${currentWinPattern}`, 'info');
-        return null; // No next pattern
-      }
-      
-      // Return next pattern
-      const nextPattern = activePatterns[currentIndex + 1];
-      logWithTimestamp(`Found next pattern: ${nextPattern.id}`, 'info');
-      return nextPattern;
-      
-    } catch (error) {
-      console.error("Error finding next win pattern:", error);
-      return null;
-    }
-  }, [sessionId, gameNumber, currentWinPattern]);
-  
   // Handle verifying a claim
-  const handleVerify = useCallback(async (claim: any) => {
+  const handleVerify = useCallback(async (claim: ClaimData) => {
     if (!claim) {
       logWithTimestamp(`ClaimVerificationSheet: Cannot verify null claim`, 'error');
       return;
@@ -153,52 +85,17 @@ export default function ClaimVerificationSheet({
     
     logWithTimestamp(`ClaimVerificationSheet: Verifying claim: ${claim.id}`, 'info');
     
-    // We'll pass onGameProgress callback if it exists for game progression
+    // Pass onGameProgress callback if it exists for game progression
     const success = await validateClaim(claim, true, onGameProgress);
     
     if (success) {
       // After successful validation, update the current win pattern
       // but only if we have more patterns to progress to
-      const nextPattern = await findNextWinPattern();
+      const nextPattern = await findNextWinPattern(currentWinPattern || null, gameNumber);
       
       if (nextPattern && sessionId) {
-        logWithTimestamp(`Progressing to next pattern: ${nextPattern.id}, prize: ${nextPattern.prizeAmount}, description: ${nextPattern.description}`, 'info');
-        
-        // Update session progress with next pattern
-        const { error: updateError } = await supabase
-          .from('sessions_progress')
-          .update({
-            current_win_pattern: nextPattern.id,
-            current_prize: String(nextPattern.prizeAmount || '10.00'),
-            current_prize_description: String(nextPattern.description || `${nextPattern.id} Prize`)
-          })
-          .eq('session_id', sessionId);
-          
-        if (updateError) {
-          console.error("Error updating win pattern:", updateError);
-          logWithTimestamp(`Error updating to next pattern: ${updateError.message}`, 'error');
-        } else {
-          logWithTimestamp(`Successfully updated to next pattern: ${nextPattern.id}`, 'info');
-          
-          // Broadcast pattern change for realtime update - Using validateChannelType and ensuring strings
-          try {
-            const broadcastChannel = supabase.channel('pattern-updates');
-            await broadcastChannel.send({
-              type: validateChannelType('broadcast'),
-              event: 'pattern-changed',
-              payload: {
-                sessionId: String(sessionId),
-                winPattern: String(nextPattern.id),
-                prize: String(nextPattern.prizeAmount || '10.00'),
-                prizeDescription: String(nextPattern.description || `${nextPattern.id} Prize`)
-              }
-            });
-            
-            logWithTimestamp(`Pattern change broadcast sent for pattern: ${nextPattern.id}`, 'info');
-          } catch (err) {
-            console.error("Error broadcasting pattern update:", err);
-          }
-        }
+        // Progress to the next pattern
+        await progressToNextPattern(nextPattern, sessionId);
       } else {
         logWithTimestamp(`No next pattern found or this was the final pattern`, 'info');
       }
@@ -220,10 +117,10 @@ export default function ClaimVerificationSheet({
         }
       }, 1500);
     }
-  }, [validateClaim, toast, fetchClaims, claims, onClose, autoClose, sessionId, findNextWinPattern, onGameProgress]);
+  }, [validateClaim, toast, fetchClaims, claims, onClose, autoClose, sessionId, findNextWinPattern, progressToNextPattern, currentWinPattern, gameNumber, onGameProgress]);
   
   // Handle rejecting a claim
-  const handleReject = useCallback(async (claim: any) => {
+  const handleReject = useCallback(async (claim: ClaimData) => {
     if (!claim) {
       logWithTimestamp(`ClaimVerificationSheet: Cannot reject null claim`, 'error');
       return;
@@ -236,7 +133,7 @@ export default function ClaimVerificationSheet({
       toast({
         title: "Claim Rejected",
         description: `The claim by ${claim.playerName} has been rejected.`,
-        duration: 3000, // Reduced to 3 seconds
+        duration: 3000,
       });
       
       // Refresh claims to update UI
@@ -253,7 +150,7 @@ export default function ClaimVerificationSheet({
     toast({
       title: "Claims Refreshed",
       description: "Claim list has been manually refreshed",
-      duration: 2000, // Even shorter for this minor notification
+      duration: 2000,
     });
   }, [sessionId, forceRefresh, toast]);
 
@@ -295,101 +192,17 @@ export default function ClaimVerificationSheet({
             />
           </div>
           
-          {!claims || claims.length === 0 ? (
-            <div className="text-center text-gray-500 p-8">
-              <p className="mb-2">No claims to review at this time.</p>
-              <p className="text-sm text-muted-foreground mb-4">
-                Claims will appear here automatically when players submit them.
-              </p>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={handleRefresh}
-                className="mx-auto"
-              >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Force Refresh
-              </Button>
-            </div>
-          ) : (
-            claims.map((claim, index) => (
-              <div key={claim.id || index} className="border rounded-md p-4">
-                <div className="font-bold">Claim Details</div>
-                <div>Player: {claim.playerName || claim.playerId}</div>
-                <div>Session: {claim.sessionId?.substring(0, 8)}...</div>
-                <div>Game: {claim.gameNumber || gameNumber}</div>
-                <div>Pattern: {claim.winPattern || currentWinPattern}</div>
-                <div>Claimed at: {new Date(claim.timestamp).toLocaleTimeString()}</div>
-                
-                {claim.toGoCount !== undefined && (
-                  <div className="mt-2 bg-yellow-50 p-2 rounded">
-                    <span className="font-semibold">Ticket Status: </span>
-                    {claim.toGoCount === 0 ? (
-                      <span className="text-green-600 font-bold">Complete (0TG)</span>
-                    ) : claim.toGoCount < 0 ? (
-                      <span className="text-orange-600 font-bold">Missed claim ({-claim.toGoCount} numbers ago)</span>
-                    ) : (
-                      <span className="text-red-600 font-bold">{claim.toGoCount} numbers to go</span>
-                    )}
-                    {claim.hasLastCalledNumber && (
-                      <span className="ml-2 bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded">
-                        Has last called number
-                      </span>
-                    )}
-                  </div>
-                )}
-                
-                {/* Display the ticket information */}
-                {claim.ticket && (
-                  <div className="mt-4 border-t pt-3">
-                    <h3 className="font-medium text-sm mb-2">Claimed Ticket:</h3>
-                    <CallerTicketDisplay
-                      ticket={{
-                        numbers: claim.ticket.numbers,
-                        layoutMask: claim.ticket.layoutMask,
-                        serial: claim.ticket.serial || "Unknown",
-                        perm: claim.ticket.perm,
-                        position: claim.ticket.position
-                      }}
-                      calledNumbers={currentCalledNumbers || claim.calledNumbers || []}
-                      lastCalledNumber={currentNumber || claim.lastCalledNumber}
-                      gameType={gameType}
-                      winPattern={currentWinPattern || claim.winPattern}
-                    />
-                  </div>
-                )}
-                
-                <div className="flex justify-end gap-2 mt-4">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => handleVerify(claim)}
-                    disabled={isProcessingClaim}
-                    className="bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
-                  >
-                    {isProcessingClaim ? (
-                      <Loader className="h-4 w-4 animate-spin mr-2" />
-                    ) : (
-                      <CheckCircle className="h-4 w-4 mr-2" />
-                    )}
-                    Verify
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    onClick={() => handleReject(claim)}
-                    disabled={isProcessingClaim}
-                    className="bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
-                  >
-                    {isProcessingClaim ? (
-                      <Loader className="h-4 w-4 animate-spin mr-2" />
-                    ) : (
-                      <XCircle className="h-4 w-4 mr-2" />
-                    )}
-                    Reject
-                  </Button>
-                </div>
-              </div>
-            ))
-          )}
+          <ClaimsList
+            claims={claims || []}
+            currentCalledNumbers={currentCalledNumbers}
+            currentNumber={currentNumber}
+            gameType={gameType}
+            currentWinPattern={currentWinPattern || null}
+            onVerify={handleVerify}
+            onReject={handleReject}
+            isProcessingClaim={isProcessingClaim}
+            onRefresh={handleRefresh}
+          />
         </div>
       </SheetContent>
     </Sheet>

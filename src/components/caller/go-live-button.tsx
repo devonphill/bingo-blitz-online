@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -11,7 +12,7 @@ interface GoLiveButtonProps {
 
 export function GoLiveButton({ sessionId, onClick }: GoLiveButtonProps) {
   const { toast } = useToast();
-  const { setLive, isLoading: isSettingLive } = useSessionLifecycle();
+  const { goLive, isUpdating } = useSessionLifecycle();
   const { initializeSessionPattern } = useSessionPatternManager(sessionId || null);
 
   const handleGoLive = async () => {
@@ -26,7 +27,7 @@ export function GoLiveButton({ sessionId, onClick }: GoLiveButtonProps) {
 
     try {
       // Set the session to live
-      const success = await setLive(sessionId);
+      const success = await goLive(sessionId);
 
       if (success) {
         toast({
@@ -56,8 +57,8 @@ export function GoLiveButton({ sessionId, onClick }: GoLiveButtonProps) {
   };
 
   return (
-    <Button onClick={handleGoLive} disabled={isSettingLive} className="w-full">
-      {isSettingLive ? 'Setting Live...' : 'Go Live'}
+    <Button onClick={handleGoLive} disabled={isUpdating} className="w-full">
+      {isUpdating ? 'Setting Live...' : 'Go Live'}
     </Button>
   );
 }

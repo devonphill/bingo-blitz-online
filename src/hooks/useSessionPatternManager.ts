@@ -1,254 +1,231 @@
 
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { validateChannelType } from '@/utils/typeUtils';
 import { logWithTimestamp } from '@/utils/logUtils';
 
-export function useSessionPatternManager(sessionId: string | null = null) {
-  const [isLoading, setIsLoading] = useState(false);
+/**
+ * Hook for managing session pattern patterns
+ */
+export function useSessionPatternManager(sessionId: string | null) {
   const { toast } = useToast();
-  
-  /**
-   * Updates the game configuration for a session
-   */
-  const updateGameConfig = useCallback(async (sessionId: string, gameConfigs: any[]) => {
-    try {
-      if (!sessionId) return false;
-      
-      // Convert gameConfigs to string for storage if needed
-      const configData = Array.isArray(gameConfigs) ? gameConfigs : [];
-      
-      const { error } = await supabase
-        .from('game_sessions')
-        .update({ games_config: configData })
-        .eq('id', sessionId);
-        
-      if (error) {
-        console.error("Error updating game config:", error);
-        return false;
-      }
-      
-      // Broadcast update to any connected players
-      const channel = supabase.channel('game-config-updates');
-      await channel.send({
-        type: validateChannelType('broadcast'),
-        event: 'config-updated', 
-        payload: { 
-          sessionId: String(sessionId), // Fix: Convert to string explicitly
-          timestamp: new Date().getTime() 
-        }
-      });
-      
-      return true;
-    } catch (err) {
-      console.error("Error in updateGameConfig:", err);
-      return false;
-    }
-  }, []);
-  
-  /**
-   * Updates the current win pattern, prize and description
-   */
-  const updateWinPattern = useCallback(async (
-    sessionId: string,
-    winPattern: string,
-    prize?: string,
-    description?: string
-  ) => {
-    if (!sessionId || !winPattern) return false;
-    
-    try {
-      const { error } = await supabase
-        .from('sessions_progress')
-        .update({
-          current_win_pattern: winPattern,
-          current_prize: prize || '10.00',
-          current_prize_description: description || `${winPattern} Prize`
-        })
-        .eq('session_id', sessionId);
-        
-      if (error) {
-        console.error("Error updating win pattern:", error);
-        return false;
-      }
-      
-      // Broadcast the update
-      const broadcastChannel = supabase.channel('pattern-updates');
-      await broadcastChannel.send({
-        type: validateChannelType('broadcast'),
-        event: 'pattern-changed',
-        payload: {
-          sessionId: String(sessionId), // Fix: Convert to string explicitly
-          winPattern,
-          prize: prize || '10.00',
-          prizeDescription: description || `${winPattern} Prize`
-        }
-      });
-      
-      return true;
-    } catch (error) {
-      console.error("Error updating win pattern:", error);
-      return false;
-    }
-  }, []);
 
   /**
-   * Initializes the session pattern if it doesn't have one yet
+   * Initialize the session pattern if it doesn't already have one
    */
   const initializeSessionPattern = useCallback(async () => {
-    if (!sessionId) return false;
-    
+    if (!sessionId) {
+      logWithTimestamp('Cannot initialize session pattern: No session ID', 'error');
+      return false;
+    }
+
     try {
-      logWithTimestamp(`Initializing session pattern for session ${sessionId}`, 'info');
-      
-      // Check if the session already has a pattern
-      const { data, error } = await supabase
+      // First check if there's already a pattern set
+      const { data: progressData } = await supabase
         .from('sessions_progress')
         .select('current_win_pattern, current_game_number')
         .eq('session_id', sessionId)
-        .single();
-        
-      if (error) {
-        logWithTimestamp(`Error fetching session progress: ${error.message}`, 'error');
-        return false;
-      }
-      
-      // If already has a pattern, no need to initialize
-      if (data && data.current_win_pattern) {
-        logWithTimestamp(`Session already has pattern: ${data.current_win_pattern}`, 'info');
+        .maybeSingle();
+
+      // If there's already a pattern set, we don't need to do anything
+      if (progressData?.current_win_pattern) {
+        logWithTimestamp('Session already has a win pattern set', 'info');
         return true;
       }
-      
-      // Fetch game config to get initial pattern
-      const { data: sessionData, error: sessionError } = await supabase
+
+      // Get the game number
+      const gameNumber = progressData?.current_game_number || 1;
+
+      // Get the game config for this session
+      const { data: sessionData } = await supabase
         .from('game_sessions')
         .select('games_config')
         .eq('id', sessionId)
         .single();
-        
-      if (sessionError || !sessionData) {
-        logWithTimestamp(`Error fetching game config: ${sessionError?.message || 'No data'}`, 'error');
+
+      if (!sessionData || !sessionData.games_config) {
+        logWithTimestamp('No game config found for session', 'warn');
         return false;
       }
-      
-      // Parse the games config
-      const gameConfigs = typeof sessionData.games_config === 'string'
-        ? JSON.parse(sessionData.games_config)
+
+      // Parse the games config if needed
+      const gamesConfig = typeof sessionData.games_config === 'string' 
+        ? JSON.parse(sessionData.games_config) 
         : sessionData.games_config;
-      
-      if (!Array.isArray(gameConfigs) || gameConfigs.length === 0) {
-        logWithTimestamp(`No game configs found for session ${sessionId}`, 'warn');
-        return false;
-      }
-      
-      // Find the first game and its first active pattern
-      const gameNumber = data?.current_game_number || 1;
-      const gameConfig = gameConfigs.find((g: any) => 
-        g.gameNumber === gameNumber || g.game_number === gameNumber
+
+      // Find the config for the current game
+      const currentGameConfig = gamesConfig.find((config: any) => 
+        config.gameNumber === gameNumber || config.game_number === gameNumber
       );
-      
-      if (!gameConfig || !gameConfig.patterns) {
-        logWithTimestamp(`No patterns found for game ${gameNumber}`, 'warn');
+
+      if (!currentGameConfig || !currentGameConfig.patterns) {
+        logWithTimestamp('No patterns found in game config', 'warn');
         return false;
       }
-      
-      // Find first active pattern
-      const patterns = Object.entries(gameConfig.patterns);
-      const firstActivePattern = patterns.find(([_, p]: [string, any]) => p.active === true);
-      
+
+      // Get the first active pattern
+      const patternEntries = Object.entries(currentGameConfig.patterns);
+      const firstActivePattern = patternEntries.find(([_, pattern]: [string, any]) => pattern.active);
+
       if (!firstActivePattern) {
-        logWithTimestamp(`No active patterns found for game ${gameNumber}`, 'warn');
+        logWithTimestamp('No active patterns found', 'warn');
         return false;
       }
-      
-      const [patternId, pattern] = firstActivePattern;
-      
-      // Update the session with the first pattern
-      return updateWinPattern(
-        sessionId,
-        patternId,
-        pattern.prizeAmount,
-        pattern.description
-      );
-    } catch (err) {
-      logWithTimestamp(`Error initializing session pattern: ${(err as Error).message}`, 'error');
+
+      const [patternId, patternDetails] = firstActivePattern as [string, Record<string, any>];
+      const { prizeAmount, description } = patternDetails;
+
+      // Set the initial pattern
+      const { error } = await supabase
+        .from('sessions_progress')
+        .update({
+          current_win_pattern: patternId,
+          current_prize: String(prizeAmount || '10.00'),
+          current_prize_description: description ? String(description) : `${patternId} Prize`
+        })
+        .eq('session_id', sessionId);
+
+      if (error) {
+        console.error('Error setting initial pattern:', error);
+        return false;
+      }
+
+      logWithTimestamp(`Initialized win pattern to: ${patternId}`, 'info');
+      return true;
+    } catch (error) {
+      console.error('Error initializing session pattern:', error);
       return false;
     }
-  }, [sessionId, updateWinPattern]);
+  }, [sessionId]);
 
   /**
-   * Updates the prize information for a specific win pattern
+   * Update the win pattern for the session
    */
-  const updatePatternPrizeInfo = useCallback(async (winPattern: string) => {
-    if (!sessionId || !winPattern) return false;
-    
+  const updateWinPattern = useCallback(async (patternId: string) => {
+    if (!sessionId) {
+      toast({
+        title: 'Error',
+        description: 'Cannot update pattern: No active session',
+        variant: 'destructive',
+      });
+      return false;
+    }
+
     try {
-      // Fetch game config to get pattern details
-      const { data: sessionData, error: sessionError } = await supabase
-        .from('game_sessions')
-        .select('games_config')
-        .eq('id', sessionId)
-        .single();
-        
-      if (sessionError || !sessionData) {
-        logWithTimestamp(`Error fetching game config: ${sessionError?.message || 'No data'}`, 'error');
+      // Update the pattern in the database
+      const { error } = await supabase
+        .from('sessions_progress')
+        .update({ 
+          current_win_pattern: patternId
+        })
+        .eq('session_id', sessionId);
+
+      if (error) {
+        toast({
+          title: 'Error',
+          description: `Failed to update win pattern: ${error.message}`,
+          variant: 'destructive',
+        });
         return false;
       }
-      
-      // Get current game number
-      const { data: progressData, error: progressError } = await supabase
+
+      // Also update the prize information
+      await updatePatternPrizeInfo(patternId);
+
+      toast({
+        title: 'Pattern Updated',
+        description: `Win pattern has been updated to ${patternId}`,
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Error updating win pattern:', error);
+      toast({
+        title: 'Error',
+        description: 'An unexpected error occurred',
+        variant: 'destructive',
+      });
+      return false;
+    }
+  }, [sessionId, toast]);
+
+  /**
+   * Update the prize information for the pattern
+   */
+  const updatePatternPrizeInfo = useCallback(async (patternId: string) => {
+    if (!sessionId) return false;
+
+    try {
+      // Get the current game number
+      const { data: progressData } = await supabase
         .from('sessions_progress')
         .select('current_game_number')
         .eq('session_id', sessionId)
         .single();
-        
-      if (progressError || !progressData) {
-        logWithTimestamp(`Error fetching session progress: ${progressError?.message || 'No data'}`, 'error');
+
+      const gameNumber = progressData?.current_game_number || 1;
+
+      // Get the game config for this session
+      const { data: sessionData } = await supabase
+        .from('game_sessions')
+        .select('games_config')
+        .eq('id', sessionId)
+        .single();
+
+      if (!sessionData?.games_config) {
         return false;
       }
-      
-      // Parse the games config
-      const gameConfigs = typeof sessionData.games_config === 'string'
+
+      // Parse the games config if needed
+      const gamesConfig = typeof sessionData.games_config === 'string'
         ? JSON.parse(sessionData.games_config)
         : sessionData.games_config;
-      
-      if (!Array.isArray(gameConfigs) || gameConfigs.length === 0) {
-        logWithTimestamp(`No game configs found for session ${sessionId}`, 'warn');
+
+      // Find the config for the current game
+      const currentGameConfig = gamesConfig.find((config: any) =>
+        config.gameNumber === gameNumber || config.game_number === gameNumber
+      );
+
+      if (!currentGameConfig?.patterns?.[patternId]) {
         return false;
       }
+
+      // Get the pattern details
+      const patternDetails = currentGameConfig.patterns[patternId];
       
-      // Find the current game and the specified pattern
-      const gameNumber = progressData.current_game_number;
-      const gameConfig = gameConfigs.find((g: any) => 
-        g.gameNumber === gameNumber || g.game_number === gameNumber
-      );
-      
-      if (!gameConfig || !gameConfig.patterns || !gameConfig.patterns[winPattern]) {
-        logWithTimestamp(`Pattern ${winPattern} not found for game ${gameNumber}`, 'warn');
+      // Safely type guard patternDetails
+      const prizeAmount = patternDetails && typeof patternDetails === 'object' && 'prizeAmount' in patternDetails 
+        ? patternDetails.prizeAmount 
+        : '10.00';
+        
+      const description = patternDetails && typeof patternDetails === 'object' && 'description' in patternDetails
+        ? patternDetails.description
+        : `${patternId} Prize`;
+
+      // Update the prize information
+      const { error } = await supabase
+        .from('sessions_progress')
+        .update({
+          current_prize: String(prizeAmount || '10.00'),
+          current_prize_description: String(description || `${patternId} Prize`)
+        })
+        .eq('session_id', sessionId);
+
+      if (error) {
+        console.error('Error updating prize info:', error);
         return false;
       }
-      
-      const patternInfo = gameConfig.patterns[winPattern];
-      
-      // Update the session with the pattern info
-      return updateWinPattern(
-        sessionId,
-        winPattern,
-        patternInfo.prizeAmount,
-        patternInfo.description
-      );
-    } catch (err) {
-      logWithTimestamp(`Error updating pattern prize: ${(err as Error).message}`, 'error');
+
+      return true;
+    } catch (error) {
+      console.error('Error updating pattern prize info:', error);
       return false;
     }
-  }, [sessionId, updateWinPattern]);
+  }, [sessionId]);
 
   return {
-    isLoading,
-    updateGameConfig,
-    updateWinPattern,
     initializeSessionPattern,
+    updateWinPattern,
     updatePatternPrizeInfo
   };
 }
