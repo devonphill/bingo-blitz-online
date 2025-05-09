@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { connectionManager } from '@/utils/connectionManager';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { claimService } from '@/services/ClaimManagementService';
+import { validateChannelType } from '@/utils/typeUtils';
 
 // Export the ConnectionState type so it can be used by other components
 // Fix: Use 'export type' for re-exporting when isolatedModules is enabled

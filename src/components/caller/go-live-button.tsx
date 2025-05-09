@@ -6,6 +6,7 @@ import { Play } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { useSessionPatternManager } from '@/hooks/useSessionPatternManager';
+import { validateChannelType } from '@/utils/typeUtils';
 
 interface GoLiveButtonProps {
   sessionId: string;
@@ -106,7 +107,7 @@ export default function GoLiveButton({ sessionId, disabled = false, isLive = fal
       // Broadcast that the session is now live
       const channel = supabase.channel('session-updates');
       await channel.send({
-        type: 'broadcast',
+        type: validateChannelType('broadcast'),
         event: 'session-live',
         payload: {
           sessionId,

@@ -1,5 +1,7 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { validateChannelType } from '@/utils/typeUtils';
 
 /**
  * Service for managing bingo claim events and lifecycle.
@@ -165,7 +167,7 @@ const broadcastClaimEvent = async (claim: any) => {
     
     // Broadcast the claim to all listeners
     await broadcastChannel.send({
-      type: 'broadcast', 
+      type: validateChannelType('broadcast'), 
       event: 'claim-submitted',
       payload: {
         claimId: claim.id,
@@ -205,7 +207,7 @@ const broadcastClaimResult = async (
     
     // Broadcast to all clients - they'll filter based on their own player ID
     await broadcastChannel.send({
-      type: 'broadcast',
+      type: validateChannelType('broadcast'),
       event: 'claim-result',
       payload: {
         sessionId,

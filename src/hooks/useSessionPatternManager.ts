@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { validateChannelType, ensureString } from '@/utils/typeUtils';
 
 /**
  * Hook for managing session win patterns and prize information
@@ -78,9 +79,9 @@ export function useSessionPatternManager(sessionId: string | null) {
         const { error: updateError } = await supabase
           .from('sessions_progress')
           .update({
-            current_win_pattern: firstPattern.id,
-            current_prize: firstPattern.prizeAmount,
-            current_prize_description: firstPattern.description
+            current_win_pattern: ensureString(firstPattern.id),
+            current_prize: ensureString(firstPattern.prizeAmount),
+            current_prize_description: ensureString(firstPattern.description)
           })
           .eq('session_id', sessionId);
           
@@ -97,9 +98,9 @@ export function useSessionPatternManager(sessionId: string | null) {
             current_game_number: currentGame,
             max_game_number: configs.length,
             current_game_type: currentConfig.gameType,
-            current_win_pattern: firstPattern.id,
-            current_prize: firstPattern.prizeAmount,
-            current_prize_description: firstPattern.description
+            current_win_pattern: ensureString(firstPattern.id),
+            current_prize: ensureString(firstPattern.prizeAmount),
+            current_prize_description: ensureString(firstPattern.description)
           });
           
         if (insertError) {
@@ -114,7 +115,7 @@ export function useSessionPatternManager(sessionId: string | null) {
       try {
         const broadcastChannel = supabase.channel('pattern-updates');
         await broadcastChannel.send({
-          type: 'broadcast',
+          type: validateChannelType('broadcast'),
           event: 'pattern-initialized',
           payload: {
             sessionId,
@@ -187,8 +188,8 @@ export function useSessionPatternManager(sessionId: string | null) {
       const { error: updateError } = await supabase
         .from('sessions_progress')
         .update({
-          current_prize: pattern.prizeAmount || '10.00',
-          current_prize_description: pattern.description || `${patternId} Prize`
+          current_prize: ensureString(pattern.prizeAmount || '10.00'),
+          current_prize_description: ensureString(pattern.description || `${patternId} Prize`)
         })
         .eq('session_id', sessionId);
         

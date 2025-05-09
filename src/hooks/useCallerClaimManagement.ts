@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { useToast } from '@/hooks/use-toast';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
+import { validateChannelType } from '@/utils/typeUtils';
 
 /**
  * Hook for managing bingo claims from the caller's perspective

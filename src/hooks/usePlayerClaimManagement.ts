@@ -1,7 +1,9 @@
+
 import { useState, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { supabase } from '@/integrations/supabase/client';
+import { validateChannelType } from '@/utils/typeUtils';
 
 /**
  * Hook for managing bingo claims from the player perspective
@@ -43,7 +45,7 @@ export function usePlayerClaimManagement(
     try {
       // Create payload to send
       const payload = {
-        type: 'broadcast',
+        type: validateChannelType('broadcast'),
         event: 'claim-submitted',
         payload: {
           playerCode,
