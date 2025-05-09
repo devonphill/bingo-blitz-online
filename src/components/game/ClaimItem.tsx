@@ -65,7 +65,7 @@ export default function ClaimItem({
               perm: claim.ticket.perm,
               position: claim.ticket.position
             }}
-            calledNumbers={currentCalledNumbers || claim.calledNumbers || []}
+            calledNumbers={currentCalledNumbers || (claim.calledNumbers || [])}
             lastCalledNumber={currentNumber || claim.lastCalledNumber}
             gameType={gameType}
             winPattern={currentWinPattern || claim.winPattern}

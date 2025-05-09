@@ -16,6 +16,9 @@ export interface ClaimData {
   ticket?: TicketData;
   status: 'pending' | 'valid' | 'invalid' | 'rejected';
   lastCalledNumber?: number | null;
+  // Add the missing properties
+  calledNumbers?: number[];
+  hasLastCalledNumber?: boolean;
 }
 
 export interface TicketData {
