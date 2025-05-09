@@ -30,6 +30,13 @@ const Index = () => {
         >
           Login as Host
         </Button>
+        
+        <Button
+          className="bg-gradient-to-r from-green-500 to-teal-500 hover:from-green-600 hover:to-teal-600 text-lg px-6 py-6"
+          onClick={() => navigate('/signup')}
+        >
+          Join Now
+        </Button>
       </div>
       
       <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl w-full">

@@ -23,9 +23,10 @@ const PlayerJoin = lazy(() => import("./pages/PlayerJoin"));
 const PlayerGame = lazy(() => import("./pages/PlayerGame"));
 const AddPlayers = lazy(() => import("./pages/AddPlayers"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Signup = lazy(() => import("./pages/Signup"));
+const Login = lazy(() => import("./pages/Login"));
 
 // Setup simplified pages
-const Register = () => <div className="p-8"><h1 className="text-2xl">Register Page</h1><p>This page is not yet implemented.</p></div>;
 const ForgotPassword = () => <div className="p-8"><h1 className="text-2xl">Forgot Password</h1><p>This page is not yet implemented.</p></div>;
 
 // Simple layout component
@@ -53,8 +54,8 @@ function App() {
           <Route path="/about" element={<PublicLayout><About /></PublicLayout>} />
           
           {/* Public auth routes (accessible only when NOT logged in) */}
-          <Route path="/login" element={<PublicRoute><PublicLayout><LoginForm /></PublicLayout></PublicRoute>} />
-          <Route path="/register" element={<PublicRoute><PublicLayout><Register /></PublicLayout></PublicRoute>} />
+          <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+          <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
           <Route path="/forgot-password" element={<PublicRoute><PublicLayout><ForgotPassword /></PublicLayout></PublicRoute>} />
           
           {/* Protected routes (require auth) */}
