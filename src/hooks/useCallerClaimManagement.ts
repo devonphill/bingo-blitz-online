@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { useToast } from '@/hooks/use-toast';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
-import { validateChannelType } from '@/utils/typeUtils';
+import { validateChannelType, ensureString } from '@/utils/typeUtils';
 
 /**
  * Hook for managing bingo claims from the caller's perspective
@@ -59,84 +59,80 @@ export function useCallerClaimManagement(sessionId: string | null) {
     setIsProcessingClaim(true);
     try {
       logWithTimestamp(`Processing claim ${claim.id} with result: ${isValid ? 'valid' : 'invalid'}`);
-      // Use network context to process claim
-      const result = await network.validateClaim(claim, isValid);
       
-      if (result) {
+      // Use claimService to process the claim
+      const success = await claimService.processClaim(
+        ensureString(claim.id),
+        ensureString(sessionId),
+        isValid,
+        onGameProgress
+      );
+      
+      if (!success) {
         toast({
-          title: isValid ? "Claim Verified" : "Claim Rejected",
-          description: `${claim.playerName || 'Player'}'s claim has been ${isValid ? 'verified' : 'rejected'}.`,
-          duration: 3000,
+          title: "Error",
+          description: "Failed to process claim",
+          variant: "destructive"
         });
-        
-        // If the claim was valid and we have a progress callback, call it
-        if (isValid && onGameProgress) {
-          onGameProgress();
-        }
+        return false;
       }
       
-      return result;
+      // Refresh claims after processing
+      fetchClaims();
+      
+      return true;
     } catch (error) {
       console.error('Error validating claim:', error);
       toast({
         title: "Error",
-        description: "Failed to process claim",
+        description: "An unexpected error occurred during claim validation",
         variant: "destructive"
       });
       return false;
     } finally {
       setIsProcessingClaim(false);
-      // Refresh claims after processing
-      fetchClaims();
     }
-  }, [sessionId, toast, fetchClaims, network]);
+  }, [sessionId, toast, fetchClaims]);
   
-  // Set up real-time listener for new claims
+  // Listen for new claims
   useEffect(() => {
-    if (!sessionId) {
-      setClaims([]);
-      return;
-    }
+    if (!sessionId) return;
     
-    logWithTimestamp(`Setting up claim listener for session ${sessionId}`);
-    
-    // Listen for claim submissions
-    const channel = supabase.channel('game-updates')
+    // Set up channel to listen for new claims
+    const channel = supabase
+      .channel('caller-claims-listen')
       .on('broadcast', { event: 'claim-submitted' }, payload => {
         if (payload.payload?.sessionId === sessionId) {
-          logWithTimestamp(`Received real-time claim notification for session ${sessionId}`, 'info');
+          logWithTimestamp(`Received new claim broadcast for session ${sessionId}`, 'info');
+          // Refresh claims to include the new one
+          fetchClaims();
           
-          // Show a toast notification for the new claim
+          // Show toast notification
           toast({
-            title: "New Bingo Claim!",
-            description: `${payload.payload.playerName || 'A player'} has claimed bingo!`,
-            variant: "destructive",
+            title: "New Claim Submitted",
+            description: `Player ${payload.payload.playerName || 'Unknown'} has submitted a bingo claim.`,
             duration: 5000,
           });
-          
-          // Refresh claims to get the latest data
-          fetchClaims();
         }
       })
       .subscribe();
       
-    // Fetch claims initially
-    fetchClaims();
-    
-    // Clean up
+    // Clean up on unmount
     return () => {
       supabase.removeChannel(channel);
     };
   }, [sessionId, fetchClaims, toast]);
   
-  // Return claims, count, refresh function and validation methods
+  // Get claims count for convenience
+  const claimsCount = claims.length;
+  
   return {
     claims,
-    claimsCount: claims.length,
+    claimsCount,
     fetchClaims,
-    isRefreshing,
-    lastRefreshTime,
     validateClaim,
-    isProcessingClaim
+    isProcessingClaim,
+    isRefreshing,
+    lastRefreshTime
   };
 }

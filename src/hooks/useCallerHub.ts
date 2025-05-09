@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { validateChannelType } from '@/utils/typeUtils';
 
 export function useCallerHub(sessionId: string | undefined) {
   const [pendingClaims, setPendingClaims] = useState<any[]>([]);
@@ -117,7 +118,7 @@ export function useCallerHub(sessionId: string | undefined) {
       
       // Broadcast the result to the player
       await sendBroadcast('claim-result', { 
-        playerId: playerId,
+        playerId: String(playerId),
         result: isValid ? 'valid' : 'rejected'
       });
       
@@ -165,8 +166,8 @@ export function useCallerHub(sessionId: string | undefined) {
       
       // Broadcast the pattern change
       await sendBroadcast('pattern-change', { 
-        sessionId,
-        pattern: patternId
+        sessionId: String(sessionId),
+        pattern: String(patternId)
       });
       
       return true;
@@ -230,8 +231,7 @@ export function useCallerHub(sessionId: string | undefined) {
   };
 }
 
-// Add proper typing for the event and a proper channel variable
-// Create a function with channel as a parameter so it's available in the scope
+// Fix the sendBroadcast function to use validateChannelType
 const sendBroadcast = async (event: string, payload: any) => {
   // Create a new channel for each broadcast to avoid the channel not found error
   const broadcastChannel = supabase.channel('broadcast-channel');
@@ -241,7 +241,7 @@ const sendBroadcast = async (event: string, payload: any) => {
     logWithTimestamp('Sending broadcast message', 'info');
     
     await broadcastChannel.send({
-      type: 'broadcast',
+      type: validateChannelType('broadcast'),
       event: event,
       payload: payload
     });

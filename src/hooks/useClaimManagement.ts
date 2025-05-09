@@ -1,8 +1,8 @@
-
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { validateChannelType, ensureString } from '@/utils/typeUtils';
 
 export function useClaimManagement(sessionId?: string, gameNumber?: number) {
   const [isProcessingClaim, setIsProcessingClaim] = useState(false);
@@ -130,10 +130,10 @@ export function useClaimManagement(sessionId?: string, gameNumber?: number) {
         
         // Send to UUID
         await broadcastChannel.send({
-          type: 'broadcast',
+          type: validateChannelType('broadcast'),
           event: 'claim-result',
           payload: {
-            playerId: actualPlayerId,
+            playerId: ensureString(actualPlayerId),
             result: 'valid'
           }
         });
@@ -141,10 +141,10 @@ export function useClaimManagement(sessionId?: string, gameNumber?: number) {
         // If we originally had a player code, also send to that
         if (actualPlayerId !== playerId) {
           await broadcastChannel.send({
-            type: 'broadcast',
+            type: validateChannelType('broadcast'),
             event: 'claim-result',
             payload: {
-              playerId: playerId, // Original player code
+              playerId: ensureString(playerId), // Original player code
               result: 'valid'
             }
           });
@@ -289,10 +289,10 @@ export function useClaimManagement(sessionId?: string, gameNumber?: number) {
         
         // Send to UUID
         await broadcastChannel.send({
-          type: 'broadcast',
+          type: validateChannelType('broadcast'),
           event: 'claim-result',
           payload: {
-            playerId: actualPlayerId,
+            playerId: ensureString(actualPlayerId),
             result: 'rejected'
           }
         });
@@ -300,10 +300,10 @@ export function useClaimManagement(sessionId?: string, gameNumber?: number) {
         // If we originally had a player code, also send to that
         if (actualPlayerId !== playerId) {
           await broadcastChannel.send({
-            type: 'broadcast',
+            type: validateChannelType('broadcast'),
             event: 'claim-result',
             payload: {
-              playerId: playerId, // Original player code
+              playerId: ensureString(playerId), // Original player code
               result: 'rejected'
             }
           });

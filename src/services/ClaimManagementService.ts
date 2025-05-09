@@ -1,7 +1,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { validateChannelType } from '@/utils/typeUtils';
+import { validateChannelType, ensureString } from '@/utils/typeUtils';
 
 /**
  * Service for managing bingo claim events and lifecycle.
@@ -35,7 +35,7 @@ const submitClaim = (claimData: any) => {
   }
 
   try {
-    const sessionId = claimData.sessionId;
+    const sessionId = ensureString(claimData.sessionId);
     logWithTimestamp(`Submitting claim for session ${sessionId}`);
 
     // Create a new queue for this session if it doesn't exist yet
@@ -170,14 +170,14 @@ const broadcastClaimEvent = async (claim: any) => {
       type: validateChannelType('broadcast'), 
       event: 'claim-submitted',
       payload: {
-        claimId: claim.id,
-        sessionId: claim.sessionId,
-        playerId: claim.playerId,
-        playerName: claim.playerName || 'unknown',
+        claimId: ensureString(claim.id),
+        sessionId: ensureString(claim.sessionId),
+        playerId: ensureString(claim.playerId),
+        playerName: ensureString(claim.playerName || 'unknown'),
         timestamp: claim.timestamp,
         toGoCount: claim.toGoCount || 0,
-        gameType: claim.gameType || 'mainstage',
-        winPattern: claim.winPattern || 'oneLine',
+        gameType: ensureString(claim.gameType || 'mainstage'),
+        winPattern: ensureString(claim.winPattern || 'oneLine'),
         ticket: claim.ticket // Pass the ticket data for verification
       }
     });
@@ -210,13 +210,13 @@ const broadcastClaimResult = async (
       type: validateChannelType('broadcast'),
       event: 'claim-result',
       payload: {
-        sessionId,
-        playerId,
-        playerName,
+        sessionId: ensureString(sessionId),
+        playerId: ensureString(playerId),
+        playerName: ensureString(playerName),
         result,
         timestamp: new Date().toISOString(),
         ticket: ticket ? {
-          serial: ticket.serial,
+          serial: ensureString(ticket.serial),
           numbers: ticket.numbers,
           calledNumbers: ticket.calledNumbers
         } : undefined

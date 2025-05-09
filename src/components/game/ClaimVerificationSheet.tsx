@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Sheet,
@@ -14,6 +13,7 @@ import { logWithTimestamp } from '@/utils/logUtils';
 import CallerTicketDisplay from './CallerTicketDisplay';
 import { useCallerClaimManagement } from '@/hooks/useCallerClaimManagement';
 import { supabase } from '@/integrations/supabase/client';
+import { validateChannelType } from '@/utils/typeUtils';
 
 interface ClaimVerificationSheetProps {
   isOpen: boolean;
@@ -167,8 +167,8 @@ export default function ClaimVerificationSheet({
           .from('sessions_progress')
           .update({
             current_win_pattern: nextPattern.id,
-            current_prize: nextPattern.prizeAmount || '10.00',
-            current_prize_description: nextPattern.description || `${nextPattern.id} Prize`
+            current_prize: String(nextPattern.prizeAmount || '10.00'),
+            current_prize_description: String(nextPattern.description || `${nextPattern.id} Prize`)
           })
           .eq('session_id', sessionId);
           
@@ -178,17 +178,17 @@ export default function ClaimVerificationSheet({
         } else {
           logWithTimestamp(`Successfully updated to next pattern: ${nextPattern.id}`, 'info');
           
-          // Broadcast pattern change for realtime update
+          // Broadcast pattern change for realtime update - FIX: Use validateChannelType and ensure strings
           try {
             const broadcastChannel = supabase.channel('pattern-updates');
             await broadcastChannel.send({
-              type: 'broadcast',
+              type: validateChannelType('broadcast'),
               event: 'pattern-changed',
               payload: {
-                sessionId: sessionId,
-                winPattern: nextPattern.id,
-                prize: nextPattern.prizeAmount,
-                prizeDescription: nextPattern.description
+                sessionId: String(sessionId),
+                winPattern: String(nextPattern.id),
+                prize: String(nextPattern.prizeAmount || '10.00'),
+                prizeDescription: String(nextPattern.description || `${nextPattern.id} Prize`)
               }
             });
           } catch (err) {
