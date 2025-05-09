@@ -112,7 +112,7 @@ export function useSessionPatternManager(sessionId: string | null) {
       
       logWithTimestamp(`Successfully initialized session pattern to ${firstPattern.id}`, 'info');
       
-      // Broadcast pattern change
+      // Broadcast pattern change - THIS IS ONE OF THE AREAS CAUSING THE TYPE ERROR
       try {
         const broadcastChannel = supabase.channel('pattern-updates');
         await broadcastChannel.send({
@@ -120,9 +120,9 @@ export function useSessionPatternManager(sessionId: string | null) {
           event: 'pattern-initialized',
           payload: {
             sessionId,
-            winPattern: firstPattern.id,
-            prize: firstPattern.prizeAmount,
-            prizeDescription: firstPattern.description
+            winPattern: String(firstPattern.id),
+            prize: String(firstPattern.prizeAmount), // Fix: Explicitly convert to string
+            prizeDescription: String(firstPattern.description) // Fix: Explicitly convert to string
           }
         });
       } catch (err) {
