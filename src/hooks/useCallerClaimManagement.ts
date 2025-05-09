@@ -8,6 +8,7 @@ import { logWithTimestamp } from '@/utils/logUtils';
 export function useCallerClaimManagement(sessionId: string | null) {
   const [claims, setClaims] = useState<BingoClaim[]>([]);
   const [isProcessingClaim, setIsProcessingClaim] = useState(false);
+  const [lastFetchTime, setLastFetchTime] = useState<number>(0);
   const { toast } = useToast();
 
   // Register session with claim service on mount
@@ -39,49 +40,79 @@ export function useCallerClaimManagement(sessionId: string | null) {
       }
     });
     
-    // Also listen for broadcast claim events as a backup
-    const channel = supabase.channel('game-updates')
-      .on('broadcast', { event: 'new-claim' }, payload => {
-        logWithTimestamp(`Received new claim broadcast: ${JSON.stringify(payload.payload)}`, 'info');
-        if (payload.payload && payload.payload.sessionId === sessionId) {
-          // Force refetch claims 
-          fetchClaims();
-          
-          // Also try to add the claim directly from the broadcast data
-          tryAddClaimFromBroadcast(payload.payload);
-          
-          // Show toast to alert the caller
-          toast({
-            title: "New Bingo Claim!",
-            description: `A player has claimed bingo! Check the claims panel.`,
-            variant: "destructive",
-            duration: 5000, // 5 seconds duration
-          });
-        }
-      })
-      .subscribe();
+    // ENHANCED: Set up multiple listeners for redundancy
+    const setupChannelListeners = async () => {
+      // Main channel for game updates
+      const gameUpdatesChannel = supabase.channel('game-updates')
+        .on('broadcast', { event: 'new-claim' }, handleClaimBroadcast)
+        .subscribe();
       
-    // Also listen for the bingo-claim event (alternate format)
-    const bingoClaimChannel = supabase.channel('bingo-claim-channel')
-      .on('broadcast', { event: 'bingo-claim' }, payload => {
-        logWithTimestamp(`Received bingo-claim broadcast: ${JSON.stringify(payload.payload)}`, 'info');
-        if (payload.payload && payload.payload.sessionId === sessionId) {
-          // Force refetch claims
-          fetchClaims();
-          
-          // Also try to add the claim directly from the broadcast data
-          tryAddClaimFromBroadcast(payload.payload);
-        }
-      })
-      .subscribe();
+      // Secondary channel specifically for caller notifications
+      const callerNotificationsChannel = supabase.channel('caller-notifications')
+        .on('broadcast', { event: 'new-claim' }, handleClaimBroadcast)
+        .subscribe();
       
+      // Session-specific channel
+      const sessionChannel = supabase.channel(`session-${sessionId}`)
+        .on('broadcast', { event: 'new-claim' }, handleClaimBroadcast)
+        .subscribe();
+      
+      // Also listen for the bingo-claim event (alternate format)
+      const bingoClaimChannel = supabase.channel('bingo-claim-channel')
+        .on('broadcast', { event: 'bingo-claim' }, handleClaimBroadcast)
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(gameUpdatesChannel);
+        supabase.removeChannel(callerNotificationsChannel);
+        supabase.removeChannel(sessionChannel);
+        supabase.removeChannel(bingoClaimChannel);
+      };
+    };
+    
+    const cleanup = setupChannelListeners();
+    
+    // Set up periodic polling as a backup
+    const pollInterval = setInterval(() => {
+      // Only poll if it's been more than 10 seconds since our last fetch
+      if (Date.now() - lastFetchTime > 10000) {
+        fetchClaimsFromDatabase();
+      }
+    }, 15000);
+    
     return () => {
       logWithTimestamp(`Cleaning up claim listener for session ${sessionId}`, 'info');
       unsubscribe();
-      supabase.removeChannel(channel);
-      supabase.removeChannel(bingoClaimChannel);
+      clearInterval(pollInterval);
+      cleanup.then(removeChannels => removeChannels());
     };
-  }, [sessionId, toast, claims.length]);
+  }, [sessionId, toast, claims.length, lastFetchTime]);
+
+  // Handle claim broadcast from any channel
+  const handleClaimBroadcast = useCallback((payload: any) => {
+    if (!sessionId || !payload.payload) return;
+    
+    const claimData = payload.payload;
+    
+    // Check if this claim is for our session
+    if (claimData.sessionId === sessionId) {
+      logWithTimestamp(`Received claim broadcast: ${JSON.stringify(claimData)}`, 'info');
+      
+      // Force refetch claims 
+      fetchClaims();
+      
+      // Also try to add the claim directly from the broadcast data
+      tryAddClaimFromBroadcast(claimData);
+      
+      // Show toast to alert the caller
+      toast({
+        title: "New Bingo Claim!",
+        description: `A player has claimed bingo! Check the claims panel.`,
+        variant: "destructive",
+        duration: 5000, // 5 seconds duration
+      });
+    }
+  }, [sessionId, toast]);
 
   // Helper to attempt to add a claim directly from broadcast data
   const tryAddClaimFromBroadcast = useCallback((payload: any) => {
@@ -92,6 +123,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
       
       // Create a claim object with all necessary fields
       const claimData = {
+        id: payload.claimId || payload.id || undefined,
         playerId: payload.playerId,
         playerName: payload.playerName || "Unknown Player",
         sessionId: sessionId,
@@ -106,7 +138,8 @@ export function useCallerClaimManagement(sessionId: string | null) {
           numbers: payload.ticketNumbers || []
         },
         calledNumbers: payload.calledNumbers || [],
-        lastCalledNumber: payload.lastCalledNumber || null
+        lastCalledNumber: payload.lastCalledNumber || null,
+        toGoCount: payload.toGoCount
       };
       
       // Submit the claim to the service
@@ -121,6 +154,60 @@ export function useCallerClaimManagement(sessionId: string | null) {
       }
     } catch (error) {
       console.error('Error processing broadcast claim:', error);
+    }
+  }, [sessionId]);
+
+  // ENHANCED: Fetch claims from database as backup mechanism
+  const fetchClaimsFromDatabase = useCallback(async () => {
+    if (!sessionId) return;
+    
+    try {
+      logWithTimestamp(`Fetching pending claims from database for session ${sessionId}`, 'info');
+      
+      const { data, error } = await supabase
+        .from('universal_game_logs')
+        .select('*')
+        .eq('session_id', sessionId)
+        .is('validated_at', null);
+        
+      if (error) {
+        console.error('Error fetching claims from database:', error);
+        return;
+      }
+      
+      if (data && data.length > 0) {
+        logWithTimestamp(`Found ${data.length} pending claims in database`, 'info');
+        
+        // Convert to BingoClaim format and add to service
+        data.forEach(item => {
+          const claim = {
+            id: item.id,
+            playerId: item.player_id,
+            playerName: item.player_name || 'Unknown Player',
+            sessionId: item.session_id,
+            gameNumber: item.game_number || 1,
+            winPattern: item.win_pattern || 'oneLine',
+            gameType: item.game_type || 'mainstage',
+            ticket: {
+              serial: item.ticket_serial || 'unknown',
+              perm: item.ticket_perm || 0,
+              position: item.ticket_position || 0,
+              layoutMask: item.ticket_layout_mask || 0,
+              numbers: item.ticket_numbers || []
+            },
+            calledNumbers: item.called_numbers || [],
+            lastCalledNumber: item.last_called_number,
+            claimedAt: new Date(item.claimed_at || Date.now())
+          };
+          
+          claimService.submitClaim(claim);
+        });
+        
+        // Refresh claims list
+        fetchClaims();
+      }
+    } catch (dbError) {
+      console.error('Error in database claim fallback:', dbError);
     }
   }, [sessionId]);
 
@@ -141,12 +228,13 @@ export function useCallerClaimManagement(sessionId: string | null) {
     }
     
     setClaims(sessionClaims);
+    setLastFetchTime(Date.now());
     
     return sessionClaims;
   }, [sessionId]);
 
   // Validate a claim (approve or reject)
-  const validateClaim = useCallback(async (claim: BingoClaim, isValid: boolean, onGameProgress?: () => void) => {
+  const validateClaim = useCallback(async (claim: any, isValid: boolean, onGameProgress?: () => void) => {
     if (!sessionId || !claim || !claim.id) {
       logWithTimestamp('Cannot validate claim - missing required information', 'error');
       return false;

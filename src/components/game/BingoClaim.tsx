@@ -55,9 +55,27 @@ export default function BingoClaim({
       return () => clearTimeout(timer);
     }
   }, [claimStatus, resetClaimStatus, forceResetTimer]);
+
+  // ENHANCED: Add a fallback reset mechanism
+  useEffect(() => {
+    // This handles race conditions where state might get stuck
+    const fallbackTimer = setTimeout(() => {
+      if ((claimStatus === 'pending' && !isClaiming) || 
+          (isClaiming && Date.now() - lastClaimTime > 20000)) {
+        logWithTimestamp(`BingoClaim: Fallback reset triggered for stuck state: ${claimStatus}`, 'warn');
+        if (resetClaimStatus) resetClaimStatus();
+      }
+    }, 25000); // Very last resort fallback
+    
+    return () => clearTimeout(fallbackTimer);
+  }, [claimStatus, isClaiming, resetClaimStatus]);
+  
+  // Track last claim time for stuck state detection
+  const [lastClaimTime, setLastClaimTime] = useState(0);
   
   const handleClick = async () => {
     try {
+      setLastClaimTime(Date.now());
       logWithTimestamp("BingoClaim: Submitting bingo claim");
       await onClaimBingo();
     } catch (error) {

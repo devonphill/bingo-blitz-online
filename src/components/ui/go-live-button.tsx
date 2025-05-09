@@ -13,7 +13,7 @@ interface GoLiveButtonProps {
   className?: string;
   onSuccess?: () => void;
   disabled?: boolean;
-  children?: React.ReactNode; // Added this line to accept children
+  children?: React.ReactNode;
 }
 
 export function GoLiveButton({ sessionId, className, onSuccess, disabled, children = "Go Live" }: GoLiveButtonProps) {
@@ -26,7 +26,7 @@ export function GoLiveButton({ sessionId, className, onSuccess, disabled, childr
     
     try {
       // First, check if we have game configs with active patterns
-      let initialWinPattern = null; // Changed from string to null for better checking
+      let initialWinPattern = null;
       let currentGameType = 'mainstage';
       let initialPrize = '10.00'; // Default prize amount
       let initialPrizeDescription = 'One Line Prize'; // Default prize description
@@ -58,30 +58,89 @@ export function GoLiveButton({ sessionId, className, onSuccess, disabled, childr
         initialWinPattern = 'oneLine';
       }
       
-      // Explicitly log the update we're about to make
+      // ENHANCED: Double check the data we're about to save
       logWithTimestamp(`Updating sessions_progress with win pattern: ${initialWinPattern}, prize: ${initialPrize}, description: ${initialPrizeDescription}, game type: ${currentGameType}`);
       
-      // Start by updating the sessions_progress table with the initial win pattern
-      const { data: progressData, error: progressError } = await supabase
+      // First check if the session progress record exists
+      const { data: existingProgress, error: checkError } = await supabase
         .from('sessions_progress')
-        .update({
-          current_win_pattern: initialWinPattern,
-          current_game_number: 1,
-          current_game_type: currentGameType,
-          game_status: 'active',
-          current_prize: initialPrize,
-          current_prize_description: initialPrizeDescription
-        })
+        .select('id')
         .eq('session_id', sessionId)
-        .select();
+        .single();
       
-      if (progressError) {
-        console.error("Error updating session progress:", progressError);
-        throw new Error(`Failed to update session progress: ${progressError.message}`);
+      if (checkError && checkError.code !== 'PGRST116') { // Not found is ok
+        console.error("Error checking session progress:", checkError);
+        throw new Error(`Failed to check session progress: ${checkError.message}`);
+      }
+      
+      let progressResult;
+      
+      // If progress record exists, update it
+      if (existingProgress) {
+        // Update the existing progress record
+        progressResult = await supabase
+          .from('sessions_progress')
+          .update({
+            current_win_pattern: initialWinPattern,
+            current_game_number: 1,
+            current_game_type: currentGameType,
+            game_status: 'active',
+            current_prize: initialPrize,
+            current_prize_description: initialPrizeDescription
+          })
+          .eq('session_id', sessionId)
+          .select();
+      } else {
+        // Create a new progress record
+        progressResult = await supabase
+          .from('sessions_progress')
+          .insert({
+            session_id: sessionId,
+            current_win_pattern: initialWinPattern,
+            current_game_number: 1,
+            max_game_number: 1,
+            current_game_type: currentGameType,
+            game_status: 'active',
+            current_prize: initialPrize,
+            current_prize_description: initialPrizeDescription
+          })
+          .select();
+      }
+      
+      // Check for errors in the operation
+      if (progressResult.error) {
+        console.error("Error updating session progress:", progressResult.error);
+        throw new Error(`Failed to update session progress: ${progressResult.error.message}`);
       }
       
       // Log the result of the update
-      logWithTimestamp(`Update result: ${progressData ? JSON.stringify(progressData) : 'No data returned'}`);
+      logWithTimestamp(`Update result: ${progressResult.data ? JSON.stringify(progressResult.data) : 'No data returned'}`);
+      
+      // ENHANCED: Verify the data was saved correctly
+      const { data: verifyData, error: verifyError } = await supabase
+        .from('sessions_progress')
+        .select('current_win_pattern, current_prize, current_prize_description')
+        .eq('session_id', sessionId)
+        .single();
+        
+      if (verifyError) {
+        console.error("Error verifying session progress update:", verifyError);
+      } else {
+        logWithTimestamp(`Verification data: ${JSON.stringify(verifyData)}`);
+        
+        // If verification shows missing data, try once more
+        if (!verifyData.current_prize || !verifyData.current_prize_description) {
+          logWithTimestamp("Prize information missing, attempting one more update", 'warn');
+          
+          await supabase
+            .from('sessions_progress')
+            .update({
+              current_prize: initialPrize,
+              current_prize_description: initialPrizeDescription
+            })
+            .eq('session_id', sessionId);
+        }
+      }
       
       // Now call the regular goLive function
       const success = await goLive();

@@ -56,7 +56,6 @@ const Index = () => {
         </div>
       </div>
 
-      {/* Links to information pages */}
       <div className="w-full max-w-4xl">
         <h2 className="text-2xl font-semibold mb-4 text-blue-700">Learn More</h2>
         <div className="flex flex-wrap justify-center gap-4">

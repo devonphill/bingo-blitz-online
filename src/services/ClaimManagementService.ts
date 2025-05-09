@@ -30,7 +30,7 @@ export interface BingoClaim {
 const claimQueues: Map<string, BingoClaim[]> = new Map();
 const sessionSubscribers: Map<string, Set<(claims: BingoClaim[]) => void>> = new Map();
 
-// Track recently validated claims to prevent re-adding them
+// Track recently processed claims to prevent re-adding them
 const recentlyProcessedClaims = new Map<string, number>();
 
 class ClaimManagementService {
@@ -139,7 +139,7 @@ class ClaimManagementService {
       // Notify subscribers
       this.notifySubscribers(claim.sessionId);
       
-      // Also broadcast the claim event for real-time updates
+      // ENHANCED: Use multiple channels to ensure claim is broadcast
       this.broadcastClaimEvent(claim);
       
       return true;
@@ -239,7 +239,7 @@ class ClaimManagementService {
         return false;
       }
       
-      // Broadcast the result to the player
+      // ENHANCED: More robust broadcasting with multiple channels
       await this.broadcastClaimResult(claim.playerId, isValid ? 'valid' : 'invalid');
       
       // Add to recently processed claims to prevent re-adding
@@ -314,53 +314,113 @@ class ClaimManagementService {
     subscribers.forEach(callback => callback(sortedClaims));
   }
   
-  // Broadcast claim to all listeners in session
+  // ENHANCED: Broadcast claim to multiple channels for redundancy
   private async broadcastClaimEvent(claim: BingoClaim): Promise<void> {
     try {
       logWithTimestamp(`Broadcasting claim ${claim.id} for player ${claim.playerName} in session ${claim.sessionId}`, 'info');
       
-      const channel = supabase.channel('game-updates');
-      await channel.send({
-        type: 'broadcast',
-        event: 'new-claim',
-        payload: {
-          sessionId: claim.sessionId,
-          claimId: claim.id,
-          playerId: claim.playerId,
-          playerName: claim.playerName,
-          gameNumber: claim.gameNumber,
-          winPattern: claim.winPattern,
-          gameType: claim.gameType,
-          ticket: claim.ticket,
-          calledNumbers: claim.calledNumbers,
-          lastCalledNumber: claim.lastCalledNumber
-        }
-      });
+      // Use multiple channels for redundancy
+      const channels = [
+        'game-updates',
+        'caller-notifications',
+        `session-${claim.sessionId}`
+      ];
       
-      // Always remove the channel after broadcasting
-      supabase.removeChannel(channel);
+      // Create payload
+      const payload = {
+        sessionId: claim.sessionId,
+        claimId: claim.id,
+        playerId: claim.playerId,
+        playerName: claim.playerName,
+        gameNumber: claim.gameNumber,
+        winPattern: claim.winPattern,
+        gameType: claim.gameType,
+        ticket: claim.ticket,
+        calledNumbers: claim.calledNumbers,
+        lastCalledNumber: claim.lastCalledNumber,
+        toGoCount: claim.toGoCount
+      };
+      
+      // Broadcast to all channels
+      for (const channelName of channels) {
+        try {
+          const channel = supabase.channel(channelName);
+          await channel.send({
+            type: 'broadcast',
+            event: 'new-claim',
+            payload
+          });
+          supabase.removeChannel(channel);
+        } catch (err) {
+          console.error(`Error broadcasting to ${channelName}:`, err);
+          // Continue with other channels even if one fails
+        }
+      }
+      
+      // Also write to database as a backup mechanism
+      try {
+        await supabase
+          .from('universal_game_logs')
+          .insert({
+            session_id: claim.sessionId,
+            player_id: claim.playerId,
+            player_name: claim.playerName,
+            game_number: claim.gameNumber,
+            game_type: claim.gameType,
+            win_pattern: claim.winPattern,
+            ticket_serial: claim.ticket.serial,
+            ticket_perm: claim.ticket.perm,
+            ticket_position: claim.ticket.position,
+            ticket_layout_mask: claim.ticket.layoutMask,
+            ticket_numbers: claim.ticket.numbers,
+            called_numbers: claim.calledNumbers,
+            last_called_number: claim.lastCalledNumber,
+            total_calls: claim.calledNumbers.length,
+            claimed_at: claim.claimedAt.toISOString(),
+            validated_at: null,
+            prize_shared: null
+          });
+      } catch (dbErr) {
+        console.error("Failed to write claim to database as backup:", dbErr);
+        // This is just a backup mechanism, so continue even if it fails
+      }
+      
     } catch (err) {
       console.error("Error broadcasting claim:", err);
     }
   }
   
-  // Broadcast claim result to the player
+  // ENHANCED: Broadcast claim result to multiple channels for redundancy
   private async broadcastClaimResult(playerId: string, result: 'valid' | 'invalid'): Promise<void> {
     try {
       logWithTimestamp(`Broadcasting claim result (${result}) to player ${playerId}`, 'info');
       
-      const channel = supabase.channel('claim-results-channel');
-      await channel.send({
-        type: 'broadcast',
-        event: 'claim-result',
-        payload: {
-          playerId,
-          result
-        }
-      });
+      // Use multiple channels for redundancy
+      const channels = [
+        'claim-results-channel',
+        'player-notifications',
+        `player-${playerId}`
+      ];
       
-      // Always remove the channel after broadcasting
-      supabase.removeChannel(channel);
+      // Broadcast to all channels
+      for (const channelName of channels) {
+        try {
+          const channel = supabase.channel(channelName);
+          await channel.send({
+            type: 'broadcast',
+            event: 'claim-result',
+            payload: {
+              playerId,
+              result
+            }
+          });
+          supabase.removeChannel(channel);
+        } catch (err) {
+          console.error(`Error broadcasting to ${channelName}:`, err);
+          // Continue with other channels even if one fails
+        }
+      }
+      
     } catch (err) {
       console.error("Error broadcasting claim result:", err);
     }

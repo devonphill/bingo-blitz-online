@@ -1,5 +1,4 @@
-
-import React from "react";
+import React, { useMemo } from "react";
 import SafeBingoTicketDisplay from "./SafeBingoTicketDisplay";
 import BingoTicketDisplay from "./BingoTicketDisplay";
 import { Button } from "@/components/ui/compat/button";
@@ -54,6 +53,24 @@ class GameTypePlayspaceErrorBoundary extends React.Component<{children: React.Re
   }
 }
 
+// Helper function to calculate how close tickets are to winning
+const sortTicketsByWinProximity = (tickets: any[], calledNumbers: number[]) => {
+  if (!tickets || tickets.length === 0 || !calledNumbers) return tickets;
+  
+  return [...tickets].sort((a, b) => {
+    // Count matched numbers for each ticket
+    const aMatched = a.numbers ? a.numbers.filter((n: number) => calledNumbers.includes(n)).length : 0;
+    const bMatched = b.numbers ? b.numbers.filter((n: number) => calledNumbers.includes(n)).length : 0;
+    
+    // Calculate to-go counts
+    const aTogo = a.numbers ? a.numbers.length - aMatched : 0;
+    const bTogo = b.numbers ? b.numbers.length - bMatched : 0;
+    
+    // Sort by to-go count (ascending)
+    return aTogo - bTogo;
+  });
+};
+
 export default function GameTypePlayspace({
   gameType,
   tickets,
@@ -68,8 +85,14 @@ export default function GameTypePlayspace({
   // Generate unique IDs for this component using our compatibility function
   const playspaceId = useCompatId('playspace-');
   
+  // Sort tickets by win proximity
+  const sortedTickets = useMemo(() => 
+    sortTicketsByWinProximity(tickets, calledNumbers),
+    [tickets, calledNumbers]
+  );
+  
   // Debug log to see what ticket data we're receiving
-  console.log("GameTypePlayspace tickets:", tickets);
+  console.log("GameTypePlayspace tickets:", sortedTickets);
   
   return (
     <GameTypePlayspaceErrorBoundary gameType={gameType}>
@@ -99,9 +122,13 @@ export default function GameTypePlayspace({
   function renderMainstageContent() {
     return (
       <div className="grid grid-cols-1 gap-4">
-        {tickets.map((ticket: any, index: number) => {
+        {sortedTickets.map((ticket: any, index: number) => {
           // Generate a stable ticket ID - not using React hooks here to avoid errors
           const ticketId = `ticket-${ticket.serial || index}-${index}`;
+          
+          // Calculate to-go count for this ticket
+          const matchedNumbers = ticket.numbers ? ticket.numbers.filter((n: number) => calledNumbers.includes(n)).length : 0;
+          const toGoCount = ticket.numbers ? ticket.numbers.length - matchedNumbers : 0;
           
           return (
             <div key={ticketId} className="bg-white p-4 rounded-lg shadow">
@@ -110,6 +137,7 @@ export default function GameTypePlayspace({
                   <div className="text-xs text-gray-600 mb-1">Ticket Serial: <span className="font-mono font-medium">{ticket.serial || `Unknown-${index}`}</span></div>
                   <div className="text-xs text-gray-600 mb-1">Perm: <span className="font-mono font-medium">{ticket.perm || 0}</span></div>
                   <div className="text-xs text-gray-600">Position: <span className="font-mono font-medium">{ticket.position || 0}</span></div>
+                  <div className="text-xs text-blue-600 font-semibold mt-1">{toGoCount} to go</div>
                 </div>
                 
                 {handleClaimBingo && (

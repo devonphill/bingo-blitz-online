@@ -5,6 +5,7 @@ import { Bell } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { useToast } from '@/hooks/use-toast';
 
 interface ClaimNotificationsProps {
   sessionId: string | null;
@@ -18,6 +19,7 @@ export default function ClaimNotifications({
   const { claims, claimsCount, fetchClaims } = useCallerClaimManagement(sessionId);
   const [isAnimating, setIsAnimating] = useState(false);
   const [previousCount, setPreviousCount] = useState(0);
+  const { toast } = useToast();
 
   // Refresh claims initially and periodically
   useEffect(() => {
@@ -26,11 +28,11 @@ export default function ClaimNotifications({
     logWithTimestamp("ClaimNotifications: Mounted, fetching initial claims", 'info');
     fetchClaims();
     
-    // Set up periodic refresh
+    // Set up periodic refresh - more frequent now
     const interval = setInterval(() => {
       logWithTimestamp("ClaimNotifications: Periodic refresh", 'debug');
       fetchClaims();
-    }, 5000); // Check every 5 seconds
+    }, 2500); // Check every 2.5 seconds
     
     return () => clearInterval(interval);
   }, [sessionId, fetchClaims]);
@@ -44,20 +46,41 @@ export default function ClaimNotifications({
       });
     }
     
-    // Detect new claims
+    // Detect new claims and notify
     if (claimsCount > previousCount) {
       logWithTimestamp(`ClaimNotifications: New claims detected (${previousCount} → ${claimsCount})`, 'info');
+      
+      // Show a toast notification for new claims
+      toast({
+        title: "New Bingo Claims",
+        description: `${claimsCount - previousCount} new claims received`,
+        variant: "destructive",
+        duration: 8000 // Longer duration so it's not missed
+      });
+      
       setPreviousCount(claimsCount);
     }
-  }, [claims, claimsCount, previousCount]);
+  }, [claims, claimsCount, previousCount, toast]);
 
   // Animate when new claims arrive
   useEffect(() => {
     if (claimsCount > 0) {
       logWithTimestamp(`ClaimNotifications: ${claimsCount} claims detected, animating`, 'info');
       setIsAnimating(true);
-      const timer = setTimeout(() => setIsAnimating(false), 1000);
-      return () => clearTimeout(timer);
+      
+      // Animation cycles
+      const animations = [
+        // Initial animation 
+        setTimeout(() => setIsAnimating(false), 1000),
+        // Secondary pulse after a pause
+        setTimeout(() => setIsAnimating(true), 2000),
+        setTimeout(() => setIsAnimating(false), 3000),
+        // Tertiary pulse
+        setTimeout(() => setIsAnimating(true), 4000),
+        setTimeout(() => setIsAnimating(false), 5000)
+      ];
+      
+      return () => animations.forEach(timer => clearTimeout(timer));
     }
   }, [claimsCount]);
 
@@ -65,6 +88,9 @@ export default function ClaimNotifications({
   const handleClick = () => {
     logWithTimestamp("ClaimNotifications: Bell clicked, opening claim sheet", 'info');
     onOpenClaimSheet();
+    
+    // Immediate refresh when opening
+    fetchClaims();
   };
 
   if (!sessionId) return null;
@@ -80,7 +106,7 @@ export default function ClaimNotifications({
       {claimsCount > 0 && (
         <Badge 
           variant="destructive" 
-          className="absolute -top-1 -right-1 px-1.5 py-0.5 min-w-[20px] flex items-center justify-center text-xs"
+          className="absolute -top-1 -right-1 px-1.5 py-0.5 min-w-[20px] flex items-center justify-center text-xs animate-pulse"
         >
           {claimsCount}
         </Badge>
