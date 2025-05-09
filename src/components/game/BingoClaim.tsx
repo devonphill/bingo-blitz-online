@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Trophy, CheckCircle2, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 interface BingoClaimProps {
   onClaimBingo: () => Promise<boolean>;
@@ -17,26 +18,59 @@ export default function BingoClaim({
   isClaiming,
   resetClaimStatus
 }: BingoClaimProps) {
+  // Track if we need to forcibly reset the claim status
+  const [forceResetTimer, setForceResetTimer] = useState<NodeJS.Timeout | null>(null);
+  
   // Reset claim ability based on status changes
   useEffect(() => {
+    logWithTimestamp(`BingoClaim: Status changed to ${claimStatus}`, 'info');
+    
+    // Clear any existing timer when status changes
+    if (forceResetTimer) {
+      clearTimeout(forceResetTimer);
+      setForceResetTimer(null);
+    }
+    
     if (claimStatus === 'valid' || claimStatus === 'invalid') {
       // After a delay, allow claiming again
       const timer = setTimeout(() => {
         if (resetClaimStatus) {
+          logWithTimestamp(`BingoClaim: Automatically resetting claim status from: ${claimStatus} to none`, 'info');
           resetClaimStatus();
         }
       }, 5000); // 5 second timeout for showing claim result
       
+      setForceResetTimer(timer);
+      return () => clearTimeout(timer);
+    } else if (claimStatus === 'pending') {
+      // Safety fallback: if we've been in 'pending' state too long, reset
+      const timer = setTimeout(() => {
+        if (resetClaimStatus) {
+          logWithTimestamp(`BingoClaim: Force resetting stale pending claim after timeout`, 'warn');
+          resetClaimStatus();
+        }
+      }, 15000); // 15 second safety timeout
+      
+      setForceResetTimer(timer);
       return () => clearTimeout(timer);
     }
-  }, [claimStatus, resetClaimStatus]);
+  }, [claimStatus, resetClaimStatus, forceResetTimer]);
   
   const handleClick = async () => {
     try {
-      console.log("BingoClaim: Submitting bingo claim");
+      logWithTimestamp("BingoClaim: Submitting bingo claim");
       await onClaimBingo();
     } catch (error) {
       console.error("Error claiming bingo:", error);
+      logWithTimestamp(`BingoClaim: Error during claim: ${error}`, 'error');
+      
+      // Auto-reset on error after a short delay
+      setTimeout(() => {
+        if (resetClaimStatus) {
+          logWithTimestamp(`BingoClaim: Resetting after error`, 'info');
+          resetClaimStatus();
+        }
+      }, 3000);
     }
   };
   

@@ -4,6 +4,7 @@ import { getGameRulesForType } from '@/game-rules/gameRulesRegistry';
 import { checkMainstageWinPattern } from '@/utils/mainstageWinLogic';
 import { useMainstageAutoMarking } from '@/hooks/useMainstageAutoMarking';
 import { toast } from "@/hooks/use-toast";
+import { logWithTimestamp } from "@/utils/logUtils";
 
 interface BingoWinProgressProps {
   tickets?: any[];
@@ -46,9 +47,10 @@ export default function BingoWinProgress({
     }
   }
   
-  // Reset hasTriedClaim when claim status changes
+  // Reset hasTriedClaim when claim status changes or component re-mounts
   useEffect(() => {
-    if (claimStatus === null) {
+    if (claimStatus === null || claimStatus === undefined) {
+      logWithTimestamp("BingoWinProgress: Resetting claim status", "info");
       setHasTriedClaim(false);
     }
   }, [claimStatus]);
@@ -69,6 +71,8 @@ export default function BingoWinProgress({
                 await handleClaimBingo();
               } catch (error) {
                 console.error("Error claiming bingo:", error);
+                // Reset the hasTriedClaim after a timeout if there was an error
+                setTimeout(() => setHasTriedClaim(false), 3000);
                 toast({
                   title: "Claim Error",
                   description: "There was a problem submitting your claim.",
@@ -170,6 +174,8 @@ export default function BingoWinProgress({
               await handleClaimBingo();
             } catch (error) {
               console.error("Error claiming bingo:", error);
+              // Reset claim status after error
+              setTimeout(() => setHasTriedClaim(false), 3000);
               toast({
                 title: "Claim Error",
                 description: "There was a problem submitting your claim.",

@@ -42,7 +42,7 @@ export function checkMainstageWinPattern(
       .sort((a, b) => a - b)  // Sort by fewest unmarked numbers
       .slice(0, requiredLines - completedLines);  // Take only what we need
 
-    return remainingLines.length > 0 ? remainingLines[0] : 0;
+    return remainingLines.reduce((sum, count) => sum + count, 0);  // Sum the unmarked counts
   };
 
   switch (normalizedPattern) {

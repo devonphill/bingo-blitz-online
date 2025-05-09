@@ -28,6 +28,8 @@ export function GoLiveButton({ sessionId, className, onSuccess, disabled, childr
       // First, check if we have game configs with active patterns
       let initialWinPattern = null; // Changed from string to null for better checking
       let currentGameType = 'mainstage';
+      let initialPrize = '10.00'; // Default prize amount
+      let initialPrizeDescription = 'One Line Prize'; // Default prize description
       
       if (gameConfigs && gameConfigs.length > 0) {
         const firstGameConfig = gameConfigs[0];
@@ -41,7 +43,9 @@ export function GoLiveButton({ sessionId, className, onSuccess, disabled, childr
           for (const [patternId, pattern] of Object.entries(firstGameConfig.patterns)) {
             if (pattern.active === true) {
               initialWinPattern = patternId;
-              logWithTimestamp(`Using initial win pattern: ${initialWinPattern}`);
+              initialPrize = pattern.prizeAmount || '10.00';
+              initialPrizeDescription = pattern.description || `${patternId} Prize`;
+              logWithTimestamp(`Using initial win pattern: ${initialWinPattern}, Prize: ${initialPrize}, Description: ${initialPrizeDescription}`);
               break;
             }
           }
@@ -55,7 +59,7 @@ export function GoLiveButton({ sessionId, className, onSuccess, disabled, childr
       }
       
       // Explicitly log the update we're about to make
-      logWithTimestamp(`Updating sessions_progress with win pattern: ${initialWinPattern}, game type: ${currentGameType}`);
+      logWithTimestamp(`Updating sessions_progress with win pattern: ${initialWinPattern}, prize: ${initialPrize}, description: ${initialPrizeDescription}, game type: ${currentGameType}`);
       
       // Start by updating the sessions_progress table with the initial win pattern
       const { data: progressData, error: progressError } = await supabase
@@ -64,7 +68,9 @@ export function GoLiveButton({ sessionId, className, onSuccess, disabled, childr
           current_win_pattern: initialWinPattern,
           current_game_number: 1,
           current_game_type: currentGameType,
-          game_status: 'active'
+          game_status: 'active',
+          current_prize: initialPrize,
+          current_prize_description: initialPrizeDescription
         })
         .eq('session_id', sessionId)
         .select();

@@ -13,6 +13,7 @@ import { CheckCircle, XCircle, Loader, RefreshCw } from 'lucide-react';
 import { logWithTimestamp } from '@/utils/logUtils';
 import CallerTicketDisplay from './CallerTicketDisplay';
 import { useCallerClaimManagement } from '@/hooks/useCallerClaimManagement';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ClaimVerificationSheetProps {
   isOpen: boolean;
@@ -70,6 +71,77 @@ export default function ClaimVerificationSheet({
     }
   }, [isOpen, sessionId, fetchClaims]);
   
+  // Find the next win pattern after the current one
+  const findNextWinPattern = useCallback(async () => {
+    if (!sessionId || !gameNumber) return null;
+    
+    try {
+      logWithTimestamp(`Finding next win pattern after ${currentWinPattern} for game ${gameNumber}`, 'info');
+      
+      const { data: gameSessionData, error: fetchError } = await supabase
+        .from('game_sessions')
+        .select('games_config')
+        .eq('id', sessionId)
+        .single();
+        
+      if (fetchError) {
+        console.error("Error fetching game config:", fetchError);
+        return null;
+      }
+      
+      if (!gameSessionData?.games_config) {
+        logWithTimestamp(`No game configs found for session ${sessionId}`, 'warn');
+        return null;
+      }
+      
+      // Parse game configs if needed
+      const configs = typeof gameSessionData.games_config === 'string'
+        ? JSON.parse(gameSessionData.games_config)
+        : gameSessionData.games_config;
+        
+      // Find config for current game
+      const currentConfig = configs.find((config: any) => 
+        config.gameNumber === gameNumber || config.game_number === gameNumber
+      );
+      
+      if (!currentConfig || !currentConfig.patterns) {
+        logWithTimestamp(`No pattern config found for game ${gameNumber}`, 'warn');
+        return null;
+      }
+      
+      // Get all active patterns
+      const activePatterns = Object.entries(currentConfig.patterns)
+        .filter(([_, pattern]: [string, any]) => pattern.active === true)
+        .map(([id, pattern]: [string, any]) => ({
+          id,
+          ...pattern
+        }));
+      
+      logWithTimestamp(`Found ${activePatterns.length} active patterns: ${activePatterns.map(p => p.id).join(', ')}`, 'info');
+      
+      // If no currentWinPattern, return the first active pattern
+      if (!currentWinPattern && activePatterns.length > 0) {
+        return activePatterns[0];
+      }
+      
+      // Find index of current pattern
+      const currentIndex = activePatterns.findIndex(p => p.id === currentWinPattern);
+      if (currentIndex < 0 || currentIndex >= activePatterns.length - 1) {
+        logWithTimestamp(`Current pattern is the last one or not found: ${currentWinPattern}`, 'info');
+        return null; // No next pattern
+      }
+      
+      // Return next pattern
+      const nextPattern = activePatterns[currentIndex + 1];
+      logWithTimestamp(`Found next pattern: ${nextPattern.id}`, 'info');
+      return nextPattern;
+      
+    } catch (error) {
+      console.error("Error finding next win pattern:", error);
+      return null;
+    }
+  }, [sessionId, gameNumber, currentWinPattern]);
+  
   // Handle verifying a claim
   const handleVerify = useCallback(async (claim: any) => {
     if (!claim) return;
@@ -80,10 +152,54 @@ export default function ClaimVerificationSheet({
     const success = await validateClaim(claim, true, onGameProgress);
     
     if (success) {
+      // After successful validation, update the current win pattern
+      // but only if we have more patterns to progress to
+      const nextPattern = await findNextWinPattern();
+      
+      if (nextPattern && sessionId) {
+        logWithTimestamp(`Progressing to next pattern: ${nextPattern.id}, prize: ${nextPattern.prizeAmount}, description: ${nextPattern.description}`, 'info');
+        
+        // Update session progress with next pattern
+        const { error: updateError } = await supabase
+          .from('sessions_progress')
+          .update({
+            current_win_pattern: nextPattern.id,
+            current_prize: nextPattern.prizeAmount || '10.00',
+            current_prize_description: nextPattern.description || `${nextPattern.id} Prize`
+          })
+          .eq('session_id', sessionId);
+          
+        if (updateError) {
+          console.error("Error updating win pattern:", updateError);
+          logWithTimestamp(`Error updating to next pattern: ${updateError.message}`, 'error');
+        } else {
+          logWithTimestamp(`Successfully updated to next pattern: ${nextPattern.id}`, 'info');
+          
+          // Broadcast pattern change for realtime update
+          try {
+            const broadcastChannel = supabase.channel('pattern-updates');
+            await broadcastChannel.send({
+              type: 'broadcast',
+              event: 'pattern-changed',
+              payload: {
+                sessionId: sessionId,
+                winPattern: nextPattern.id,
+                prize: nextPattern.prizeAmount,
+                prizeDescription: nextPattern.description
+              }
+            });
+          } catch (err) {
+            console.error("Error broadcasting pattern update:", err);
+          }
+        }
+      } else {
+        logWithTimestamp(`No next pattern found or this was the final pattern`, 'info');
+      }
+      
       toast({
         title: "Claim Verified",
         description: `The claim by ${claim.playerName} has been verified successfully.`,
-        duration: 3000, // Reduced to 3 seconds
+        duration: 3000,
       });
       
       // Refresh claims to update UI
@@ -96,13 +212,8 @@ export default function ClaimVerificationSheet({
           onClose();
         }
       }, 1500);
-      
-      // Log that game progression callback was called
-      if (onGameProgress) {
-        logWithTimestamp("Game progression callback was triggered after claim verification", 'info');
-      }
     }
-  }, [validateClaim, toast, fetchClaims, claims, onClose, autoClose, onGameProgress]);
+  }, [validateClaim, toast, fetchClaims, claims, onClose, autoClose, sessionId, findNextWinPattern, onGameProgress]);
   
   // Handle rejecting a claim
   const handleReject = useCallback(async (claim: any) => {
