@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { claimService } from '@/services/ClaimManagementService';
 import { supabase } from '@/integrations/supabase/client';
