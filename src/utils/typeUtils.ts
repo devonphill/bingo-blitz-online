@@ -7,14 +7,14 @@ import { logWithTimestamp } from './logUtils';
 import type { Json } from '@/types/json';
 
 /**
- * Ensures a value is a string, handling various JSON types
+ * Ensures a value is a string, handling various types including JSON
  * @param value Any value that needs to be safely converted to string
  * @returns The value as a string
  */
-export function ensureString(value: Json): string {
+export function ensureString(value: any): string {
   if (value === undefined || value === null) return '';
   
-  // Handle different types of values that might come from JSON
+  // Handle different types of values
   if (typeof value === 'string') return value;
   if (typeof value === 'number') return String(value);
   if (typeof value === 'boolean') return String(value);
