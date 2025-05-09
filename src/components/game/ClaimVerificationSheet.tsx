@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Sheet,
@@ -60,13 +59,16 @@ export default function ClaimVerificationSheet({
     if (isOpen) {
       logWithTimestamp(`Session ID: ${sessionId}`, 'info');
       logWithTimestamp(`Claims count: ${claims?.length || 0}`, 'info');
-      logWithTimestamp(`Current win pattern: ${currentWinPattern}`, 'info');
-      logWithTimestamp(`Current game number: ${gameNumber}`, 'info');
+      
       if (claims?.length > 0) {
-        logWithTimestamp(`First claim: ${JSON.stringify(claims[0])}`, 'debug');
+        claims.forEach((claim, idx) => {
+          logWithTimestamp(`Claim ${idx+1}: ID=${claim.id}, Player=${claim.playerName || claim.playerId}`, 'info');
+        });
+      } else {
+        logWithTimestamp('No claims found in state', 'warn');
       }
     }
-  }, [isOpen, sessionId, claims, currentWinPattern, gameNumber]);
+  }, [isOpen, sessionId, claims]);
 
   // Fetch claims on open
   useEffect(() => {
@@ -102,7 +104,7 @@ export default function ClaimVerificationSheet({
       
       toast({
         title: "Claim Verified",
-        description: `The claim by ${claim.playerName} has been verified successfully.`,
+        description: `The claim by ${claim.playerName || claim.playerId} has been verified successfully.`,
         duration: 3000,
       });
       
@@ -132,7 +134,7 @@ export default function ClaimVerificationSheet({
     if (success) {
       toast({
         title: "Claim Rejected",
-        description: `The claim by ${claim.playerName} has been rejected.`,
+        description: `The claim by ${claim.playerName || claim.playerId} has been rejected.`,
         duration: 3000,
       });
       

@@ -23,8 +23,8 @@ class ClaimManagementService {
       const sessionId = claimData.sessionId;
       logWithTimestamp(`Submitting claim for session ${sessionId}`);
 
-      // Generate a unique ID for this claim
-      const claimId = generateUUID();
+      // Generate a unique ID for this claim if not provided
+      const claimId = claimData.id || generateUUID();
 
       // Create the full claim object
       const claim: ClaimData = {
@@ -34,11 +34,23 @@ class ClaimManagementService {
         status: 'pending'
       };
 
-      // Add to storage
+      // Log the claim for debugging
+      logWithTimestamp(`Submitting claim: ${JSON.stringify({
+        id: claim.id,
+        playerId: claim.playerId,
+        playerName: claim.playerName,
+        sessionId: claim.sessionId,
+        ticket: claim.ticket ? 'present' : 'missing'
+      })}`, 'info');
+
+      // Add to storage - this should store it in memory for caller retrieval
       const added = claimStorageService.storeClaim(claim);
       if (!added) {
+        logWithTimestamp(`Failed to add claim ${claim.id} to storage`, 'error');
         return false;
       }
+
+      logWithTimestamp(`Successfully stored claim ${claim.id} locally`, 'info');
 
       // Broadcast this claim to listeners (callers and other players)
       claimBroadcastService.broadcastClaimEvent(claim);
@@ -70,6 +82,8 @@ class ClaimManagementService {
         return false;
       }
 
+      logWithTimestamp(`Looking for claim ${claimId} in session ${sessionId}`, 'info');
+
       // Find and remove the claim
       const claim = claimStorageService.removeClaim(sessionId, claimId);
       
@@ -78,12 +92,14 @@ class ClaimManagementService {
         return false;
       }
       
+      logWithTimestamp(`Found and removed claim ${claimId} from storage`, 'info');
+      
       // Broadcast result to the player
       await claimBroadcastService.broadcastClaimResult({
         sessionId,
         playerId: claim.playerId,
         playerName: claim.playerName || 'Player',
-        result: isValid ? 'valid' : 'invalid',
+        result: isValid ? 'valid' : 'rejected',
         timestamp: new Date().toISOString(),
         ticket: claim.ticket
       });
@@ -105,7 +121,9 @@ class ClaimManagementService {
    * Get all pending claims for a specific session
    */
   getClaimsForSession(sessionId: string): ClaimData[] {
-    return claimStorageService.getClaimsForSession(sessionId);
+    const claims = claimStorageService.getClaimsForSession(sessionId);
+    logWithTimestamp(`Retrieved ${claims.length} claims for session ${sessionId} from storage service`, 'info');
+    return claims;
   }
 
   /**

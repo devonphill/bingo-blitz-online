@@ -20,6 +20,33 @@ class ClaimBroadcastService {
 
       logWithTimestamp(`Broadcasting claim ${claim.id} for player ${claim.playerName || claim.playerId} in session ${claim.sessionId}`);
 
+      // Clean up the payload to avoid circular references
+      const broadcastPayload = {
+        claimId: ensureString(claim.id),
+        sessionId: ensureString(claim.sessionId),
+        playerId: ensureString(claim.playerId),
+        playerName: ensureString(claim.playerName || 'unknown'),
+        timestamp: claim.timestamp,
+        toGoCount: claim.toGoCount || 0,
+        gameType: ensureString(claim.gameType || 'mainstage'),
+        winPattern: ensureString(claim.winPattern || 'oneLine'),
+        // Sanitize ticket data to avoid circular references
+        ticket: claim.ticket ? {
+          serial: ensureString(claim.ticket.serial),
+          perm: claim.ticket.perm,
+          position: claim.ticket.position,
+          layoutMask: claim.ticket.layoutMask,
+          numbers: claim.ticket.numbers,
+          calledNumbers: claim.ticket.calledNumbers || []
+        } : undefined,
+        calledNumbers: claim.calledNumbers || [],
+        lastCalledNumber: claim.lastCalledNumber,
+        hasLastCalledNumber: claim.hasLastCalledNumber || false
+      };
+
+      // Log the actual payload we're sending for debugging
+      logWithTimestamp(`Broadcast payload: ${JSON.stringify(broadcastPayload)}`, 'debug');
+
       // Use consistent channel name "game-updates" for all claim-related broadcasts
       const broadcastChannel = supabase.channel('game-updates');
       
@@ -27,17 +54,7 @@ class ClaimBroadcastService {
       await broadcastChannel.send({
         type: validateChannelType('broadcast'), 
         event: 'claim-submitted',
-        payload: {
-          claimId: ensureString(claim.id),
-          sessionId: ensureString(claim.sessionId),
-          playerId: ensureString(claim.playerId),
-          playerName: ensureString(claim.playerName || 'unknown'),
-          timestamp: claim.timestamp,
-          toGoCount: claim.toGoCount || 0,
-          gameType: ensureString(claim.gameType || 'mainstage'),
-          winPattern: ensureString(claim.winPattern || 'oneLine'),
-          ticket: claim.ticket // Pass the ticket data for verification
-        }
+        payload: broadcastPayload
       });
       
       logWithTimestamp(`Claim broadcast sent for player ${claim.playerName || claim.playerId}`);

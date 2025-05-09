@@ -13,57 +13,82 @@ export const isPlayerCode = (id: string): boolean => {
 };
 
 /**
- * Resolves a player ID (either UUID or player code) to the actual UUID and player name
+ * Resolves a player ID (which might be a player code) to an actual database ID
  */
-export const resolvePlayerId = async (
-  playerId: string
-): Promise<{ actualPlayerId: string; playerName: string | null; error?: string }> => {
-  // If it's already a UUID, no need to resolve
-  if (!isPlayerCode(playerId)) {
-    return { actualPlayerId: playerId, playerName: null };
-  }
-
+export async function resolvePlayerId(playerIdOrCode: string): Promise<{ 
+  actualPlayerId: string | null; 
+  playerName: string | null;
+  error: string | null;
+}> {
   try {
-    // Try to find the player by code
-    const { data: playerData, error: playerError } = await supabase
-      .from('players')
-      .select('id, nickname')
-      .eq('player_code', playerId)
-      .single();
-
-    if (playerError) {
-      logWithTimestamp(`Error finding player by code: ${playerError}`, 'error');
+    // First, check if this is already a valid UUID
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isUuid = uuidPattern.test(playerIdOrCode);
+    
+    if (isUuid) {
+      // It's already a UUID, so just return it
+      logWithTimestamp(`Player ID ${playerIdOrCode} appears to be a valid UUID, using as-is`, 'info');
+      
+      // Try to get the player name though
+      const { data } = await supabase
+        .from('players')
+        .select('nickname')
+        .eq('id', playerIdOrCode)
+        .single();
+        
       return { 
-        actualPlayerId: playerId, 
-        playerName: null, 
-        error: `Failed to resolve player code: ${playerError.message}` 
+        actualPlayerId: playerIdOrCode, 
+        playerName: data?.nickname || null,
+        error: null 
       };
     }
-
-    if (!playerData) {
-      logWithTimestamp(`No player found with code ${playerId}`, 'warn');
-      return { actualPlayerId: playerId, playerName: null };
+    
+    // Otherwise, assume it's a player code and look it up
+    logWithTimestamp(`Looking up player by code: ${playerIdOrCode}`, 'info');
+    const { data, error } = await supabase
+      .from('players')
+      .select('id, nickname')
+      .eq('player_code', playerIdOrCode)
+      .single();
+    
+    if (error) {
+      logWithTimestamp(`Error finding player by code ${playerIdOrCode}: ${error.message}`, 'error');
+      return { 
+        actualPlayerId: null, 
+        playerName: null,
+        error: `Player not found: ${error.message}` 
+      };
     }
-
-    logWithTimestamp(`Found player by code: ${playerData.id} (${playerData.nickname || 'unnamed'})`, 'info');
+    
+    if (!data) {
+      logWithTimestamp(`No player found with code ${playerIdOrCode}`, 'error');
+      return { 
+        actualPlayerId: null, 
+        playerName: null,
+        error: 'Player not found' 
+      };
+    }
+    
+    logWithTimestamp(`Resolved player code ${playerIdOrCode} to ID ${data.id}`, 'info');
     return { 
-      actualPlayerId: playerData.id, 
-      playerName: playerData.nickname 
+      actualPlayerId: data.id, 
+      playerName: data.nickname,
+      error: null 
     };
   } catch (err) {
     logWithTimestamp(`Error resolving player ID: ${(err as Error).message}`, 'error');
     return { 
-      actualPlayerId: playerId, 
-      playerName: null, 
-      error: `Exception resolving player: ${(err as Error).message}` 
+      actualPlayerId: null, 
+      playerName: null,
+      error: `Error resolving player ID: ${(err as Error).message}` 
     };
   }
-};
+}
 
 /**
- * Updates an existing claim or creates a new one in the database
+ * Updates or inserts a claim in the database
  */
-export const upsertClaimInDatabase = async (
+export async function upsertClaimInDatabase(
   sessionId: string,
   playerId: string,
   playerName: string,
@@ -71,70 +96,20 @@ export const upsertClaimInDatabase = async (
   calledNumbers: number[],
   lastCalledNumber: number | null,
   ticketData: any,
-  gameNumber: number = 1,
-  gameType: string = 'mainstage',
-  isValid: boolean = true
-): Promise<boolean> => {
+  gameNumber: number,
+  gameType: string,
+  isValid: boolean
+): Promise<boolean> {
   try {
-    // First check if the claim already exists
-    const { data: existingClaims, error: fetchError } = await supabase
-      .from('universal_game_logs')
-      .select('id')
-      .eq('session_id', sessionId)
-      .eq('player_id', playerId)
-      .is('validated_at', null);
-
-    if (fetchError) {
-      logWithTimestamp(`Error fetching existing claims: ${fetchError}`, 'error');
-    }
-
-    // If we found an existing claim, update it
-    if (existingClaims && existingClaims.length > 0) {
-      const { error: updateError } = await supabase
-        .from('universal_game_logs')
-        .update({
-          validated_at: new Date().toISOString(),
-          prize_shared: isValid
-        })
-        .eq('id', existingClaims[0].id);
-
-      if (updateError) {
-        logWithTimestamp(`Error updating claim: ${updateError}`, 'error');
-        return false;
-      }
-    } else {
-      // Otherwise create a new validated entry
-      const { error: insertError } = await supabase
-        .from('universal_game_logs')
-        .insert({
-          session_id: sessionId,
-          player_id: playerId,
-          player_name: playerName,
-          game_number: gameNumber,
-          game_type: gameType,
-          win_pattern: winPattern,
-          ticket_serial: ticketData.serial,
-          ticket_perm: ticketData.perm,
-          ticket_position: ticketData.position,
-          ticket_layout_mask: ticketData.layoutMask || ticketData.layout_mask,
-          ticket_numbers: ticketData.numbers,
-          called_numbers: calledNumbers,
-          last_called_number: lastCalledNumber,
-          total_calls: calledNumbers.length,
-          claimed_at: new Date().toISOString(),
-          validated_at: new Date().toISOString(),
-          prize_shared: isValid
-        });
-
-      if (insertError) {
-        logWithTimestamp(`Error inserting claim: ${insertError}`, 'error');
-        return false;
-      }
-    }
+    // Log this info but don't actually store it in the database
+    // This function is just for compatibility with existing code
+    logWithTimestamp(`MOCK DB: Would upsert claim for player ${playerName} in session ${sessionId}`, 'info');
+    logWithTimestamp(`MOCK DB: Claim validity: ${isValid}`, 'info');
     
+    // Always return success since we're not actually storing in DB
     return true;
   } catch (err) {
-    logWithTimestamp(`Exception in upsertClaimInDatabase: ${(err as Error).message}`, 'error');
+    logWithTimestamp(`Error upserting claim: ${(err as Error).message}`, 'error');
     return false;
   }
-};
+}

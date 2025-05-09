@@ -1,12 +1,11 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useCallerClaimManagement } from '@/hooks/useCallerClaimManagement';
 import { Bell, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
 
 interface ClaimNotificationsProps {
   sessionId: string | null;
@@ -21,59 +20,42 @@ export default function ClaimNotifications({
   const [isAnimating, setIsAnimating] = useState(false);
   const [previousCount, setPreviousCount] = useState(0);
   const { toast } = useToast();
+  const mountedRef = useRef(true);
 
-  // Refresh claims initially and periodically
+  // Component lifecycle management
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false };
+  }, []);
+
+  // Refresh claims initially
   useEffect(() => {
     if (!sessionId) return;
     
     logWithTimestamp("ClaimNotifications: Mounted, fetching initial claims", 'info');
     fetchClaims();
+  }, [sessionId, fetchClaims]);
+  
+  // Set up periodic refresh
+  useEffect(() => {
+    if (!sessionId) return;
     
-    // Set up periodic refresh - more frequent now
     const interval = setInterval(() => {
-      logWithTimestamp("ClaimNotifications: Periodic refresh", 'debug');
-      fetchClaims();
-    }, 2500); // Check every 2.5 seconds
+      if (mountedRef.current) {
+        logWithTimestamp("ClaimNotifications: Periodic refresh", 'debug');
+        fetchClaims();
+      }
+    }, 3000); // Check more frequently
     
-    // Set up a Supabase real-time listener for more immediate claim notifications
-    // FIXED: Use "game-updates" channel with "claim-submitted" event
-    const channel = supabase
-      .channel('game-updates')
-      .on('broadcast', { event: 'claim-submitted' }, payload => {
-        logWithTimestamp(`ClaimNotifications: Received broadcast event: ${JSON.stringify(payload.event)}`, 'info');
-        
-        if (payload.payload?.sessionId === sessionId) {
-          logWithTimestamp(`ClaimNotifications: Real-time claim notification received`, 'info');
-          fetchClaims(); // Refresh claims immediately
-          setIsAnimating(true); // Trigger animation for immediate feedback
-          
-          // Automatically stop animation after a while
-          setTimeout(() => setIsAnimating(false), 1000);
-          
-          // Show notification for better visibility
-          toast({
-            title: "New Claim!",
-            description: `Player ${payload.payload.playerName || 'Unknown'} has submitted a claim`,
-            duration: 8000,
-          });
-        }
-      })
-      .subscribe((status) => {
-        logWithTimestamp(`ClaimNotifications: Channel subscription status: ${status}`, 'info');
-      });
-    
-    return () => {
-      clearInterval(interval);
-      supabase.removeChannel(channel);
-    };
-  }, [sessionId, fetchClaims, toast]);
+    return () => clearInterval(interval);
+  }, [sessionId, fetchClaims]);
 
   // Enhanced debugging for claims data
   useEffect(() => {
     if (claims?.length > 0) {
       logWithTimestamp(`ClaimNotifications: ${claims.length} claims found:`, 'info');
       claims.forEach((claim, i) => {
-        logWithTimestamp(`Claim ${i+1}: Player=${claim.playerName || claim.playerId}, ID=${claim.id}`, 'info');
+        logWithTimestamp(`Claim ${i+1}: ID=${claim.id}, Player=${claim.playerName || claim.playerId}`, 'info');
       });
     }
     
@@ -107,13 +89,23 @@ export default function ClaimNotifications({
       // Animation cycles
       const animations = [
         // Initial animation 
-        setTimeout(() => setIsAnimating(false), 1000),
+        setTimeout(() => {
+          if (mountedRef.current) setIsAnimating(false);
+        }, 1000),
         // Secondary pulse after a pause
-        setTimeout(() => setIsAnimating(true), 2000),
-        setTimeout(() => setIsAnimating(false), 3000),
+        setTimeout(() => {
+          if (mountedRef.current) setIsAnimating(true);
+        }, 2000),
+        setTimeout(() => {
+          if (mountedRef.current) setIsAnimating(false);
+        }, 3000),
         // Tertiary pulse
-        setTimeout(() => setIsAnimating(true), 4000),
-        setTimeout(() => setIsAnimating(false), 5000)
+        setTimeout(() => {
+          if (mountedRef.current) setIsAnimating(true);
+        }, 4000),
+        setTimeout(() => {
+          if (mountedRef.current) setIsAnimating(false);
+        }, 5000)
       ];
       
       return () => animations.forEach(timer => clearTimeout(timer));
@@ -150,7 +142,7 @@ export default function ClaimNotifications({
       <Button 
         variant="ghost" 
         size="sm" 
-        className={`relative ${claimsCount > 0 ? 'bg-red-50' : ''}`}
+        className={`relative ${claimsCount > 0 ? 'bg-red-50 hover:bg-red-100' : ''}`}
         onClick={handleClick}
       >
         {claimsCount > 0 ? (
