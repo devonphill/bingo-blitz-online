@@ -4,13 +4,14 @@
  */
 
 import { logWithTimestamp } from './logUtils';
+import type { Json } from '@/types/json';
 
 /**
  * Ensures a value is a string, handling various JSON types
  * @param value Any value that needs to be safely converted to string
  * @returns The value as a string
  */
-export function ensureString(value: any): string {
+export function ensureString(value: Json): string {
   if (value === undefined || value === null) return '';
   
   // Handle different types of values that might come from JSON

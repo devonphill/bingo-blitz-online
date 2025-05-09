@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { validateChannelType, ensureString } from '@/utils/typeUtils';
-import { Json } from '@/types/json';
+import type { Json } from '@/types/json';
 
 /**
  * Hook for managing session win patterns and prize information
@@ -80,9 +80,9 @@ export function useSessionPatternManager(sessionId: string | null) {
         const { error: updateError } = await supabase
           .from('sessions_progress')
           .update({
-            current_win_pattern: ensureString(firstPattern.id),
-            current_prize: ensureString(firstPattern.prizeAmount),
-            current_prize_description: ensureString(firstPattern.description)
+            current_win_pattern: ensureString(firstPattern.id as Json),
+            current_prize: ensureString(firstPattern.prizeAmount as Json),
+            current_prize_description: ensureString(firstPattern.description as Json)
           })
           .eq('session_id', sessionId);
           
@@ -99,9 +99,9 @@ export function useSessionPatternManager(sessionId: string | null) {
             current_game_number: currentGame,
             max_game_number: configs.length,
             current_game_type: currentConfig.gameType,
-            current_win_pattern: ensureString(firstPattern.id),
-            current_prize: ensureString(firstPattern.prizeAmount),
-            current_prize_description: ensureString(firstPattern.description)
+            current_win_pattern: ensureString(firstPattern.id as Json),
+            current_prize: ensureString(firstPattern.prizeAmount as Json),
+            current_prize_description: ensureString(firstPattern.description as Json)
           });
           
         if (insertError) {
@@ -189,8 +189,8 @@ export function useSessionPatternManager(sessionId: string | null) {
       const { error: updateError } = await supabase
         .from('sessions_progress')
         .update({
-          current_prize: ensureString(pattern.prizeAmount || '10.00'),
-          current_prize_description: ensureString(pattern.description || `${patternId} Prize`)
+          current_prize: ensureString(pattern.prizeAmount as Json || '10.00'),
+          current_prize_description: ensureString(pattern.description as Json || `${patternId} Prize`)
         })
         .eq('session_id', sessionId);
         
