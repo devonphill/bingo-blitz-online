@@ -4,22 +4,83 @@ import { Button } from '@/components/ui/button';
 import { Trophy, CheckCircle2, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { logWithTimestamp } from '@/utils/logUtils';
+import ClaimResultDialog from './ClaimResultDialog';
+import { supabase } from '@/integrations/supabase/client';
 
 interface BingoClaimProps {
   onClaimBingo: () => Promise<boolean>;
   claimStatus: 'none' | 'pending' | 'valid' | 'invalid';
   isClaiming: boolean;
   resetClaimStatus?: () => void;
+  playerName?: string;
+  currentTicket?: any;
+  calledNumbers?: number[];
+  sessionId?: string | null;
+  playerId?: string | null;
 }
 
 export default function BingoClaim({
   onClaimBingo,
   claimStatus,
   isClaiming,
-  resetClaimStatus
+  resetClaimStatus,
+  playerName = 'Player',
+  currentTicket,
+  calledNumbers = [],
+  sessionId,
+  playerId
 }: BingoClaimProps) {
   // Track if we need to forcibly reset the claim status
   const [forceResetTimer, setForceResetTimer] = useState<NodeJS.Timeout | null>(null);
+  const [showResultDialog, setShowResultDialog] = useState(false);
+  const [dialogResult, setDialogResult] = useState<'valid' | 'invalid' | null>(null);
+  const [lastClaimTime, setLastClaimTime] = useState(0);
+  
+  // Listen for claim result broadcasts
+  useEffect(() => {
+    if (!playerId || !sessionId) return;
+    
+    logWithTimestamp(`BingoClaim: Setting up claim result listener for player ${playerId}`, 'info');
+    
+    const channel = supabase
+      .channel('claim-results-channel')
+      .on('broadcast', { event: 'claim-result' }, payload => {
+        // Listen for any claim result (our own or others)
+        logWithTimestamp(`BingoClaim: Received claim result broadcast: ${JSON.stringify(payload.payload)}`, 'info');
+        
+        const result = payload.payload?.result;
+        const targetPlayerId = payload.payload?.playerId;
+        const targetPlayerName = payload.payload?.playerName || 'Unknown Player';
+        const ticket = payload.payload?.ticket;
+        
+        // Handle all claim results, even from other players
+        if (result === 'valid' || result === 'rejected' || result === 'invalid') {
+          // If it's our own claim
+          if (targetPlayerId === playerId) {
+            const isValid = result === 'valid';
+            
+            setDialogResult(isValid ? 'valid' : 'invalid');
+            setShowResultDialog(true);
+            
+            // Set the appropriate claim status
+            if (resetClaimStatus) {
+              setTimeout(() => {
+                resetClaimStatus();
+              }, 1000);
+            }
+          } 
+          // If it's someone else's claim, show a toast notification
+          else if (sessionId === payload.payload?.sessionId) {
+            logWithTimestamp(`BingoClaim: Another player's claim result: ${targetPlayerName} - ${result}`);
+          }
+        }
+      })
+      .subscribe();
+      
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [playerId, sessionId, resetClaimStatus]);
   
   // Reset claim ability based on status changes
   useEffect(() => {
@@ -32,11 +93,16 @@ export default function BingoClaim({
     }
     
     if (claimStatus === 'valid' || claimStatus === 'invalid') {
+      // Show the appropriate result dialog
+      setDialogResult(claimStatus === 'valid' ? 'valid' : 'invalid');
+      setShowResultDialog(true);
+      
       // After a delay, allow claiming again
       const timer = setTimeout(() => {
         if (resetClaimStatus) {
           logWithTimestamp(`BingoClaim: Automatically resetting claim status from: ${claimStatus} to none`, 'info');
           resetClaimStatus();
+          setShowResultDialog(false);
         }
       }, 5000); // 5 second timeout for showing claim result
       
@@ -68,10 +134,7 @@ export default function BingoClaim({
     }, 25000); // Very last resort fallback
     
     return () => clearTimeout(fallbackTimer);
-  }, [claimStatus, isClaiming, resetClaimStatus]);
-  
-  // Track last claim time for stuck state detection
-  const [lastClaimTime, setLastClaimTime] = useState(0);
+  }, [claimStatus, isClaiming, resetClaimStatus, lastClaimTime]);
   
   const handleClick = async () => {
     try {
@@ -89,6 +152,13 @@ export default function BingoClaim({
           resetClaimStatus();
         }
       }, 3000);
+    }
+  };
+  
+  const handleCloseResultDialog = () => {
+    setShowResultDialog(false);
+    if (resetClaimStatus) {
+      resetClaimStatus();
     }
   };
   
@@ -154,11 +224,26 @@ export default function BingoClaim({
     }
   };
 
+  // Prepare ticket data for the result dialog
+  const ticketForDialog = currentTicket ? {
+    serial: currentTicket.serial || '',
+    numbers: currentTicket.numbers || [],
+    calledNumbers: calledNumbers || []
+  } : undefined;
+
   return (
     <div className="flex flex-col items-center">
       <div className="w-full max-w-xs">
         {renderButton()}
       </div>
+      
+      <ClaimResultDialog
+        isOpen={showResultDialog}
+        onClose={handleCloseResultDialog}
+        result={dialogResult}
+        playerName={playerName}
+        ticket={ticketForDialog}
+      />
     </div>
   );
 }

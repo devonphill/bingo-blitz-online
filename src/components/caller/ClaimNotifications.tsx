@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { useCallerClaimManagement } from '@/hooks/useCallerClaimManagement';
-import { Bell } from 'lucide-react';
+import { Bell, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ClaimNotificationsProps {
   sessionId: string | null;
@@ -34,7 +35,25 @@ export default function ClaimNotifications({
       fetchClaims();
     }, 2500); // Check every 2.5 seconds
     
-    return () => clearInterval(interval);
+    // Set up a Supabase real-time listener for more immediate claim notifications
+    const channel = supabase
+      .channel('claim-notifications-channel')
+      .on('broadcast', { event: 'claim-submitted' }, payload => {
+        if (payload.payload?.sessionId === sessionId) {
+          logWithTimestamp(`ClaimNotifications: Real-time claim notification received`, 'info');
+          fetchClaims(); // Refresh claims immediately
+          setIsAnimating(true); // Trigger animation for immediate feedback
+          
+          // Automatically stop animation after a while
+          setTimeout(() => setIsAnimating(false), 1000);
+        }
+      })
+      .subscribe();
+    
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
   }, [sessionId, fetchClaims]);
 
   // Enhanced debugging for claims data
@@ -50,10 +69,15 @@ export default function ClaimNotifications({
     if (claimsCount > previousCount) {
       logWithTimestamp(`ClaimNotifications: New claims detected (${previousCount} → ${claimsCount})`, 'info');
       
+      // Get details of the newest claim
+      const newestClaim = claims && claims.length > 0 ? claims[0] : null;
+      
       // Show a toast notification for new claims
       toast({
         title: "New Bingo Claims",
-        description: `${claimsCount - previousCount} new claims received`,
+        description: newestClaim 
+          ? `${newestClaim.playerName || 'Player'} has claimed bingo!` 
+          : `${claimsCount - previousCount} new claims received`,
         variant: "destructive",
         duration: 8000 // Longer duration so it's not missed
       });
@@ -102,7 +126,12 @@ export default function ClaimNotifications({
       className={`relative ${claimsCount > 0 ? 'bg-red-50' : ''}`}
       onClick={handleClick}
     >
-      <Bell className={`h-5 w-5 ${isAnimating ? 'animate-bounce' : ''} ${claimsCount > 0 ? 'text-red-500' : ''}`} />
+      {claimsCount > 0 ? (
+        <AlertTriangle className={`h-5 w-5 ${isAnimating ? 'animate-bounce' : ''} text-red-500`} />
+      ) : (
+        <Bell className={`h-5 w-5 ${isAnimating ? 'animate-bounce' : ''}`} />
+      )}
+      
       {claimsCount > 0 && (
         <Badge 
           variant="destructive" 

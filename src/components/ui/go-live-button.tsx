@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useSessionLifecycle } from '@/hooks/useSessionLifecycle';
@@ -74,71 +73,78 @@ export function GoLiveButton({ sessionId, className, onSuccess, disabled, childr
       }
       
       let progressResult;
+      let updateAttempts = 0;
+      const maxAttempts = 3;
+      let updateSucceeded = false;
       
-      // If progress record exists, update it
-      if (existingProgress) {
-        // Update the existing progress record
-        progressResult = await supabase
-          .from('sessions_progress')
-          .update({
-            current_win_pattern: initialWinPattern,
-            current_game_number: 1,
-            current_game_type: currentGameType,
-            game_status: 'active',
-            current_prize: initialPrize,
-            current_prize_description: initialPrizeDescription
-          })
-          .eq('session_id', sessionId)
-          .select();
-      } else {
-        // Create a new progress record
-        progressResult = await supabase
-          .from('sessions_progress')
-          .insert({
-            session_id: sessionId,
-            current_win_pattern: initialWinPattern,
-            current_game_number: 1,
-            max_game_number: 1,
-            current_game_type: currentGameType,
-            game_status: 'active',
-            current_prize: initialPrize,
-            current_prize_description: initialPrizeDescription
-          })
-          .select();
-      }
-      
-      // Check for errors in the operation
-      if (progressResult.error) {
-        console.error("Error updating session progress:", progressResult.error);
-        throw new Error(`Failed to update session progress: ${progressResult.error.message}`);
-      }
-      
-      // Log the result of the update
-      logWithTimestamp(`Update result: ${progressResult.data ? JSON.stringify(progressResult.data) : 'No data returned'}`);
-      
-      // ENHANCED: Verify the data was saved correctly
-      const { data: verifyData, error: verifyError } = await supabase
-        .from('sessions_progress')
-        .select('current_win_pattern, current_prize, current_prize_description')
-        .eq('session_id', sessionId)
-        .single();
+      // Using a retry loop to ensure data is written
+      while (updateAttempts < maxAttempts && !updateSucceeded) {
+        updateAttempts++;
         
-      if (verifyError) {
-        console.error("Error verifying session progress update:", verifyError);
-      } else {
-        logWithTimestamp(`Verification data: ${JSON.stringify(verifyData)}`);
-        
-        // If verification shows missing data, try once more
-        if (!verifyData.current_prize || !verifyData.current_prize_description) {
-          logWithTimestamp("Prize information missing, attempting one more update", 'warn');
+        try {
+          // If progress record exists, update it
+          if (existingProgress) {
+            // Update the existing progress record
+            progressResult = await supabase
+              .from('sessions_progress')
+              .update({
+                current_win_pattern: initialWinPattern,
+                current_game_number: 1,
+                current_game_type: currentGameType,
+                game_status: 'active',
+                current_prize: initialPrize,
+                current_prize_description: initialPrizeDescription
+              })
+              .eq('session_id', sessionId)
+              .select();
+          } else {
+            // Create a new progress record
+            progressResult = await supabase
+              .from('sessions_progress')
+              .insert({
+                session_id: sessionId,
+                current_win_pattern: initialWinPattern,
+                current_game_number: 1,
+                max_game_number: 1,
+                current_game_type: currentGameType,
+                game_status: 'active',
+                current_prize: initialPrize,
+                current_prize_description: initialPrizeDescription
+              })
+              .select();
+          }
           
-          await supabase
+          // Check for errors in the operation
+          if (progressResult.error) {
+            throw new Error(`Failed to update session progress: ${progressResult.error.message}`);
+          }
+          
+          // Verify the data was actually written
+          const { data: verifyData, error: verifyError } = await supabase
             .from('sessions_progress')
-            .update({
-              current_prize: initialPrize,
-              current_prize_description: initialPrizeDescription
-            })
-            .eq('session_id', sessionId);
+            .select('current_win_pattern, current_prize, current_prize_description')
+            .eq('session_id', sessionId)
+            .single();
+            
+          if (verifyError) {
+            throw new Error(`Error verifying session progress update: ${verifyError.message}`);
+          }
+          
+          // Check that prize information was properly saved
+          if (!verifyData.current_prize || !verifyData.current_prize_description) {
+            throw new Error("Prize information missing after update");
+          }
+          
+          logWithTimestamp(`Prize information verified: ${verifyData.current_prize} - ${verifyData.current_prize_description}`);
+          updateSucceeded = true;
+          
+        } catch (err) {
+          console.error(`Update attempt ${updateAttempts} failed:`, err);
+          if (updateAttempts === maxAttempts) {
+            throw err; // Rethrow if this was the last attempt
+          }
+          // Otherwise wait a bit and retry
+          await new Promise(resolve => setTimeout(resolve, 500));
         }
       }
       
@@ -148,7 +154,7 @@ export function GoLiveButton({ sessionId, className, onSuccess, disabled, childr
       if (success) {
         toast({
           title: "Session is now live",
-          description: `Players can now join and play. Initial pattern: ${initialWinPattern}`,
+          description: `Players can now join and play. Initial pattern: ${initialWinPattern}, Prize: ${initialPrize}`,
           duration: 3000
         });
         

@@ -17,6 +17,7 @@ export function usePlayerClaimManagement(
   const [claimStatus, setClaimStatus] = useState<'none' | 'pending' | 'valid' | 'invalid'>('none');
   const [isSubmittingClaim, setIsSubmittingClaim] = useState(false);
   const [lastClaimId, setLastClaimId] = useState<string | null>(null);
+  const [lastTicket, setLastTicket] = useState<any>(null);
   const { toast } = useToast();
 
   // Listen for claim result broadcasts
@@ -49,10 +50,7 @@ export function usePlayerClaimManagement(
             });
           }
           
-          // Reset status after a delay
-          setTimeout(() => {
-            setClaimStatus('none');
-          }, 3000); // Match toast duration
+          // No auto reset here - we'll let the UI components manage the reset
         }
       })
       .subscribe();
@@ -98,39 +96,42 @@ export function usePlayerClaimManagement(
       
       // Determine if we should submit individual claims for winning tickets
       let success = false;
+      let bestTicket = null;
       
       if (winningTickets.length > 0) {
         logWithTimestamp(`Found ${winningTickets.length} winning tickets with 0 to-go. Submitting individual claims.`);
         
-        // Submit each winning ticket as a separate claim
-        for (const ticket of winningTickets) {
-          const claimData = {
-            playerId,
-            playerName,
-            sessionId,
-            gameNumber,
-            winPattern: currentWinPattern || 'oneLine',
-            ticket: {
-              serial: ticket.serial,
-              perm: ticket.perm,
-              position: ticket.position,
-              layoutMask: ticket.layoutMask || ticket.layout_mask,
-              numbers: ticket.numbers
-            },
-            calledNumbers: ticket.calledNumbers || [],
-            lastCalledNumber: ticket.lastCalledNumber || null,
-            gameType,
-            toGoCount: 0
-          };
-          
-          const result = claimService.submitClaim(claimData);
-          if (result) success = true;
-        }
+        // Use the first winning ticket
+        bestTicket = winningTickets[0];
+        
+        const claimData = {
+          playerId,
+          playerName,
+          sessionId,
+          gameNumber,
+          winPattern: currentWinPattern || 'oneLine',
+          ticket: {
+            serial: bestTicket.serial,
+            perm: bestTicket.perm,
+            position: bestTicket.position,
+            layoutMask: bestTicket.layoutMask || bestTicket.layout_mask,
+            numbers: bestTicket.numbers
+          },
+          calledNumbers: bestTicket.calledNumbers || [],
+          lastCalledNumber: bestTicket.lastCalledNumber || null,
+          gameType,
+          toGoCount: 0
+        };
+        
+        // Store the ticket for potential use in the UI
+        setLastTicket(bestTicket);
+        
+        success = claimService.submitClaim(claimData);
       } else {
-        logWithTimestamp('No winning tickets found. Submitting all tickets as a single claim.');
+        logWithTimestamp('No winning tickets found. Submitting best ticket as a single claim.');
         
         // No winning tickets - sort by fewest numbers to go and submit the best one
-        const bestTicket = [...ticketsWithCounts].sort((a, b) => a.toGoCount - b.toGoCount)[0];
+        bestTicket = [...ticketsWithCounts].sort((a, b) => a.toGoCount - b.toGoCount)[0];
         
         const claimData = {
           playerId,
@@ -150,6 +151,9 @@ export function usePlayerClaimManagement(
           gameType,
           toGoCount: bestTicket.toGoCount
         };
+        
+        // Store the ticket for potential use in the UI
+        setLastTicket(bestTicket);
         
         success = claimService.submitClaim(claimData);
       }
@@ -184,10 +188,10 @@ export function usePlayerClaimManagement(
     } finally {
       setIsSubmittingClaim(false);
       
-      // Auto-reset back to 'none' after 10 seconds if still pending (reduced from 15)
+      // Auto-reset back to 'none' after 15 seconds if still pending
       setTimeout(() => {
         setClaimStatus(prev => prev === 'pending' ? 'none' : prev);
-      }, 10000);
+      }, 15000);
     }
   }, [playerCode, playerId, sessionId, playerName, gameNumber, currentWinPattern, gameType, isSubmittingClaim, toast]);
 
@@ -200,6 +204,7 @@ export function usePlayerClaimManagement(
     claimStatus,
     isSubmittingClaim,
     submitClaim,
-    resetClaimStatus
+    resetClaimStatus,
+    lastTicket
   };
 }

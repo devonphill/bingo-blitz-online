@@ -40,17 +40,17 @@ const Index = () => {
       </div>
       
       <div className="mb-12 grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl w-full">
-        <div className="bg-white p-6 rounded-lg shadow-md">
+        <div className="bg-white p-6 rounded-lg shadow-md flex flex-col items-center">
           <div className="text-xl font-bold text-purple-600 mb-2">Multi-Game Support</div>
           <p className="text-gray-600">Play various bingo formats including 90-Ball, 80-Ball, Quiz, Music, and Logo bingo.</p>
         </div>
         
-        <div className="bg-white p-6 rounded-lg shadow-md">
+        <div className="bg-white p-6 rounded-lg shadow-md flex flex-col items-center">
           <div className="text-xl font-bold text-purple-600 mb-2">Real-time Experience</div>
           <p className="text-gray-600">Enjoy a seamless, real-time gaming experience with instant updates and notifications.</p>
         </div>
         
-        <div className="bg-white p-6 rounded-lg shadow-md">
+        <div className="bg-white p-6 rounded-lg shadow-md flex flex-col items-center">
           <div className="text-xl font-bold text-purple-600 mb-2">Easy Access</div>
           <p className="text-gray-600">Players can join games with simple 6-digit codes. No accounts needed for players.</p>
         </div>
