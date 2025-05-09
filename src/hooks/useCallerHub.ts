@@ -23,9 +23,10 @@ export function useCallerHub(sessionId: string | undefined) {
     const interval = setInterval(fetchPendingClaims, 5000);
     
     // Listen for new claims via broadcast channel
+    // FIXED: Use "game-updates" channel with "claim-submitted" event
     const channel = supabase
-      .channel('caller-claims-channel')
-      .on('broadcast', { event: 'bingo-claim' }, payload => {
+      .channel('game-updates')
+      .on('broadcast', { event: 'claim-submitted' }, payload => {
         // Fix: Use correct LogLevel parameter format
         logWithTimestamp('Received bingo claim broadcast:', 'info', 'Connection');
         if (payload.payload && payload.payload.sessionId === sessionId) {

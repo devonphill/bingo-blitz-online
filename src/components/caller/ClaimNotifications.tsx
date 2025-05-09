@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useCallerClaimManagement } from '@/hooks/useCallerClaimManagement';
-import { Bell, AlertTriangle } from 'lucide-react';
+import { Bell, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -17,7 +17,7 @@ export default function ClaimNotifications({
   sessionId, 
   onOpenClaimSheet 
 }: ClaimNotificationsProps) {
-  const { claims, claimsCount, fetchClaims } = useCallerClaimManagement(sessionId);
+  const { claims, claimsCount, fetchClaims, forceRefresh } = useCallerClaimManagement(sessionId);
   const [isAnimating, setIsAnimating] = useState(false);
   const [previousCount, setPreviousCount] = useState(0);
   const { toast } = useToast();
@@ -36,9 +36,12 @@ export default function ClaimNotifications({
     }, 2500); // Check every 2.5 seconds
     
     // Set up a Supabase real-time listener for more immediate claim notifications
+    // FIXED: Use "game-updates" channel with "claim-submitted" event
     const channel = supabase
-      .channel('claim-notifications-channel')
+      .channel('game-updates')
       .on('broadcast', { event: 'claim-submitted' }, payload => {
+        logWithTimestamp(`ClaimNotifications: Received broadcast event: ${JSON.stringify(payload.event)}`, 'info');
+        
         if (payload.payload?.sessionId === sessionId) {
           logWithTimestamp(`ClaimNotifications: Real-time claim notification received`, 'info');
           fetchClaims(); // Refresh claims immediately
@@ -46,22 +49,31 @@ export default function ClaimNotifications({
           
           // Automatically stop animation after a while
           setTimeout(() => setIsAnimating(false), 1000);
+          
+          // Show notification for better visibility
+          toast({
+            title: "New Claim!",
+            description: `Player ${payload.payload.playerName || 'Unknown'} has submitted a claim`,
+            duration: 8000,
+          });
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        logWithTimestamp(`ClaimNotifications: Channel subscription status: ${status}`, 'info');
+      });
     
     return () => {
       clearInterval(interval);
       supabase.removeChannel(channel);
     };
-  }, [sessionId, fetchClaims]);
+  }, [sessionId, fetchClaims, toast]);
 
   // Enhanced debugging for claims data
   useEffect(() => {
     if (claims?.length > 0) {
       logWithTimestamp(`ClaimNotifications: ${claims.length} claims found:`, 'info');
       claims.forEach((claim, i) => {
-        logWithTimestamp(`Claim ${i+1}: Player=${claim.playerName || claim.playerId}`, 'info');
+        logWithTimestamp(`Claim ${i+1}: Player=${claim.playerName || claim.playerId}, ID=${claim.id}`, 'info');
       });
     }
     
@@ -117,29 +129,56 @@ export default function ClaimNotifications({
     fetchClaims();
   };
 
+  // Handle force refresh of claims
+  const handleForceRefresh = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Don't trigger the parent click handler
+    logWithTimestamp("ClaimNotifications: Force refreshing claims", 'info');
+    
+    forceRefresh();
+    
+    toast({
+      title: "Claims Refreshed",
+      description: "Manually refreshed claim notifications",
+      duration: 2000,
+    });
+  };
+
   if (!sessionId) return null;
 
   return (
-    <Button 
-      variant="ghost" 
-      size="sm" 
-      className={`relative ${claimsCount > 0 ? 'bg-red-50' : ''}`}
-      onClick={handleClick}
-    >
-      {claimsCount > 0 ? (
-        <AlertTriangle className={`h-5 w-5 ${isAnimating ? 'animate-bounce' : ''} text-red-500`} />
-      ) : (
-        <Bell className={`h-5 w-5 ${isAnimating ? 'animate-bounce' : ''}`} />
-      )}
+    <div className="relative">
+      <Button 
+        variant="ghost" 
+        size="sm" 
+        className={`relative ${claimsCount > 0 ? 'bg-red-50' : ''}`}
+        onClick={handleClick}
+      >
+        {claimsCount > 0 ? (
+          <AlertTriangle className={`h-5 w-5 ${isAnimating ? 'animate-bounce' : ''} text-red-500`} />
+        ) : (
+          <Bell className={`h-5 w-5 ${isAnimating ? 'animate-bounce' : ''}`} />
+        )}
+        
+        {claimsCount > 0 && (
+          <Badge 
+            variant="destructive" 
+            className="absolute -top-1 -right-1 px-1.5 py-0.5 min-w-[20px] flex items-center justify-center text-xs animate-pulse"
+          >
+            {claimsCount}
+          </Badge>
+        )}
+      </Button>
       
-      {claimsCount > 0 && (
-        <Badge 
-          variant="destructive" 
-          className="absolute -top-1 -right-1 px-1.5 py-0.5 min-w-[20px] flex items-center justify-center text-xs animate-pulse"
-        >
-          {claimsCount}
-        </Badge>
-      )}
-    </Button>
+      {/* Add small refresh button for forced refresh */}
+      <Button
+        variant="outline"
+        size="sm"
+        className="absolute -right-10 top-0 w-8 h-8 p-0"
+        onClick={handleForceRefresh}
+        title="Force refresh claims"
+      >
+        <RefreshCw className="h-3 w-3" />
+      </Button>
+    </div>
   );
 }

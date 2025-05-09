@@ -40,6 +40,17 @@ export function useCallerClaimManagement(sessionId: string | null) {
       setIsRefreshing(false);
     }
   }, [sessionId]);
+
+  // Force refresh function to manually reload claims when needed
+  const forceRefresh = useCallback(() => {
+    logWithTimestamp(`Force refreshing claims for session ${sessionId}`, 'info');
+    fetchClaims();
+    
+    // Attempt to re-subscribe to ensure we're getting events
+    setupChannelSubscription();
+    
+    return true;
+  }, [sessionId, fetchClaims]);
   
   // Method to validate a claim
   const validateClaim = useCallback(async (
@@ -94,34 +105,49 @@ export function useCallerClaimManagement(sessionId: string | null) {
     }
   }, [sessionId, toast, fetchClaims]);
   
-  // Listen for new claims
-  useEffect(() => {
-    if (!sessionId) return;
+  // Function to set up channel subscription - extracted to be reusable
+  const setupChannelSubscription = useCallback(() => {
+    if (!sessionId) return null;
     
-    // Set up channel to listen for new claims
+    logWithTimestamp(`Setting up claim listening for session ${sessionId}`, 'info');
+    
+    // Set up channel to listen for new claims - FIXED: using "game-updates" channel with "claim-submitted" event
     const channel = supabase
-      .channel('caller-claims-listen')
+      .channel('game-updates')
       .on('broadcast', { event: 'claim-submitted' }, payload => {
         if (payload.payload?.sessionId === sessionId) {
           logWithTimestamp(`Received new claim broadcast for session ${sessionId}`, 'info');
+          logWithTimestamp(`Claim details: ${JSON.stringify(payload.payload)}`, 'debug');
+          
           // Refresh claims to include the new one
           fetchClaims();
           
           // Show toast notification
           toast({
-            title: "New Claim Submitted",
+            title: "New Claim Submitted!",
             description: `Player ${payload.payload.playerName || 'Unknown'} has submitted a bingo claim.`,
-            duration: 5000,
+            duration: 8000, // Longer duration to ensure visibility
           });
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        logWithTimestamp(`Claim channel subscription status: ${status}`, 'info');
+      });
+      
+    return channel;
+  }, [sessionId, fetchClaims, toast]);
+  
+  // Listen for new claims - using the extracted function
+  useEffect(() => {
+    const channel = setupChannelSubscription();
       
     // Clean up on unmount
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
     };
-  }, [sessionId, fetchClaims, toast]);
+  }, [sessionId, setupChannelSubscription]);
   
   // Get claims count for convenience
   const claimsCount = claims.length;
@@ -130,6 +156,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
     claims,
     claimsCount,
     fetchClaims,
+    forceRefresh,
     validateClaim,
     isProcessingClaim,
     isRefreshing,

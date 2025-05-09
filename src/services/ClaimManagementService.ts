@@ -162,10 +162,10 @@ const broadcastClaimEvent = async (claim: any) => {
 
     logWithTimestamp(`Broadcasting claim ${claim.id} for player ${claim.playerName || claim.playerId} in session ${claim.sessionId}`);
 
-    // Create a channel for broadcasting
+    // FIXED: Use consistent channel name "game-updates" for all claim-related broadcasts
     const broadcastChannel = supabase.channel('game-updates');
     
-    // Broadcast the claim to all listeners
+    // Broadcast the claim to all listeners - FIXED: use consistent event name "claim-submitted"
     await broadcastChannel.send({
       type: validateChannelType('broadcast'), 
       event: 'claim-submitted',
@@ -199,7 +199,7 @@ const broadcastClaimResult = async (
   ticket?: any
 ) => {
   try {
-    // Create a channel for broadcasting
+    // FIXED: Use consistent channel name "claim-results-channel" for result broadcasts
     const broadcastChannel = supabase.channel('claim-results-channel');
     
     // Log before broadcasting

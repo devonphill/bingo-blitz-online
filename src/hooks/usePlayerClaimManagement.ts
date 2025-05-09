@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -43,12 +42,16 @@ export function usePlayerClaimManagement(
     setClaimStatus('pending');
     
     try {
+      // FIXED: Use correct channel name "game-updates" and event name "claim-submitted"
+      const channel = supabase.channel('game-updates');
+      
       // Create payload to send
       const payload = {
         type: validateChannelType('broadcast'),
         event: 'claim-submitted',
         payload: {
           playerCode,
+          playerId,
           sessionId,
           playerName: playerName || playerCode,
           gameType,
@@ -68,8 +71,9 @@ export function usePlayerClaimManagement(
       logWithTimestamp(`PlayerClaimManagement: Submitting claim with payload: ${JSON.stringify(payload.payload)}`, 'info');
       
       // Send claim via real-time channel
-      const channel = supabase.channel('game-updates');
       await channel.send(payload);
+      
+      logWithTimestamp(`PlayerClaimManagement: Claim broadcast sent successfully`, 'info');
       
       toast({
         title: "Bingo Submitted!",
@@ -92,7 +96,7 @@ export function usePlayerClaimManagement(
       // Keep the claim status as pending but stop the submitting indicator
       setIsSubmittingClaim(false);
     }
-  }, [playerCode, sessionId, playerName, gameType, currentWinPattern, gameNumber, toast]);
+  }, [playerCode, playerId, sessionId, playerName, gameType, currentWinPattern, gameNumber, toast]);
   
   // Set up listener for claim results
   useEffect(() => {
@@ -131,7 +135,9 @@ export function usePlayerClaimManagement(
           }
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        logWithTimestamp(`PlayerClaimManagement: Result channel subscription status: ${status}`, 'info');
+      });
     
     return () => {
       supabase.removeChannel(channel);

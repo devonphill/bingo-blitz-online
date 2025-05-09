@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Sheet,
@@ -43,7 +44,8 @@ export default function ClaimVerificationSheet({
     claims, 
     validateClaim, 
     isProcessingClaim,
-    fetchClaims
+    fetchClaims,
+    forceRefresh
   } = useCallerClaimManagement(sessionId || null);
   
   const { toast } = useToast();
@@ -178,7 +180,7 @@ export default function ClaimVerificationSheet({
         } else {
           logWithTimestamp(`Successfully updated to next pattern: ${nextPattern.id}`, 'info');
           
-          // Broadcast pattern change for realtime update - FIX: Use validateChannelType and ensure strings
+          // Broadcast pattern change for realtime update - Using validateChannelType and ensuring strings
           try {
             const broadcastChannel = supabase.channel('pattern-updates');
             await broadcastChannel.send({
@@ -191,6 +193,8 @@ export default function ClaimVerificationSheet({
                 prizeDescription: String(nextPattern.description || `${nextPattern.id} Prize`)
               }
             });
+            
+            logWithTimestamp(`Pattern change broadcast sent for pattern: ${nextPattern.id}`, 'info');
           } catch (err) {
             console.error("Error broadcasting pattern update:", err);
           }
@@ -245,13 +249,13 @@ export default function ClaimVerificationSheet({
     if (!sessionId) return;
     
     logWithTimestamp(`Manually refreshing claims for session ${sessionId}`, 'info');
-    fetchClaims();
+    forceRefresh();
     toast({
-      title: "Refreshed",
-      description: "Claim list has been refreshed",
+      title: "Claims Refreshed",
+      description: "Claim list has been manually refreshed",
       duration: 2000, // Even shorter for this minor notification
     });
-  }, [sessionId, fetchClaims, toast]);
+  }, [sessionId, forceRefresh, toast]);
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
@@ -297,6 +301,15 @@ export default function ClaimVerificationSheet({
               <p className="text-sm text-muted-foreground mb-4">
                 Claims will appear here automatically when players submit them.
               </p>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleRefresh}
+                className="mx-auto"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Force Refresh
+              </Button>
             </div>
           ) : (
             claims.map((claim, index) => (
