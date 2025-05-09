@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -76,11 +75,11 @@ export function LiveGameView({
   // Use the network context
   const network = useNetwork();
   
-  // Use our new claim management hook
+  // Use our claim management hook
   const { claims, claimsCount, fetchClaims } = useCallerClaimManagement(sessionId || null);
 
-  // Use our new session pattern manager hook
-  const { initializeSessionPattern, updatePatternPrizeInfo } = useSessionPatternManager(sessionId || null);
+  // Use our session pattern manager hook with the fixed implementation
+  const { updateWinPattern, initializeSessionPattern, updatePatternPrizeInfo } = useSessionPatternManager(sessionId || null);
 
   // Log when currentWinPattern changes
   React.useEffect(() => {
