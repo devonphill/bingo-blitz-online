@@ -65,9 +65,17 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return result;
   }, [updateConnectionState]);
   
-  // Fetch pending claims
+  // Fetch pending claims - MODIFIED to use claimService
   const fetchClaims = useCallback(async (sessionId?: string): Promise<any[]> => {
-    return await connectionManager.fetchClaims(sessionId);
+    logWithTimestamp(`NetworkContext: Fetching claims for session ${sessionId || connectedSessionId.current}`);
+    if (!sessionId && !connectedSessionId.current) {
+      return [];
+    }
+    
+    // Use claimService instead of direct database calls
+    const claims = claimService.getClaimsForSession(sessionId || connectedSessionId.current || '');
+    logWithTimestamp(`NetworkContext: Found ${claims.length} claims in service`);
+    return claims;
   }, []);
   
   // Add implementation for updatePlayerPresence
@@ -173,10 +181,10 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, []);
   
-  // Add implementation for submitBingoClaim - UPDATED to use claim service
+  // Add implementation for submitBingoClaim - UPDATED to ensure proper connection with claimService
   const submitBingoClaim = useCallback((ticket: any, playerCode: string, sessionId: string): boolean => {
     try {
-      logWithTimestamp(`Submitting bingo claim for player ${playerCode} in session ${sessionId}`, 'info');
+      logWithTimestamp(`NetworkContext: Submitting bingo claim for player ${playerCode} in session ${sessionId}`, 'info');
       
       // First, we need to fetch the actual player ID
       supabase
@@ -197,7 +205,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
           }
           
           // Submit the claim using the claim service
-          return claimService.submitClaim({
+          const result = claimService.submitClaim({
             playerId: data.id,
             playerName: data.nickname || playerCode,
             sessionId: sessionId,
@@ -212,6 +220,8 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
             calledNumbers: ticket.calledNumbers || [],
             lastCalledNumber: ticket.lastCalledNumber || null
           });
+          
+          return result;
         });
       
       return true; // Return true to indicate claim submission attempt started
@@ -221,18 +231,27 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, []);
   
-  // Add implementation for validateClaim - UPDATED to use claim service
+  // Add implementation for validateClaim - UPDATED to use claim service explicitly
   const validateClaim = useCallback(async (claim: any, isValid: boolean): Promise<boolean> => {
+    if (!claim || !claim.id) {
+      logWithTimestamp(`NetworkContext: Cannot validate claim: invalid claim data`, 'error');
+      return false;
+    }
+    
+    logWithTimestamp(`NetworkContext: Processing claim ${claim.id}, isValid=${isValid}`, 'info');
     try {
-      if (!claim || !claim.id) {
-        logWithTimestamp(`Cannot validate claim: invalid claim data`, 'error');
-        return false;
+      // Use claim service to process claim
+      const result = await claimService.processClaim(claim.id, claim.sessionId || connectedSessionId.current || '', isValid);
+      
+      if (result) {
+        logWithTimestamp(`NetworkContext: Claim ${claim.id} processed successfully, isValid=${isValid}`, 'info');
+      } else {
+        logWithTimestamp(`NetworkContext: Failed to process claim ${claim.id}`, 'error');
       }
       
-      // Use claim service to process claim
-      return await claimService.processClaim(claim.id, claim.sessionId, isValid);
+      return result;
     } catch (err) {
-      logWithTimestamp(`Exception validating claim: ${(err as Error).message}`, 'error');
+      logWithTimestamp(`NetworkContext: Exception validating claim: ${(err as Error).message}`, 'error');
       return false;
     }
   }, []);

@@ -4,6 +4,7 @@ import { claimService } from '@/services/ClaimManagementService';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { useToast } from '@/hooks/use-toast';
+import { useNetwork } from '@/contexts/NetworkStatusContext';
 
 /**
  * Hook for managing bingo claims from the caller's perspective
@@ -14,6 +15,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [isProcessingClaim, setIsProcessingClaim] = useState<boolean>(false);
   const { toast } = useToast();
+  const network = useNetwork(); // Get network context
   
   // Refresh claims from the service
   const fetchClaims = useCallback(() => {
@@ -26,7 +28,9 @@ export function useCallerClaimManagement(sessionId: string | null) {
     setIsRefreshing(true);
     
     try {
+      // Use claimService directly
       const sessionClaims = claimService.getClaimsForSession(sessionId);
+      logWithTimestamp(`Found ${sessionClaims.length} claims from service`, 'info');
       setClaims(sessionClaims);
       setLastRefreshTime(Date.now());
     } catch (error) {
@@ -54,7 +58,8 @@ export function useCallerClaimManagement(sessionId: string | null) {
     setIsProcessingClaim(true);
     try {
       logWithTimestamp(`Processing claim ${claim.id} with result: ${isValid ? 'valid' : 'invalid'}`);
-      const result = await claimService.processClaim(claim.id, sessionId, isValid, onGameProgress);
+      // Use network context to process claim
+      const result = await network.validateClaim(claim, isValid);
       
       if (result) {
         toast({
@@ -62,6 +67,11 @@ export function useCallerClaimManagement(sessionId: string | null) {
           description: `${claim.playerName || 'Player'}'s claim has been ${isValid ? 'verified' : 'rejected'}.`,
           duration: 3000,
         });
+        
+        // If the claim was valid and we have a progress callback, call it
+        if (isValid && onGameProgress) {
+          onGameProgress();
+        }
       }
       
       return result;
@@ -78,7 +88,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
       // Refresh claims after processing
       fetchClaims();
     }
-  }, [sessionId, toast, fetchClaims]);
+  }, [sessionId, toast, fetchClaims, network]);
   
   // Set up real-time listener for new claims
   useEffect(() => {

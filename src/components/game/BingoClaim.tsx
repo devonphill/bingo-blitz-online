@@ -35,12 +35,21 @@ export default function BingoClaim({
   const [showResultDialog, setShowResultDialog] = useState(false);
   const [dialogResult, setDialogResult] = useState<'valid' | 'invalid' | null>(null);
   const [lastClaimTime, setLastClaimTime] = useState(0);
+  const [hasReceivedResult, setHasReceivedResult] = useState(false);
+  
+  // Log when status changes to help with debugging
+  useEffect(() => {
+    logWithTimestamp(`BingoClaim: Status changed to ${claimStatus}`, 'info');
+  }, [claimStatus]);
   
   // Listen for claim result broadcasts
   useEffect(() => {
-    if (!playerId || !sessionId) return;
+    if (!playerId && !sessionId) {
+      logWithTimestamp(`BingoClaim: No player ID or session ID provided, skipping result listener`, 'warn');
+      return;
+    }
     
-    logWithTimestamp(`BingoClaim: Setting up claim result listener for player ${playerId}`, 'info');
+    logWithTimestamp(`BingoClaim: Setting up claim result listener for ${playerId ? `player ${playerId}` : 'session ' + sessionId}`, 'info');
     
     const channel = supabase
       .channel('claim-results-channel')
@@ -51,27 +60,33 @@ export default function BingoClaim({
         const result = payload.payload?.result;
         const targetPlayerId = payload.payload?.playerId;
         const targetPlayerName = payload.payload?.playerName || 'Unknown Player';
+        const targetSessionId = payload.payload?.sessionId;
         const ticket = payload.payload?.ticket;
         
         // Handle all claim results, even from other players
         if (result === 'valid' || result === 'rejected' || result === 'invalid') {
-          // If it's our own claim
-          if (targetPlayerId === playerId) {
-            const isValid = result === 'valid';
-            
-            setDialogResult(isValid ? 'valid' : 'invalid');
-            setShowResultDialog(true);
-            
-            // Set the appropriate claim status
-            if (resetClaimStatus) {
-              setTimeout(() => {
-                resetClaimStatus();
-              }, 1000);
+          // Check if it's for our session
+          if (sessionId === targetSessionId) {
+            // If it's our own claim
+            if (playerId === targetPlayerId) {
+              const isValid = result === 'valid';
+              
+              logWithTimestamp(`BingoClaim: Received result for my claim: ${result}`, 'info');
+              setDialogResult(isValid ? 'valid' : 'invalid');
+              setShowResultDialog(true);
+              setHasReceivedResult(true);
+              
+              // Set the appropriate claim status
+              if (resetClaimStatus) {
+                setTimeout(() => {
+                  resetClaimStatus();
+                }, 1000);
+              }
+            } 
+            // If it's someone else's claim, show a toast notification
+            else {
+              logWithTimestamp(`BingoClaim: Another player's claim result: ${targetPlayerName} - ${result}`);
             }
-          } 
-          // If it's someone else's claim, show a toast notification
-          else if (sessionId === payload.payload?.sessionId) {
-            logWithTimestamp(`BingoClaim: Another player's claim result: ${targetPlayerName} - ${result}`);
           }
         }
       })
@@ -93,9 +108,11 @@ export default function BingoClaim({
     }
     
     if (claimStatus === 'valid' || claimStatus === 'invalid') {
-      // Show the appropriate result dialog
-      setDialogResult(claimStatus === 'valid' ? 'valid' : 'invalid');
-      setShowResultDialog(true);
+      // Show the appropriate result dialog if we haven't already
+      if (!showResultDialog) {
+        setDialogResult(claimStatus === 'valid' ? 'valid' : 'invalid');
+        setShowResultDialog(true);
+      }
       
       // After a delay, allow claiming again
       const timer = setTimeout(() => {
@@ -120,7 +137,7 @@ export default function BingoClaim({
       setForceResetTimer(timer);
       return () => clearTimeout(timer);
     }
-  }, [claimStatus, resetClaimStatus, forceResetTimer]);
+  }, [claimStatus, resetClaimStatus, forceResetTimer, showResultDialog]);
 
   // ENHANCED: Add a fallback reset mechanism
   useEffect(() => {
@@ -140,6 +157,7 @@ export default function BingoClaim({
     try {
       setLastClaimTime(Date.now());
       logWithTimestamp("BingoClaim: Submitting bingo claim");
+      setHasReceivedResult(false);
       await onClaimBingo();
     } catch (error) {
       console.error("Error claiming bingo:", error);
@@ -156,6 +174,7 @@ export default function BingoClaim({
   };
   
   const handleCloseResultDialog = () => {
+    logWithTimestamp(`BingoClaim: Closing result dialog`, 'info');
     setShowResultDialog(false);
     if (resetClaimStatus) {
       resetClaimStatus();

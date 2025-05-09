@@ -1,13 +1,14 @@
-
-import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { useState, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { claimService } from '@/services/ClaimManagementService';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { supabase } from '@/integrations/supabase/client';
 
+/**
+ * Hook for managing bingo claims from the player perspective
+ */
 export function usePlayerClaimManagement(
-  playerCode: string | null, 
-  playerId: string | null, 
+  playerCode: string | null,
+  playerId: string | null,
   sessionId: string | null,
   playerName: string | null,
   gameType: string = 'mainstage',
@@ -16,195 +17,129 @@ export function usePlayerClaimManagement(
 ) {
   const [claimStatus, setClaimStatus] = useState<'none' | 'pending' | 'valid' | 'invalid'>('none');
   const [isSubmittingClaim, setIsSubmittingClaim] = useState(false);
-  const [lastClaimId, setLastClaimId] = useState<string | null>(null);
-  const [lastTicket, setLastTicket] = useState<any>(null);
   const { toast } = useToast();
-
-  // Listen for claim result broadcasts
+  
+  // Reset claim status
+  const resetClaimStatus = useCallback(() => {
+    logWithTimestamp(`PlayerClaimManagement: Resetting claim status from ${claimStatus} to none`, 'info');
+    setClaimStatus('none');
+  }, [claimStatus]);
+  
+  // Submit a claim
+  const submitClaim = useCallback(async (ticket: any) => {
+    if (!playerCode || !sessionId) {
+      toast({
+        title: "Cannot Claim",
+        description: "Missing player information or session ID",
+        variant: "destructive"
+      });
+      return false;
+    }
+    
+    logWithTimestamp(`PlayerClaimManagement: Submitting claim for ${playerCode} in ${sessionId}`, 'info');
+    setIsSubmittingClaim(true);
+    setClaimStatus('pending');
+    
+    try {
+      // Create payload to send
+      const payload = {
+        type: 'broadcast',
+        event: 'claim-submitted',
+        payload: {
+          playerCode,
+          sessionId,
+          playerName: playerName || playerCode,
+          gameType,
+          winPattern: currentWinPattern,
+          gameNumber,
+          timestamp: new Date().toISOString(),
+          ticket: {
+            serial: ticket.serial,
+            perm: ticket.perm,
+            position: ticket.position,
+            layoutMask: ticket.layout_mask || ticket.layoutMask,
+            numbers: ticket.numbers
+          }
+        }
+      };
+      
+      logWithTimestamp(`PlayerClaimManagement: Submitting claim with payload: ${JSON.stringify(payload.payload)}`, 'info');
+      
+      // Send claim via real-time channel
+      const channel = supabase.channel('game-updates');
+      await channel.send(payload);
+      
+      toast({
+        title: "Bingo Submitted!",
+        description: "Your claim has been submitted for verification.",
+        duration: 3000,
+      });
+      
+      // Keep the claim status as pending until we get a result
+      return true;
+    } catch (error) {
+      console.error('Error submitting claim:', error);
+      toast({
+        title: "Claim Error",
+        description: "Failed to submit your bingo claim.",
+        variant: "destructive"
+      });
+      setClaimStatus('none');
+      return false;
+    } finally {
+      // Keep the claim status as pending but stop the submitting indicator
+      setIsSubmittingClaim(false);
+    }
+  }, [playerCode, sessionId, playerName, gameType, currentWinPattern, gameNumber, toast]);
+  
+  // Set up listener for claim results
   useEffect(() => {
-    if (!playerId) return;
+    if (!playerId && !playerCode) return;
     
-    logWithTimestamp(`Setting up claim result listener for player ${playerId}`, 'info');
+    logWithTimestamp(`PlayerClaimManagement: Setting up claim result listener for ${playerCode || playerId}`, 'info');
     
-    const channel = supabase
-      .channel('claim-results-channel')
+    const channel = supabase.channel('claim-results-channel')
       .on('broadcast', { event: 'claim-result' }, payload => {
-        if (payload.payload && payload.payload.playerId === playerId) {
-          logWithTimestamp(`Received claim result for player ${playerId}: ${payload.payload.result}`, 'info');
-          
-          if (payload.payload.result === 'valid') {
+        const result = payload.payload?.result;
+        const targetPlayerId = payload.payload?.playerId;
+        const targetSessionId = payload.payload?.sessionId;
+        
+        logWithTimestamp(`PlayerClaimManagement: Received claim result: ${JSON.stringify(payload.payload)}`, 'info');
+        
+        // Check if this result is for us
+        if ((targetPlayerId === playerId || targetPlayerId === playerCode) && targetSessionId === sessionId) {
+          // Update our claim status based on the result
+          if (result === 'valid') {
+            logWithTimestamp(`PlayerClaimManagement: Claim was validated!`, 'info');
             setClaimStatus('valid');
             toast({
-              title: "Bingo Validated!",
-              description: "Your bingo claim has been verified. Congratulations!",
-              variant: "default",
-              duration: 3000, // Reduced to 3 seconds 
+              title: "Bingo Verified!",
+              description: "Your bingo claim has been verified!",
+              duration: 5000,
             });
-          } else {
+          } else if (result === 'invalid' || result === 'rejected') {
+            logWithTimestamp(`PlayerClaimManagement: Claim was rejected`, 'info');
             setClaimStatus('invalid');
             toast({
               title: "Claim Rejected",
               description: "Your bingo claim was not verified.",
               variant: "destructive",
-              duration: 3000, // Reduced to 3 seconds
+              duration: 5000,
             });
           }
-          
-          // No auto reset here - we'll let the UI components manage the reset
         }
       })
       .subscribe();
-      
+    
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [playerId, toast]);
-
-  // Handle submitting a bingo claim - organized by ticket status
-  const submitClaim = useCallback(async (tickets: any[]) => {
-    if (!playerCode || !playerId || !sessionId || !playerName) {
-      logWithTimestamp('Cannot submit claim - missing required information', 'error');
-      return false;
-    }
-    
-    if (isSubmittingClaim) {
-      logWithTimestamp('Claim submission already in progress', 'warn');
-      return false;
-    }
-    
-    if (!tickets || tickets.length === 0) {
-      logWithTimestamp('No tickets provided for claim', 'error');
-      return false;
-    }
-    
-    setIsSubmittingClaim(true);
-    setClaimStatus('pending');
-    
-    try {
-      // First, process tickets to determine which need to be submitted as claims
-      // Calculate "to-go" count for each ticket
-      const ticketsWithCounts = tickets.map(ticket => {
-        const toGoCount = ticket.numbers.filter(n => !ticket.calledNumbers.includes(n)).length;
-        return {
-          ...ticket,
-          toGoCount
-        };
-      });
-      
-      // Find tickets with 0 "to-go" (winning tickets)
-      const winningTickets = ticketsWithCounts.filter(t => t.toGoCount === 0);
-      
-      // Determine if we should submit individual claims for winning tickets
-      let success = false;
-      let bestTicket = null;
-      
-      if (winningTickets.length > 0) {
-        logWithTimestamp(`Found ${winningTickets.length} winning tickets with 0 to-go. Submitting individual claims.`);
-        
-        // Use the first winning ticket
-        bestTicket = winningTickets[0];
-        
-        const claimData = {
-          playerId,
-          playerName,
-          sessionId,
-          gameNumber,
-          winPattern: currentWinPattern || 'oneLine',
-          ticket: {
-            serial: bestTicket.serial,
-            perm: bestTicket.perm,
-            position: bestTicket.position,
-            layoutMask: bestTicket.layoutMask || bestTicket.layout_mask,
-            numbers: bestTicket.numbers
-          },
-          calledNumbers: bestTicket.calledNumbers || [],
-          lastCalledNumber: bestTicket.lastCalledNumber || null,
-          gameType,
-          toGoCount: 0
-        };
-        
-        // Store the ticket for potential use in the UI
-        setLastTicket(bestTicket);
-        
-        success = claimService.submitClaim(claimData);
-      } else {
-        logWithTimestamp('No winning tickets found. Submitting best ticket as a single claim.');
-        
-        // No winning tickets - sort by fewest numbers to go and submit the best one
-        bestTicket = [...ticketsWithCounts].sort((a, b) => a.toGoCount - b.toGoCount)[0];
-        
-        const claimData = {
-          playerId,
-          playerName,
-          sessionId,
-          gameNumber,
-          winPattern: currentWinPattern || 'oneLine',
-          ticket: {
-            serial: bestTicket.serial,
-            perm: bestTicket.perm,
-            position: bestTicket.position,
-            layoutMask: bestTicket.layoutMask || bestTicket.layout_mask,
-            numbers: bestTicket.numbers
-          },
-          calledNumbers: bestTicket.calledNumbers || [],
-          lastCalledNumber: bestTicket.lastCalledNumber || null,
-          gameType,
-          toGoCount: bestTicket.toGoCount
-        };
-        
-        // Store the ticket for potential use in the UI
-        setLastTicket(bestTicket);
-        
-        success = claimService.submitClaim(claimData);
-      }
-      
-      if (success) {
-        toast({
-          title: "Bingo Claim Submitted",
-          description: "Your claim has been submitted and is waiting for verification.",
-          duration: 3000, // Reduced to 3 seconds
-        });
-      } else {
-        toast({
-          title: "Claim Submission Failed",
-          description: "Failed to submit your claim. Please try again.",
-          variant: "destructive",
-          duration: 3000, // Reduced to 3 seconds
-        });
-        setClaimStatus('none');
-      }
-      
-      return success;
-    } catch (error) {
-      console.error('Error submitting claim:', error);
-      toast({
-        title: "Error",
-        description: "An unexpected error occurred while submitting your claim.",
-        variant: "destructive",
-        duration: 3000, // Reduced to 3 seconds
-      });
-      setClaimStatus('none');
-      return false;
-    } finally {
-      setIsSubmittingClaim(false);
-      
-      // Auto-reset back to 'none' after 15 seconds if still pending
-      setTimeout(() => {
-        setClaimStatus(prev => prev === 'pending' ? 'none' : prev);
-      }, 15000);
-    }
-  }, [playerCode, playerId, sessionId, playerName, gameNumber, currentWinPattern, gameType, isSubmittingClaim, toast]);
-
-  // Reset claim status
-  const resetClaimStatus = useCallback(() => {
-    setClaimStatus('none');
-  }, []);
+  }, [playerId, playerCode, sessionId, toast]);
 
   return {
     claimStatus,
     isSubmittingClaim,
     submitClaim,
-    resetClaimStatus,
-    lastTicket
+    resetClaimStatus
   };
 }

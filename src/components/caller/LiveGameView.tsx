@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +14,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
 import { useCallerClaimManagement } from '@/hooks/useCallerClaimManagement';
 import ClaimNotifications from './ClaimNotifications';
+import { useSessionPatternManager } from '@/hooks/useSessionPatternManager'; // Import our new hook
 
 interface WinPattern {
   id: string;
@@ -75,12 +77,20 @@ export function LiveGameView({
   const network = useNetwork();
   
   // Use our new claim management hook
-  const { claims, claimsCount } = useCallerClaimManagement(sessionId || null);
+  const { claims, claimsCount, fetchClaims } = useCallerClaimManagement(sessionId || null);
+
+  // Use our new session pattern manager hook
+  const { initializeSessionPattern, updatePatternPrizeInfo } = useSessionPatternManager(sessionId || null);
 
   // Log when currentWinPattern changes
   React.useEffect(() => {
     logWithTimestamp(`LiveGameView: Current win pattern updated to ${currentWinPattern}`);
-  }, [currentWinPattern]);
+    
+    // If we have a current win pattern but it has no prize info, update it
+    if (currentWinPattern && sessionId) {
+      updatePatternPrizeInfo(currentWinPattern);
+    }
+  }, [currentWinPattern, sessionId, updatePatternPrizeInfo]);
   
   // Set up connection when component mounts
   useEffect(() => {
@@ -97,9 +107,29 @@ export function LiveGameView({
     // When the component mounts, reconnect to make sure we're in sync
     setTimeout(() => {
       network.connect(sessionId);
+      
+      // Initialize the session pattern if it doesn't have one yet
+      initializeSessionPattern();
     }, 500);
     
-  }, [sessionId, network]);
+  }, [sessionId, network, initializeSessionPattern]);
+  
+  // Refresh claims periodically
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    // Check for claims initially
+    fetchClaims();
+    
+    // Set up periodic refresh
+    const interval = setInterval(() => {
+      if (isMounted.current) {
+        fetchClaims();
+      }
+    }, 5000); // Check every 5 seconds
+    
+    return () => clearInterval(interval);
+  }, [sessionId, fetchClaims]);
   
   const handleReconnect = () => {
     // Simple reconnect using network context
@@ -116,6 +146,10 @@ export function LiveGameView({
 
   const openClaimSheet = () => {
     console.log(`Opening claim verification sheet`);
+    // Refresh claims before opening
+    if (sessionId) {
+      fetchClaims();
+    }
     setIsClaimSheetOpen(true);
   };
   

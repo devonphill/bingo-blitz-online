@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
@@ -176,9 +175,12 @@ const broadcastClaimEvent = async (claim: any) => {
         timestamp: claim.timestamp,
         toGoCount: claim.toGoCount || 0,
         gameType: claim.gameType || 'mainstage',
-        winPattern: claim.winPattern || 'oneLine'
+        winPattern: claim.winPattern || 'oneLine',
+        ticket: claim.ticket // Pass the ticket data for verification
       }
     });
+    
+    logWithTimestamp(`Claim broadcast sent for player ${claim.playerName || claim.playerId}`);
   } catch (err) {
     console.error("Error broadcasting claim:", err);
   }
@@ -198,6 +200,9 @@ const broadcastClaimResult = async (
     // Create a channel for broadcasting
     const broadcastChannel = supabase.channel('claim-results-channel');
     
+    // Log before broadcasting
+    logWithTimestamp(`Broadcasting claim result: ${result} for player ${playerName || playerId} in session ${sessionId}`, 'info');
+    
     // Broadcast to all clients - they'll filter based on their own player ID
     await broadcastChannel.send({
       type: 'broadcast',
@@ -216,7 +221,7 @@ const broadcastClaimResult = async (
       }
     });
     
-    logWithTimestamp(`Broadcast claim result: ${result} for player ${playerName || playerId}`);
+    logWithTimestamp(`Broadcast claim result sent: ${result} for player ${playerName || playerId}`);
     
     // Remove claim from pending list if found
     const sessionClaims = pendingClaims.get(sessionId) || [];
@@ -240,9 +245,9 @@ const clearClaimsForSession = (sessionId: string) => {
 
 export const claimService = {
   submitClaim,
+  processClaim,
   getClaimsForSession,
   broadcastClaimEvent,
   broadcastClaimResult,
-  clearClaimsForSession,
-  processClaim
+  clearClaimsForSession
 };

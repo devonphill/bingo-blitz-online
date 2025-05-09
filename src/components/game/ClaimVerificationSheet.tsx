@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Sheet,
@@ -143,9 +144,12 @@ export default function ClaimVerificationSheet({
   
   // Handle verifying a claim
   const handleVerify = useCallback(async (claim: any) => {
-    if (!claim) return;
+    if (!claim) {
+      logWithTimestamp(`ClaimVerificationSheet: Cannot verify null claim`, 'error');
+      return;
+    }
     
-    logWithTimestamp(`Verifying claim: ${JSON.stringify(claim)}`, 'info');
+    logWithTimestamp(`ClaimVerificationSheet: Verifying claim: ${claim.id}`, 'info');
     
     // We'll pass onGameProgress callback if it exists for game progression
     const success = await validateClaim(claim, true, onGameProgress);
@@ -216,9 +220,12 @@ export default function ClaimVerificationSheet({
   
   // Handle rejecting a claim
   const handleReject = useCallback(async (claim: any) => {
-    if (!claim) return;
+    if (!claim) {
+      logWithTimestamp(`ClaimVerificationSheet: Cannot reject null claim`, 'error');
+      return;
+    }
     
-    logWithTimestamp(`Rejecting claim: ${JSON.stringify(claim)}`, 'info');
+    logWithTimestamp(`ClaimVerificationSheet: Rejecting claim: ${claim.id}`, 'info');
     const success = await validateClaim(claim, false);
     
     if (success) {
@@ -284,7 +291,7 @@ export default function ClaimVerificationSheet({
             />
           </div>
           
-          {claims?.length === 0 ? (
+          {!claims || claims.length === 0 ? (
             <div className="text-center text-gray-500 p-8">
               <p className="mb-2">No claims to review at this time.</p>
               <p className="text-sm text-muted-foreground mb-4">
@@ -292,7 +299,7 @@ export default function ClaimVerificationSheet({
               </p>
             </div>
           ) : (
-            claims?.map((claim, index) => (
+            claims.map((claim, index) => (
               <div key={claim.id || index} className="border rounded-md p-4">
                 <div className="font-bold">Claim Details</div>
                 <div>Player: {claim.playerName || claim.playerId}</div>
