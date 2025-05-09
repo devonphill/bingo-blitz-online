@@ -12,7 +12,8 @@ interface GoLiveButtonProps {
 
 export function GoLiveButton({ sessionId, onClick }: GoLiveButtonProps) {
   const { toast } = useToast();
-  const { goLive, isUpdating } = useSessionLifecycle();
+  // Pass sessionId to useSessionLifecycle as it's required by the hook
+  const { goLive, isUpdating } = useSessionLifecycle(sessionId || undefined);
   const { initializeSessionPattern } = useSessionPatternManager(sessionId);
 
   const handleGoLive = async () => {
