@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 const Index = () => {
   const navigate = useNavigate();
@@ -15,7 +15,7 @@ const Index = () => {
         A real-time online bingo platform for hosting and playing various bingo games
       </p>
       
-      <div className="flex flex-col sm:flex-row gap-4">
+      <div className="flex flex-col sm:flex-row gap-4 mb-12">
         <Button 
           className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-lg px-6 py-6"
           onClick={() => navigate('/player/join')}
@@ -39,7 +39,7 @@ const Index = () => {
         </Button>
       </div>
       
-      <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl w-full">
+      <div className="mb-12 grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl w-full">
         <div className="bg-white p-6 rounded-lg shadow-md">
           <div className="text-xl font-bold text-purple-600 mb-2">Multi-Game Support</div>
           <p className="text-gray-600">Play various bingo formats including 90-Ball, 80-Ball, Quiz, Music, and Logo bingo.</p>
@@ -53,6 +53,25 @@ const Index = () => {
         <div className="bg-white p-6 rounded-lg shadow-md">
           <div className="text-xl font-bold text-purple-600 mb-2">Easy Access</div>
           <p className="text-gray-600">Players can join games with simple 6-digit codes. No accounts needed for players.</p>
+        </div>
+      </div>
+
+      {/* Links to information pages */}
+      <div className="w-full max-w-4xl">
+        <h2 className="text-2xl font-semibold mb-4 text-blue-700">Learn More</h2>
+        <div className="flex flex-wrap justify-center gap-4">
+          <Button variant="ghost" onClick={() => navigate('/attract-hosts')} className="border border-blue-200">
+            For Hosts
+          </Button>
+          <Button variant="ghost" onClick={() => navigate('/about')} className="border border-blue-200">
+            About Us
+          </Button>
+          <Button variant="ghost" onClick={() => navigate('/faq-players')} className="border border-blue-200">
+            Player FAQ
+          </Button>
+          <Button variant="ghost" onClick={() => navigate('/faq-hosts')} className="border border-blue-200">
+            Host FAQ
+          </Button>
         </div>
       </div>
     </div>

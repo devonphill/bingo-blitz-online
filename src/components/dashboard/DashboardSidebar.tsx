@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Settings } from 'lucide-react';
+import { User, Settings, FileText, Users, FileBarChart, HelpCircle, Info } from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
@@ -17,18 +17,52 @@ export default function DashboardSidebar() {
   const navigate = useNavigate();
   const { user, role } = useAuth();
 
-  const menuItems = [
-    ...(role === 'superuser' ? [
-      {
-        title: 'Game Rules',
-        icon: Settings,
-        onClick: () => navigate('/admin'),
-      }
-    ] : []),
+  const adminMenuItems = [
+    {
+      title: 'Dashboard',
+      icon: FileBarChart,
+      onClick: () => navigate('/dashboard'),
+    },
+    {
+      title: 'Reports',
+      icon: FileText,
+      onClick: () => navigate('/reports'),
+    },
     {
       title: 'Profile',
       icon: User,
       onClick: () => navigate('/profile'),
+    },
+  ];
+
+  const superuserMenuItems = [
+    {
+      title: 'Manage Superusers',
+      icon: Users,
+      onClick: () => navigate('/superuser/manage'),
+    },
+    {
+      title: 'System Reports',
+      icon: FileBarChart,
+      onClick: () => navigate('/superuser/reports'),
+    }
+  ];
+
+  const helpMenuItems = [
+    {
+      title: 'Host FAQ',
+      icon: HelpCircle,
+      onClick: () => navigate('/faq-hosts'),
+    },
+    {
+      title: 'Player FAQ',
+      icon: HelpCircle,
+      onClick: () => navigate('/faq-players'),
+    },
+    {
+      title: 'About Us',
+      icon: Info,
+      onClick: () => navigate('/about'),
     },
   ];
 
@@ -52,7 +86,47 @@ export default function DashboardSidebar() {
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <nav className="space-y-1">
-              {menuItems.map((item) => (
+              {adminMenuItems.map((item) => (
+                <div key={item.title}>
+                  <Button 
+                    variant="ghost" 
+                    className="flex items-center gap-3 w-full justify-start"
+                    onClick={item.onClick}>
+                    <item.icon className="h-4 w-4" />
+                    <span>{item.title}</span>
+                  </Button>
+                </div>
+              ))}
+            </nav>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {role === 'superuser' && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Administration</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <nav className="space-y-1">
+                {superuserMenuItems.map((item) => (
+                  <div key={item.title}>
+                    <Button 
+                      variant="ghost" 
+                      className="flex items-center gap-3 w-full justify-start"
+                      onClick={item.onClick}>
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </Button>
+                  </div>
+                ))}
+              </nav>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Help & Support</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <nav className="space-y-1">
+              {helpMenuItems.map((item) => (
                 <div key={item.title}>
                   <Button 
                     variant="ghost" 
