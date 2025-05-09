@@ -12,6 +12,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
   const [claims, setClaims] = useState<any[]>([]);
   const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [isProcessingClaim, setIsProcessingClaim] = useState<boolean>(false);
   const { toast } = useToast();
   
   // Refresh claims from the service
@@ -34,6 +35,50 @@ export function useCallerClaimManagement(sessionId: string | null) {
       setIsRefreshing(false);
     }
   }, [sessionId]);
+  
+  // Method to validate a claim
+  const validateClaim = useCallback(async (
+    claim: any, 
+    isValid: boolean, 
+    onGameProgress?: () => void
+  ) => {
+    if (!sessionId || !claim?.id) {
+      toast({
+        title: "Error",
+        description: "Invalid claim data",
+        variant: "destructive"
+      });
+      return false;
+    }
+    
+    setIsProcessingClaim(true);
+    try {
+      logWithTimestamp(`Processing claim ${claim.id} with result: ${isValid ? 'valid' : 'invalid'}`);
+      const result = await claimService.processClaim(claim.id, sessionId, isValid, onGameProgress);
+      
+      if (result) {
+        toast({
+          title: isValid ? "Claim Verified" : "Claim Rejected",
+          description: `${claim.playerName || 'Player'}'s claim has been ${isValid ? 'verified' : 'rejected'}.`,
+          duration: 3000,
+        });
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('Error validating claim:', error);
+      toast({
+        title: "Error",
+        description: "Failed to process claim",
+        variant: "destructive"
+      });
+      return false;
+    } finally {
+      setIsProcessingClaim(false);
+      // Refresh claims after processing
+      fetchClaims();
+    }
+  }, [sessionId, toast, fetchClaims]);
   
   // Set up real-time listener for new claims
   useEffect(() => {
@@ -73,12 +118,14 @@ export function useCallerClaimManagement(sessionId: string | null) {
     };
   }, [sessionId, fetchClaims, toast]);
   
-  // Return claims, count, and refresh function
+  // Return claims, count, refresh function and validation methods
   return {
     claims,
     claimsCount: claims.length,
     fetchClaims,
     isRefreshing,
-    lastRefreshTime
+    lastRefreshTime,
+    validateClaim,
+    isProcessingClaim
   };
 }

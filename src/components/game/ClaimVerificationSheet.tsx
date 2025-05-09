@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Sheet,
@@ -300,7 +299,7 @@ export default function ClaimVerificationSheet({
                 <div>Session: {claim.sessionId?.substring(0, 8)}...</div>
                 <div>Game: {claim.gameNumber || gameNumber}</div>
                 <div>Pattern: {claim.winPattern || currentWinPattern}</div>
-                <div>Claimed at: {new Date(claim.claimedAt).toLocaleTimeString()}</div>
+                <div>Claimed at: {new Date(claim.timestamp).toLocaleTimeString()}</div>
                 
                 {claim.toGoCount !== undefined && (
                   <div className="mt-2 bg-yellow-50 p-2 rounded">

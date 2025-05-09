@@ -230,7 +230,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return false;
       }
       
-      // Use claim service to validate
+      // Use claim service to process claim
       return await claimService.processClaim(claim.id, claim.sessionId, isValid);
     } catch (err) {
       logWithTimestamp(`Exception validating claim: ${(err as Error).message}`, 'error');

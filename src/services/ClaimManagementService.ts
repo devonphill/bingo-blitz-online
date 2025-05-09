@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
@@ -72,6 +73,64 @@ const submitClaim = (claimData: any) => {
     return true;
   } catch (error) {
     console.error('Error submitting claim:', error);
+    return false;
+  }
+};
+
+/**
+ * Process a claim validation result
+ * @param claimId The ID of the claim to process
+ * @param sessionId The session ID for context
+ * @param isValid Whether the claim is valid or not
+ * @param onGameProgress Optional callback for game progression after validation
+ * @returns {Promise<boolean>} Success status
+ */
+const processClaim = async (
+  claimId: string,
+  sessionId: string,
+  isValid: boolean,
+  onGameProgress?: () => void
+): Promise<boolean> => {
+  try {
+    if (!claimId || !sessionId) {
+      logWithTimestamp('Cannot process claim: Missing claim ID or session ID', 'error');
+      return false;
+    }
+
+    // Find the claim in the session queue
+    const sessionClaims = pendingClaims.get(sessionId) || [];
+    const claimIndex = sessionClaims.findIndex(c => c.id === claimId);
+
+    if (claimIndex === -1) {
+      logWithTimestamp(`Claim ${claimId} not found in session ${sessionId}`, 'error');
+      return false;
+    }
+
+    const claim = sessionClaims[claimIndex];
+    
+    // Remove from pending claims
+    sessionClaims.splice(claimIndex, 1);
+    pendingClaims.set(sessionId, sessionClaims);
+    logWithTimestamp(`Removed claim ${claimId} from pending queue. Queue now has ${sessionClaims.length} claims.`);
+    
+    // Broadcast result to the player
+    await broadcastClaimResult(
+      sessionId,
+      claim.playerId,
+      claim.playerName || 'Player',
+      isValid ? 'valid' : 'invalid',
+      claim.ticket
+    );
+    
+    // If valid and there's a progression callback, trigger it
+    if (isValid && onGameProgress) {
+      logWithTimestamp('Triggering game progression callback', 'info');
+      onGameProgress();
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error processing claim:', error);
     return false;
   }
 };
@@ -184,5 +243,6 @@ export const claimService = {
   getClaimsForSession,
   broadcastClaimEvent,
   broadcastClaimResult,
-  clearClaimsForSession
+  clearClaimsForSession,
+  processClaim
 };
