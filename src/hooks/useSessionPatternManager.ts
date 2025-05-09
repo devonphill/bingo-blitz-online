@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { validateChannelType, ensureString } from '@/utils/typeUtils';
+import { Json } from '@/types/json';
 
 /**
  * Hook for managing session win patterns and prize information
