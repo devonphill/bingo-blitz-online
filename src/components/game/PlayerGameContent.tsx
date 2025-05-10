@@ -12,7 +12,7 @@ import GameTypePlayspace from "./GameTypePlayspace";
 import { usePlayerClaimManagement } from "@/hooks/usePlayerClaimManagement";
 import { usePlayerWebSocketNumbers } from "@/hooks/usePlayerWebSocketNumbers";
 import BingoClaim, { claimEvents } from "./BingoClaim";
-import { supabase } from "@/integrations/supabase/client"; // Add the missing import
+import { supabase } from "@/integrations/supabase/client";
 
 interface PlayerGameContentProps {
   tickets: any[];
@@ -256,14 +256,19 @@ export default function PlayerGameContent({
     };
   }, [currentWinPattern, activeWinPatterns, winPrizes]);
 
-  // Handle claim bingo
+  // Handle local claim bingo
   const handleLocalClaimBingo = async () => {
     logWithTimestamp('PlayerGameContent: Handling local claim bingo', 'info');
-    console.log('HANDLING CLAIM BINGO CLICK');
     
     if (onClaimBingo) {
+      // Use the provided claim handler from props
       return await onClaimBingo();
+    } 
+    else if (submitClaim && tickets && tickets.length > 0) {
+      // Use the claim manager hook if we have ticket data
+      return await submitClaim(tickets[0]);
     }
+    
     return false;
   };
 

@@ -38,69 +38,8 @@ export default function FixedClaimOverlay({
       // Log for debugging
       logWithTimestamp(`FixedClaimOverlay: Displaying for ${playerName}`, 'info');
       console.log('FixedClaimOverlay claimData:', claimData);
-      
-      // Check if element is actually visible in DOM after a short delay
-      setTimeout(() => {
-        if (overlayRef.current) {
-          logElementVisibility('.fixed-claim-overlay', 'Fixed Claim Overlay');
-          
-          // Try to measure its position and dimensions for debugging
-          const rect = overlayRef.current.getBoundingClientRect();
-          logWithTimestamp(`FixedClaimOverlay position: x=${rect.left}, y=${rect.top}, width=${rect.width}, height=${rect.height}`, 'info');
-          
-          // Check if parent elements might be hiding it
-          let parent = overlayRef.current.parentElement;
-          let depth = 0;
-          while (parent && depth < 5) {
-            const style = window.getComputedStyle(parent);
-            logWithTimestamp(`Parent ${depth} style: position=${style.position}, z-index=${style.zIndex}, overflow=${style.overflow}`, 'debug');
-            parent = parent.parentElement;
-            depth++;
-          }
-        } else {
-          logWithTimestamp('FixedClaimOverlay: Element not found in DOM after mounting', 'warn');
-        }
-      }, 100);
     }
   }, [isVisible, playerName, claimData]);
-  
-  // Insert the overlay directly into body when visible for maximum z-index effectiveness
-  useEffect(() => {
-    // Create a direct body-level container for the overlay if needed
-    if (isVisible && typeof document !== 'undefined') {
-      // Check if our container already exists
-      let container = document.getElementById('fixed-overlay-container');
-      
-      if (!container) {
-        // Create container if it doesn't exist
-        container = document.createElement('div');
-        container.id = 'fixed-overlay-container';
-        container.style.position = 'fixed';
-        container.style.top = '0';
-        container.style.left = '0';
-        container.style.width = '100vw';
-        container.style.height = '100vh';
-        container.style.display = 'flex';
-        container.style.alignItems = 'center';
-        container.style.justifyContent = 'center';
-        container.style.zIndex = '10000'; // Very high z-index
-        container.style.pointerEvents = 'none'; // Let clicks through by default
-        document.body.appendChild(container);
-        
-        logWithTimestamp('Created body-level container for fixed overlay', 'info');
-      }
-      
-      // Enable pointer events when overlay is active
-      container.style.pointerEvents = 'auto';
-      
-      return () => {
-        // Disable pointer events when overlay is hidden
-        if (container) {
-          container.style.pointerEvents = 'none';
-        }
-      };
-    }
-  }, [isVisible]);
   
   // Auto-close logic for when a validation result is received
   useEffect(() => {
@@ -118,21 +57,35 @@ export default function FixedClaimOverlay({
   
   if (!isVisible) return null;
 
-  // Check if we have ticket data to display
-  const hasTicket = claimData?.ticket && (
-    Array.isArray(claimData.ticket.numbers) || 
-    Array.isArray(claimData.ticket.calledNumbers)
-  );
-  
-  // Get ticket data from claim payload
-  const ticketData = hasTicket ? {
-    numbers: claimData.ticket.numbers || [],
-    layoutMask: claimData.ticket.layoutMask || claimData.ticket.layout_mask || 0,
-    calledNumbers: claimData.calledNumbers || claimData.ticket.calledNumbers || [],
-    serial: claimData.ticket.serial || 'Unknown',
-    perm: claimData.ticket.perm || 0,
-    position: claimData.ticket.position || 0
-  } : null;
+  // Process ticket data more carefully from the claim payload
+  const ticketData = (() => {
+    if (!claimData) return null;
+    
+    // Check if we have ticket object with necessary properties
+    const ticket = claimData.ticket;
+    if (!ticket) return null;
+    
+    // Make sure we have numbers array
+    const numbers = Array.isArray(ticket.numbers) ? ticket.numbers : [];
+    if (numbers.length === 0) return null;
+    
+    // Handle both naming conventions for layout mask
+    const layoutMask = ticket.layoutMask !== undefined ? ticket.layoutMask : ticket.layout_mask;
+    
+    // Get called numbers from either the ticket or the claimData
+    const calledNumbers = Array.isArray(claimData.calledNumbers) 
+      ? claimData.calledNumbers 
+      : (Array.isArray(ticket.calledNumbers) ? ticket.calledNumbers : []);
+    
+    return {
+      numbers,
+      layoutMask,
+      calledNumbers,
+      serial: ticket.serial || 'Unknown',
+      perm: ticket.perm || 0,
+      position: ticket.position || 0
+    };
+  })();
   
   return (
     <div 
@@ -140,19 +93,10 @@ export default function FixedClaimOverlay({
       className="fixed inset-0 flex items-center justify-center bg-black/70 z-[9999] fixed-claim-overlay animate-fade-in"
       ref={overlayRef}
       style={{ 
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        width: '100vw',
-        height: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 9999,
         backdropFilter: 'blur(3px)'
       }}
     >
-      <Card className="w-[95vw] max-w-md bg-white shadow-xl animate-scale-in relative">
+      <Card className="w-[95vw] max-w-md bg-white shadow-xl animate-scale-in relative overflow-hidden">
         {/* Validation overlay - only shows when there's a result */}
         {validationResult && (
           <div className={cn(
@@ -178,6 +122,7 @@ export default function FixedClaimOverlay({
             variant="ghost" 
             size="icon" 
             className="absolute right-2 top-2 rounded-full hover:bg-red-100 hover:text-red-600"
+            aria-label="Close"
           >
             <X className="h-5 w-5 text-red-500" />
           </Button>
@@ -217,7 +162,7 @@ export default function FixedClaimOverlay({
             
             {!validationResult && (
               <p className="text-center text-gray-600">
-                The caller is checking this claim now. Please wait...
+                The caller is checking this claim now...
               </p>
             )}
             
@@ -225,6 +170,16 @@ export default function FixedClaimOverlay({
               <div className="mt-2 px-4 py-2 bg-amber-50 rounded-md text-amber-700 text-center">
                 Pattern: <span className="font-semibold">{claimData.winPattern}</span>
               </div>
+            )}
+            
+            {/* Conditionally show close button only if we're not auto-closing */}
+            {validationResult && !shouldAutoClose && (
+              <Button 
+                onClick={onClose}
+                className="mt-2 bg-blue-500 hover:bg-blue-600 text-white"
+              >
+                Close
+              </Button>
             )}
           </div>
         </CardContent>
