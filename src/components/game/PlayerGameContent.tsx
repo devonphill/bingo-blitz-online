@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -289,17 +290,18 @@ export default function PlayerGameContent({
           <div className="mt-4">
             {children || (
               <GameTypePlayspace
-                gameType={gameType}
+                gameType={gameType as any}
                 tickets={tickets}
                 calledNumbers={effectiveCalledNumbers}
                 lastCalledNumber={effectiveLastCalledNumber}
                 autoMarking={autoMarking}
+                setAutoMarking={setAutoMarking}
                 handleClaimBingo={handleLocalClaimBingo}
                 isClaiming={effectiveIsClaiming}
                 claimStatus={effectiveClaimStatus === 'valid' ? 'validated' : effectiveClaimStatus === 'invalid' ? 'rejected' : 'pending'}
-                sessionId={currentSession?.id}  {/* IMPORTANT: Pass session ID */}
-                playerId={playerId}             {/* IMPORTANT: Pass player ID */}
-                playerName={playerName}         {/* IMPORTANT: Pass player name */}
+                sessionId={currentSession?.id}
+                playerId={playerId}
+                playerName={playerName}
               />
             )}
           </div>
@@ -311,8 +313,8 @@ export default function PlayerGameContent({
         claimStatus={effectiveClaimStatus}
         isClaiming={effectiveIsClaiming}
         onRefreshTickets={onRefreshTickets}
-        sessionId={currentSession?.id}  {/* IMPORTANT: Pass session ID */}
-        playerId={playerId}             {/* IMPORTANT: Pass player ID */}
+        sessionId={currentSession?.id}
+        playerId={playerId}
       />
       
       {/* Add global BingoClaim component */}
