@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
 import StatusBar from "./StatusBar";
@@ -12,6 +12,7 @@ import GameTypePlayspace from "./GameTypePlayspace";
 import { usePlayerClaimManagement } from "@/hooks/usePlayerClaimManagement";
 import { usePlayerWebSocketNumbers } from "@/hooks/usePlayerWebSocketNumbers";
 import BingoClaim, { claimEvents } from "./BingoClaim";
+import { setupClaimDebugging } from "@/utils/claimDebugUtils";
 
 interface PlayerGameContentProps {
   tickets: any[];
@@ -36,7 +37,7 @@ interface PlayerGameContentProps {
   connectionState?: 'disconnected' | 'connecting' | 'connected' | 'error';
   onRefreshTickets?: () => void;
   onReconnect?: () => void;
-  children?: React.ReactNode; // Added children prop
+  children?: React.ReactNode;
 }
 
 export default function PlayerGameContent({
@@ -62,8 +63,22 @@ export default function PlayerGameContent({
   connectionState = 'connected',
   onRefreshTickets,
   onReconnect,
-  children // Added children to destructuring
+  children
 }: PlayerGameContentProps) {
+  // Keep a reference to track component instance
+  const componentId = useRef(`playerGame-${Math.random().toString(36).substring(2, 7)}`);
+  
+  // Log critical values to help with debugging
+  useEffect(() => {
+    console.log('PlayerGameContent critical values:', {
+      sessionId: currentSession?.id,
+      playerCode,
+      playerId,
+      playerName,
+      claimStatus
+    });
+  }, [currentSession?.id, playerCode, playerId, playerName, claimStatus]);
+  
   const { getGameTypeById } = useGameManager();
   
   // Local states for UI elements
@@ -83,7 +98,7 @@ export default function PlayerGameContent({
     isConnected: wsConnected
   } = usePlayerWebSocketNumbers(currentSession?.id);
   
-  // Use our new claim management hook
+  // Use our claim management hook
   const {
     claimStatus: claimStatusFromHook,
     isSubmittingClaim,
@@ -99,15 +114,14 @@ export default function PlayerGameContent({
     currentGameNumber
   );
   
-  // DEBUGGING: Log important values related to claim management
-  console.log('PlayerGameContent critical values:', {
-    sessionId: currentSession?.id,
-    playerCode,
-    playerId,
-    playerName,
-    claimStatus: claimStatusFromHook || claimStatus
-  });
-  
+  // Setup claim debugging
+  useEffect(() => {
+    logWithTimestamp(`PlayerGameContent (${componentId.current}): Setting up claim debugging`, 'info');
+    const cleanup = setupClaimDebugging();
+    
+    return cleanup;
+  }, []);
+
   // Use the WebSocket called numbers if available, otherwise use props
   const effectiveCalledNumbers = wsCalledNumbers.length > 0 ? wsCalledNumbers : calledNumbers;
   const effectiveLastCalledNumber = wsLastCalledNumber !== null ? wsLastCalledNumber : currentNumber;
@@ -253,7 +267,7 @@ export default function PlayerGameContent({
 
   // Handle local claim bingo
   const handleLocalClaimBingo = async () => {
-    logWithTimestamp('PlayerGameContent: Handling local claim bingo', 'info');
+    logWithTimestamp(`PlayerGameContent (${componentId.current}): Handling local claim bingo`, 'info');
     
     if (onClaimBingo) {
       // Use the provided claim handler from props
@@ -266,17 +280,9 @@ export default function PlayerGameContent({
     
     return false;
   };
-
-  // Use state to track if we've already handled the claim event
-  const [claimHandled, setClaimHandled] = useState(false);
-
-  // Reset claim handled state when session changes
-  useEffect(() => {
-    setClaimHandled(false);
-  }, [currentSession?.id]);
   
   return (
-    <div className={`min-h-full flex flex-col`} style={{ backgroundColor }}>
+    <div className="min-h-full flex flex-col" style={{ backgroundColor }}>
       <GameHeader 
         gameNumber={currentGameNumber} 
         totalGames={numberOfGames}
@@ -330,7 +336,7 @@ export default function PlayerGameContent({
         playerId={playerId}
       />
       
-      {/* Add BingoClaim component for handling claim broadcasts - disable emergency fallback UI */}
+      {/* Add BingoClaim component with improved handling */}
       <BingoClaim
         onClaimBingo={handleLocalClaimBingo}
         claimStatus={effectiveClaimStatus}
@@ -341,7 +347,7 @@ export default function PlayerGameContent({
         calledNumbers={effectiveCalledNumbers}
         sessionId={currentSession?.id}
         playerId={playerId}
-        disableEmergencyFallback={true} // Prevent emergency notifications
+        disableEmergencyFallback={true} // Fully disable emergency notifications
       />
       
       {showDebug && (

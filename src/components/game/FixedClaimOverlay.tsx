@@ -36,12 +36,14 @@ export default function FixedClaimOverlay({
       setRenderKey(prev => prev + 1);
       
       // Log for debugging
-      logWithTimestamp(`FixedClaimOverlay: Displaying for ${playerName}`, 'info');
+      logWithTimestamp(`FixedClaimOverlay: Displaying for ${playerName} with data:`, 'info');
       console.log('FixedClaimOverlay claimData:', claimData);
       
       // Log DOM visibility after a slight delay to ensure element is rendered
       setTimeout(() => {
+        const element = document.querySelector('.fixed-claim-overlay');
         logElementVisibility('.fixed-claim-overlay', 'FixedClaimOverlay');
+        logWithTimestamp(`FixedClaimOverlay DOM element exists: ${!!element}, visible: ${element?.getBoundingClientRect().height > 0}`, 'info');
       }, 100);
     }
   }, [isVisible, playerName, claimData]);
@@ -60,27 +62,61 @@ export default function FixedClaimOverlay({
     }
   }, [validationResult, isVisible, onClose]);
   
-  if (!isVisible) return null;
+  // For debugging - add global access
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).claimOverlayState = { isVisible, claimData, validationResult };
+      (window as any).toggleClaimOverlay = () => {
+        logWithTimestamp('Manual toggling of claim overlay', 'info');
+        const element = document.querySelector('.fixed-claim-overlay');
+        if (element) {
+          logWithTimestamp(`Overlay element exists, current display: ${window.getComputedStyle(element).display}`, 'info');
+        } else {
+          logWithTimestamp('Overlay element does not exist in DOM', 'warn');
+        }
+      };
+    }
+  }, [isVisible, claimData, validationResult]);
+  
+  // Don't render anything if not visible
+  if (!isVisible) {
+    logWithTimestamp('FixedClaimOverlay: Not rendering because isVisible is false', 'info');
+    return null;
+  }
 
   // Process ticket data more carefully from the claim payload
   const ticketData = (() => {
-    if (!claimData) return null;
+    if (!claimData) {
+      logWithTimestamp('FixedClaimOverlay: No claim data available', 'warn');
+      return null;
+    }
     
     // Check if we have ticket object with necessary properties
     const ticket = claimData.ticket;
-    if (!ticket) return null;
+    if (!ticket) {
+      logWithTimestamp('FixedClaimOverlay: No ticket object in claim data', 'warn');
+      return null;
+    }
     
     // Make sure we have numbers array
     const numbers = Array.isArray(ticket.numbers) ? ticket.numbers : [];
-    if (numbers.length === 0) return null;
+    if (numbers.length === 0) {
+      logWithTimestamp('FixedClaimOverlay: No numbers array in ticket', 'warn');
+      return null;
+    }
     
     // Handle both naming conventions for layout mask
     const layoutMask = ticket.layoutMask !== undefined ? ticket.layoutMask : ticket.layout_mask;
+    if (layoutMask === undefined) {
+      logWithTimestamp('FixedClaimOverlay: No layout mask found in ticket', 'warn');
+    }
     
     // Get called numbers from either the ticket or the claimData
     const calledNumbers = Array.isArray(claimData.calledNumbers) 
       ? claimData.calledNumbers 
       : (Array.isArray(ticket.calledNumbers) ? ticket.calledNumbers : []);
+      
+    logWithTimestamp(`FixedClaimOverlay: Processed ticket data with ${numbers.length} numbers and ${calledNumbers.length} called numbers`, 'info');
     
     return {
       numbers,
@@ -95,11 +131,12 @@ export default function FixedClaimOverlay({
   return (
     <div 
       key={`overlay-${renderKey}`}
-      className="fixed inset-0 flex items-center justify-center bg-black/70 z-[9999] fixed-claim-overlay animate-fade-in"
+      className="fixed inset-0 flex items-center justify-center bg-black/70 z-[100000] fixed-claim-overlay animate-fade-in"
       ref={overlayRef}
+      data-testid="fixed-claim-overlay"
       style={{ 
         backdropFilter: 'blur(3px)',
-        zIndex: 10000 // Ensure this is higher than the emergency UI
+        zIndex: 100000 // Extremely high z-index
       }}
     >
       <Card className="w-[95vw] max-w-md bg-white shadow-xl animate-scale-in relative overflow-hidden">

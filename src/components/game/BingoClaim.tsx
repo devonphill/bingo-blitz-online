@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import FixedClaimOverlay from './FixedClaimOverlay';
@@ -27,6 +27,8 @@ const claimEvents = {
     return () => claimEvents.listeners.delete(listener);
   },
   dispatch: (data: any) => {
+    logWithTimestamp(`ClaimEvents: Dispatching ${data.type} event`, 'info');
+    console.log('ClaimEvents dispatch:', data);
     claimEvents.listeners.forEach(listener => listener(data));
   }
 };
@@ -55,11 +57,17 @@ export default function BingoClaim({
   const [claimResult, setClaimResult] = useState<'valid' | 'invalid' | null>(null);
   
   // Channels for real-time communication
-  const [claimCheckingChannel, setClaimCheckingChannel] = useState<any>(null);
-  const [claimResultChannel, setClaimResultChannel] = useState<any>(null);
+  const claimCheckingChannelRef = useRef<any>(null);
+  const claimResultChannelRef = useRef<any>(null);
   
   // Debug flag to check visibility issues
   const [debugVisibility, setDebugVisibility] = useState(false);
+  
+  // Reference to track if component is mounted
+  const isMountedRef = useRef(true);
+  
+  // Track last received claim ID to avoid duplicates
+  const lastClaimIdRef = useRef<string | null>(null);
   
   // Set up channels for claim checking and results
   useEffect(() => {
@@ -70,6 +78,17 @@ export default function BingoClaim({
     
     logWithTimestamp(`BingoClaim: Setting up channels for session ${sessionId}`, 'info');
     
+    // Clear any existing channels first
+    if (claimCheckingChannelRef.current) {
+      supabase.removeChannel(claimCheckingChannelRef.current);
+      claimCheckingChannelRef.current = null;
+    }
+    
+    if (claimResultChannelRef.current) {
+      supabase.removeChannel(claimResultChannelRef.current);
+      claimResultChannelRef.current = null;
+    }
+    
     // Set up claim checking channel
     const checkingChannel = supabase
       .channel('claim_checking_broadcaster')
@@ -79,6 +98,16 @@ export default function BingoClaim({
         // Check if this broadcast is for our session
         if (payload.payload?.sessionId === sessionId) {
           logWithTimestamp(`BingoClaim: Claim checking broadcast matches current session`, 'info');
+          
+          // Prevent duplicate claims (check claim ID)
+          const claimId = payload.payload?.claimId;
+          if (claimId && claimId === lastClaimIdRef.current) {
+            logWithTimestamp(`BingoClaim: Ignoring duplicate claim with ID ${claimId}`, 'info');
+            return;
+          }
+          
+          // Update last claim ID
+          lastClaimIdRef.current = claimId;
           
           // Store the payload globally for debugging
           (window as any).lastClaimPayload = payload.payload;
@@ -102,15 +131,44 @@ export default function BingoClaim({
             });
           }
           
-          // Add a timeout to verify state update and make a second attempt if needed
+          // Verify overlay is visible after a short delay
           setTimeout(() => {
+            if (!isMountedRef.current) return;
+            
             logWithTimestamp(`BingoClaim: Overlay visibility check: ${isClaimOverlayVisible}`, 'info');
             
+            // Check if overlay is truly visible in DOM
+            const overlayElement = document.querySelector('.fixed-claim-overlay');
+            logWithTimestamp(`BingoClaim: Overlay element exists: ${!!overlayElement}`, 'info');
+            
             // If overlay isn't showing, try to force visibility again
-            if (!document.querySelector('.fixed-claim-overlay')) {
+            if (!overlayElement) {
               logWithTimestamp(`BingoClaim: Overlay not found in DOM, forcing visibility again`, 'warn');
               setDebugVisibility(true);
               setIsClaimOverlayVisible(true);
+              
+              // Add overlay directly to body as emergency fallback
+              if (!disableEmergencyFallback && !document.querySelector('#emergency-claim-overlay')) {
+                const div = document.createElement('div');
+                div.id = 'emergency-claim-overlay';
+                div.style.position = 'fixed';
+                div.style.top = '50%';
+                div.style.left = '50%';
+                div.style.transform = 'translate(-50%, -50%)';
+                div.style.background = 'white';
+                div.style.padding = '20px';
+                div.style.borderRadius = '8px';
+                div.style.boxShadow = '0 0 10px rgba(0,0,0,0.3)';
+                div.style.zIndex = '100001';
+                div.innerHTML = `<strong>${payload.payload.playerName || 'A player'}</strong> has claimed Bingo!`;
+                document.body.appendChild(div);
+                
+                setTimeout(() => {
+                  if (document.querySelector('#emergency-claim-overlay')) {
+                    document.body.removeChild(div);
+                  }
+                }, 5000);
+              }
             }
           }, 100);
         }
@@ -124,6 +182,8 @@ export default function BingoClaim({
       .channel('game-updates')
       .on('broadcast', { event: 'claim-result' }, payload => {
         logWithTimestamp(`BingoClaim: Received claim result: ${JSON.stringify(payload.payload)}`, 'info');
+        
+        if (!isMountedRef.current) return;
         
         const result = payload.payload;
         
@@ -169,7 +229,9 @@ export default function BingoClaim({
             // Reset claim status if this was our claim and we have the function
             if (result.playerId === playerId && resetClaimStatus) {
               setTimeout(() => {
-                resetClaimStatus();
+                if (isMountedRef.current && resetClaimStatus) {
+                  resetClaimStatus();
+                }
               }, 3000); // Match the auto-close timing
             }
           }
@@ -180,22 +242,51 @@ export default function BingoClaim({
       });
     
     // Store channels for cleanup
-    setClaimCheckingChannel(checkingChannel);
-    setClaimResultChannel(resultChannel);
+    claimCheckingChannelRef.current = checkingChannel;
+    claimResultChannelRef.current = resultChannel;
     
     // Clean up channels on unmount
     return () => {
-      if (checkingChannel) supabase.removeChannel(checkingChannel);
-      if (resultChannel) supabase.removeChannel(resultChannel);
+      isMountedRef.current = false;
       
-      logWithTimestamp(`BingoClaim: Channels removed during cleanup`, 'info');
+      if (claimCheckingChannelRef.current) {
+        logWithTimestamp(`BingoClaim: Removing claim checking channel during cleanup`, 'info');
+        supabase.removeChannel(claimCheckingChannelRef.current);
+        claimCheckingChannelRef.current = null;
+      }
+      
+      if (claimResultChannelRef.current) {
+        logWithTimestamp(`BingoClaim: Removing claim result channel during cleanup`, 'info');
+        supabase.removeChannel(claimResultChannelRef.current);
+        claimResultChannelRef.current = null;
+      }
     };
   }, [sessionId, playerId, resetClaimStatus, disableEmergencyFallback]);
   
   // Log visibility state changes for debugging
   useEffect(() => {
-    logWithTimestamp(`BingoClaim: Visibility states - overlay: ${isClaimOverlayVisible}, result dialog: ${isResultOpen}`, 'info');
-  }, [isClaimOverlayVisible, isResultOpen]);
+    logWithTimestamp(`BingoClaim: Visibility states - overlay: ${isClaimOverlayVisible}, result dialog: ${isResultOpen}, debug: ${debugVisibility}`, 'info');
+    
+    // Add debug method to window for testing
+    (window as any).showClaimOverlay = (data: any) => {
+      logWithTimestamp('Manually showing claim overlay', 'info');
+      setClaimCheckData(data || {
+        playerName: 'Test Player',
+        ticket: {
+          serial: 'TEST1234',
+          numbers: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+          layoutMask: 110616623,
+          calledNumbers: [1, 2, 3]
+        },
+        winPattern: 'oneLine'
+      });
+      setIsClaimOverlayVisible(true);
+    };
+    
+    return () => {
+      delete (window as any).showClaimOverlay;
+    };
+  }, [isClaimOverlayVisible, isResultOpen, debugVisibility]);
   
   // Handle closing the overlay
   const handleOverlayClose = () => {
@@ -215,6 +306,22 @@ export default function BingoClaim({
       resetClaimStatus();
     }
   };
+  
+  // Add an effect to insert a claim overlay container into the body if using portal
+  useEffect(() => {
+    let containerElement: HTMLElement | null = document.getElementById('claim-overlay-container');
+    
+    if (!containerElement) {
+      containerElement = document.createElement('div');
+      containerElement.id = 'claim-overlay-container';
+      document.body.appendChild(containerElement);
+      logWithTimestamp(`BingoClaim: Created claim overlay container in body`, 'info');
+    }
+    
+    return () => {
+      // Don't remove it on component cleanup, others might use it
+    };
+  }, []);
   
   return (
     <>
