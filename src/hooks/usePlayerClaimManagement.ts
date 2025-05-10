@@ -1,9 +1,8 @@
-
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { supabase } from '@/integrations/supabase/client';
-import { validateChannelType } from '@/utils/typeUtils';
+import { validateChannelType, ensureString } from '@/utils/typeUtils';
 
 /**
  * Hook for managing bingo claims from the player perspective
