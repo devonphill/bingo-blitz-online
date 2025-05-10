@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
@@ -105,6 +106,21 @@ export async function upsertClaimInDatabase(
     // This function is just for compatibility with existing code
     logWithTimestamp(`MOCK DB: Would upsert claim for player ${playerName} in session ${sessionId}`, 'info');
     logWithTimestamp(`MOCK DB: Claim validity: ${isValid}`, 'info');
+    
+    // Also broadcast to the channel that we've processed this claim
+    const broadcastChannel = supabase.channel('game-updates');
+    
+    await broadcastChannel.send({
+      type: 'broadcast',
+      event: 'claim-processed',
+      payload: {
+        sessionId,
+        playerId,
+        playerName,
+        isValid,
+        timestamp: new Date().toISOString()
+      }
+    });
     
     // Always return success since we're not actually storing in DB
     return true;

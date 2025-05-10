@@ -88,3 +88,36 @@ export function createClaimData(partialData: Partial<ClaimData>): ClaimData {
   
   return claim;
 }
+
+/**
+ * Check if the pattern is the final pattern in a game
+ */
+export function isFinalPattern(
+  currentPattern: string | null,
+  activePatterns: string[]
+): boolean {
+  if (!currentPattern || activePatterns.length === 0) {
+    return false;
+  }
+
+  const currentIndex = activePatterns.indexOf(currentPattern);
+  // If it's the last pattern in the array, it's the final pattern
+  return currentIndex === activePatterns.length - 1;
+}
+
+/**
+ * Check if we're at the final game and pattern
+ */
+export function isGameSequenceComplete(
+  currentGame: number, 
+  totalGames: number, 
+  currentPattern: string | null,
+  activePatterns: string[]
+): boolean {
+  const isLastGame = currentGame >= totalGames;
+  const isFinalPatternInGame = isFinalPattern(currentPattern, activePatterns);
+  
+  logWithTimestamp(`Game sequence check: isLastGame=${isLastGame}, isFinalPattern=${isFinalPatternInGame}`, 'info');
+  
+  return isLastGame && isFinalPatternInGame;
+}

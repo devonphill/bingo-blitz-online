@@ -16,6 +16,7 @@ interface ClaimResultDialogProps {
     numbers: number[];
     calledNumbers: number[];
   };
+  isGlobalBroadcast?: boolean;
 }
 
 export default function ClaimResultDialog({
@@ -23,7 +24,8 @@ export default function ClaimResultDialog({
   onClose,
   result,
   playerName,
-  ticket
+  ticket,
+  isGlobalBroadcast = false
 }: ClaimResultDialogProps) {
   const [autoCloseTimer, setAutoCloseTimer] = useState<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
@@ -31,7 +33,17 @@ export default function ClaimResultDialog({
   // Set up auto-close timer
   useEffect(() => {
     if (isOpen && result) {
-      logWithTimestamp(`ClaimResultDialog: Showing ${result} result for ${playerName}`);
+      logWithTimestamp(`ClaimResultDialog: Showing ${result} result for ${playerName} (global: ${isGlobalBroadcast})`);
+      
+      // Also show a toast for quick notification
+      if (isGlobalBroadcast) {
+        toast({
+          title: result === 'valid' ? 'Bingo Verified!' : 'Invalid Claim',
+          description: `${playerName}'s claim was ${result === 'valid' ? 'validated' : 'rejected'}`,
+          variant: result === 'valid' ? 'default' : 'destructive',
+          duration: 5000
+        });
+      }
       
       // Auto close after 5 seconds
       const timer = setTimeout(() => {
@@ -44,7 +56,7 @@ export default function ClaimResultDialog({
         if (timer) clearTimeout(timer);
       };
     }
-  }, [isOpen, result, onClose, playerName]);
+  }, [isOpen, result, onClose, playerName, toast, isGlobalBroadcast]);
   
   // Clear timer on unmount
   useEffect(() => {
@@ -102,6 +114,13 @@ export default function ClaimResultDialog({
                 ))}
               </div>
             </Card>
+          )}
+          
+          {/* Additional information for global broadcasts */}
+          {isGlobalBroadcast && (
+            <p className="text-sm text-gray-500 mt-4">
+              This result was broadcast by the caller to all players.
+            </p>
           )}
         </div>
       </DialogContent>

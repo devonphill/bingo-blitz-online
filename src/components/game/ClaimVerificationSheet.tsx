@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Sheet,
@@ -50,8 +51,14 @@ export default function ClaimVerificationSheet({
   const { toast } = useToast();
   const [autoClose, setAutoClose] = useState(true);
 
-  // Use the pattern progression hook
-  const { findNextWinPattern, progressToNextPattern } = usePatternProgression(sessionId || null);
+  // Use the pattern progression hook with all its new capabilities
+  const { 
+    findNextWinPattern, 
+    progressToNextPattern, 
+    isLastPattern,
+    getActivePatterns,
+    progressToNextGame
+  } = usePatternProgression(sessionId || null);
 
   // Debug log when sheet is opened/closed
   useEffect(() => {
@@ -80,46 +87,110 @@ export default function ClaimVerificationSheet({
   
   // Handle verifying a claim
   const handleVerify = useCallback(async (claim: ClaimData) => {
-    if (!claim) {
-      logWithTimestamp(`ClaimVerificationSheet: Cannot verify null claim`, 'error');
+    if (!claim || !sessionId) {
+      logWithTimestamp(`ClaimVerificationSheet: Cannot verify null claim or no sessionId`, 'error');
       return;
     }
     
     logWithTimestamp(`ClaimVerificationSheet: Verifying claim: ${claim.id}`, 'info');
     
-    // Pass onGameProgress callback if it exists for game progression
-    const success = await validateClaim(claim, true, onGameProgress);
-    
-    if (success) {
-      // After successful validation, update the current win pattern
-      // but only if we have more patterns to progress to
-      const nextPattern = await findNextWinPattern(currentWinPattern || null, gameNumber);
+    try {
+      // First, validate the claim
+      const success = await validateClaim(claim, true);
       
-      if (nextPattern && sessionId) {
-        // Progress to the next pattern
-        await progressToNextPattern(nextPattern, sessionId);
-      } else {
-        logWithTimestamp(`No next pattern found or this was the final pattern`, 'info');
-      }
-      
-      toast({
-        title: "Claim Verified",
-        description: `The claim by ${claim.playerName || claim.playerId} has been verified successfully.`,
-        duration: 3000,
-      });
-      
-      // Refresh claims to update UI
-      fetchClaims();
-      
-      // If no claims left and autoClose is enabled, close the sheet after a short delay
-      setTimeout(() => {
-        const remainingClaims = claims.filter(c => c.id !== claim.id);
-        if (remainingClaims.length === 0 && autoClose) {
-          onClose();
+      if (success) {
+        // Get active patterns for current game
+        const activePatterns = await getActivePatterns(gameNumber);
+        
+        // Check if this was the final pattern
+        const finalPattern = await isLastPattern(currentWinPattern || null, gameNumber);
+        
+        logWithTimestamp(`Pattern check: currentWinPattern=${currentWinPattern}, isLastPattern=${finalPattern}`, 'info');
+        
+        // If not the final pattern, try to progress to the next pattern
+        if (!finalPattern) {
+          const nextPattern = await findNextWinPattern(currentWinPattern || null, gameNumber);
+          
+          if (nextPattern && sessionId) {
+            // Progress to the next pattern
+            await progressToNextPattern(nextPattern, sessionId);
+            
+            toast({
+              title: "Pattern Completed",
+              description: `Moving to next pattern: ${nextPattern.id}`,
+              duration: 3000,
+            });
+          }
         }
-      }, 1500);
+        // If it was the final pattern, progress to the next game
+        else {
+          logWithTimestamp(`This was the final pattern - advancing to next game`, 'info');
+          
+          // Progress to next game
+          const gameProgressSuccess = await progressToNextGame(gameNumber || 1);
+          
+          // If game progression was successful, show notification
+          if (gameProgressSuccess) {
+            toast({
+              title: "Game Completed",
+              description: "Advancing to next game...",
+              duration: 5000,
+            });
+            
+            // Always call the onGameProgress callback if provided
+            if (onGameProgress) {
+              // Use a timeout to ensure UI updates first
+              setTimeout(() => {
+                logWithTimestamp(`Triggering onGameProgress callback`, 'info');
+                onGameProgress();
+              }, 1500);
+            }
+          }
+        }
+        
+        toast({
+          title: "Claim Verified",
+          description: `The claim by ${claim.playerName || claim.playerId} has been verified successfully.`,
+          duration: 3000,
+        });
+        
+        // Refresh claims to update UI
+        fetchClaims();
+        
+        // If no claims left and autoClose is enabled, close the sheet after a short delay
+        setTimeout(() => {
+          const remainingClaims = claims.filter(c => c.id !== claim.id);
+          if (remainingClaims.length === 0 && autoClose) {
+            onClose();
+          }
+        }, 1500);
+      }
+    } catch (err) {
+      console.error("Error during claim verification:", err);
+      toast({
+        title: "Error",
+        description: "Failed to process claim verification",
+        variant: "destructive",
+        duration: 5000,
+      });
     }
-  }, [validateClaim, toast, fetchClaims, claims, onClose, autoClose, sessionId, findNextWinPattern, progressToNextPattern, currentWinPattern, gameNumber, onGameProgress]);
+  }, [
+    validateClaim, 
+    toast, 
+    fetchClaims, 
+    claims, 
+    onClose, 
+    autoClose, 
+    sessionId, 
+    gameNumber,
+    currentWinPattern, 
+    findNextWinPattern,
+    progressToNextPattern,
+    isLastPattern,
+    getActivePatterns,
+    progressToNextGame,
+    onGameProgress
+  ]);
   
   // Handle rejecting a claim
   const handleReject = useCallback(async (claim: ClaimData) => {
