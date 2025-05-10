@@ -2,8 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
-import FixedClaimOverlay from './FixedClaimOverlay';
-import ClaimResultDialog from './ClaimResultDialog';
+import ClaimOverlayPortal from './ClaimOverlayPortal';
 import { toast } from 'sonner';
 
 interface BingoClaimProps {
@@ -16,7 +15,6 @@ interface BingoClaimProps {
   calledNumbers?: number[];
   sessionId?: string | null;
   playerId?: string | null;
-  disableEmergencyFallback?: boolean;
 }
 
 // Create a global event system for claim events
@@ -45,23 +43,16 @@ export default function BingoClaim({
   currentTicket,
   calledNumbers = [],
   sessionId,
-  playerId,
-  disableEmergencyFallback = false
+  playerId
 }: BingoClaimProps) {
   // State for claim checking overlay
   const [isClaimOverlayVisible, setIsClaimOverlayVisible] = useState(false);
   const [claimCheckData, setClaimCheckData] = useState<any>(null);
-  
-  // State for claim result dialog
-  const [isResultOpen, setIsResultOpen] = useState(false);
   const [claimResult, setClaimResult] = useState<'valid' | 'invalid' | null>(null);
   
   // Channels for real-time communication
   const claimCheckingChannelRef = useRef<any>(null);
   const claimResultChannelRef = useRef<any>(null);
-  
-  // Debug flag to check visibility issues
-  const [debugVisibility, setDebugVisibility] = useState(false);
   
   // Reference to track if component is mounted
   const isMountedRef = useRef(true);
@@ -109,9 +100,6 @@ export default function BingoClaim({
           // Update last claim ID
           lastClaimIdRef.current = claimId;
           
-          // Store the payload globally for debugging
-          (window as any).lastClaimPayload = payload.payload;
-          
           // Set claim data and force visibility to true
           setClaimCheckData(payload.payload);
           setIsClaimOverlayVisible(true);
@@ -122,55 +110,6 @@ export default function BingoClaim({
             type: 'claim-checking',
             data: payload.payload
           });
-          
-          // Show toast as a fallback notification only if emergency fallback is not disabled
-          if (!disableEmergencyFallback) {
-            toast.info(`${payload.payload.playerName || 'A player'} has claimed Bingo! Caller is checking...`, {
-              duration: 10000,
-              position: 'top-center',
-            });
-          }
-          
-          // Verify overlay is visible after a short delay
-          setTimeout(() => {
-            if (!isMountedRef.current) return;
-            
-            logWithTimestamp(`BingoClaim: Overlay visibility check: ${isClaimOverlayVisible}`, 'info');
-            
-            // Check if overlay is truly visible in DOM
-            const overlayElement = document.querySelector('.fixed-claim-overlay');
-            logWithTimestamp(`BingoClaim: Overlay element exists: ${!!overlayElement}`, 'info');
-            
-            // If overlay isn't showing, try to force visibility again
-            if (!overlayElement) {
-              logWithTimestamp(`BingoClaim: Overlay not found in DOM, forcing visibility again`, 'warn');
-              setDebugVisibility(true);
-              setIsClaimOverlayVisible(true);
-              
-              // Add overlay directly to body as emergency fallback
-              if (!disableEmergencyFallback && !document.querySelector('#emergency-claim-overlay')) {
-                const div = document.createElement('div');
-                div.id = 'emergency-claim-overlay';
-                div.style.position = 'fixed';
-                div.style.top = '50%';
-                div.style.left = '50%';
-                div.style.transform = 'translate(-50%, -50%)';
-                div.style.background = 'white';
-                div.style.padding = '20px';
-                div.style.borderRadius = '8px';
-                div.style.boxShadow = '0 0 10px rgba(0,0,0,0.3)';
-                div.style.zIndex = '100001';
-                div.innerHTML = `<strong>${payload.payload.playerName || 'A player'}</strong> has claimed Bingo!`;
-                document.body.appendChild(div);
-                
-                setTimeout(() => {
-                  if (document.querySelector('#emergency-claim-overlay')) {
-                    document.body.removeChild(div);
-                  }
-                }, 5000);
-              }
-            }
-          }, 100);
         }
       })
       .subscribe((status) => {
@@ -187,9 +126,6 @@ export default function BingoClaim({
         
         const result = payload.payload;
         
-        // Store result globally for debugging
-        (window as any).lastClaimResult = result;
-        
         // Check if this result is for our session
         if (result.sessionId === sessionId) {
           logWithTimestamp(`BingoClaim: Claim result broadcast matches current session`, 'info');
@@ -198,33 +134,20 @@ export default function BingoClaim({
           if (result.isGlobalBroadcast || result.playerId === playerId) {
             const isValidClaim = result.result === 'valid';
             
-            // Show appropriate toast notification only if emergency fallback is not disabled
-            if (!disableEmergencyFallback) {
-              toast(isValidClaim ? 'Bingo Winner!' : 'Claim Rejected', {
-                description: isValidClaim 
-                  ? `${result.playerName || 'A player'} has won!` 
-                  : `The claim by ${result.playerName || 'a player'} was rejected`,
-                position: 'top-center',
-                duration: 5000
-              });
-            }
-            
             // Dispatch to global event system
             claimEvents.dispatch({
               type: 'claim-result',
               data: result
             });
             
-            // Show result dialog
+            // Show result in the portal
             logWithTimestamp(`BingoClaim: Setting claim result to: ${result.result}`, 'info');
             setClaimResult(result.result);
             setClaimCheckData({
               playerName: result.playerName,
               ticket: result.ticket
             });
-            
-            // Do not immediately close the overlay - show the result overlay
-            // The overlay will auto-close after the animation displays
+            setIsClaimOverlayVisible(true);
             
             // Reset claim status if this was our claim and we have the function
             if (result.playerId === playerId && resetClaimStatus) {
@@ -261,11 +184,11 @@ export default function BingoClaim({
         claimResultChannelRef.current = null;
       }
     };
-  }, [sessionId, playerId, resetClaimStatus, disableEmergencyFallback]);
+  }, [sessionId, playerId, resetClaimStatus]);
   
   // Log visibility state changes for debugging
   useEffect(() => {
-    logWithTimestamp(`BingoClaim: Visibility states - overlay: ${isClaimOverlayVisible}, result dialog: ${isResultOpen}, debug: ${debugVisibility}`, 'info');
+    logWithTimestamp(`BingoClaim: Overlay visibility state: ${isClaimOverlayVisible}, result: ${claimResult || 'none'}`, 'info');
     
     // Add debug method to window for testing
     (window as any).showClaimOverlay = (data: any) => {
@@ -286,7 +209,7 @@ export default function BingoClaim({
     return () => {
       delete (window as any).showClaimOverlay;
     };
-  }, [isClaimOverlayVisible, isResultOpen, debugVisibility]);
+  }, [isClaimOverlayVisible, claimResult]);
   
   // Handle closing the overlay
   const handleOverlayClose = () => {
@@ -295,59 +218,17 @@ export default function BingoClaim({
     setClaimResult(null);
   };
   
-  // Handle dialog close events
-  const handleResultClose = () => {
-    logWithTimestamp(`BingoClaim: Closing claim result dialog`, 'info');
-    setIsResultOpen(false);
-    setDebugVisibility(false);
-    
-    // If we have a reset function, call it
-    if (resetClaimStatus) {
-      resetClaimStatus();
-    }
-  };
-  
-  // Add an effect to insert a claim overlay container into the body if using portal
-  useEffect(() => {
-    let containerElement: HTMLElement | null = document.getElementById('claim-overlay-container');
-    
-    if (!containerElement) {
-      containerElement = document.createElement('div');
-      containerElement.id = 'claim-overlay-container';
-      document.body.appendChild(containerElement);
-      logWithTimestamp(`BingoClaim: Created claim overlay container in body`, 'info');
-    }
-    
-    return () => {
-      // Don't remove it on component cleanup, others might use it
-    };
-  }, []);
-  
   return (
     <>
-      {/* Fixed Position Claim Overlay - always included in DOM */}
-      <FixedClaimOverlay
-        isVisible={isClaimOverlayVisible}
+      {/* Portal-based Claim Overlay */}
+      <ClaimOverlayPortal
+        isOpen={isClaimOverlayVisible}
         onClose={handleOverlayClose}
-        claimData={claimCheckData}
+        playerName={claimCheckData?.playerName || playerName}
+        ticketData={claimCheckData?.ticket || currentTicket}
+        winPattern={claimCheckData?.winPattern}
         validationResult={claimResult}
       />
-      
-      <ClaimResultDialog
-        isOpen={isResultOpen}
-        onClose={handleResultClose}
-        result={claimResult || 'invalid'}
-        playerName={claimCheckData?.playerName || playerName || 'Player'}
-        isGlobalBroadcast={true}
-        ticket={claimCheckData?.ticket}
-      />
-      
-      {/* Debug element to show visibility state */}
-      {debugVisibility && (
-        <div className="fixed bottom-2 left-2 bg-black/80 text-white p-2 text-xs z-[11000] rounded">
-          Overlay Visible: {isClaimOverlayVisible.toString()}, Result Dialog: {isResultOpen.toString()}
-        </div>
-      )}
     </>
   );
 }

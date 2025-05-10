@@ -4,8 +4,9 @@ import { createPortal } from 'react-dom';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Trophy, Loader, X } from 'lucide-react';
+import { Trophy, Loader, X, Check } from 'lucide-react';
 import SafeBingoTicketDisplay from './SafeBingoTicketDisplay';
+import { cn } from '@/lib/utils';
 
 interface ClaimOverlayPortalProps {
   isOpen: boolean;
@@ -13,6 +14,8 @@ interface ClaimOverlayPortalProps {
   playerName: string;
   ticketData?: any;
   winPattern?: string;
+  validationResult?: 'valid' | 'invalid' | null;
+  autoClose?: boolean;
 }
 
 /**
@@ -24,9 +27,12 @@ export default function ClaimOverlayPortal({
   onClose,
   playerName,
   ticketData,
-  winPattern
+  winPattern,
+  validationResult = null,
+  autoClose = true
 }: ClaimOverlayPortalProps) {
   const [domReady, setDomReady] = useState(false);
+  const [shouldAutoClose, setShouldAutoClose] = useState(false);
   
   // Set up the portal container
   useEffect(() => {
@@ -52,6 +58,20 @@ export default function ClaimOverlayPortal({
     };
   }, []);
   
+  // Auto-close logic for when a validation result is received
+  useEffect(() => {
+    if (validationResult && isOpen && autoClose) {
+      setShouldAutoClose(true);
+      // Close after 3 seconds to give users time to see the result
+      const timer = setTimeout(() => {
+        onClose();
+        setShouldAutoClose(false);
+      }, 3000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [validationResult, isOpen, onClose, autoClose]);
+  
   // Don't render anything if not open or DOM not ready
   if (!isOpen || !domReady) return null;
   
@@ -75,6 +95,25 @@ export default function ClaimOverlayPortal({
       data-testid="portal-claim-overlay"
     >
       <Card className="w-[95vw] max-w-md bg-white shadow-xl animate-scale-in relative overflow-hidden">
+        {/* Validation overlay - only shows when there's a result */}
+        {validationResult && (
+          <div className={cn(
+            "absolute inset-0 flex items-center justify-center z-[100] bg-black/40 backdrop-blur-sm animate-fade-in",
+            "rounded-md overflow-hidden"
+          )}>
+            <div className={cn(
+              "w-32 h-32 rounded-full flex items-center justify-center animate-scale-in",
+              validationResult === 'valid' ? 'bg-green-100' : 'bg-red-100'
+            )}>
+              {validationResult === 'valid' ? (
+                <Check className="h-20 w-20 text-green-600 animate-scale-in" />
+              ) : (
+                <X className="h-20 w-20 text-red-600 animate-scale-in" />
+              )}
+            </div>
+          </div>
+        )}
+        
         <CardHeader className="relative bg-amber-50">
           <Button 
             onClick={onClose}
@@ -93,9 +132,11 @@ export default function ClaimOverlayPortal({
         
         <CardContent>
           <div className="flex flex-col items-center p-4 gap-4">
-            <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center">
-              <Loader className="h-8 w-8 text-amber-600 animate-spin" />
-            </div>
+            {!validationResult && (
+              <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center">
+                <Loader className="h-8 w-8 text-amber-600 animate-spin" />
+              </div>
+            )}
             
             <h3 className="text-lg font-semibold text-center">
               {playerName} has claimed Bingo!
@@ -117,14 +158,26 @@ export default function ClaimOverlayPortal({
               </div>
             )}
             
-            <p className="text-center text-gray-600">
-              The caller is checking this claim now...
-            </p>
+            {!validationResult && (
+              <p className="text-center text-gray-600">
+                The caller is checking this claim now...
+              </p>
+            )}
             
             {winPattern && (
               <div className="mt-2 px-4 py-2 bg-amber-50 rounded-md text-amber-700 text-center">
                 Pattern: <span className="font-semibold">{winPattern}</span>
               </div>
+            )}
+            
+            {/* Conditionally show close button only if we're not auto-closing */}
+            {validationResult && !shouldAutoClose && (
+              <Button 
+                onClick={onClose}
+                className="mt-2 bg-blue-500 hover:bg-blue-600 text-white"
+              >
+                Close
+              </Button>
             )}
           </div>
         </CardContent>

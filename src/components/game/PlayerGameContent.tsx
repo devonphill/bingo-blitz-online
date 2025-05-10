@@ -336,7 +336,7 @@ export default function PlayerGameContent({
         playerId={playerId}
       />
       
-      {/* Add BingoClaim component with improved handling */}
+      {/* Use our portal-based claim notification system */}
       <BingoClaim
         onClaimBingo={handleLocalClaimBingo}
         claimStatus={effectiveClaimStatus}
@@ -347,7 +347,6 @@ export default function PlayerGameContent({
         calledNumbers={effectiveCalledNumbers}
         sessionId={currentSession?.id}
         playerId={playerId}
-        disableEmergencyFallback={true} // Fully disable emergency notifications
       />
       
       {showDebug && (
