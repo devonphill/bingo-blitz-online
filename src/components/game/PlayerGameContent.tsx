@@ -12,6 +12,7 @@ import GameTypePlayspace from "./GameTypePlayspace";
 import { usePlayerClaimManagement } from "@/hooks/usePlayerClaimManagement";
 import { usePlayerWebSocketNumbers } from "@/hooks/usePlayerWebSocketNumbers";
 import BingoClaim, { claimEvents } from "./BingoClaim";
+import { supabase } from "@/integrations/supabase/client"; // Add the missing import
 
 interface PlayerGameContentProps {
   tickets: any[];

@@ -79,7 +79,7 @@ export default function BingoClaim({
           logWithTimestamp(`BingoClaim: Claim checking broadcast matches current session`, 'info');
           
           // Store the payload globally for debugging
-          window.lastClaimPayload = payload.payload;
+          (window as any).lastClaimPayload = payload.payload;
           
           // Set claim data and force visibility to true
           setClaimCheckData(payload.payload);
@@ -147,7 +147,7 @@ export default function BingoClaim({
         const result = payload.payload;
         
         // Store result globally for debugging
-        window.lastClaimResult = result;
+        (window as any).lastClaimResult = result;
         
         // Check if this result is for our session
         if (result.sessionId === sessionId) {
