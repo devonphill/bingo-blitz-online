@@ -5,13 +5,13 @@ import StatusBar from "./StatusBar";
 import GameSheetControls from "./GameSheetControls";
 import DebugPanel from "./DebugPanel";
 import { connectionManager } from "@/utils/connectionManager";
-import { logWithTimestamp } from "@/utils/logUtils";
+import { logWithTimestamp, showEmergencyNotification } from "@/utils/logUtils";
 import { useNetwork } from "@/contexts/NetworkStatusContext";
 import { useGameManager } from "@/contexts/GameManager";
 import GameTypePlayspace from "./GameTypePlayspace";
 import { usePlayerClaimManagement } from "@/hooks/usePlayerClaimManagement";
 import { usePlayerWebSocketNumbers } from "@/hooks/usePlayerWebSocketNumbers";
-import BingoClaim from "./BingoClaim";
+import BingoClaim, { claimEvents } from "./BingoClaim";
 
 interface PlayerGameContentProps {
   tickets: any[];
@@ -73,6 +73,10 @@ export default function PlayerGameContent({
   const [localNumbers, setLocalNumbers] = useState<number[]>(calledNumbers || []); 
   const [localCurrentNumber, setLocalCurrentNumber] = useState<number | null>(currentNumber);
 
+  // Add a direct claim state
+  const [directClaimData, setDirectClaimData] = useState<any>(null);
+  const [showDirectClaim, setShowDirectClaim] = useState(false);
+  
   // Use the network context
   const network = useNetwork();
   
@@ -262,6 +266,57 @@ export default function PlayerGameContent({
     return false;
   };
 
+  // Add direct listener for claim events (redundant pathway for robustness)
+  useEffect(() => {
+    if (!currentSession?.id) return;
+    
+    logWithTimestamp('PlayerGameContent: Setting up direct claim event listener', 'info');
+    
+    // Subscribe to global claim events
+    const removeListener = claimEvents.addListener((event) => {
+      if (event.type === 'claim-checking') {
+        logWithTimestamp('PlayerGameContent: Received claim checking event via event system', 'info');
+        setDirectClaimData(event.data);
+        setShowDirectClaim(true);
+      }
+      else if (event.type === 'claim-result') {
+        logWithTimestamp('PlayerGameContent: Received claim result event via event system', 'info');
+        setShowDirectClaim(false);
+        
+        // Show an emergency notification as fallback
+        const isValid = event.data.result === 'valid';
+        showEmergencyNotification(
+          isValid 
+            ? `${event.data.playerName || 'A player'} WON Bingo!` 
+            : `Claim by ${event.data.playerName || 'a player'} was rejected`,
+          isValid ? 'info' : 'warning'
+        );
+      }
+    });
+    
+    // Listen for direct broadcast channel events as a fallback
+    const checkingChannel = supabase
+      .channel('claim_checking_broadcaster')
+      .on('broadcast', { event: 'claim-checking' }, payload => {
+        logWithTimestamp(`PlayerGameContent: Direct claim checking broadcast received`, 'info');
+        
+        if (payload.payload?.sessionId === currentSession.id) {
+          setDirectClaimData(payload.payload);
+          setShowDirectClaim(true);
+          
+          // Create a direct DOM notification as ultimate fallback
+          const playerName = payload.payload.playerName || 'A player';
+          showEmergencyNotification(`${playerName} has claimed Bingo!`, 'info');
+        }
+      })
+      .subscribe();
+    
+    return () => {
+      removeListener();
+      if (checkingChannel) supabase.removeChannel(checkingChannel);
+    };
+  }, [currentSession?.id]);
+  
   return (
     <div className={`min-h-full flex flex-col`} style={{ backgroundColor }}>
       <GameHeader 
@@ -317,7 +372,7 @@ export default function PlayerGameContent({
         playerId={playerId}
       />
       
-      {/* Add BingoClaim component for handling claim broadcasts - make it VISIBLE */}
+      {/* Add BingoClaim component for handling claim broadcasts */}
       <BingoClaim
         onClaimBingo={handleLocalClaimBingo}
         claimStatus={effectiveClaimStatus}
@@ -329,6 +384,26 @@ export default function PlayerGameContent({
         sessionId={currentSession?.id}
         playerId={playerId}
       />
+      
+      {/* Direct claim display - redundant pathway for robustness */}
+      {showDirectClaim && directClaimData && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[20000]">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full">
+            <h3 className="text-lg font-semibold mb-2 text-center">
+              {directClaimData.playerName || 'A player'} claimed Bingo!
+            </h3>
+            <p className="text-center text-gray-600 mb-4">
+              The caller is checking this claim now...
+            </p>
+            <button 
+              onClick={() => setShowDirectClaim(false)}
+              className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
       
       {showDebug && (
         <div className="fixed bottom-4 right-4 w-64">

@@ -1,3 +1,4 @@
+
 // Utility functions for logging
 import React from 'react';
 
@@ -197,10 +198,32 @@ export function logElementVisibility(selector: string, name: string = selector):
       logWithTimestamp(
         `Element "${name}" (${selector}): visible=${isVisible}, z-index=${zIndex}, ` +
         `position=${position}, width=${rect.width}px, height=${rect.height}px, ` +
-        `opacity=${style.opacity}, display=${style.display}, visibility=${style.visibility}`,
+        `opacity=${style.opacity}, display=${style.display}, visibility=${style.visibility}, ` +
+        `left=${rect.left}, top=${rect.top}`,
         'info',
         'DOMVisibility'
       );
+      
+      // Create a map of DOM hierarchy for deeper debugging
+      let hierarchyMap = '';
+      let currentEl = element;
+      let depth = 0;
+      
+      while (currentEl && depth < 10) {
+        const elStyle = window.getComputedStyle(currentEl);
+        const className = currentEl.className || 'no-class';
+        const id = currentEl.id || 'no-id';
+        
+        hierarchyMap += `\n${' '.repeat(depth * 2)}${currentEl.tagName}: id=${id}, class=${className}, ` +
+                        `position=${elStyle.position}, z-index=${elStyle.zIndex}, overflow=${elStyle.overflow}`;
+        
+        currentEl = currentEl.parentElement;
+        depth++;
+      }
+      
+      if (hierarchyMap) {
+        logWithTimestamp(`DOM hierarchy for ${name}:${hierarchyMap}`, 'debug', 'DOMHierarchy');
+      }
       
       // Check if element might be hidden by another element with higher z-index
       if (isVisible) {
@@ -235,4 +258,110 @@ export function logElementVisibility(selector: string, name: string = selector):
       logWithTimestamp(`Error checking visibility for "${name}": ${(err as Error).message}`, 'error', 'DOMVisibility');
     }
   }, 100);
+}
+
+/**
+ * Emergency DOM debugging - creates a flying indicator at a specific position
+ * @param text Text to display in the indicator
+ * @param x X coordinate
+ * @param y Y coordinate
+ * @param color Optional color (default: 'red')
+ * @param duration Optional duration in ms (default: 3000)
+ */
+export function createDebugMarker(text: string, x: number, y: number, color: string = 'red', duration: number = 3000): void {
+  try {
+    if (typeof document === 'undefined') return;
+    
+    const marker = document.createElement('div');
+    marker.textContent = text;
+    marker.style.position = 'fixed';
+    marker.style.top = `${y}px`;
+    marker.style.left = `${x}px`;
+    marker.style.backgroundColor = color;
+    marker.style.color = 'white';
+    marker.style.padding = '4px 8px';
+    marker.style.borderRadius = '4px';
+    marker.style.fontSize = '12px';
+    marker.style.fontWeight = 'bold';
+    marker.style.zIndex = '10000';
+    marker.style.transform = 'translate(-50%, -50%)';
+    marker.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.5)';
+    marker.style.pointerEvents = 'none';
+    
+    document.body.appendChild(marker);
+    
+    // Make it fade out and remove it after duration
+    marker.style.transition = `opacity ${duration / 1000}s ease-out`;
+    setTimeout(() => {
+      marker.style.opacity = '0';
+      setTimeout(() => {
+        if (marker.parentNode) {
+          document.body.removeChild(marker);
+        }
+      }, 1000);
+    }, 100);
+    
+    logWithTimestamp(`Created debug marker at (${x},${y}): ${text}`, 'debug', 'DebugUI');
+  } catch (err) {
+    console.error('Error creating debug marker:', err);
+  }
+}
+
+/**
+ * Create a global toast notification that doesn't rely on React
+ * For emergency notifications when React components don't render
+ */
+export function showEmergencyNotification(message: string, type: 'info' | 'warning' | 'error' = 'info', duration: number = 5000): void {
+  try {
+    if (typeof document === 'undefined') return;
+    
+    const colors = {
+      info: { bg: '#3498db', text: 'white' },
+      warning: { bg: '#f39c12', text: 'black' },
+      error: { bg: '#e74c3c', text: 'white' }
+    };
+    
+    const notif = document.createElement('div');
+    notif.textContent = message;
+    notif.style.position = 'fixed';
+    notif.style.top = '20px';
+    notif.style.left = '50%';
+    notif.style.transform = 'translateX(-50%)';
+    notif.style.backgroundColor = colors[type].bg;
+    notif.style.color = colors[type].text;
+    notif.style.padding = '12px 24px';
+    notif.style.borderRadius = '4px';
+    notif.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+    notif.style.zIndex = '100000';
+    notif.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+    notif.style.fontSize = '14px';
+    notif.style.textAlign = 'center';
+    notif.style.minWidth = '250px';
+    
+    // Animation setup
+    notif.style.opacity = '0';
+    notif.style.transition = 'all 0.3s ease';
+    
+    document.body.appendChild(notif);
+    
+    // Animate in
+    setTimeout(() => {
+      notif.style.opacity = '1';
+    }, 10);
+    
+    // Animate out and remove
+    setTimeout(() => {
+      notif.style.opacity = '0';
+      notif.style.transform = 'translate(-50%, -20px)';
+      setTimeout(() => {
+        if (notif.parentNode) {
+          document.body.removeChild(notif);
+        }
+      }, 300);
+    }, duration);
+    
+    logWithTimestamp(`Showed emergency notification: ${message}`, 'info', 'EmergencyUI');
+  } catch (err) {
+    console.error('Error showing emergency notification:', err);
+  }
 }

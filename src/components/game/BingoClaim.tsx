@@ -18,6 +18,21 @@ interface BingoClaimProps {
   playerId?: string | null;
 }
 
+// Create a global event system for claim events
+const claimEvents = {
+  listeners: new Set<(data: any) => void>(),
+  addListener: (listener: (data: any) => void) => {
+    claimEvents.listeners.add(listener);
+    return () => claimEvents.listeners.delete(listener);
+  },
+  dispatch: (data: any) => {
+    claimEvents.listeners.forEach(listener => listener(data));
+  }
+};
+
+// Export the event system so it can be used from anywhere
+export { claimEvents };
+
 export default function BingoClaim({
   onClaimBingo,
   claimStatus = 'none',
@@ -63,27 +78,60 @@ export default function BingoClaim({
         if (payload.payload?.sessionId === sessionId) {
           logWithTimestamp(`BingoClaim: Claim checking broadcast matches current session`, 'info');
           
+          // Store the payload globally for debugging
+          window.lastClaimPayload = payload.payload;
+          
           // Set claim data and force visibility to true
           setClaimCheckData(payload.payload);
           setIsClaimOverlayVisible(true);
           
-          // Add a timeout to verify state update
-          setTimeout(() => {
-            logWithTimestamp(`BingoClaim: Overlay visibility after update: ${isClaimOverlayVisible}`, 'info');
-            
-            // If overlay isn't showing, try to force visibility
-            if (!isClaimOverlayVisible) {
-              logWithTimestamp(`BingoClaim: Overlay not showing after state update, trying force visibility`, 'warn');
-              setDebugVisibility(true);
-              setIsClaimOverlayVisible(true);
-            }
-          }, 100);
+          // Dispatch to global event system
+          claimEvents.dispatch({
+            type: 'claim-checking',
+            data: payload.payload
+          });
           
           // Show toast as a fallback notification
           toast.info(`${payload.payload.playerName || 'A player'} has claimed Bingo! Caller is checking...`, {
-            duration: 5000,
+            duration: 10000,
             position: 'top-center',
           });
+          
+          // Add a timeout to verify state update and make a second attempt if needed
+          setTimeout(() => {
+            logWithTimestamp(`BingoClaim: Overlay visibility check: ${isClaimOverlayVisible}`, 'info');
+            
+            // If overlay isn't showing, try to force visibility again
+            if (!document.querySelector('.fixed-claim-overlay')) {
+              logWithTimestamp(`BingoClaim: Overlay not found in DOM, forcing visibility again`, 'warn');
+              setDebugVisibility(true);
+              setIsClaimOverlayVisible(true);
+              
+              // Try direct DOM manipulation as a last resort
+              setTimeout(() => {
+                const container = document.getElementById('fixed-overlay-container');
+                if (!container || !container.children.length) {
+                  logWithTimestamp(`BingoClaim: Creating overlay through direct DOM manipulation`, 'warn');
+                  
+                  // Create a temporary div for the notification
+                  const tempNotification = document.createElement('div');
+                  tempNotification.className = 'fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white p-4 rounded shadow-lg z-[10000]';
+                  tempNotification.innerHTML = `
+                    <div class="flex flex-col items-center">
+                      <h3 class="text-lg font-bold">Claim Check</h3>
+                      <p>${payload.payload.playerName || 'A player'} has claimed Bingo!</p>
+                    </div>
+                  `;
+                  document.body.appendChild(tempNotification);
+                  
+                  // Remove after 5 seconds
+                  setTimeout(() => {
+                    document.body.removeChild(tempNotification);
+                  }, 5000);
+                }
+              }, 500);
+            }
+          }, 100);
         }
       })
       .subscribe((status) => {
@@ -97,6 +145,9 @@ export default function BingoClaim({
         logWithTimestamp(`BingoClaim: Received claim result: ${JSON.stringify(payload.payload)}`, 'info');
         
         const result = payload.payload;
+        
+        // Store result globally for debugging
+        window.lastClaimResult = result;
         
         // Check if this result is for our session
         if (result.sessionId === sessionId) {
@@ -113,6 +164,12 @@ export default function BingoClaim({
                 : `The claim by ${result.playerName || 'a player'} was rejected`,
               position: 'top-center',
               duration: 5000
+            });
+            
+            // Dispatch to global event system
+            claimEvents.dispatch({
+              type: 'claim-result',
+              data: result
             });
             
             // Show result dialog
@@ -179,7 +236,7 @@ export default function BingoClaim({
   
   return (
     <>
-      {/* New Fixed Position Claim Overlay */}
+      {/* Fixed Position Claim Overlay - always included in DOM */}
       <FixedClaimOverlay
         isVisible={isClaimOverlayVisible}
         onClose={handleOverlayClose}
