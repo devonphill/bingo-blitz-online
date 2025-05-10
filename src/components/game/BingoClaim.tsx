@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
-import ClaimCheckingDialog from './ClaimCheckingDialog';
+import FixedClaimOverlay from './FixedClaimOverlay';
 import ClaimResultDialog from './ClaimResultDialog';
 import { toast } from 'sonner';
 
@@ -29,8 +29,8 @@ export default function BingoClaim({
   sessionId,
   playerId
 }: BingoClaimProps) {
-  // State for claim checking dialog
-  const [isClaimCheckingOpen, setIsClaimCheckingOpen] = useState(false);
+  // State for claim checking overlay
+  const [isClaimOverlayVisible, setIsClaimOverlayVisible] = useState(false);
   const [claimCheckData, setClaimCheckData] = useState<any>(null);
   
   // State for claim result dialog
@@ -41,7 +41,7 @@ export default function BingoClaim({
   const [claimCheckingChannel, setClaimCheckingChannel] = useState<any>(null);
   const [claimResultChannel, setClaimResultChannel] = useState<any>(null);
   
-  // Debug flag to check dialog visibility issues
+  // Debug flag to check visibility issues
   const [debugVisibility, setDebugVisibility] = useState(false);
   
   // Set up channels for claim checking and results
@@ -63,22 +63,19 @@ export default function BingoClaim({
         if (payload.payload?.sessionId === sessionId) {
           logWithTimestamp(`BingoClaim: Claim checking broadcast matches current session`, 'info');
           
-          // Show checking dialog for all players in the session
+          // Set claim data and force visibility to true
           setClaimCheckData(payload.payload);
-          
-          // Force dialog to open and log the state change attempt
-          logWithTimestamp(`BingoClaim: Attempting to open claim checking dialog`, 'info');
-          setIsClaimCheckingOpen(true);
+          setIsClaimOverlayVisible(true);
           
           // Add a timeout to verify state update
           setTimeout(() => {
-            logWithTimestamp(`BingoClaim: Dialog open state after update: ${isClaimCheckingOpen}`, 'info');
+            logWithTimestamp(`BingoClaim: Overlay visibility after update: ${isClaimOverlayVisible}`, 'info');
             
-            // If dialog isn't showing, try to force visibility
-            if (!isClaimCheckingOpen) {
-              logWithTimestamp(`BingoClaim: Dialog not showing after state update, trying force visibility`, 'warn');
+            // If overlay isn't showing, try to force visibility
+            if (!isClaimOverlayVisible) {
+              logWithTimestamp(`BingoClaim: Overlay not showing after state update, trying force visibility`, 'warn');
               setDebugVisibility(true);
-              setIsClaimCheckingOpen(true);
+              setIsClaimOverlayVisible(true);
             }
           }, 100);
           
@@ -126,8 +123,8 @@ export default function BingoClaim({
               ticket: result.ticket
             });
             
-            // Close checking dialog and open result dialog
-            setIsClaimCheckingOpen(false);
+            // Close checking overlay and open result dialog
+            setIsClaimOverlayVisible(false);
             setIsResultOpen(true);
             setDebugVisibility(true);
             
@@ -157,31 +154,18 @@ export default function BingoClaim({
     };
   }, [sessionId, playerId, resetClaimStatus]);
   
-  // Log dialog state changes for debugging
+  // Log visibility state changes for debugging
   useEffect(() => {
-    logWithTimestamp(`BingoClaim: Dialog states updated - checking: ${isClaimCheckingOpen}, result: ${isResultOpen}`, 'info');
-    
-    // Add DOM check to verify dialog exists and is visible
-    if (isClaimCheckingOpen || isResultOpen) {
-      setTimeout(() => {
-        const dialogElements = document.querySelectorAll('[role="dialog"]');
-        logWithTimestamp(`BingoClaim: Found ${dialogElements.length} dialog elements in DOM`, 'info');
-        
-        dialogElements.forEach((el, i) => {
-          const isVisible = window.getComputedStyle(el).display !== 'none' && 
-                           window.getComputedStyle(el).visibility !== 'hidden';
-          logWithTimestamp(`BingoClaim: Dialog #${i} visible=${isVisible}, z-index=${window.getComputedStyle(el).zIndex}`, 'info');
-        });
-      }, 200);
-    }
-  }, [isClaimCheckingOpen, isResultOpen]);
+    logWithTimestamp(`BingoClaim: Visibility states - overlay: ${isClaimOverlayVisible}, result dialog: ${isResultOpen}`, 'info');
+  }, [isClaimOverlayVisible, isResultOpen]);
   
-  // Handle dialog close events
-  const handleCheckingClose = () => {
-    logWithTimestamp(`BingoClaim: Closing claim checking dialog`, 'info');
-    setIsClaimCheckingOpen(false);
+  // Handle closing the overlay
+  const handleOverlayClose = () => {
+    logWithTimestamp(`BingoClaim: Closing claim overlay`, 'info');
+    setIsClaimOverlayVisible(false);
   };
   
+  // Handle dialog close events
   const handleResultClose = () => {
     logWithTimestamp(`BingoClaim: Closing claim result dialog`, 'info');
     setIsResultOpen(false);
@@ -195,9 +179,10 @@ export default function BingoClaim({
   
   return (
     <>
-      <ClaimCheckingDialog
-        isOpen={isClaimCheckingOpen}
-        onClose={handleCheckingClose}
+      {/* New Fixed Position Claim Overlay */}
+      <FixedClaimOverlay
+        isVisible={isClaimOverlayVisible}
+        onClose={handleOverlayClose}
         claimData={claimCheckData}
       />
       
@@ -210,10 +195,10 @@ export default function BingoClaim({
         ticket={claimCheckData?.ticket}
       />
       
-      {/* Debug element to show dialog state */}
+      {/* Debug element to show visibility state */}
       {debugVisibility && (
         <div className="fixed bottom-2 left-2 bg-black/80 text-white p-2 text-xs z-[2000] rounded">
-          Dialog States: Checking={isClaimCheckingOpen.toString()}, Result={isResultOpen.toString()}
+          Overlay Visible: {isClaimOverlayVisible.toString()}, Result Dialog: {isResultOpen.toString()}
         </div>
       )}
     </>

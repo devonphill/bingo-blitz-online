@@ -1,4 +1,3 @@
-
 // Utility functions for logging
 import React from 'react';
 
@@ -144,31 +143,38 @@ export function logComponentRender(componentName: string, props?: any): void {
 }
 
 /**
- * Check if an element is visible in the DOM
+ * Check if an element is visible in the DOM with enhanced checks
  * @param element The DOM element to check
  * @returns Boolean indicating if the element is visible
  */
 export function isElementVisible(element: HTMLElement | null): boolean {
-  if (!element) return false;
+  if (!element) {
+    logWithTimestamp('Element visibility check: Element is null', 'warn', 'DOMCheck');
+    return false;
+  }
   
   const style = window.getComputedStyle(element);
+  const rect = element.getBoundingClientRect();
   const isDisplayed = style.display !== 'none';
   const isVisible = style.visibility !== 'hidden';
-  const hasNonZeroArea = element.offsetWidth > 0 && element.offsetHeight > 0;
+  const isNotTransparent = parseFloat(style.opacity) > 0;
+  const hasNonZeroArea = rect.width > 0 && rect.height > 0;
   const isInDOM = document.body.contains(element);
+  const zIndex = parseInt(style.zIndex, 10);
   
   logWithTimestamp(
     `Element visibility check: display=${style.display}, visibility=${style.visibility}, ` +
-    `width=${element.offsetWidth}, height=${element.offsetHeight}, inDOM=${isInDOM}`,
+    `opacity=${style.opacity}, width=${rect.width}, height=${rect.height}, ` +
+    `z-index=${isNaN(zIndex) ? 'auto' : zIndex}, inDOM=${isInDOM}`,
     'debug',
     'DOMCheck'
   );
   
-  return isDisplayed && isVisible && hasNonZeroArea && isInDOM;
+  return isDisplayed && isVisible && isNotTransparent && hasNonZeroArea && isInDOM;
 }
 
 /**
- * Log DOM element visibility - useful for debugging UI issues
+ * Log DOM element visibility with enhanced details - useful for debugging UI issues
  * @param selector CSS selector to find the element
  * @param name Optional name for the element (for logging)
  */
@@ -177,17 +183,56 @@ export function logElementVisibility(selector: string, name: string = selector):
     try {
       const element = document.querySelector(selector) as HTMLElement;
       const isVisible = isElementVisible(element);
-      const zIndex = element ? window.getComputedStyle(element).zIndex : 'N/A';
-      const position = element ? window.getComputedStyle(element).position : 'N/A';
+      
+      if (!element) {
+        logWithTimestamp(`Element "${name}" (${selector}): NOT FOUND IN DOM`, 'warn', 'DOMVisibility');
+        return;
+      }
+      
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      const zIndex = style.zIndex;
+      const position = style.position;
       
       logWithTimestamp(
-        `Element "${name}" (${selector}): visible=${isVisible}, z-index=${zIndex}, position=${position}`,
+        `Element "${name}" (${selector}): visible=${isVisible}, z-index=${zIndex}, ` +
+        `position=${position}, width=${rect.width}px, height=${rect.height}px, ` +
+        `opacity=${style.opacity}, display=${style.display}, visibility=${style.visibility}`,
         'info',
         'DOMVisibility'
       );
+      
+      // Check if element might be hidden by another element with higher z-index
+      if (isVisible) {
+        const elementAtPoint = document.elementFromPoint(
+          rect.left + rect.width / 2,
+          rect.top + rect.height / 2
+        );
+        
+        if (elementAtPoint && !element.contains(elementAtPoint) && !elementAtPoint.contains(element)) {
+          logWithTimestamp(
+            `Element "${name}" may be covered by another element: ${elementAtPoint.tagName} ` +
+            `with class "${elementAtPoint.className}"`,
+            'warn',
+            'DOMVisibility'
+          );
+        }
+      }
+      
+      // In debug mode, highlight the element temporarily
+      if (currentLogLevel <= LOG_LEVEL.DEBUG) {
+        const originalOutline = element.style.outline;
+        const originalZIndex = element.style.zIndex;
+        element.style.outline = '3px solid red';
+        element.style.zIndex = '10000';
+        
+        setTimeout(() => {
+          element.style.outline = originalOutline;
+          element.style.zIndex = originalZIndex;
+        }, 3000);
+      }
     } catch (err) {
       logWithTimestamp(`Error checking visibility for "${name}": ${(err as Error).message}`, 'error', 'DOMVisibility');
     }
   }, 100);
 }
-

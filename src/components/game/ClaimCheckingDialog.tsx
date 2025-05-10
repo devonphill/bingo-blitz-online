@@ -1,8 +1,8 @@
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Trophy, Loader } from 'lucide-react';
-import { logWithTimestamp } from '@/utils/logUtils';
+import { logWithTimestamp, logElementVisibility } from '@/utils/logUtils';
 
 interface ClaimCheckingDialogProps {
   isOpen: boolean;
@@ -12,6 +12,7 @@ interface ClaimCheckingDialogProps {
 
 export default function ClaimCheckingDialog({ isOpen, onClose, claimData }: ClaimCheckingDialogProps) {
   const playerName = claimData?.playerName || 'A player';
+  const dialogRef = useRef<HTMLDivElement>(null);
   
   // Log when dialog open state changes
   useEffect(() => {
@@ -24,13 +25,30 @@ export default function ClaimCheckingDialog({ isOpen, onClose, claimData }: Clai
         winPattern: claimData.winPattern,
         hasTicket: !!claimData.ticket
       })}`, 'info');
+      
+      // Check DOM visibility after a short delay
+      setTimeout(() => {
+        logElementVisibility('[role="dialog"]', 'Dialog Component');
+        
+        // Try to find dialog content directly
+        const dialogContent = document.querySelector('[role="dialog"] .DialogContent');
+        if (dialogContent) {
+          logWithTimestamp('Found dialog content in DOM', 'info');
+        } else {
+          logWithTimestamp('Dialog content not found in DOM', 'warn');
+        }
+      }, 200);
     }
   }, [isOpen, claimData, playerName]);
   
   return (
     <>
       <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className="w-[95vw] max-w-md rounded-lg fixed z-[2000] bg-white">
+        <DialogContent 
+          ref={dialogRef}
+          className="w-[95vw] max-w-md rounded-lg fixed z-[2000] bg-white"
+          style={{ zIndex: 2000 }}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center justify-center text-xl gap-2">
               <Trophy className="h-5 w-5 text-amber-500" />
