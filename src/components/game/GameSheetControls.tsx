@@ -11,6 +11,8 @@ interface GameSheetControlsProps {
   isRefreshing?: boolean;
   winningTickets?: number;
   totalTickets?: number;
+  sessionId?: string | null; // Added
+  playerId?: string | null;  // Added
 }
 
 export default function GameSheetControls({
@@ -20,7 +22,9 @@ export default function GameSheetControls({
   isClaiming = false,
   isRefreshing = false,
   winningTickets = 0,
-  totalTickets = 0
+  totalTickets = 0,
+  sessionId, // Added
+  playerId  // Added
 }: GameSheetControlsProps) {
   
   // Determine button appearance based on claim status

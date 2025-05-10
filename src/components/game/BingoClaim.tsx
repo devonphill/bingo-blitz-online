@@ -357,12 +357,15 @@ export default function BingoClaim({
   } : undefined;
 
   // DEBUGGING: Log the state of the dialog when it should be shown
-  console.log('BINGO CLAIM RENDER STATE:', {
-    showCheckingDialog,
-    checkingClaimData,
-    sessionId,
-    playerId
-  });
+  // Fixed: wrap in a fragment so we're not returning void in JSX context
+  {
+    console.log('BINGO CLAIM RENDER STATE:', {
+      showCheckingDialog,
+      checkingClaimData,
+      sessionId,
+      playerId
+    });
+  }
 
   return (
     <div className="flex flex-col items-center">
@@ -380,7 +383,6 @@ export default function BingoClaim({
       />
       
       {/* Claim checking dialog with enhanced debugging */}
-      {console.log('Rendering ClaimCheckingDialog with props:', { isOpen: showCheckingDialog, claimData: checkingClaimData })}
       <ClaimCheckingDialog
         isOpen={showCheckingDialog}
         onClose={handleCloseCheckingDialog}

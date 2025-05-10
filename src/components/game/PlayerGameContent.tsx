@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -12,6 +11,7 @@ import { useGameManager } from "@/contexts/GameManager";
 import GameTypePlayspace from "./GameTypePlayspace";
 import { usePlayerClaimManagement } from "@/hooks/usePlayerClaimManagement";
 import { usePlayerWebSocketNumbers } from "@/hooks/usePlayerWebSocketNumbers";
+import BingoClaim from "./BingoClaim";
 
 interface PlayerGameContentProps {
   tickets: any[];
