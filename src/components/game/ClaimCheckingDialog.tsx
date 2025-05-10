@@ -18,10 +18,14 @@ export default function ClaimCheckingDialog({
 }: ClaimCheckingDialogProps) {
   const [autoCloseTimer, setAutoCloseTimer] = useState<NodeJS.Timeout | null>(null);
   
+  // Log state for debugging
+  console.log('ClaimCheckingDialog props:', { isOpen, claimData });
+  
   // Set up auto-close timer
   useEffect(() => {
     if (isOpen && claimData) {
       logWithTimestamp('ClaimCheckingDialog: Showing claim check details', 'info');
+      console.log('ClaimCheckingDialog: Dialog opened with data', claimData);
       
       // Auto close after a delay
       const timer = setTimeout(() => {
@@ -44,6 +48,7 @@ export default function ClaimCheckingDialog({
   }, [autoCloseTimer]);
 
   if (!isOpen || !claimData) {
+    console.log('ClaimCheckingDialog: Not showing dialog - isOpen:', isOpen, 'claimData:', claimData ? 'present' : 'missing');
     return null;
   }
 
@@ -51,6 +56,8 @@ export default function ClaimCheckingDialog({
   const winPattern = claimData.winPattern || 'unknown pattern';
   const ticket = claimData.ticket;
   const calledNumbers = claimData.calledNumbers || [];
+  
+  console.log('ClaimCheckingDialog: Rendering dialog for', playerName, 'with ticket:', ticket?.serial);
 
   return isOpen ? (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => onClose()}>

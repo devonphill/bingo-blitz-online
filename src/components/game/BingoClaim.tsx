@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Trophy, CheckCircle2, XCircle } from 'lucide-react';
@@ -123,7 +124,7 @@ export default function BingoClaim({
     };
   }, [playerId, sessionId, resetClaimStatus, playerName]);
   
-  // NEW: Listen for claim checking broadcasts - only when session is available
+  // ENHANCED: Listen for claim checking broadcasts with better error handling
   useEffect(() => {
     if (!sessionId) {
       logWithTimestamp(`BingoClaim: No session ID for claim checking listener`, 'warn');
@@ -132,34 +133,62 @@ export default function BingoClaim({
     
     logWithTimestamp(`BingoClaim: Setting up claim checking listener for session ${sessionId}`, 'info');
     
-    // Use the dedicated claim_checking_broadcaster channel
-    const channel = supabase
-      .channel('claim_checking_broadcaster')
-      .on('broadcast', { event: 'claim-checking' }, payload => {
-        logWithTimestamp(`BingoClaim: Received claim checking broadcast: ${JSON.stringify(payload.payload)}`, 'info');
-        
-        const claimSessionId = payload.payload?.sessionId;
-        
-        // Only show for our session
-        if (sessionId === claimSessionId) {
-          logWithTimestamp(`BingoClaim: Showing claim checking dialog for session ${sessionId}`, 'info');
+    try {
+      // IMPORTANT FIX: Use the correct channel name consistently
+      const channel = supabase
+        .channel('claim_checking_broadcaster')
+        .on('broadcast', { event: 'claim-checking' }, payload => {
+          console.log('CLAIM CHECKING BROADCAST RECEIVED:', payload);
+          logWithTimestamp(`BingoClaim: Received claim checking broadcast: ${JSON.stringify(payload.payload)}`, 'info');
           
-          // Store claim data and show dialog
-          setCheckingClaimData(payload.payload);
-          setShowCheckingDialog(true);
-        }
-      })
-      .subscribe((status) => {
-        logWithTimestamp(`BingoClaim: Claim checking channel status: ${status}`, 'info');
-      });
-    
-    // Store channel reference for cleanup
-    checkingChannelRef.current = channel;
+          const claimSessionId = payload.payload?.sessionId;
+          
+          // Only show for our session
+          if (sessionId === claimSessionId) {
+            logWithTimestamp(`BingoClaim: Showing claim checking dialog for session ${sessionId}`, 'info');
+            
+            // Store claim data and show dialog
+            setCheckingClaimData(payload.payload);
+            setShowCheckingDialog(true);
+            
+            // DEBUGGING: Log that we're actually trying to show the dialog
+            console.log('SHOWING CLAIM CHECKING DIALOG', {
+              payload: payload.payload,
+              dialogShown: true
+            });
+          } else {
+            console.log('SESSION ID MISMATCH', {
+              receivedSessionId: claimSessionId,
+              ourSessionId: sessionId
+            });
+          }
+        })
+        .subscribe((status) => {
+          logWithTimestamp(`BingoClaim: Claim checking channel status: ${status}`, 'info');
+          console.log(`Claim checking channel subscription status: ${status}`);
+          
+          if (status === 'SUBSCRIBED') {
+            console.log('Successfully subscribed to claim_checking_broadcaster channel!');
+          } else if (status === 'CHANNEL_ERROR') {
+            console.error('Error subscribing to claim_checking_broadcaster channel');
+          }
+        });
+      
+      // Store channel reference for cleanup
+      checkingChannelRef.current = channel;
+    } catch (err) {
+      console.error('Error setting up claim checking listener:', err);
+      logWithTimestamp(`BingoClaim: Error setting up claim checking listener: ${err}`, 'error');
+    }
     
     return () => {
       if (checkingChannelRef.current) {
         logWithTimestamp(`BingoClaim: Cleaning up claim checking channel`, 'info');
-        supabase.removeChannel(checkingChannelRef.current);
+        try {
+          supabase.removeChannel(checkingChannelRef.current);
+        } catch (err) {
+          console.error('Error removing claim checking channel:', err);
+        }
         checkingChannelRef.current = null;
       }
     };
@@ -253,6 +282,8 @@ export default function BingoClaim({
   
   // New handler for closing the checking dialog
   const handleCloseCheckingDialog = () => {
+    logWithTimestamp(`BingoClaim: Closing checking dialog`, 'info');
+    console.log('CLOSING CLAIM CHECKING DIALOG');
     setShowCheckingDialog(false);
   };
   
@@ -325,6 +356,14 @@ export default function BingoClaim({
     calledNumbers: calledNumbers || []
   } : undefined;
 
+  // DEBUGGING: Log the state of the dialog when it should be shown
+  console.log('BINGO CLAIM RENDER STATE:', {
+    showCheckingDialog,
+    checkingClaimData,
+    sessionId,
+    playerId
+  });
+
   return (
     <div className="flex flex-col items-center">
       <div className="w-full max-w-xs">
@@ -340,7 +379,8 @@ export default function BingoClaim({
         isGlobalBroadcast={isGlobalBroadcast}
       />
       
-      {/* New claim checking dialog */}
+      {/* Claim checking dialog with enhanced debugging */}
+      {console.log('Rendering ClaimCheckingDialog with props:', { isOpen: showCheckingDialog, claimData: checkingClaimData })}
       <ClaimCheckingDialog
         isOpen={showCheckingDialog}
         onClose={handleCloseCheckingDialog}

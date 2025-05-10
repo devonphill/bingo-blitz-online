@@ -6,6 +6,7 @@ import CallerTicketDisplay from './CallerTicketDisplay';
 import { ClaimData } from '@/types/claim';
 import { claimBroadcastService } from '@/services/ClaimBroadcastService';
 import { useToast } from '@/hooks/use-toast';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 interface ClaimItemProps {
   claim: ClaimData;
@@ -34,6 +35,13 @@ export default function ClaimItem({
   const handleSendToPlayers = async () => {
     setIsSendingToPlayers(true);
     try {
+      logWithTimestamp(`ClaimItem: Broadcasting claim check for ${claim.playerName || claim.playerId}`, 'info');
+      console.log('BROADCASTING CLAIM CHECK TO PLAYERS:', {
+        playerName: claim.playerName || claim.playerId,
+        sessionId: claim.sessionId,
+        ticketSerial: claim.ticket?.serial
+      });
+      
       // Send the current claim to all players
       const success = await claimBroadcastService.broadcastClaimChecking(
         {
@@ -45,12 +53,18 @@ export default function ClaimItem({
       );
       
       if (success) {
+        logWithTimestamp(`ClaimItem: Successfully broadcasted claim check for ${claim.playerName || claim.playerId}`, 'info');
+        console.log('BROADCAST CLAIM CHECK SUCCESS');
+        
         toast({
           title: "Sent to Players",
           description: `Claim by ${claim.playerName || claim.playerId} shared with all players`,
           duration: 3000,
         });
       } else {
+        logWithTimestamp(`ClaimItem: Failed to broadcast claim check for ${claim.playerName || claim.playerId}`, 'error');
+        console.error('BROADCAST CLAIM CHECK FAILED');
+        
         toast({
           title: "Broadcast Error",
           description: "Failed to send claim to players",
@@ -60,6 +74,8 @@ export default function ClaimItem({
       }
     } catch (error) {
       console.error("Error broadcasting claim to players:", error);
+      logWithTimestamp(`ClaimItem: Error broadcasting claim check: ${error}`, 'error');
+      
       toast({
         title: "Broadcast Error",
         description: "An unexpected error occurred",

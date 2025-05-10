@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { validateChannelType, ensureString } from '@/utils/typeUtils';
@@ -114,19 +115,27 @@ class ClaimBroadcastService {
   /**
    * Manually broadcast a claim being checked to all players
    * Used by the caller to show players what claim is currently being verified
+   * IMPORTANT: This function has been enhanced with better error handling
    */
   public async broadcastClaimChecking(claim: ClaimData, message?: string): Promise<boolean> {
     try {
       if (!claim || !claim.sessionId) {
         logWithTimestamp('Cannot broadcast claim check: Missing session ID', 'error');
+        console.error('Cannot broadcast claim check: Missing session ID');
         return false;
       }
 
       logWithTimestamp(`Broadcasting claim check for ${claim.playerName || claim.playerId} in session ${claim.sessionId}`, 'info');
+      console.log('BROADCASTING CLAIM CHECK:', {
+        playerName: claim.playerName || claim.playerId,
+        sessionId: claim.sessionId,
+        channel: this.CLAIM_CHECKING_CHANNEL,
+        event: this.CLAIM_CHECKING_EVENT
+      });
       
-      // Clean up the payload to avoid circular references
+      // Clean up the payload to avoid circular references and ensure proper data
       const broadcastPayload = {
-        claimId: ensureString(claim.id),
+        claimId: ensureString(claim.id || 'unknown'),
         sessionId: ensureString(claim.sessionId),
         playerId: ensureString(claim.playerId),
         playerName: ensureString(claim.playerName || 'unknown'),
@@ -136,27 +145,51 @@ class ClaimBroadcastService {
         winPattern: ensureString(claim.winPattern || 'oneLine'),
         // Sanitize ticket data to avoid circular references
         ticket: claim.ticket ? {
-          serial: ensureString(claim.ticket.serial),
-          numbers: claim.ticket.numbers,
+          serial: ensureString(claim.ticket.serial || 'unknown'),
+          numbers: claim.ticket.numbers || [],
           calledNumbers: claim.calledNumbers || []
-        } : undefined,
+        } : null,
         calledNumbers: claim.calledNumbers || []
       };
       
-      // Use dedicated channel for claim checking broadcasts
-      const broadcastChannel = supabase.channel(this.CLAIM_CHECKING_CHANNEL);
+      console.log('CLAIM CHECK PAYLOAD:', broadcastPayload);
       
-      // Broadcast the claim check to all listeners
-      await broadcastChannel.send({
-        type: validateChannelType('broadcast'),
-        event: this.CLAIM_CHECKING_EVENT,
-        payload: broadcastPayload
-      });
-      
-      logWithTimestamp(`Claim check broadcast sent for ${claim.playerName || claim.playerId}`, 'info');
-      return true;
+      try {
+        // Use dedicated channel for claim checking broadcasts with explicit configuration
+        const broadcastChannel = supabase.channel(this.CLAIM_CHECKING_CHANNEL, {
+          config: {
+            broadcast: { self: true } // Ensure sender receives their own events
+          }
+        });
+        
+        // Broadcast the claim check to all listeners
+        await broadcastChannel.send({
+          type: validateChannelType('broadcast'),
+          event: this.CLAIM_CHECKING_EVENT,
+          payload: broadcastPayload
+        });
+        
+        logWithTimestamp(`Claim check broadcast sent for ${claim.playerName || claim.playerId}`, 'info');
+        console.log('CLAIM CHECK BROADCAST SENT SUCCESSFULLY');
+        return true;
+      } catch (channelError) {
+        console.error("Error with Supabase channel during claim check broadcast:", channelError);
+        
+        // Try an alternative approach with a new channel instance
+        console.log('Trying alternative broadcast approach...');
+        const fallbackChannel = supabase.channel('claim_checking_fallback');
+        await fallbackChannel.send({
+          type: validateChannelType('broadcast'),
+          event: this.CLAIM_CHECKING_EVENT,
+          payload: broadcastPayload
+        });
+        
+        console.log('Fallback broadcast sent');
+        return true;
+      }
     } catch (err) {
       console.error("Error broadcasting claim check:", err);
+      logWithTimestamp(`Error broadcasting claim check: ${(err as Error).message}`, 'error');
       return false;
     }
   }

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -98,6 +97,15 @@ export default function PlayerGameContent({
     currentWinPattern || null,
     currentGameNumber
   );
+  
+  // DEBUGGING: Log important values related to claim management
+  console.log('PlayerGameContent critical values:', {
+    sessionId: currentSession?.id,
+    playerCode,
+    playerId,
+    playerName,
+    claimStatus: claimStatusFromHook || claimStatus
+  });
   
   // Use the WebSocket called numbers if available, otherwise use props
   const effectiveCalledNumbers = wsCalledNumbers.length > 0 ? wsCalledNumbers : calledNumbers;
@@ -244,6 +252,9 @@ export default function PlayerGameContent({
 
   // Handle claim bingo
   const handleLocalClaimBingo = async () => {
+    logWithTimestamp('PlayerGameContent: Handling local claim bingo', 'info');
+    console.log('HANDLING CLAIM BINGO CLICK');
+    
     if (onClaimBingo) {
       return await onClaimBingo();
     }
@@ -286,6 +297,9 @@ export default function PlayerGameContent({
                 handleClaimBingo={handleLocalClaimBingo}
                 isClaiming={effectiveIsClaiming}
                 claimStatus={effectiveClaimStatus === 'valid' ? 'validated' : effectiveClaimStatus === 'invalid' ? 'rejected' : 'pending'}
+                sessionId={currentSession?.id}  {/* IMPORTANT: Pass session ID */}
+                playerId={playerId}             {/* IMPORTANT: Pass player ID */}
+                playerName={playerName}         {/* IMPORTANT: Pass player name */}
               />
             )}
           </div>
@@ -297,7 +311,24 @@ export default function PlayerGameContent({
         claimStatus={effectiveClaimStatus}
         isClaiming={effectiveIsClaiming}
         onRefreshTickets={onRefreshTickets}
+        sessionId={currentSession?.id}  {/* IMPORTANT: Pass session ID */}
+        playerId={playerId}             {/* IMPORTANT: Pass player ID */}
       />
+      
+      {/* Add global BingoClaim component */}
+      <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
+        <BingoClaim
+          onClaimBingo={handleLocalClaimBingo}
+          claimStatus={effectiveClaimStatus}
+          isClaiming={effectiveIsClaiming}
+          resetClaimStatus={resetClaimStatus}
+          playerName={playerName}
+          currentTicket={tickets && tickets.length > 0 ? tickets[0] : null}
+          calledNumbers={effectiveCalledNumbers}
+          sessionId={currentSession?.id}
+          playerId={playerId}
+        />
+      </div>
       
       {showDebug && (
         <div className="fixed bottom-4 right-4 w-64">
