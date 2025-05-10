@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { validateChannelType, ensureString } from '@/utils/typeUtils';
@@ -10,8 +9,10 @@ import { ClaimData, ClaimResult } from '@/types/claim';
 class ClaimBroadcastService {
   // Channel name constants
   private readonly CLAIM_CHANNEL = 'game-updates';
+  private readonly CLAIM_CHECKING_CHANNEL = 'claim_checking_broadcaster';
   private readonly CLAIM_RESULT_EVENT = 'claim-result';
   private readonly CLAIM_SUBMITTED_EVENT = 'claim-submitted';
+  private readonly CLAIM_CHECKING_EVENT = 'claim-checking';
 
   /**
    * Broadcast a new claim to the game-updates channel
@@ -106,6 +107,56 @@ class ClaimBroadcastService {
       return true;
     } catch (err) {
       console.error("Error broadcasting claim result:", err);
+      return false;
+    }
+  }
+
+  /**
+   * Manually broadcast a claim being checked to all players
+   * Used by the caller to show players what claim is currently being verified
+   */
+  public async broadcastClaimChecking(claim: ClaimData, message?: string): Promise<boolean> {
+    try {
+      if (!claim || !claim.sessionId) {
+        logWithTimestamp('Cannot broadcast claim check: Missing session ID', 'error');
+        return false;
+      }
+
+      logWithTimestamp(`Broadcasting claim check for ${claim.playerName || claim.playerId} in session ${claim.sessionId}`, 'info');
+      
+      // Clean up the payload to avoid circular references
+      const broadcastPayload = {
+        claimId: ensureString(claim.id),
+        sessionId: ensureString(claim.sessionId),
+        playerId: ensureString(claim.playerId),
+        playerName: ensureString(claim.playerName || 'unknown'),
+        timestamp: new Date().toISOString(),
+        message: message || 'Claim being verified by caller',
+        gameType: ensureString(claim.gameType || 'mainstage'),
+        winPattern: ensureString(claim.winPattern || 'oneLine'),
+        // Sanitize ticket data to avoid circular references
+        ticket: claim.ticket ? {
+          serial: ensureString(claim.ticket.serial),
+          numbers: claim.ticket.numbers,
+          calledNumbers: claim.calledNumbers || []
+        } : undefined,
+        calledNumbers: claim.calledNumbers || []
+      };
+      
+      // Use dedicated channel for claim checking broadcasts
+      const broadcastChannel = supabase.channel(this.CLAIM_CHECKING_CHANNEL);
+      
+      // Broadcast the claim check to all listeners
+      await broadcastChannel.send({
+        type: validateChannelType('broadcast'),
+        event: this.CLAIM_CHECKING_EVENT,
+        payload: broadcastPayload
+      });
+      
+      logWithTimestamp(`Claim check broadcast sent for ${claim.playerName || claim.playerId}`, 'info');
+      return true;
+    } catch (err) {
+      console.error("Error broadcasting claim check:", err);
       return false;
     }
   }

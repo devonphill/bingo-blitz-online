@@ -21,6 +21,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
   const { toast } = useToast();
   const network = useNetwork(); // Get network context
   const channelRef = useRef<any>(null);
+  const claimCheckingChannelRef = useRef<any>(null);
   
   // Refresh claims from the service
   const fetchClaims = useCallback(() => {
@@ -46,6 +47,10 @@ export function useCallerClaimManagement(sessionId: string | null) {
       
       setClaims(sessionClaims);
       setLastRefreshTime(Date.now());
+      
+      // Setup or cleanup claim checking channel based on having claims
+      manageClaimCheckingChannel(sessionClaims.length > 0);
+      
     } catch (error) {
       console.error('Error fetching claims:', error);
     } finally {
@@ -63,6 +68,31 @@ export function useCallerClaimManagement(sessionId: string | null) {
     
     return true;
   }, [sessionId, fetchClaims]);
+  
+  // Manage the claim checking channel based on having claims
+  const manageClaimCheckingChannel = useCallback((hasActiveClaims: boolean) => {
+    // Only manage if we have a session ID
+    if (!sessionId) return;
+    
+    // If we have claims and no channel, set up the claim checking channel
+    if (hasActiveClaims && !claimCheckingChannelRef.current) {
+      logWithTimestamp(`Setting up claim checking channel for session ${sessionId}`, 'info');
+      
+      const channel = supabase.channel('claim_checking_broadcaster')
+        .subscribe((status) => {
+          logWithTimestamp(`Claim checking channel subscription status: ${status}`, 'info');
+        });
+        
+      claimCheckingChannelRef.current = channel;
+    } 
+    // If we have no claims and a channel, clean it up
+    else if (!hasActiveClaims && claimCheckingChannelRef.current) {
+      logWithTimestamp(`Cleaning up claim checking channel - no active claims`, 'info');
+      
+      supabase.removeChannel(claimCheckingChannelRef.current);
+      claimCheckingChannelRef.current = null;
+    }
+  }, [sessionId]);
   
   // Create a claim directly from broadcast payload
   const createClaimFromBroadcast = useCallback((payload: any): ClaimData | null => {
@@ -222,6 +252,12 @@ export function useCallerClaimManagement(sessionId: string | null) {
     return () => {
       if (channel) {
         supabase.removeChannel(channel);
+      }
+      
+      // Also clean up the claim checking channel if it exists
+      if (claimCheckingChannelRef.current) {
+        supabase.removeChannel(claimCheckingChannelRef.current);
+        claimCheckingChannelRef.current = null;
       }
     };
   }, [sessionId, setupChannelSubscription, fetchClaims]);

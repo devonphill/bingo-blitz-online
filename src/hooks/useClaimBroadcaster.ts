@@ -8,8 +8,9 @@ import { logWithTimestamp } from '@/utils/logUtils';
  * Hook for broadcasting claim validation results to players
  */
 export function useClaimBroadcaster() {
-  // Channel name constant for consistency - FIXED: Use 'game-updates' for all claim-related communications
+  // Channel name constant for consistency
   const CLAIM_CHANNEL = 'game-updates';
+  const CLAIM_CHECKING_CHANNEL = 'claim_checking_broadcaster';
 
   /**
    * Broadcasts claim validation result to the player and everyone in the session
@@ -69,7 +70,45 @@ export function useClaimBroadcaster() {
     }
   }, []);
 
+  /**
+   * Broadcasts a claim being checked to all players
+   */
+  const broadcastClaimChecking = useCallback(async (
+    claim: any,
+    sessionId: string,
+    message?: string
+  ): Promise<boolean> => {
+    try {
+      logWithTimestamp(`Broadcasting claim checking to all players in session ${sessionId}`, 'info');
+      
+      // Use the dedicated channel for claim checking broadcasts
+      const broadcastChannel = supabase.channel(CLAIM_CHECKING_CHANNEL);
+      
+      // Create a payload with claim details
+      const payload = {
+        ...claim,
+        sessionId: ensureString(sessionId),
+        timestamp: new Date().toISOString(),
+        message: message || 'Claim being verified by caller'
+      };
+      
+      // Send to all players via broadcast
+      await broadcastChannel.send({
+        type: validateChannelType('broadcast'),
+        event: 'claim-checking',
+        payload
+      });
+      
+      logWithTimestamp(`Claim checking broadcast sent to session ${sessionId}`, 'info');
+      return true;
+    } catch (err) {
+      logWithTimestamp(`Error broadcasting claim checking: ${(err as Error).message}`, 'error');
+      return false;
+    }
+  }, []);
+
   return {
-    broadcastClaimResult
+    broadcastClaimResult,
+    broadcastClaimChecking
   };
 }

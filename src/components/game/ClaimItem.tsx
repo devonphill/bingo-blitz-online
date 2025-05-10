@@ -1,9 +1,11 @@
 
 import React from 'react';
 import { Button } from "@/components/ui/button";
-import { Loader, CheckCircle, XCircle } from 'lucide-react';
+import { Loader, CheckCircle, XCircle, Share2 } from 'lucide-react';
 import CallerTicketDisplay from './CallerTicketDisplay';
 import { ClaimData } from '@/types/claim';
+import { claimBroadcastService } from '@/services/ClaimBroadcastService';
+import { useToast } from '@/hooks/use-toast';
 
 interface ClaimItemProps {
   claim: ClaimData;
@@ -26,6 +28,49 @@ export default function ClaimItem({
   onReject,
   isProcessingClaim
 }: ClaimItemProps) {
+  const { toast } = useToast();
+  const [isSendingToPlayers, setIsSendingToPlayers] = React.useState(false);
+
+  const handleSendToPlayers = async () => {
+    setIsSendingToPlayers(true);
+    try {
+      // Send the current claim to all players
+      const success = await claimBroadcastService.broadcastClaimChecking(
+        {
+          ...claim,
+          calledNumbers: currentCalledNumbers,
+          lastCalledNumber: currentNumber
+        },
+        "Caller is reviewing this claim now"
+      );
+      
+      if (success) {
+        toast({
+          title: "Sent to Players",
+          description: `Claim by ${claim.playerName || claim.playerId} shared with all players`,
+          duration: 3000,
+        });
+      } else {
+        toast({
+          title: "Broadcast Error",
+          description: "Failed to send claim to players",
+          variant: "destructive",
+          duration: 3000,
+        });
+      }
+    } catch (error) {
+      console.error("Error broadcasting claim to players:", error);
+      toast({
+        title: "Broadcast Error",
+        description: "An unexpected error occurred",
+        variant: "destructive",
+        duration: 3000,
+      });
+    } finally {
+      setIsSendingToPlayers(false);
+    }
+  };
+
   return (
     <div className="border rounded-md p-4">
       <div className="font-bold">Claim Details</div>
@@ -73,7 +118,21 @@ export default function ClaimItem({
         </div>
       )}
       
-      <div className="flex justify-end gap-2 mt-4">
+      <div className="flex flex-wrap justify-end gap-2 mt-4">
+        <Button 
+          variant="outline"
+          onClick={handleSendToPlayers}
+          disabled={isSendingToPlayers || isProcessingClaim}
+          className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+          size="sm"
+        >
+          {isSendingToPlayers ? (
+            <Loader className="h-4 w-4 animate-spin mr-2" />
+          ) : (
+            <Share2 className="h-4 w-4 mr-2" />
+          )}
+          Send to Players
+        </Button>
         <Button 
           variant="outline" 
           onClick={() => onVerify(claim)}

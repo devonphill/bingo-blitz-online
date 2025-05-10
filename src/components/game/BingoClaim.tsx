@@ -1,10 +1,10 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Trophy, CheckCircle2, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { logWithTimestamp } from '@/utils/logUtils';
 import ClaimResultDialog from './ClaimResultDialog';
+import ClaimCheckingDialog from './ClaimCheckingDialog';
 import { supabase } from '@/integrations/supabase/client';
 
 interface BingoClaimProps {
@@ -39,6 +39,11 @@ export default function BingoClaim({
   const [lastClaimTime, setLastClaimTime] = useState(0);
   const [hasReceivedResult, setHasReceivedResult] = useState(false);
   const claimChannelRef = useRef<any>(null);
+  
+  // New state for claim checking dialog
+  const [showCheckingDialog, setShowCheckingDialog] = useState(false);
+  const [checkingClaimData, setCheckingClaimData] = useState<any>(null);
+  const checkingChannelRef = useRef<any>(null);
   
   // Log when status changes to help with debugging
   useEffect(() => {
@@ -117,6 +122,48 @@ export default function BingoClaim({
       }
     };
   }, [playerId, sessionId, resetClaimStatus, playerName]);
+  
+  // NEW: Listen for claim checking broadcasts - only when session is available
+  useEffect(() => {
+    if (!sessionId) {
+      logWithTimestamp(`BingoClaim: No session ID for claim checking listener`, 'warn');
+      return;
+    }
+    
+    logWithTimestamp(`BingoClaim: Setting up claim checking listener for session ${sessionId}`, 'info');
+    
+    // Use the dedicated claim_checking_broadcaster channel
+    const channel = supabase
+      .channel('claim_checking_broadcaster')
+      .on('broadcast', { event: 'claim-checking' }, payload => {
+        logWithTimestamp(`BingoClaim: Received claim checking broadcast: ${JSON.stringify(payload.payload)}`, 'info');
+        
+        const claimSessionId = payload.payload?.sessionId;
+        
+        // Only show for our session
+        if (sessionId === claimSessionId) {
+          logWithTimestamp(`BingoClaim: Showing claim checking dialog for session ${sessionId}`, 'info');
+          
+          // Store claim data and show dialog
+          setCheckingClaimData(payload.payload);
+          setShowCheckingDialog(true);
+        }
+      })
+      .subscribe((status) => {
+        logWithTimestamp(`BingoClaim: Claim checking channel status: ${status}`, 'info');
+      });
+    
+    // Store channel reference for cleanup
+    checkingChannelRef.current = channel;
+    
+    return () => {
+      if (checkingChannelRef.current) {
+        logWithTimestamp(`BingoClaim: Cleaning up claim checking channel`, 'info');
+        supabase.removeChannel(checkingChannelRef.current);
+        checkingChannelRef.current = null;
+      }
+    };
+  }, [sessionId]);
   
   // Reset claim ability based on status changes
   useEffect(() => {
@@ -204,6 +251,11 @@ export default function BingoClaim({
     }
   };
   
+  // New handler for closing the checking dialog
+  const handleCloseCheckingDialog = () => {
+    setShowCheckingDialog(false);
+  };
+  
   // Render different button states based on claim status
   const renderButton = () => {
     switch (claimStatus) {
@@ -286,6 +338,13 @@ export default function BingoClaim({
         playerName={dialogPlayerName || playerName}
         ticket={ticketForDialog}
         isGlobalBroadcast={isGlobalBroadcast}
+      />
+      
+      {/* New claim checking dialog */}
+      <ClaimCheckingDialog
+        isOpen={showCheckingDialog}
+        onClose={handleCloseCheckingDialog}
+        claimData={checkingClaimData}
       />
     </div>
   );

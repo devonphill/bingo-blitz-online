@@ -1,9 +1,9 @@
 
 import React from 'react';
+import ClaimItem from './ClaimItem';
 import { Button } from "@/components/ui/button";
 import { RefreshCw } from 'lucide-react';
 import { ClaimData } from '@/types/claim';
-import ClaimItem from './ClaimItem';
 
 interface ClaimsListProps {
   claims: ClaimData[];
@@ -17,7 +17,7 @@ interface ClaimsListProps {
   onRefresh: () => void;
 }
 
-export default function ClaimsList({
+const ClaimsList: React.FC<ClaimsListProps> = ({
   claims,
   currentCalledNumbers,
   currentNumber,
@@ -27,32 +27,29 @@ export default function ClaimsList({
   onReject,
   isProcessingClaim,
   onRefresh
-}: ClaimsListProps) {
+}) => {
   if (!claims || claims.length === 0) {
     return (
-      <div className="text-center text-gray-500 p-8">
-        <p className="mb-2">No claims to review at this time.</p>
-        <p className="text-sm text-muted-foreground mb-4">
-          Claims will appear here automatically when players submit them.
-        </p>
+      <div className="flex flex-col items-center justify-center p-6 bg-gray-50 border border-dashed rounded-lg">
+        <p className="text-gray-500 mb-4">No claims to verify</p>
         <Button 
           variant="outline" 
-          size="sm" 
-          onClick={onRefresh}
-          className="mx-auto"
+          onClick={onRefresh} 
+          className="flex items-center gap-1"
+          size="sm"
         >
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Force Refresh
+          <RefreshCw className="h-4 w-4" />
+          Refresh
         </Button>
       </div>
     );
   }
 
   return (
-    <>
-      {claims.map((claim, index) => (
+    <div className="space-y-4">
+      {claims.map((claim) => (
         <ClaimItem
-          key={claim.id || index}
+          key={claim.id}
           claim={claim}
           currentCalledNumbers={currentCalledNumbers}
           currentNumber={currentNumber}
@@ -60,9 +57,11 @@ export default function ClaimsList({
           currentWinPattern={currentWinPattern}
           onVerify={onVerify}
           onReject={onReject}
-          isProcessingClaim={isProcessingClaim}
+          isProcessingClaim={isProcessingClaim && claim.id === claims[0].id}
         />
       ))}
-    </>
+    </div>
   );
-}
+};
+
+export default ClaimsList;
