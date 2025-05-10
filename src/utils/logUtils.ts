@@ -21,28 +21,28 @@ export function setLogLevel(level) {
 // Debug log
 export function logDebug(...args) {
   if (currentLogLevel <= LOG_LEVEL.DEBUG) {
-    console.debug(...args);
+    console.debug('[DEBUG]', ...args);
   }
 }
 
 // Info log
 export function logInfo(...args) {
   if (currentLogLevel <= LOG_LEVEL.INFO) {
-    console.info(...args);
+    console.info('[INFO]', ...args);
   }
 }
 
 // Warning log
 export function logWarn(...args) {
   if (currentLogLevel <= LOG_LEVEL.WARN) {
-    console.warn(...args);
+    console.warn('[WARN]', ...args);
   }
 }
 
 // Error log
 export function logError(...args) {
   if (currentLogLevel <= LOG_LEVEL.ERROR) {
-    console.error(...args);
+    console.error('[ERROR]', ...args);
   }
 }
 
@@ -130,3 +130,64 @@ export function logWithTimestamp(message: string, level: string = 'info', catego
   
   return formattedMessage;
 }
+
+/**
+ * Log UI component rendering - useful for detecting render issues
+ * @param componentName The name of the component being rendered
+ * @param props Optional props to log
+ */
+export function logComponentRender(componentName: string, props?: any): void {
+  if (currentLogLevel <= LOG_LEVEL.DEBUG) {
+    const propsStr = props ? ` with props: ${formatObject(props)}` : '';
+    logDebug(`Rendering ${componentName}${propsStr}`);
+  }
+}
+
+/**
+ * Check if an element is visible in the DOM
+ * @param element The DOM element to check
+ * @returns Boolean indicating if the element is visible
+ */
+export function isElementVisible(element: HTMLElement | null): boolean {
+  if (!element) return false;
+  
+  const style = window.getComputedStyle(element);
+  const isDisplayed = style.display !== 'none';
+  const isVisible = style.visibility !== 'hidden';
+  const hasNonZeroArea = element.offsetWidth > 0 && element.offsetHeight > 0;
+  const isInDOM = document.body.contains(element);
+  
+  logWithTimestamp(
+    `Element visibility check: display=${style.display}, visibility=${style.visibility}, ` +
+    `width=${element.offsetWidth}, height=${element.offsetHeight}, inDOM=${isInDOM}`,
+    'debug',
+    'DOMCheck'
+  );
+  
+  return isDisplayed && isVisible && hasNonZeroArea && isInDOM;
+}
+
+/**
+ * Log DOM element visibility - useful for debugging UI issues
+ * @param selector CSS selector to find the element
+ * @param name Optional name for the element (for logging)
+ */
+export function logElementVisibility(selector: string, name: string = selector): void {
+  setTimeout(() => {
+    try {
+      const element = document.querySelector(selector) as HTMLElement;
+      const isVisible = isElementVisible(element);
+      const zIndex = element ? window.getComputedStyle(element).zIndex : 'N/A';
+      const position = element ? window.getComputedStyle(element).position : 'N/A';
+      
+      logWithTimestamp(
+        `Element "${name}" (${selector}): visible=${isVisible}, z-index=${zIndex}, position=${position}`,
+        'info',
+        'DOMVisibility'
+      );
+    } catch (err) {
+      logWithTimestamp(`Error checking visibility for "${name}": ${(err as Error).message}`, 'error', 'DOMVisibility');
+    }
+  }, 100);
+}
+
