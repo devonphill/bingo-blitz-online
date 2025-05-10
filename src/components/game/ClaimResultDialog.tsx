@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
-import { CheckCircle2, XCircle } from 'lucide-react';
+import { CheckCircle2, XCircle, Award } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -37,8 +37,11 @@ export default function ClaimResultDialog({
       
       // Also show a toast for quick notification
       toast({
-        title: result === 'valid' ? 'Bingo Verified!' : 'Invalid Claim',
-        description: `${playerName}'s claim was ${result === 'valid' ? 'validated' : 'rejected'}`,
+        title: isGlobalBroadcast ? `${result === 'valid' ? 'Bingo Verified!' : 'Claim Rejected'}` : 
+                                   `${result === 'valid' ? 'Your Bingo Verified!' : 'Your Claim Rejected'}`,
+        description: isGlobalBroadcast ? 
+                     `${playerName}'s claim was ${result === 'valid' ? 'validated' : 'rejected'}` :
+                     `Your claim was ${result === 'valid' ? 'validated' : 'rejected'}`,
         variant: result === 'valid' ? 'default' : 'destructive',
         duration: 5000
       });
@@ -72,8 +75,10 @@ export default function ClaimResultDialog({
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className={isGlobalBroadcast ? "flex items-center gap-2" : ""}>
+            {isGlobalBroadcast && <Award className="h-5 w-5 text-amber-500" />}
             {result === 'valid' ? 'Bingo Claim Validated!' : 'Bingo Claim Invalid'}
+            {isGlobalBroadcast && <span className="text-sm text-muted-foreground ml-2">Broadcast</span>}
           </DialogTitle>
         </DialogHeader>
         
@@ -88,9 +93,9 @@ export default function ClaimResultDialog({
           </div>
           
           <p className="text-lg font-medium mb-4">
-            {playerName === 'Player' 
-              ? (result === 'valid' ? "Your claim was verified!" : "Your claim was rejected.")
-              : `${playerName}'s claim was ${result === 'valid' ? 'verified!' : 'rejected.'}`}
+            {isGlobalBroadcast 
+              ? `${playerName}'s claim was ${result === 'valid' ? 'verified!' : 'rejected.'}`
+              : `Your claim was ${result === 'valid' ? 'verified!' : 'rejected.'}`}
           </p>
           
           {/* Show ticket if available */}
@@ -117,9 +122,11 @@ export default function ClaimResultDialog({
           
           {/* Additional information for global broadcasts */}
           {isGlobalBroadcast && (
-            <p className="text-sm text-gray-500 mt-4">
-              This claim was broadcast by the caller and visible to all players.
-            </p>
+            <div className="mt-4 p-2 bg-amber-50 border border-amber-200 rounded-md w-full text-center">
+              <p className="text-sm text-amber-800">
+                This claim was broadcast by the caller and visible to all players.
+              </p>
+            </div>
           )}
         </div>
       </DialogContent>

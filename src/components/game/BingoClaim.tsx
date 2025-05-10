@@ -34,6 +34,8 @@ export default function BingoClaim({
   const [forceResetTimer, setForceResetTimer] = useState<NodeJS.Timeout | null>(null);
   const [showResultDialog, setShowResultDialog] = useState(false);
   const [dialogResult, setDialogResult] = useState<'valid' | 'invalid' | null>(null);
+  const [dialogPlayerName, setDialogPlayerName] = useState<string>(playerName);
+  const [isGlobalBroadcast, setIsGlobalBroadcast] = useState<boolean>(false);
   const [lastClaimTime, setLastClaimTime] = useState(0);
   const [hasReceivedResult, setHasReceivedResult] = useState(false);
   const claimChannelRef = useRef<any>(null);
@@ -45,12 +47,12 @@ export default function BingoClaim({
   
   // Listen for claim result broadcasts - FIXED: Use the same channel as the broadcaster
   useEffect(() => {
-    if (!playerId && !sessionId) {
-      logWithTimestamp(`BingoClaim: No player ID or session ID provided, skipping result listener`, 'warn');
+    if (!sessionId) {
+      logWithTimestamp(`BingoClaim: No session ID provided, skipping result listener`, 'warn');
       return;
     }
     
-    logWithTimestamp(`BingoClaim: Setting up claim result listener for ${playerId ? `player ${playerId}` : 'session ' + sessionId}`, 'info');
+    logWithTimestamp(`BingoClaim: Setting up claim result listener for session ${sessionId}`, 'info');
     
     // FIXED: Use 'game-updates' channel to match the server broadcast
     const channel = supabase
@@ -76,6 +78,8 @@ export default function BingoClaim({
               
               logWithTimestamp(`BingoClaim: Received result for my claim: ${result}`, 'info');
               setDialogResult(isValid ? 'valid' : 'invalid');
+              setDialogPlayerName(playerName);
+              setIsGlobalBroadcast(false);
               setShowResultDialog(true);
               setHasReceivedResult(true);
               
@@ -86,28 +90,33 @@ export default function BingoClaim({
                 }, 1000);
               }
             } 
-            // If it's someone else's claim and it's a global broadcast
-            else if (isGlobalBroadcast) {
-              logWithTimestamp(`BingoClaim: Another player's claim result: ${targetPlayerName} - ${result}`, 'info');
+            // If it's someone else's claim
+            else if (isGlobalBroadcast || playerId !== targetPlayerId) {
+              logWithTimestamp(`BingoClaim: Received other player's claim result: ${targetPlayerName} - ${result}`, 'info');
               // Show dialog for other player's claim result
               setDialogResult(result === 'valid' ? 'valid' : 'invalid');
+              setDialogPlayerName(targetPlayerName);
+              setIsGlobalBroadcast(true);
               setShowResultDialog(true);
             }
           }
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        logWithTimestamp(`BingoClaim: Result channel subscription status: ${status}`, 'info');
+      });
       
     // Store the channel reference for economic management
     claimChannelRef.current = channel;
     
     return () => {
       if (claimChannelRef.current) {
+        logWithTimestamp(`BingoClaim: Cleaning up claim result channel`, 'info');
         supabase.removeChannel(claimChannelRef.current);
         claimChannelRef.current = null;
       }
     };
-  }, [playerId, sessionId, resetClaimStatus]);
+  }, [playerId, sessionId, resetClaimStatus, playerName]);
   
   // Reset claim ability based on status changes
   useEffect(() => {
@@ -123,6 +132,8 @@ export default function BingoClaim({
       // Show the appropriate result dialog if we haven't already
       if (!showResultDialog) {
         setDialogResult(claimStatus === 'valid' ? 'valid' : 'invalid');
+        setDialogPlayerName(playerName);
+        setIsGlobalBroadcast(false);
         setShowResultDialog(true);
       }
       
@@ -149,7 +160,7 @@ export default function BingoClaim({
       setForceResetTimer(timer);
       return () => clearTimeout(timer);
     }
-  }, [claimStatus, resetClaimStatus, forceResetTimer, showResultDialog]);
+  }, [claimStatus, resetClaimStatus, forceResetTimer, showResultDialog, playerName]);
 
   // ENHANCED: Add a fallback reset mechanism
   useEffect(() => {
@@ -188,7 +199,7 @@ export default function BingoClaim({
   const handleCloseResultDialog = () => {
     logWithTimestamp(`BingoClaim: Closing result dialog`, 'info');
     setShowResultDialog(false);
-    if (resetClaimStatus) {
+    if (resetClaimStatus && !isGlobalBroadcast) {
       resetClaimStatus();
     }
   };
@@ -272,9 +283,9 @@ export default function BingoClaim({
         isOpen={showResultDialog}
         onClose={handleCloseResultDialog}
         result={dialogResult}
-        playerName={playerName}
+        playerName={dialogPlayerName || playerName}
         ticket={ticketForDialog}
-        isGlobalBroadcast={playerId !== sessionId} // Pass flag to indicate if this is for another player
+        isGlobalBroadcast={isGlobalBroadcast}
       />
     </div>
   );

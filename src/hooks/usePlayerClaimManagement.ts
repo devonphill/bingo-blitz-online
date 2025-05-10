@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -102,9 +103,12 @@ export function usePlayerClaimManagement(
   
   // Set up listener for claim results - FIXED: Use the same channel as the broadcaster
   useEffect(() => {
-    if (!playerId && !playerCode) return;
+    if (!sessionId) {
+      logWithTimestamp(`PlayerClaimManagement: No session ID available for claim result listener`, 'warn');
+      return;
+    }
     
-    logWithTimestamp(`PlayerClaimManagement: Setting up claim result listener for ${playerCode || playerId}`, 'info');
+    logWithTimestamp(`PlayerClaimManagement: Setting up claim result listener for session ${sessionId}`, 'info');
     
     // FIXED: Use 'game-updates' channel to match the server broadcast
     const channel = supabase.channel('game-updates')
@@ -136,6 +140,10 @@ export function usePlayerClaimManagement(
               duration: 5000,
             });
           }
+        } else if (targetSessionId === sessionId) {
+          // This is a claim result for someone else in our session
+          logWithTimestamp(`PlayerClaimManagement: Received claim result for another player in our session`, 'info');
+          // We don't need to do anything here as the BingoClaim component will handle displaying it
         }
       })
       .subscribe((status) => {
@@ -147,6 +155,7 @@ export function usePlayerClaimManagement(
     
     return () => {
       if (claimChannelRef.current) {
+        logWithTimestamp(`PlayerClaimManagement: Removing claim result channel`, 'info');
         supabase.removeChannel(claimChannelRef.current);
         claimChannelRef.current = null;
       }

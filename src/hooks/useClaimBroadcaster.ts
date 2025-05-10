@@ -41,21 +41,22 @@ export function useClaimBroadcaster() {
       
       logWithTimestamp(`Sending claim result broadcast with payload: ${JSON.stringify(payload)}`, 'debug');
       
-      // Send to UUID (actual player ID if available, otherwise the provided ID)
+      // Send to everyone in the session via broadcast
       await broadcastChannel.send({
         type: validateChannelType('broadcast'),
         event: 'claim-result',
         payload
       });
       
-      // If we have both IDs and they're different, send to the original ID too
+      // If we have both IDs and they're different, send a specific event to the original ID too
       if (actualPlayerId && actualPlayerId !== playerId) {
         await broadcastChannel.send({
           type: validateChannelType('broadcast'),
           event: 'claim-result',
           payload: {
             ...payload,
-            playerId: ensureString(playerId) // Original player code
+            playerId: ensureString(playerId), // Original player code
+            isGlobalBroadcast: false // This is a personal notification
           }
         });
       }
