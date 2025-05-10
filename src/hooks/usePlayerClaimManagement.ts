@@ -31,38 +31,6 @@ export function usePlayerClaimManagement(
     setClaimStatus('none');
   }, [claimStatus]);
 
-  // Create a custom toast with ticket display
-  const showTicketToast = useCallback((title: string, description: string, ticketData: any, calledNumbers: number[] = []) => {
-    if (!ticketData) {
-      toast({
-        title,
-        description,
-        duration: 5000,
-      });
-      return;
-    }
-
-    // Create a simplified representation for the toast as plain text instead of JSX
-    const displayNumbers = ticketData.numbers?.slice(0, 5) || [];
-    const totalMarked = ticketData.numbers?.filter((n: number) => calledNumbers.includes(n)).length || 0;
-    const totalNumbers = ticketData.numbers?.length || 0;
-    
-    // Format the ticket information as plain text
-    const ticketInfo = `Ticket: ${ticketData.serial || 'Unknown'} • ${totalMarked}/${totalNumbers} called`;
-    const numbersDisplay = displayNumbers.map(n => 
-      calledNumbers.includes(n) ? `[${n}]` : n
-    ).join(', ');
-    const moreNumbersText = ticketData.numbers?.length > 5 ? `+${ticketData.numbers.length - 5} more` : '';
-    
-    const formattedDescription = `${description}\n${numbersDisplay} ${moreNumbersText}\n${ticketInfo}`;
-
-    toast({
-      title,
-      description: formattedDescription,
-      duration: 5000,
-    });
-  }, [toast]);
-
   // Set up or clean up the claim checking channel based on session availability
   const setupClaimCheckingChannel = useCallback(() => {
     // Only set up if we have a session ID
@@ -86,21 +54,8 @@ export function usePlayerClaimManagement(
       .on('broadcast', { event: 'claim-checking' }, payload => {
         logWithTimestamp(`PlayerClaimManagement: Received claim checking broadcast: ${JSON.stringify(payload.payload)}`, 'info');
         
-        // Check if this is for our session
-        if (payload.payload?.sessionId === sessionId) {
-          const claimPlayerName = payload.payload?.playerName || 'Unknown player';
-          const claimPattern = payload.payload?.winPattern || 'bingo';
-          const ticket = payload.payload?.ticket;
-          const calledNumbers = payload.payload?.calledNumbers || [];
-          
-          // Show toast notification with ticket representation
-          showTicketToast(
-            "Claim Being Verified",
-            `The caller is verifying ${claimPlayerName}'s ${claimPattern} claim`,
-            ticket,
-            calledNumbers
-          );
-        }
+        // We don't need any additional processing here as the BingoClaim component
+        // now handles displaying the claim checking dialog
       })
       .subscribe((status) => {
         logWithTimestamp(`PlayerClaimManagement: Claim checking channel status: ${status}`, 'info');
@@ -108,7 +63,7 @@ export function usePlayerClaimManagement(
     
     // Store channel reference for cleanup
     claimCheckingChannelRef.current = channel;
-  }, [sessionId, showTicketToast]);
+  }, [sessionId]);
   
   // Submit a claim
   const submitClaim = useCallback(async (ticket: any) => {
@@ -216,25 +171,15 @@ export function usePlayerClaimManagement(
             setClaimStatus('valid');
             setHasActiveClaims(false);
             
-            // Show toast with ticket information
-            showTicketToast(
-              "Bingo Verified!",
-              "Your bingo claim has been verified!",
-              ticket,
-              calledNumbers
-            );
+            // We no longer need to show a toast here as the BingoClaim component
+            // will handle showing the result dialog
           } else if (result === 'invalid' || result === 'rejected') {
             logWithTimestamp(`PlayerClaimManagement: Claim was rejected`, 'info');
             setClaimStatus('invalid');
             setHasActiveClaims(false);
             
-            // Show toast with ticket information
-            showTicketToast(
-              "Claim Rejected",
-              "Your bingo claim was not verified.",
-              ticket,
-              calledNumbers
-            );
+            // We no longer need to show a toast here as the BingoClaim component
+            // will handle showing the result dialog
           }
         } else if (targetSessionId === sessionId) {
           // This is a claim result for someone else in our session
@@ -265,7 +210,7 @@ export function usePlayerClaimManagement(
         claimCheckingChannelRef.current = null;
       }
     };
-  }, [playerId, playerCode, sessionId, toast, setupClaimCheckingChannel, showTicketToast]);
+  }, [playerId, playerCode, sessionId, toast, setupClaimCheckingChannel]);
 
   return {
     claimStatus,

@@ -4,7 +4,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Card } from '@/components/ui/card';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { CheckCircle2, Clock, Ticket } from 'lucide-react';
-import ClaimToastDisplay from './ClaimToastDisplay';
 
 interface ClaimCheckingDialogProps {
   isOpen: boolean;
@@ -89,10 +88,10 @@ export default function ClaimCheckingDialog({
             The caller will verify this claim soon
           </p>
           
-          {/* Show ticket if available */}
+          {/* Enhanced ticket display */}
           {ticket && (
-            <Card className="w-full p-2 border bg-gray-50">
-              <div className="flex items-center justify-between text-sm text-gray-500 mb-2">
+            <Card className="w-full p-4 border bg-gray-50">
+              <div className="flex items-center justify-between text-sm text-gray-500 mb-3">
                 <div className="flex items-center">
                   <Ticket className="h-4 w-4 mr-1" />
                   Ticket: {ticket.serial}
@@ -104,20 +103,27 @@ export default function ClaimCheckingDialog({
                 )}
               </div>
               
-              <div className="grid grid-cols-5 gap-1">
+              <div className="grid grid-cols-5 gap-2 mb-3">
                 {ticket.numbers && ticket.numbers.map((num: number, index: number) => (
                   <div 
                     key={`${num}-${index}`}
                     className={`
-                      w-8 h-8 flex items-center justify-center rounded-full text-sm 
+                      w-9 h-9 flex items-center justify-center rounded-full text-base font-medium
                       ${calledNumbers.includes(num) 
-                        ? "bg-amber-500 text-white" 
+                        ? "bg-amber-500 text-white shadow-sm" 
                         : "bg-gray-200 text-gray-700"}
+                      transition-colors duration-200
                     `}
                   >
                     {num}
                   </div>
                 ))}
+              </div>
+              
+              <div className="text-center text-xs text-gray-600 mt-2">
+                {ticket.numbers && 
+                   `${ticket.numbers.filter((n: number) => calledNumbers.includes(n)).length} of ${ticket.numbers.length} numbers called`
+                }
               </div>
             </Card>
           )}
