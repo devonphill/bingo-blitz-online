@@ -84,12 +84,21 @@ export function useClaimBroadcaster() {
       // Use the dedicated channel for claim checking broadcasts
       const broadcastChannel = supabase.channel(CLAIM_CHECKING_CHANNEL);
       
-      // Create a payload with claim details
+      // Ensure we have properly formatted ticket data for display
+      const ticketData = claim.ticket ? {
+        serial: claim.ticket.serial || '',
+        numbers: claim.ticket.numbers || [],
+        calledNumbers: claim.calledNumbers || [],
+        layoutMask: claim.ticket.layoutMask || claim.ticket.layout_mask || 0
+      } : null;
+      
+      // Create a payload with claim details including ticket information
       const payload = {
         ...claim,
         sessionId: ensureString(sessionId),
         timestamp: new Date().toISOString(),
-        message: message || 'Claim being verified by caller'
+        message: message || 'Claim being verified by caller',
+        ticket: ticketData
       };
       
       // Send to all players via broadcast

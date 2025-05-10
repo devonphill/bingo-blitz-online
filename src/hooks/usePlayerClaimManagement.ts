@@ -1,8 +1,11 @@
+
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { supabase } from '@/integrations/supabase/client';
 import { validateChannelType, ensureString } from '@/utils/typeUtils';
+import { processTicketLayout } from '@/utils/ticketUtils';
+import { toast as sonnerToast } from 'sonner';
 
 /**
  * Hook for managing bingo claims from the player perspective
@@ -28,6 +31,56 @@ export function usePlayerClaimManagement(
     logWithTimestamp(`PlayerClaimManagement: Resetting claim status from ${claimStatus} to none`, 'info');
     setClaimStatus('none');
   }, [claimStatus]);
+
+  // Create a custom toast with ticket display
+  const showTicketToast = useCallback((title: string, description: string, ticketData: any, calledNumbers: number[] = []) => {
+    if (!ticketData) {
+      toast({
+        title,
+        description,
+        duration: 5000,
+      });
+      return;
+    }
+
+    // Create a simplified ticket display for the toast
+    const TicketToast = () => {
+      // Get first 5 numbers to show in simplified view
+      const displayNumbers = ticketData.numbers?.slice(0, 5) || [];
+      const totalMarked = ticketData.numbers?.filter((n: number) => calledNumbers.includes(n)).length || 0;
+      
+      return (
+        <div className="flex flex-col">
+          <div className="text-sm">{description}</div>
+          <div className="flex items-center gap-1 mt-1">
+            {displayNumbers.map((num: number, i: number) => (
+              <div 
+                key={`toast-num-${i}`}
+                className={`w-6 h-6 flex items-center justify-center rounded-full text-xs 
+                  ${calledNumbers.includes(num) ? "bg-amber-500 text-white" : "bg-gray-200 text-gray-700"}`
+                }
+              >
+                {num}
+              </div>
+            ))}
+            {ticketData.numbers?.length > 5 && (
+              <div className="text-xs ml-1">+{ticketData.numbers.length - 5} more</div>
+            )}
+          </div>
+          <div className="text-xs text-gray-500 mt-1">
+            Ticket: {ticketData.serial} • {totalMarked}/{ticketData.numbers?.length || 0} called
+          </div>
+        </div>
+      );
+    };
+
+    // Use the standard toast with our custom component
+    toast({
+      title,
+      description: <TicketToast />,
+      duration: 5000,
+    });
+  }, [toast]);
 
   // Set up or clean up the claim checking channel based on session availability
   const setupClaimCheckingChannel = useCallback(() => {
@@ -56,13 +109,16 @@ export function usePlayerClaimManagement(
         if (payload.payload?.sessionId === sessionId) {
           const claimPlayerName = payload.payload?.playerName || 'Unknown player';
           const claimPattern = payload.payload?.winPattern || 'bingo';
+          const ticket = payload.payload?.ticket;
+          const calledNumbers = payload.payload?.calledNumbers || [];
           
-          // Show toast notification for the claim being checked
-          toast({
-            title: "Claim Being Verified",
-            description: `The caller is verifying ${claimPlayerName}'s ${claimPattern} claim`,
-            duration: 5000,
-          });
+          // Show toast notification with ticket representation
+          showTicketToast(
+            "Claim Being Verified",
+            `The caller is verifying ${claimPlayerName}'s ${claimPattern} claim`,
+            ticket,
+            calledNumbers
+          );
         }
       })
       .subscribe((status) => {
@@ -71,7 +127,7 @@ export function usePlayerClaimManagement(
     
     // Store channel reference for cleanup
     claimCheckingChannelRef.current = channel;
-  }, [sessionId, toast]);
+  }, [sessionId, showTicketToast]);
   
   // Submit a claim
   const submitClaim = useCallback(async (ticket: any) => {
@@ -166,6 +222,8 @@ export function usePlayerClaimManagement(
         const result = payload.payload?.result;
         const targetPlayerId = payload.payload?.playerId;
         const targetSessionId = payload.payload?.sessionId;
+        const ticket = payload.payload?.ticket;
+        const calledNumbers = payload.payload?.calledNumbers || [];
         
         logWithTimestamp(`PlayerClaimManagement: Received claim result: ${JSON.stringify(payload.payload)}`, 'info');
         
@@ -176,21 +234,26 @@ export function usePlayerClaimManagement(
             logWithTimestamp(`PlayerClaimManagement: Claim was validated!`, 'info');
             setClaimStatus('valid');
             setHasActiveClaims(false);
-            toast({
-              title: "Bingo Verified!",
-              description: "Your bingo claim has been verified!",
-              duration: 5000,
-            });
+            
+            // Show toast with ticket information
+            showTicketToast(
+              "Bingo Verified!",
+              "Your bingo claim has been verified!",
+              ticket,
+              calledNumbers
+            );
           } else if (result === 'invalid' || result === 'rejected') {
             logWithTimestamp(`PlayerClaimManagement: Claim was rejected`, 'info');
             setClaimStatus('invalid');
             setHasActiveClaims(false);
-            toast({
-              title: "Claim Rejected",
-              description: "Your bingo claim was not verified.",
-              variant: "destructive",
-              duration: 5000,
-            });
+            
+            // Show toast with ticket information
+            showTicketToast(
+              "Claim Rejected",
+              "Your bingo claim was not verified.",
+              ticket,
+              calledNumbers
+            );
           }
         } else if (targetSessionId === sessionId) {
           // This is a claim result for someone else in our session
@@ -221,7 +284,7 @@ export function usePlayerClaimManagement(
         claimCheckingChannelRef.current = null;
       }
     };
-  }, [playerId, playerCode, sessionId, toast, setupClaimCheckingChannel]);
+  }, [playerId, playerCode, sessionId, toast, setupClaimCheckingChannel, showTicketToast]);
 
   return {
     claimStatus,

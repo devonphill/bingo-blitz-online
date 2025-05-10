@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card } from '@/components/ui/card';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { CheckCircle2, Clock } from 'lucide-react';
+import { CheckCircle2, Clock, Ticket } from 'lucide-react';
 
 interface ClaimCheckingDialogProps {
   isOpen: boolean;
@@ -91,7 +91,18 @@ export default function ClaimCheckingDialog({
           {/* Show ticket if available */}
           {ticket && (
             <Card className="w-full p-2 border bg-gray-50">
-              <div className="text-sm text-gray-500 mb-2">Ticket: {ticket.serial}</div>
+              <div className="flex items-center justify-between text-sm text-gray-500 mb-2">
+                <div className="flex items-center">
+                  <Ticket className="h-4 w-4 mr-1" />
+                  Ticket: {ticket.serial}
+                </div>
+                {ticket.numbers && (
+                  <span className="text-xs bg-amber-100 px-2 py-0.5 rounded-full">
+                    {ticket.numbers.filter((num: number) => calledNumbers.includes(num)).length}/{ticket.numbers.length} called
+                  </span>
+                )}
+              </div>
+              
               <div className="grid grid-cols-5 gap-1">
                 {ticket.numbers && ticket.numbers.map((num: number, index: number) => (
                   <div 
