@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card } from '@/components/ui/card';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { CheckCircle2, Clock, Ticket } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface ClaimCheckingDialogProps {
   isOpen: boolean;
@@ -52,16 +52,19 @@ export default function ClaimCheckingDialog({
   const ticket = claimData.ticket;
   const calledNumbers = claimData.calledNumbers || [];
 
-  return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Clock className="h-5 w-5 text-amber-500" />
-            Claim Being Verified
-            <span className="text-sm text-muted-foreground ml-2">Broadcast</span>
-          </DialogTitle>
-        </DialogHeader>
+  return isOpen ? (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => onClose()}>
+      <div 
+        className="bg-white rounded-lg shadow-xl max-w-md w-full m-4 overflow-hidden animate-in fade-in zoom-in duration-200" 
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="bg-amber-50 p-3 border-b border-amber-200">
+          <div className="flex items-center gap-2">
+            <Clock className="h-5 w-5 text-amber-600" />
+            <h2 className="text-lg font-medium text-amber-800">Claim Being Verified</h2>
+            <span className="ml-auto text-xs bg-amber-200 px-2 py-0.5 rounded-full text-amber-800">Broadcast</span>
+          </div>
+        </div>
         
         <div className="flex flex-col items-center p-4">
           {/* Icon showing checking status */}
@@ -107,13 +110,13 @@ export default function ClaimCheckingDialog({
                 {ticket.numbers && ticket.numbers.map((num: number, index: number) => (
                   <div 
                     key={`${num}-${index}`}
-                    className={`
-                      w-9 h-9 flex items-center justify-center rounded-full text-base font-medium
-                      ${calledNumbers.includes(num) 
+                    className={cn(
+                      "w-9 h-9 flex items-center justify-center rounded-full text-base font-medium",
+                      calledNumbers.includes(num) 
                         ? "bg-amber-500 text-white shadow-sm" 
-                        : "bg-gray-200 text-gray-700"}
-                      transition-colors duration-200
-                    `}
+                        : "bg-gray-200 text-gray-700",
+                      "transition-colors duration-200"
+                    )}
                   >
                     {num}
                   </div>
@@ -133,8 +136,15 @@ export default function ClaimCheckingDialog({
               This broadcast was sent by the caller and is visible to all players.
             </p>
           </div>
+          
+          <button 
+            onClick={onClose}
+            className="mt-4 bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-md transition-colors duration-200"
+          >
+            Close
+          </button>
         </div>
-      </DialogContent>
-    </Dialog>
-  );
+      </div>
+    </div>
+  ) : null;
 }
