@@ -8,7 +8,7 @@ import { logWithTimestamp } from '@/utils/logUtils';
  * Hook for broadcasting claim validation results to players
  */
 export function useClaimBroadcaster() {
-  // Channel name constant for consistency
+  // Channel name constant for consistency - FIXED: Use 'game-updates' for all claim-related communications
   const CLAIM_CHANNEL = 'game-updates';
 
   /**
@@ -38,6 +38,8 @@ export function useClaimBroadcaster() {
         isGlobalBroadcast: true, // Flag to indicate this is for everyone
         ticket: ticketInfo
       };
+      
+      logWithTimestamp(`Sending claim result broadcast with payload: ${JSON.stringify(payload)}`, 'debug');
       
       // Send to UUID (actual player ID if available, otherwise the provided ID)
       await broadcastChannel.send({

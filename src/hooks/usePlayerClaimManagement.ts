@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -18,7 +19,9 @@ export function usePlayerClaimManagement(
 ) {
   const [claimStatus, setClaimStatus] = useState<'none' | 'pending' | 'valid' | 'invalid'>('none');
   const [isSubmittingClaim, setIsSubmittingClaim] = useState(false);
+  const [hasActiveClaims, setHasActiveClaims] = useState(false);
   const { toast } = useToast();
+  const claimChannelRef = useRef<any>(null);
   
   // Reset claim status
   const resetClaimStatus = useCallback(() => {
@@ -42,7 +45,7 @@ export function usePlayerClaimManagement(
     setClaimStatus('pending');
     
     try {
-      // FIXED: Use correct channel name "game-updates" and event name "claim-submitted"
+      // Use correct channel name "game-updates" and event name "claim-submitted"
       const channel = supabase.channel('game-updates');
       
       // Create payload to send
@@ -98,13 +101,14 @@ export function usePlayerClaimManagement(
     }
   }, [playerCode, playerId, sessionId, playerName, gameType, currentWinPattern, gameNumber, toast]);
   
-  // Set up listener for claim results
+  // Set up listener for claim results - FIXED: Use the same channel as the broadcaster
   useEffect(() => {
     if (!playerId && !playerCode) return;
     
     logWithTimestamp(`PlayerClaimManagement: Setting up claim result listener for ${playerCode || playerId}`, 'info');
     
-    const channel = supabase.channel('claim-results-channel')
+    // FIXED: Use 'game-updates' channel to match the server broadcast
+    const channel = supabase.channel('game-updates')
       .on('broadcast', { event: 'claim-result' }, payload => {
         const result = payload.payload?.result;
         const targetPlayerId = payload.payload?.playerId;
@@ -139,8 +143,14 @@ export function usePlayerClaimManagement(
         logWithTimestamp(`PlayerClaimManagement: Result channel subscription status: ${status}`, 'info');
       });
     
+    // Store the channel for cleanup  
+    claimChannelRef.current = channel;
+    
     return () => {
-      supabase.removeChannel(channel);
+      if (claimChannelRef.current) {
+        supabase.removeChannel(claimChannelRef.current);
+        claimChannelRef.current = null;
+      }
     };
   }, [playerId, playerCode, sessionId, toast]);
 
@@ -148,6 +158,7 @@ export function usePlayerClaimManagement(
     claimStatus,
     isSubmittingClaim,
     submitClaim,
-    resetClaimStatus
+    resetClaimStatus,
+    hasActiveClaims
   };
 }

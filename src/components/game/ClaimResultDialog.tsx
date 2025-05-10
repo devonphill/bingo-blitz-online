@@ -36,20 +36,19 @@ export default function ClaimResultDialog({
       logWithTimestamp(`ClaimResultDialog: Showing ${result} result for ${playerName} (global: ${isGlobalBroadcast})`);
       
       // Also show a toast for quick notification
-      if (isGlobalBroadcast) {
-        toast({
-          title: result === 'valid' ? 'Bingo Verified!' : 'Invalid Claim',
-          description: `${playerName}'s claim was ${result === 'valid' ? 'validated' : 'rejected'}`,
-          variant: result === 'valid' ? 'default' : 'destructive',
-          duration: 5000
-        });
-      }
+      toast({
+        title: result === 'valid' ? 'Bingo Verified!' : 'Invalid Claim',
+        description: `${playerName}'s claim was ${result === 'valid' ? 'validated' : 'rejected'}`,
+        variant: result === 'valid' ? 'default' : 'destructive',
+        duration: 5000
+      });
       
-      // Auto close after 5 seconds
+      // Auto close after longer time for global broadcasts, shorter for own claims
+      const closeDelay = isGlobalBroadcast ? 8000 : 5000;
       const timer = setTimeout(() => {
         logWithTimestamp('ClaimResultDialog: Auto-closing after timeout');
         onClose();
-      }, 5000);
+      }, closeDelay);
       
       setAutoCloseTimer(timer);
       return () => {
@@ -89,9 +88,9 @@ export default function ClaimResultDialog({
           </div>
           
           <p className="text-lg font-medium mb-4">
-            {result === 'valid'
-              ? `${playerName}'s claim was verified!`
-              : `${playerName}'s claim was rejected.`}
+            {playerName === 'Player' 
+              ? (result === 'valid' ? "Your claim was verified!" : "Your claim was rejected.")
+              : `${playerName}'s claim was ${result === 'valid' ? 'verified!' : 'rejected.'}`}
           </p>
           
           {/* Show ticket if available */}
@@ -119,7 +118,7 @@ export default function ClaimResultDialog({
           {/* Additional information for global broadcasts */}
           {isGlobalBroadcast && (
             <p className="text-sm text-gray-500 mt-4">
-              This result was broadcast by the caller to all players.
+              This claim was broadcast by the caller and visible to all players.
             </p>
           )}
         </div>

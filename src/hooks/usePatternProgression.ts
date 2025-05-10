@@ -315,10 +315,19 @@ export function usePatternProgression(sessionId: string | null) {
           
           firstActivePattern = patternId;
           
-          // Safe access to pattern data properties
+          // Safe access to pattern data properties - FIX TypeScript error
           if (patternData && typeof patternData === 'object') {
-            patternPrizeAmount = patternData.prizeAmount || '10.00';
-            patternDescription = patternData.description || `${patternId} Prize`;
+            // Use optional chaining and type checking for safer access
+            patternPrizeAmount = typeof patternData === 'object' && 
+                               'prizeAmount' in patternData && 
+                               patternData.prizeAmount ? 
+                               String(patternData.prizeAmount) : '10.00';
+                               
+            patternDescription = typeof patternData === 'object' && 
+                               'description' in patternData && 
+                               patternData.description ? 
+                               String(patternData.description) : 
+                               `${patternId} Prize`;
           }
         }
       }

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Trophy, CheckCircle2, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -36,13 +36,14 @@ export default function BingoClaim({
   const [dialogResult, setDialogResult] = useState<'valid' | 'invalid' | null>(null);
   const [lastClaimTime, setLastClaimTime] = useState(0);
   const [hasReceivedResult, setHasReceivedResult] = useState(false);
+  const claimChannelRef = useRef<any>(null);
   
   // Log when status changes to help with debugging
   useEffect(() => {
     logWithTimestamp(`BingoClaim: Status changed to ${claimStatus}`, 'info');
   }, [claimStatus]);
   
-  // Listen for claim result broadcasts
+  // Listen for claim result broadcasts - FIXED: Use the same channel as the broadcaster
   useEffect(() => {
     if (!playerId && !sessionId) {
       logWithTimestamp(`BingoClaim: No player ID or session ID provided, skipping result listener`, 'warn');
@@ -51,8 +52,9 @@ export default function BingoClaim({
     
     logWithTimestamp(`BingoClaim: Setting up claim result listener for ${playerId ? `player ${playerId}` : 'session ' + sessionId}`, 'info');
     
+    // FIXED: Use 'game-updates' channel to match the server broadcast
     const channel = supabase
-      .channel('claim-results-channel')
+      .channel('game-updates')
       .on('broadcast', { event: 'claim-result' }, payload => {
         // Listen for any claim result (our own or others)
         logWithTimestamp(`BingoClaim: Received claim result broadcast: ${JSON.stringify(payload.payload)}`, 'info');
@@ -62,6 +64,7 @@ export default function BingoClaim({
         const targetPlayerName = payload.payload?.playerName || 'Unknown Player';
         const targetSessionId = payload.payload?.sessionId;
         const ticket = payload.payload?.ticket;
+        const isGlobalBroadcast = payload.payload?.isGlobalBroadcast;
         
         // Handle all claim results, even from other players
         if (result === 'valid' || result === 'rejected' || result === 'invalid') {
@@ -83,17 +86,26 @@ export default function BingoClaim({
                 }, 1000);
               }
             } 
-            // If it's someone else's claim, show a toast notification
-            else {
-              logWithTimestamp(`BingoClaim: Another player's claim result: ${targetPlayerName} - ${result}`);
+            // If it's someone else's claim and it's a global broadcast
+            else if (isGlobalBroadcast) {
+              logWithTimestamp(`BingoClaim: Another player's claim result: ${targetPlayerName} - ${result}`, 'info');
+              // Show dialog for other player's claim result
+              setDialogResult(result === 'valid' ? 'valid' : 'invalid');
+              setShowResultDialog(true);
             }
           }
         }
       })
       .subscribe();
       
+    // Store the channel reference for economic management
+    claimChannelRef.current = channel;
+    
     return () => {
-      supabase.removeChannel(channel);
+      if (claimChannelRef.current) {
+        supabase.removeChannel(claimChannelRef.current);
+        claimChannelRef.current = null;
+      }
     };
   }, [playerId, sessionId, resetClaimStatus]);
   
@@ -262,6 +274,7 @@ export default function BingoClaim({
         result={dialogResult}
         playerName={playerName}
         ticket={ticketForDialog}
+        isGlobalBroadcast={playerId !== sessionId} // Pass flag to indicate if this is for another player
       />
     </div>
   );
