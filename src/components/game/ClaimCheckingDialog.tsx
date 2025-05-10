@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Card } from '@/components/ui/card';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { CheckCircle2, Clock, Ticket } from 'lucide-react';
+import ClaimToastDisplay from './ClaimToastDisplay';
 
 interface ClaimCheckingDialogProps {
   isOpen: boolean;

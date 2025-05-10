@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -43,41 +42,23 @@ export function usePlayerClaimManagement(
       return;
     }
 
-    // Create a simplified ticket display for the toast
-    const TicketToast = () => {
-      // Get first 5 numbers to show in simplified view
-      const displayNumbers = ticketData.numbers?.slice(0, 5) || [];
-      const totalMarked = ticketData.numbers?.filter((n: number) => calledNumbers.includes(n)).length || 0;
-      
-      return (
-        <div className="flex flex-col">
-          <div className="text-sm">{description}</div>
-          <div className="flex items-center gap-1 mt-1">
-            {displayNumbers.map((num: number, i: number) => (
-              <div 
-                key={`toast-num-${i}`}
-                className={`w-6 h-6 flex items-center justify-center rounded-full text-xs 
-                  ${calledNumbers.includes(num) ? "bg-amber-500 text-white" : "bg-gray-200 text-gray-700"}`
-                }
-              >
-                {num}
-              </div>
-            ))}
-            {ticketData.numbers?.length > 5 && (
-              <div className="text-xs ml-1">+{ticketData.numbers.length - 5} more</div>
-            )}
-          </div>
-          <div className="text-xs text-gray-500 mt-1">
-            Ticket: {ticketData.serial} • {totalMarked}/{ticketData.numbers?.length || 0} called
-          </div>
-        </div>
-      );
-    };
+    // Create a simplified representation for the toast as plain text instead of JSX
+    const displayNumbers = ticketData.numbers?.slice(0, 5) || [];
+    const totalMarked = ticketData.numbers?.filter((n: number) => calledNumbers.includes(n)).length || 0;
+    const totalNumbers = ticketData.numbers?.length || 0;
+    
+    // Format the ticket information as plain text
+    const ticketInfo = `Ticket: ${ticketData.serial || 'Unknown'} • ${totalMarked}/${totalNumbers} called`;
+    const numbersDisplay = displayNumbers.map(n => 
+      calledNumbers.includes(n) ? `[${n}]` : n
+    ).join(', ');
+    const moreNumbersText = ticketData.numbers?.length > 5 ? `+${ticketData.numbers.length - 5} more` : '';
+    
+    const formattedDescription = `${description}\n${numbersDisplay} ${moreNumbersText}\n${ticketInfo}`;
 
-    // Use the standard toast with our custom component
     toast({
       title,
-      description: <TicketToast />,
+      description: formattedDescription,
       duration: 5000,
     });
   }, [toast]);
