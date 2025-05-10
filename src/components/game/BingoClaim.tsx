@@ -84,6 +84,7 @@ export default function BingoClaim({
           // Set claim data and force visibility to true
           setClaimCheckData(payload.payload);
           setIsClaimOverlayVisible(true);
+          setClaimResult(null); // Clear any previous result
           
           // Dispatch to global event system
           claimEvents.dispatch({
@@ -173,23 +174,21 @@ export default function BingoClaim({
             });
             
             // Show result dialog
-            logWithTimestamp(`BingoClaim: Opening claim result dialog with status: ${result.result}`, 'info');
+            logWithTimestamp(`BingoClaim: Setting claim result to: ${result.result}`, 'info');
             setClaimResult(result.result);
             setClaimCheckData({
               playerName: result.playerName,
               ticket: result.ticket
             });
             
-            // Close checking overlay and open result dialog
-            setIsClaimOverlayVisible(false);
-            setIsResultOpen(true);
-            setDebugVisibility(true);
+            // Do not immediately close the overlay - show the result overlay
+            // The overlay will auto-close after the animation displays
             
             // Reset claim status if this was our claim and we have the function
             if (result.playerId === playerId && resetClaimStatus) {
               setTimeout(() => {
                 resetClaimStatus();
-              }, 2000);
+              }, 3000); // Match the auto-close timing
             }
           }
         }
@@ -220,6 +219,7 @@ export default function BingoClaim({
   const handleOverlayClose = () => {
     logWithTimestamp(`BingoClaim: Closing claim overlay`, 'info');
     setIsClaimOverlayVisible(false);
+    setClaimResult(null);
   };
   
   // Handle dialog close events
@@ -241,6 +241,7 @@ export default function BingoClaim({
         isVisible={isClaimOverlayVisible}
         onClose={handleOverlayClose}
         claimData={claimCheckData}
+        validationResult={claimResult}
       />
       
       <ClaimResultDialog

@@ -1,20 +1,17 @@
 
-import React from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { CheckCircle2, XCircle } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { X, Check, Trophy } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import SafeBingoTicketDisplay from './SafeBingoTicketDisplay';
 
 interface ClaimResultDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  result: 'valid' | 'invalid' | null;
+  result: 'valid' | 'invalid';
   playerName: string;
   isGlobalBroadcast?: boolean;
-  ticket?: {
-    serial: string;
-    numbers: number[];
-    calledNumbers: number[];
-  };
+  ticket?: any;
 }
 
 export default function ClaimResultDialog({
@@ -25,66 +22,94 @@ export default function ClaimResultDialog({
   isGlobalBroadcast = false,
   ticket
 }: ClaimResultDialogProps) {
+  // Auto-close after 3 seconds
+  useEffect(() => {
+    if (isOpen) {
+      const timer = setTimeout(() => {
+        onClose();
+      }, 3000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, onClose]);
+
+  // Process ticket data for display if available
+  const hasTicket = ticket && (
+    Array.isArray(ticket.numbers) || 
+    Array.isArray(ticket.calledNumbers)
+  );
+  
+  const ticketData = hasTicket ? {
+    numbers: ticket.numbers || [],
+    layoutMask: ticket.layoutMask || ticket.layout_mask || 0,
+    calledNumbers: ticket.calledNumbers || [],
+    serial: ticket.serial || 'Unknown',
+    perm: ticket.perm || 0,
+    position: ticket.position || 0
+  } : null;
+  
   const isValid = result === 'valid';
   
-  // Custom dialog styling based on result
-  const dialogStyles = isValid
-    ? "border-green-200 shadow-green-100"
-    : "border-red-200 shadow-red-100";
-    
-  const titleStyles = isValid
-    ? "text-green-700"
-    : "text-red-700";
-    
-  const iconStyles = isValid
-    ? "text-green-600"
-    : "text-red-600";
-    
-  const Icon = isValid ? CheckCircle2 : XCircle;
-  
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className={`w-[95vw] max-w-md rounded-lg border-2 ${dialogStyles}`}>
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className={`flex items-center justify-center text-xl gap-2 ${titleStyles}`}>
-            <Icon className="h-5 w-5" />
-            <span>
-              {isValid 
-                ? isGlobalBroadcast ? "Bingo Winner!" : "Bingo Verified!"
-                : "Bingo Check Failed"}
-            </span>
+          <DialogTitle className="flex items-center gap-2 justify-center text-lg">
+            <Trophy className="h-5 w-5 text-amber-500" />
+            Claim Result
           </DialogTitle>
         </DialogHeader>
         
-        <div className="flex flex-col items-center p-4 gap-4">
-          <div className={`w-16 h-16 rounded-full ${isValid ? 'bg-green-100' : 'bg-red-100'} flex items-center justify-center`}>
-            <Icon className={`h-8 w-8 ${iconStyles}`} />
+        <div className="relative">
+          {/* Result overlay */}
+          <div className={cn(
+            "absolute inset-0 flex items-center justify-center z-[100] bg-black/30 backdrop-blur-sm",
+            "rounded-md overflow-hidden"
+          )}>
+            <div className={cn(
+              "w-24 h-24 rounded-full flex items-center justify-center animate-scale-in",
+              isValid ? 'bg-green-100' : 'bg-red-100'
+            )}>
+              {isValid ? (
+                <Check className="h-16 w-16 text-green-600" />
+              ) : (
+                <X className="h-16 w-16 text-red-600" />
+              )}
+            </div>
           </div>
           
-          <h3 className="text-lg font-semibold text-center">
-            {isGlobalBroadcast 
-              ? `${playerName} has won Bingo!`
-              : isValid
-                ? "Your Bingo claim has been verified!"
-                : "Your Bingo claim was rejected"}
-          </h3>
-          
-          {ticket && (
-            <div className="mt-2 text-sm text-gray-500">
-              <p>Ticket: {ticket.serial}</p>
-              <p>Matched: {ticket.numbers.filter(n => ticket.calledNumbers.includes(n)).length} numbers</p>
-            </div>
-          )}
+          <div className="p-4 flex flex-col items-center gap-3">
+            <h3 className={cn(
+              "text-lg font-bold",
+              isValid ? "text-green-700" : "text-red-700"
+            )}>
+              {isValid ? "BINGO WINNER!" : "Claim Rejected"}
+            </h3>
+            
+            <p className="text-center">
+              {isGlobalBroadcast 
+                ? `${playerName} has ${isValid ? 'won!' : 'had their claim rejected'}`
+                : `Your claim has been ${isValid ? 'validated!' : 'rejected'}`
+              }
+            </p>
+            
+            {/* The player's ticket display */}
+            {ticketData && (
+              <div className="w-full max-w-sm bg-gray-50 p-3 rounded-md border border-gray-200 mt-2">
+                <SafeBingoTicketDisplay 
+                  numbers={ticketData.numbers}
+                  layoutMask={ticketData.layoutMask}
+                  calledNumbers={ticketData.calledNumbers}
+                  serial={ticketData.serial}
+                  perm={ticketData.perm}
+                  position={ticketData.position}
+                  autoMarking={true}
+                  showProgress={true}
+                />
+              </div>
+            )}
+          </div>
         </div>
-        
-        <DialogFooter>
-          <Button 
-            onClick={onClose}
-            className={isValid ? "bg-green-600 hover:bg-green-700" : "bg-gray-600 hover:bg-gray-700"}
-          >
-            {isValid ? "Great!" : "OK"}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
