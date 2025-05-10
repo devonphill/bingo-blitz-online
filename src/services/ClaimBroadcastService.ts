@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { validateChannelType, ensureString } from '@/utils/typeUtils';
@@ -145,7 +146,7 @@ class ClaimBroadcastService {
           serial: ensureString(claim.ticket.serial || 'unknown'),
           numbers: claim.ticket.numbers || [],
           calledNumbers: claim.calledNumbers || [],
-          layoutMask: claim.ticket.layout_mask || claim.ticket.layoutMask || 0
+          layoutMask: claim.ticket.layoutMask || 0  // Changed layout_mask to layoutMask
         } : null,
         calledNumbers: claim.calledNumbers || []
       };
