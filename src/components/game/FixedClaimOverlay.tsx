@@ -38,6 +38,11 @@ export default function FixedClaimOverlay({
       // Log for debugging
       logWithTimestamp(`FixedClaimOverlay: Displaying for ${playerName}`, 'info');
       console.log('FixedClaimOverlay claimData:', claimData);
+      
+      // Log DOM visibility after a slight delay to ensure element is rendered
+      setTimeout(() => {
+        logElementVisibility('.fixed-claim-overlay', 'FixedClaimOverlay');
+      }, 100);
     }
   }, [isVisible, playerName, claimData]);
   
@@ -93,7 +98,8 @@ export default function FixedClaimOverlay({
       className="fixed inset-0 flex items-center justify-center bg-black/70 z-[9999] fixed-claim-overlay animate-fade-in"
       ref={overlayRef}
       style={{ 
-        backdropFilter: 'blur(3px)'
+        backdropFilter: 'blur(3px)',
+        zIndex: 10000 // Ensure this is higher than the emergency UI
       }}
     >
       <Card className="w-[95vw] max-w-md bg-white shadow-xl animate-scale-in relative overflow-hidden">
