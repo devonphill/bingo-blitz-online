@@ -1,3 +1,4 @@
+
 import { useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -301,15 +302,24 @@ export function usePatternProgression(sessionId: string | null) {
       
       // Get first active pattern for next game
       let firstActivePattern = null;
+      let patternPrizeAmount = '10.00';
+      let patternDescription = 'First Line Prize';
+      
       if (nextGameConfig && nextGameConfig.patterns) {
         const activePatternEntry = Object.entries(nextGameConfig.patterns)
           .find(([_, pattern]: [string, any]) => pattern.active === true);
           
         if (activePatternEntry) {
-          firstActivePattern = {
-            id: activePatternEntry[0],
-            ...activePatternEntry[1]
-          };
+          const patternId = activePatternEntry[0];
+          const patternData = activePatternEntry[1];
+          
+          firstActivePattern = patternId;
+          
+          // Safe access to pattern data properties
+          if (patternData && typeof patternData === 'object') {
+            patternPrizeAmount = patternData.prizeAmount || '10.00';
+            patternDescription = patternData.description || `${patternId} Prize`;
+          }
         }
       }
       
@@ -319,11 +329,9 @@ export function usePatternProgression(sessionId: string | null) {
         .update({
           current_game_number: nextGameNumber,
           called_numbers: [], // Reset called numbers
-          current_win_pattern: firstActivePattern ? firstActivePattern.id : 'oneLine',
-          current_prize: firstActivePattern ? String(firstActivePattern.prizeAmount || '10.00') : '10.00',
-          current_prize_description: firstActivePattern 
-            ? String(firstActivePattern.description || `${firstActivePattern.id} Prize`)
-            : 'First Line Prize',
+          current_win_pattern: firstActivePattern || 'oneLine',
+          current_prize: String(patternPrizeAmount),
+          current_prize_description: String(patternDescription),
           game_status: 'active'
         })
         .eq('session_id', sessionId);
@@ -336,7 +344,7 @@ export function usePatternProgression(sessionId: string | null) {
         payload: {
           sessionId,
           gameNumber: nextGameNumber,
-          winPattern: firstActivePattern ? firstActivePattern.id : 'oneLine'
+          winPattern: firstActivePattern || 'oneLine'
         }
       });
       
