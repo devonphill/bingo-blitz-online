@@ -1,17 +1,15 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Button } from '@/components/ui/button';
-import { Trophy, CheckCircle2, XCircle } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { logWithTimestamp } from '@/utils/logUtils';
-import ClaimResultDialog from './ClaimResultDialog';
-import ClaimCheckingDialog from './ClaimCheckingDialog';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { logWithTimestamp } from '@/utils/logUtils';
+import ClaimCheckingDialog from './ClaimCheckingDialog';
+import ClaimResultDialog from './ClaimResultDialog';
+import { toast } from 'sonner';
 
 interface BingoClaimProps {
-  onClaimBingo: () => Promise<boolean>;
-  claimStatus: 'none' | 'pending' | 'valid' | 'invalid';
-  isClaiming: boolean;
+  onClaimBingo?: () => Promise<boolean>;
+  claimStatus?: 'none' | 'pending' | 'valid' | 'invalid';
+  isClaiming?: boolean;
   resetClaimStatus?: () => void;
   playerName?: string;
   currentTicket?: any;
@@ -22,8 +20,8 @@ interface BingoClaimProps {
 
 export default function BingoClaim({
   onClaimBingo,
-  claimStatus,
-  isClaiming,
+  claimStatus = 'none',
+  isClaiming = false,
   resetClaimStatus,
   playerName = 'Player',
   currentTicket,
@@ -31,363 +29,130 @@ export default function BingoClaim({
   sessionId,
   playerId
 }: BingoClaimProps) {
-  // Track if we need to forcibly reset the claim status
-  const [forceResetTimer, setForceResetTimer] = useState<NodeJS.Timeout | null>(null);
-  const [showResultDialog, setShowResultDialog] = useState(false);
-  const [dialogResult, setDialogResult] = useState<'valid' | 'invalid' | null>(null);
-  const [dialogPlayerName, setDialogPlayerName] = useState<string>(playerName);
-  const [isGlobalBroadcast, setIsGlobalBroadcast] = useState<boolean>(false);
-  const [lastClaimTime, setLastClaimTime] = useState(0);
-  const [hasReceivedResult, setHasReceivedResult] = useState(false);
-  const claimChannelRef = useRef<any>(null);
+  // State for claim checking dialog
+  const [isClaimCheckingOpen, setIsClaimCheckingOpen] = useState(false);
+  const [claimCheckData, setClaimCheckData] = useState<any>(null);
   
-  // New state for claim checking dialog
-  const [showCheckingDialog, setShowCheckingDialog] = useState(false);
-  const [checkingClaimData, setCheckingClaimData] = useState<any>(null);
-  const checkingChannelRef = useRef<any>(null);
+  // State for claim result dialog
+  const [isResultOpen, setIsResultOpen] = useState(false);
+  const [claimResult, setClaimResult] = useState<'valid' | 'invalid' | null>(null);
   
-  // Log when status changes to help with debugging
+  // Channels for real-time communication
+  const [claimCheckingChannel, setClaimCheckingChannel] = useState<any>(null);
+  const [claimResultChannel, setClaimResultChannel] = useState<any>(null);
+  
+  // Set up channels for claim checking and results
   useEffect(() => {
-    logWithTimestamp(`BingoClaim: Status changed to ${claimStatus}`, 'info');
-  }, [claimStatus]);
-  
-  // Listen for claim result broadcasts - FIXED: Use the same channel as the broadcaster
-  useEffect(() => {
-    if (!sessionId) {
-      logWithTimestamp(`BingoClaim: No session ID provided, skipping result listener`, 'warn');
-      return;
-    }
+    if (!sessionId) return;
     
-    logWithTimestamp(`BingoClaim: Setting up claim result listener for session ${sessionId}`, 'info');
+    logWithTimestamp(`BingoClaim: Setting up channels for session ${sessionId}`, 'info');
     
-    // FIXED: Use 'game-updates' channel to match the server broadcast
-    const channel = supabase
+    // Set up claim checking channel
+    const checkingChannel = supabase
+      .channel('claim_checking_broadcaster')
+      .on('broadcast', { event: 'claim-checking' }, payload => {
+        logWithTimestamp(`BingoClaim: Received claim checking broadcast: ${JSON.stringify(payload.payload)}`, 'info');
+        
+        // Check if this broadcast is for our session
+        if (payload.payload?.sessionId === sessionId) {
+          // Show checking dialog for all players in the session
+          setClaimCheckData(payload.payload);
+          setIsClaimCheckingOpen(true);
+        }
+      })
+      .subscribe((status) => {
+        logWithTimestamp(`BingoClaim: Claim checking channel status: ${status}`, 'info');
+      });
+    
+    // Set up claim result channel
+    const resultChannel = supabase
       .channel('game-updates')
       .on('broadcast', { event: 'claim-result' }, payload => {
-        // Listen for any claim result (our own or others)
-        logWithTimestamp(`BingoClaim: Received claim result broadcast: ${JSON.stringify(payload.payload)}`, 'info');
+        logWithTimestamp(`BingoClaim: Received claim result: ${JSON.stringify(payload.payload)}`, 'info');
         
-        const result = payload.payload?.result;
-        const targetPlayerId = payload.payload?.playerId;
-        const targetPlayerName = payload.payload?.playerName || 'Unknown Player';
-        const targetSessionId = payload.payload?.sessionId;
-        const ticket = payload.payload?.ticket;
-        const isGlobalBroadcast = payload.payload?.isGlobalBroadcast;
+        const result = payload.payload;
         
-        // Handle all claim results, even from other players
-        if (result === 'valid' || result === 'rejected' || result === 'invalid') {
-          // Check if it's for our session
-          if (sessionId === targetSessionId) {
-            // If it's our own claim
-            if (playerId === targetPlayerId) {
-              const isValid = result === 'valid';
-              
-              logWithTimestamp(`BingoClaim: Received result for my claim: ${result}`, 'info');
-              setDialogResult(isValid ? 'valid' : 'invalid');
-              setDialogPlayerName(playerName);
-              setIsGlobalBroadcast(false);
-              setShowResultDialog(true);
-              setHasReceivedResult(true);
-              
-              // Set the appropriate claim status
-              if (resetClaimStatus) {
-                setTimeout(() => {
-                  resetClaimStatus();
-                }, 1000);
-              }
-            } 
-            // If it's someone else's claim
-            else if (isGlobalBroadcast || playerId !== targetPlayerId) {
-              logWithTimestamp(`BingoClaim: Received other player's claim result: ${targetPlayerName} - ${result}`, 'info');
-              // Show dialog for other player's claim result
-              setDialogResult(result === 'valid' ? 'valid' : 'invalid');
-              setDialogPlayerName(targetPlayerName);
-              setIsGlobalBroadcast(true);
-              setShowResultDialog(true);
+        // Check if this result is for our session
+        if (result.sessionId === sessionId) {
+          // If global broadcast or specific to this player
+          if (result.isGlobalBroadcast || result.playerId === playerId) {
+            const isValidClaim = result.result === 'valid';
+            
+            // Show appropriate toast notification
+            toast(isValidClaim ? 'Bingo Winner!' : 'Claim Rejected', {
+              description: isValidClaim 
+                ? `${result.playerName || 'A player'} has won!` 
+                : `The claim by ${result.playerName || 'a player'} was rejected`,
+              position: 'top-center',
+              duration: 5000
+            });
+            
+            // Show result dialog
+            setClaimResult(result.result);
+            setClaimCheckData({
+              playerName: result.playerName,
+              ticket: result.ticket
+            });
+            setIsResultOpen(true);
+            setIsClaimCheckingOpen(false);
+            
+            // Reset claim status if this was our claim and we have the function
+            if (result.playerId === playerId && resetClaimStatus) {
+              setTimeout(() => {
+                resetClaimStatus();
+              }, 2000);
             }
           }
         }
       })
       .subscribe((status) => {
-        logWithTimestamp(`BingoClaim: Result channel subscription status: ${status}`, 'info');
+        logWithTimestamp(`BingoClaim: Claim result channel status: ${status}`, 'info');
       });
-      
-    // Store the channel reference for economic management
-    claimChannelRef.current = channel;
     
+    // Store channels for cleanup
+    setClaimCheckingChannel(checkingChannel);
+    setClaimResultChannel(resultChannel);
+    
+    // Clean up channels on unmount
     return () => {
-      if (claimChannelRef.current) {
-        logWithTimestamp(`BingoClaim: Cleaning up claim result channel`, 'info');
-        supabase.removeChannel(claimChannelRef.current);
-        claimChannelRef.current = null;
-      }
+      if (checkingChannel) supabase.removeChannel(checkingChannel);
+      if (resultChannel) supabase.removeChannel(resultChannel);
+      
+      logWithTimestamp(`BingoClaim: Channels removed during cleanup`, 'info');
     };
-  }, [playerId, sessionId, resetClaimStatus, playerName]);
+  }, [sessionId, playerId, resetClaimStatus]);
   
-  // ENHANCED: Listen for claim checking broadcasts with better error handling
-  useEffect(() => {
-    if (!sessionId) {
-      logWithTimestamp(`BingoClaim: No session ID for claim checking listener`, 'warn');
-      return;
-    }
-    
-    logWithTimestamp(`BingoClaim: Setting up claim checking listener for session ${sessionId}`, 'info');
-    
-    try {
-      // IMPORTANT FIX: Use the correct channel name consistently
-      const channel = supabase
-        .channel('claim_checking_broadcaster')
-        .on('broadcast', { event: 'claim-checking' }, payload => {
-          console.log('CLAIM CHECKING BROADCAST RECEIVED:', payload);
-          logWithTimestamp(`BingoClaim: Received claim checking broadcast: ${JSON.stringify(payload.payload)}`, 'info');
-          
-          const claimSessionId = payload.payload?.sessionId;
-          
-          // Only show for our session
-          if (sessionId === claimSessionId) {
-            logWithTimestamp(`BingoClaim: Showing claim checking dialog for session ${sessionId}`, 'info');
-            
-            // Store claim data and show dialog
-            setCheckingClaimData(payload.payload);
-            setShowCheckingDialog(true);
-            
-            // DEBUGGING: Log that we're actually trying to show the dialog
-            console.log('SHOWING CLAIM CHECKING DIALOG', {
-              payload: payload.payload,
-              dialogShown: true
-            });
-          } else {
-            console.log('SESSION ID MISMATCH', {
-              receivedSessionId: claimSessionId,
-              ourSessionId: sessionId
-            });
-          }
-        })
-        .subscribe((status) => {
-          logWithTimestamp(`BingoClaim: Claim checking channel status: ${status}`, 'info');
-          console.log(`Claim checking channel subscription status: ${status}`);
-          
-          if (status === 'SUBSCRIBED') {
-            console.log('Successfully subscribed to claim_checking_broadcaster channel!');
-          } else if (status === 'CHANNEL_ERROR') {
-            console.error('Error subscribing to claim_checking_broadcaster channel');
-          }
-        });
-      
-      // Store channel reference for cleanup
-      checkingChannelRef.current = channel;
-    } catch (err) {
-      console.error('Error setting up claim checking listener:', err);
-      logWithTimestamp(`BingoClaim: Error setting up claim checking listener: ${err}`, 'error');
-    }
-    
-    return () => {
-      if (checkingChannelRef.current) {
-        logWithTimestamp(`BingoClaim: Cleaning up claim checking channel`, 'info');
-        try {
-          supabase.removeChannel(checkingChannelRef.current);
-        } catch (err) {
-          console.error('Error removing claim checking channel:', err);
-        }
-        checkingChannelRef.current = null;
-      }
-    };
-  }, [sessionId]);
-  
-  // Reset claim ability based on status changes
-  useEffect(() => {
-    logWithTimestamp(`BingoClaim: Status changed to ${claimStatus}`, 'info');
-    
-    // Clear any existing timer when status changes
-    if (forceResetTimer) {
-      clearTimeout(forceResetTimer);
-      setForceResetTimer(null);
-    }
-    
-    if (claimStatus === 'valid' || claimStatus === 'invalid') {
-      // Show the appropriate result dialog if we haven't already
-      if (!showResultDialog) {
-        setDialogResult(claimStatus === 'valid' ? 'valid' : 'invalid');
-        setDialogPlayerName(playerName);
-        setIsGlobalBroadcast(false);
-        setShowResultDialog(true);
-      }
-      
-      // After a delay, allow claiming again
-      const timer = setTimeout(() => {
-        if (resetClaimStatus) {
-          logWithTimestamp(`BingoClaim: Automatically resetting claim status from: ${claimStatus} to none`, 'info');
-          resetClaimStatus();
-          setShowResultDialog(false);
-        }
-      }, 5000); // 5 second timeout for showing claim result
-      
-      setForceResetTimer(timer);
-      return () => clearTimeout(timer);
-    } else if (claimStatus === 'pending') {
-      // Safety fallback: if we've been in 'pending' state too long, reset
-      const timer = setTimeout(() => {
-        if (resetClaimStatus) {
-          logWithTimestamp(`BingoClaim: Force resetting stale pending claim after timeout`, 'warn');
-          resetClaimStatus();
-        }
-      }, 15000); // 15 second safety timeout
-      
-      setForceResetTimer(timer);
-      return () => clearTimeout(timer);
-    }
-  }, [claimStatus, resetClaimStatus, forceResetTimer, showResultDialog, playerName]);
-
-  // ENHANCED: Add a fallback reset mechanism
-  useEffect(() => {
-    // This handles race conditions where state might get stuck
-    const fallbackTimer = setTimeout(() => {
-      if ((claimStatus === 'pending' && !isClaiming) || 
-          (isClaiming && Date.now() - lastClaimTime > 20000)) {
-        logWithTimestamp(`BingoClaim: Fallback reset triggered for stuck state: ${claimStatus}`, 'warn');
-        if (resetClaimStatus) resetClaimStatus();
-      }
-    }, 25000); // Very last resort fallback
-    
-    return () => clearTimeout(fallbackTimer);
-  }, [claimStatus, isClaiming, resetClaimStatus, lastClaimTime]);
-  
-  const handleClick = async () => {
-    try {
-      setLastClaimTime(Date.now());
-      logWithTimestamp("BingoClaim: Submitting bingo claim");
-      setHasReceivedResult(false);
-      await onClaimBingo();
-    } catch (error) {
-      console.error("Error claiming bingo:", error);
-      logWithTimestamp(`BingoClaim: Error during claim: ${error}`, 'error');
-      
-      // Auto-reset on error after a short delay
-      setTimeout(() => {
-        if (resetClaimStatus) {
-          logWithTimestamp(`BingoClaim: Resetting after error`, 'info');
-          resetClaimStatus();
-        }
-      }, 3000);
-    }
+  // Handle dialog close events
+  const handleCheckingClose = () => {
+    setIsClaimCheckingOpen(false);
   };
   
-  const handleCloseResultDialog = () => {
-    logWithTimestamp(`BingoClaim: Closing result dialog`, 'info');
-    setShowResultDialog(false);
-    if (resetClaimStatus && !isGlobalBroadcast) {
+  const handleResultClose = () => {
+    setIsResultOpen(false);
+    
+    // If we have a reset function, call it
+    if (resetClaimStatus) {
       resetClaimStatus();
     }
   };
   
-  // New handler for closing the checking dialog
-  const handleCloseCheckingDialog = () => {
-    logWithTimestamp(`BingoClaim: Closing checking dialog`, 'info');
-    console.log('CLOSING CLAIM CHECKING DIALOG');
-    setShowCheckingDialog(false);
-  };
-  
-  // Render different button states based on claim status
-  const renderButton = () => {
-    switch (claimStatus) {
-      case 'pending':
-        return (
-          <Button
-            disabled
-            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600"
-          >
-            <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent" />
-            <span>Verifying...</span>
-          </Button>
-        );
-        
-      case 'valid':
-        return (
-          <Button 
-            disabled
-            className="bg-green-600 hover:bg-green-700 flex items-center gap-2"
-          >
-            <CheckCircle2 className="h-4 w-4" />
-            <span>Bingo Verified!</span>
-          </Button>
-        );
-        
-      case 'invalid':
-        return (
-          <Button 
-            disabled
-            className="bg-red-600 hover:bg-red-700 flex items-center gap-2"
-          >
-            <XCircle className="h-4 w-4" />
-            <span>Invalid Claim</span>
-          </Button>
-        );
-        
-      default:
-        return (
-          <Button
-            onClick={handleClick}
-            disabled={isClaiming}
-            className={cn(
-              "bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary flex items-center gap-2",
-              isClaiming && "opacity-70 cursor-not-allowed"
-            )}
-          >
-            {isClaiming ? (
-              <>
-                <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent" />
-                <span>Claiming...</span>
-              </>
-            ) : (
-              <>
-                <Trophy className="h-5 w-5" />
-                <span>BINGO!</span>
-              </>
-            )}
-          </Button>
-        );
-    }
-  };
-
-  // Prepare ticket data for the result dialog
-  const ticketForDialog = currentTicket ? {
-    serial: currentTicket.serial || '',
-    numbers: currentTicket.numbers || [],
-    calledNumbers: calledNumbers || []
-  } : undefined;
-
-  // DEBUGGING: Log the state of the dialog when it should be shown
-  // Fixed: wrap in a fragment so we're not returning void in JSX context
-  {
-    console.log('BINGO CLAIM RENDER STATE:', {
-      showCheckingDialog,
-      checkingClaimData,
-      sessionId,
-      playerId
-    });
-  }
-
+  // No visible UI except the dialogs
   return (
-    <div className="flex flex-col items-center">
-      <div className="w-full max-w-xs">
-        {renderButton()}
-      </div>
+    <>
+      <ClaimCheckingDialog
+        isOpen={isClaimCheckingOpen}
+        onClose={handleCheckingClose}
+        claimData={claimCheckData}
+      />
       
       <ClaimResultDialog
-        isOpen={showResultDialog}
-        onClose={handleCloseResultDialog}
-        result={dialogResult}
-        playerName={dialogPlayerName || playerName}
-        ticket={ticketForDialog}
-        isGlobalBroadcast={isGlobalBroadcast}
+        isOpen={isResultOpen}
+        onClose={handleResultClose}
+        result={claimResult || 'invalid'}
+        playerName={claimCheckData?.playerName || playerName || 'Player'}
+        isGlobalBroadcast={true}
+        ticket={claimCheckData?.ticket}
       />
-      
-      {/* Claim checking dialog with enhanced debugging */}
-      <ClaimCheckingDialog
-        isOpen={showCheckingDialog}
-        onClose={handleCloseCheckingDialog}
-        claimData={checkingClaimData}
-      />
-    </div>
+    </>
   );
 }

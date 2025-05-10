@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Sheet,
@@ -15,6 +14,7 @@ import { useCallerClaimManagement } from '@/hooks/useCallerClaimManagement';
 import { usePatternProgression } from '@/hooks/usePatternProgression';
 import ClaimsList from './ClaimsList';
 import { ClaimData } from '@/types/claim';
+import { claimBroadcastService } from '@/services/ClaimBroadcastService';
 
 interface ClaimVerificationSheetProps {
   isOpen: boolean;
@@ -85,6 +85,57 @@ export default function ClaimVerificationSheet({
     }
   }, [isOpen, sessionId, fetchClaims]);
   
+  // Function to broadcast claim checking to all players
+  const broadcastClaimChecking = useCallback(async (claim: ClaimData) => {
+    if (!sessionId || !claim) return false;
+    
+    try {
+      logWithTimestamp(`ClaimVerificationSheet: Broadcasting claim check for ${claim.playerName || claim.playerId}`, 'info');
+      
+      // Add current called numbers to claim
+      const claimWithNumbers = {
+        ...claim,
+        calledNumbers: currentCalledNumbers,
+        lastCalledNumber: currentNumber,
+        sessionId: sessionId,
+        gameType: gameType,
+        winPattern: currentWinPattern
+      };
+      
+      // Use the broadcast service to send the claim checking broadcast
+      const success = await claimBroadcastService.broadcastClaimChecking(
+        claimWithNumbers,
+        `Claim being verified by caller for ${claim.playerName || claim.playerId}`
+      );
+      
+      if (success) {
+        toast({
+          title: "Broadcast Sent",
+          description: `Claim check broadcast sent to all players for ${claim.playerName || claim.playerId}`,
+          duration: 3000
+        });
+        return true;
+      } else {
+        toast({
+          title: "Broadcast Failed",
+          description: "Failed to send claim check broadcast",
+          variant: "destructive",
+          duration: 5000
+        });
+        return false;
+      }
+    } catch (err) {
+      console.error("Error broadcasting claim check:", err);
+      toast({
+        title: "Broadcast Error",
+        description: "An error occurred while broadcasting the claim check",
+        variant: "destructive",
+        duration: 5000
+      });
+      return false;
+    }
+  }, [sessionId, currentCalledNumbers, currentNumber, gameType, currentWinPattern, toast]);
+  
   // Handle verifying a claim
   const handleVerify = useCallback(async (claim: ClaimData) => {
     if (!claim || !sessionId) {
@@ -95,7 +146,13 @@ export default function ClaimVerificationSheet({
     logWithTimestamp(`ClaimVerificationSheet: Verifying claim: ${claim.id}`, 'info');
     
     try {
-      // First, validate the claim
+      // First, broadcast that we are checking this claim to all players
+      await broadcastClaimChecking(claim);
+      
+      // Wait a bit to allow UI to update
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Then, validate the claim
       const success = await validateClaim(claim, true);
       
       if (success) {
@@ -189,7 +246,9 @@ export default function ClaimVerificationSheet({
     isLastPattern,
     getActivePatterns,
     progressToNextGame,
-    onGameProgress
+    onGameProgress,
+    broadcastClaimChecking,
+    currentCalledNumbers
   ]);
   
   // Handle rejecting a claim

@@ -317,20 +317,18 @@ export default function PlayerGameContent({
         playerId={playerId}
       />
       
-      {/* Add global BingoClaim component */}
-      <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
-        <BingoClaim
-          onClaimBingo={handleLocalClaimBingo}
-          claimStatus={effectiveClaimStatus}
-          isClaiming={effectiveIsClaiming}
-          resetClaimStatus={resetClaimStatus}
-          playerName={playerName}
-          currentTicket={tickets && tickets.length > 0 ? tickets[0] : null}
-          calledNumbers={effectiveCalledNumbers}
-          sessionId={currentSession?.id}
-          playerId={playerId}
-        />
-      </div>
+      {/* Add BingoClaim component for handling claim broadcasts - make it VISIBLE */}
+      <BingoClaim
+        onClaimBingo={handleLocalClaimBingo}
+        claimStatus={effectiveClaimStatus}
+        isClaiming={effectiveIsClaiming}
+        resetClaimStatus={resetClaimStatus}
+        playerName={playerName}
+        currentTicket={tickets && tickets.length > 0 ? tickets[0] : null}
+        calledNumbers={effectiveCalledNumbers}
+        sessionId={currentSession?.id}
+        playerId={playerId}
+      />
       
       {showDebug && (
         <div className="fixed bottom-4 right-4 w-64">

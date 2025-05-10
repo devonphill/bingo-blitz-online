@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { validateChannelType, ensureString } from '@/utils/typeUtils';
@@ -104,7 +103,7 @@ class ClaimBroadcastService {
         }
       });
       
-      logWithTimestamp(`Broadcast claim result sent: ${claimResult} for player ${playerName || playerId}`);
+      logWithTimestamp(`Broadcast claim result sent: ${claimResult} for player ${playerName || playerId}`, 'info');
       return true;
     } catch (err) {
       console.error("Error broadcasting claim result:", err);
@@ -113,9 +112,7 @@ class ClaimBroadcastService {
   }
 
   /**
-   * Manually broadcast a claim being checked to all players
-   * Used by the caller to show players what claim is currently being verified
-   * IMPORTANT: This function has been enhanced with better error handling
+   * Broadcast a claim being checked to all players in the session
    */
   public async broadcastClaimChecking(claim: ClaimData, message?: string): Promise<boolean> {
     try {
@@ -147,46 +144,31 @@ class ClaimBroadcastService {
         ticket: claim.ticket ? {
           serial: ensureString(claim.ticket.serial || 'unknown'),
           numbers: claim.ticket.numbers || [],
-          calledNumbers: claim.calledNumbers || []
+          calledNumbers: claim.calledNumbers || [],
+          layoutMask: claim.ticket.layout_mask || claim.ticket.layoutMask || 0
         } : null,
         calledNumbers: claim.calledNumbers || []
       };
       
       console.log('CLAIM CHECK PAYLOAD:', broadcastPayload);
       
-      try {
-        // Use dedicated channel for claim checking broadcasts with explicit configuration
-        const broadcastChannel = supabase.channel(this.CLAIM_CHECKING_CHANNEL, {
-          config: {
-            broadcast: { self: true } // Ensure sender receives their own events
-          }
-        });
-        
-        // Broadcast the claim check to all listeners
-        await broadcastChannel.send({
-          type: validateChannelType('broadcast'),
-          event: this.CLAIM_CHECKING_EVENT,
-          payload: broadcastPayload
-        });
-        
-        logWithTimestamp(`Claim check broadcast sent for ${claim.playerName || claim.playerId}`, 'info');
-        console.log('CLAIM CHECK BROADCAST SENT SUCCESSFULLY');
-        return true;
-      } catch (channelError) {
-        console.error("Error with Supabase channel during claim check broadcast:", channelError);
-        
-        // Try an alternative approach with a new channel instance
-        console.log('Trying alternative broadcast approach...');
-        const fallbackChannel = supabase.channel('claim_checking_fallback');
-        await fallbackChannel.send({
-          type: validateChannelType('broadcast'),
-          event: this.CLAIM_CHECKING_EVENT,
-          payload: broadcastPayload
-        });
-        
-        console.log('Fallback broadcast sent');
-        return true;
-      }
+      // Use the correct channel name consistently
+      const broadcastChannel = supabase.channel(this.CLAIM_CHECKING_CHANNEL, {
+        config: {
+          broadcast: { self: true } // Ensure sender receives their own events
+        }
+      });
+      
+      // Broadcast the claim check to all listeners with correct event name
+      await broadcastChannel.send({
+        type: validateChannelType('broadcast'),
+        event: this.CLAIM_CHECKING_EVENT,
+        payload: broadcastPayload
+      });
+      
+      logWithTimestamp(`Claim check broadcast sent for ${claim.playerName || claim.playerId}`, 'info');
+      console.log('CLAIM CHECK BROADCAST SENT SUCCESSFULLY');
+      return true;
     } catch (err) {
       console.error("Error broadcasting claim check:", err);
       logWithTimestamp(`Error broadcasting claim check: ${(err as Error).message}`, 'error');
