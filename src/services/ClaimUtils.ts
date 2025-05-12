@@ -1,5 +1,8 @@
+
 import { ClaimData } from '@/types/claim';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { normalizeWinPattern } from '@/utils/winPatternUtils';
+import { checkMainstageWinPattern } from '@/utils/mainstageWinLogic';
 
 /**
  * Generate a unique ID for a claim
@@ -52,12 +55,51 @@ export function calculateTicketWinStatus(
   toGoCount: number;
   hasLastCalledNumber?: boolean;
 } {
-  // Implementation would depend on specific bingo rules
-  // This is a placeholder that just returns default values
-  return {
-    isWinner: false,
-    toGoCount: 0,
-    hasLastCalledNumber: false
+  // Ensure we have valid ticket data
+  if (!ticket || !ticket.numbers || !ticket.layoutMask && !ticket.layout_mask) {
+    logWithTimestamp('Invalid ticket data for win calculation', 'error');
+    return { isWinner: false, toGoCount: 0, hasLastCalledNumber: false };
+  }
+
+  // Normalize win pattern to ensure consistent format
+  const normalizedWinPattern = normalizeWinPattern(winPattern, 'MAINSTAGE');
+  
+  // Create a grid representation for win checking
+  const layoutMask = ticket.layoutMask || ticket.layout_mask || 0;
+  const numbers = ticket.numbers || [];
+  const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
+  const grid: (number | null)[][] = [[], [], []];
+  let numIndex = 0;
+  
+  for (let i = 0; i < 27; i++) {
+    const row = Math.floor(i / 9);
+    if (maskBits[i] === '1') {
+      if (numIndex < numbers.length) {
+        grid[row].push(numbers[numIndex]);
+        numIndex++;
+      } else {
+        grid[row].push(null); // Safety check in case of data mismatch
+      }
+    } else {
+      grid[row].push(null);
+    }
+  }
+  
+  // Check if it's a winning ticket using our shared win pattern checker
+  const result = checkMainstageWinPattern(
+    grid, 
+    calledNumbers,
+    normalizedWinPattern as any
+  );
+  
+  // Check if the last called number contributed to the win
+  const lastCalledNumber = calledNumbers.length > 0 ? calledNumbers[calledNumbers.length - 1] : null;
+  const hasLastCalledNumber = lastCalledNumber !== null && numbers.includes(lastCalledNumber);
+  
+  return { 
+    isWinner: result.isWinner,
+    toGoCount: result.tg,
+    hasLastCalledNumber
   };
 }
 

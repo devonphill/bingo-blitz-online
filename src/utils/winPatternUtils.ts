@@ -1,47 +1,40 @@
+
 /**
- * Ensures that win patterns for MAINSTAGE games always have the MAINSTAGE_ prefix
- * @param patternId The pattern ID to normalize
- * @param gameType The game type (defaults to 'mainstage')
- * @returns A properly prefixed pattern ID
+ * Normalizes a win pattern by ensuring it has the game type prefix
+ * @param pattern The pattern to normalize
+ * @param gameType The game type to use as prefix
+ * @returns The normalized pattern with prefix
  */
-export function normalizeWinPattern(patternId: string | null | undefined, gameType: string = 'mainstage'): string {
-  if (!patternId) {
-    return 'MAINSTAGE_oneLine'; // Default to one line if no pattern provided
+export function normalizeWinPattern(pattern: string | null | undefined, gameType: string = 'mainstage'): string {
+  if (!pattern) return `${gameType.toUpperCase()}_oneLine`;
+  
+  // If pattern already has the prefix, return as is
+  if (pattern.toUpperCase().startsWith(`${gameType.toUpperCase()}_`)) {
+    return pattern;
   }
   
-  // For MAINSTAGE game type
-  if (gameType.toLowerCase() === 'mainstage' || gameType.toLowerCase() === '90ball') {
-    // If it doesn't start with MAINSTAGE_, add it
-    if (!patternId.startsWith('MAINSTAGE_')) {
-      return `MAINSTAGE_${patternId}`;
-    }
-    return patternId;
-  }
-  
-  // For other game types, keep as is for now
-  return patternId;
+  // Add the prefix
+  return `${gameType.toUpperCase()}_${pattern}`;
 }
 
 /**
- * Gets the display name for a win pattern based on its ID
- * @param patternId The pattern ID
- * @returns A user-friendly name
+ * Gets a display name for a win pattern
+ * @param pattern The pattern to get display name for
+ * @returns A user-friendly display name
  */
-export function getWinPatternDisplayName(patternId: string | null | undefined): string {
-  if (!patternId) return 'One Line';
+export function getWinPatternDisplayName(pattern: string | null | undefined): string {
+  if (!pattern) return 'One Line';
   
-  // Remove prefix for display
-  const basePattern = patternId.replace(/^MAINSTAGE_|^PARTY_|^MUSIC_|^QUIZ_/, '');
+  // Remove any prefix like MAINSTAGE_
+  const normalizedPattern = pattern.replace(/^[A-Z]+_/i, '');
   
-  // Map to friendly names
-  const patternNames: Record<string, string> = {
-    'oneLine': 'One Line',
-    'twoLines': 'Two Lines',
-    'fullHouse': 'Full House',
-    'corners': 'Corners',
-    'threeLines': 'Three Lines',
-    'coverAll': 'Cover All'
-  };
-  
-  return patternNames[basePattern] || basePattern;
+  // Map to display name
+  switch (normalizedPattern.toLowerCase()) {
+    case 'oneline': return 'One Line';
+    case 'twolines': return 'Two Lines';
+    case 'fullhouse': return 'Full House';
+    case 'fourcorners': return 'Four Corners';
+    case 'centersquare': return 'Center Square';
+    default: return normalizedPattern.charAt(0).toUpperCase() + normalizedPattern.slice(1);
+  }
 }

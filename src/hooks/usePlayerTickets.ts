@@ -2,118 +2,164 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { checkMainstageWinPattern } from '@/utils/mainstageWinLogic';
+import { normalizeWinPattern } from '@/utils/winPatternUtils';
 
-// Define an interface for ticket data
-export interface PlayerTicket {
-  id: string;
-  session_id: string;
-  player_id: string;
-  serial: string;
-  perm: number;
-  position: number;
-  layout_mask: number;
-  numbers: number[];
-  called_numbers: number | null;
-  time_stamp: string;
-  is_winning?: boolean;
-  winning_pattern?: string | null;
-}
-
-export function usePlayerTickets(sessionId: string | undefined) {
-  const [playerTickets, setPlayerTickets] = useState<PlayerTicket[]>([]);
-  const [currentWinningTickets, setCurrentWinningTickets] = useState<PlayerTicket[]>([]);
-  const [isLoadingTickets, setIsLoadingTickets] = useState(true);
+export function usePlayerTickets(sessionId?: string | null) {
+  const [playerTickets, setPlayerTickets] = useState<any[]>([]);
+  const [isLoadingTickets, setIsLoadingTickets] = useState(false);
   const [ticketError, setTicketError] = useState<string | null>(null);
   const [isRefreshingTickets, setIsRefreshingTickets] = useState(false);
+  const [currentWinningTickets, setCurrentWinningTickets] = useState<any[]>([]);
 
-  const fetchTickets = useCallback(async () => {
+  // Function to process tickets and check if they're winning
+  const processTickets = useCallback((tickets: any[], calledNumbers: number[], currentWinPattern: string | null) => {
+    if (!tickets || tickets.length === 0) return [];
+    
+    const normalizedWinPattern = normalizeWinPattern(currentWinPattern, 'MAINSTAGE');
+    
+    return tickets.map(ticket => {
+      // Convert ticket data into the format needed for win checking
+      const layoutMask = ticket.layout_mask || ticket.layoutMask || 0;
+      const numbers = ticket.numbers || [];
+      
+      if (!layoutMask || numbers.length === 0) {
+        return { ...ticket, is_winning: false };
+      }
+      
+      // Create a grid representation for win checking
+      const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
+      const grid: (number | null)[][] = [[], [], []];
+      let numIndex = 0;
+      
+      for (let i = 0; i < 27; i++) {
+        const row = Math.floor(i / 9);
+        if (maskBits[i] === '1') {
+          if (numIndex < numbers.length) {
+            grid[row].push(numbers[numIndex]);
+            numIndex++;
+          } else {
+            grid[row].push(null); // Safety check in case of data mismatch
+          }
+        } else {
+          grid[row].push(null);
+        }
+      }
+      
+      // Check if it's a winning ticket
+      const result = checkMainstageWinPattern(
+        grid, 
+        calledNumbers,
+        normalizedWinPattern as any
+      );
+      
+      return { 
+        ...ticket, 
+        is_winning: result.isWinner,
+        winning_pattern: result.isWinner ? currentWinPattern : null,
+        to_go: result.tg
+      };
+    });
+  }, []);
+
+  // Function to fetch tickets from the database
+  const fetchTickets = useCallback(async (forceRefresh = false) => {
     if (!sessionId) {
-      setIsLoadingTickets(false);
+      setPlayerTickets([]);
+      setCurrentWinningTickets([]);
       return;
     }
     
+    if (forceRefresh) {
+      setIsRefreshingTickets(true);
+    } else {
+      setIsLoadingTickets(true);
+    }
+    
+    setTicketError(null);
+    
     try {
-      // Get player ID from localStorage
-      const playerId = localStorage.getItem('playerId');
+      logWithTimestamp(`Fetching tickets for session ${sessionId} with player ID ${sessionId}`, 'info');
       
-      if (!playerId) {
-        throw new Error('No player ID found');
-      }
-      
-      logWithTimestamp(`Fetching tickets for session ${sessionId} with player ID ${playerId}`, 'info');
-      
-      // Get tickets for this player in this session
       const { data, error } = await supabase
         .from('assigned_tickets')
         .select('*')
-        .eq('session_id', sessionId)
-        .eq('player_id', playerId);
-      
+        .eq('session_id', sessionId);
+        
       if (error) {
-        throw new Error(`Failed to fetch tickets: ${error.message}`);
+        setTicketError(`Error fetching tickets: ${error.message}`);
+        return;
       }
       
       if (!data || data.length === 0) {
-        logWithTimestamp('No tickets found', 'info');
+        logWithTimestamp('No tickets found for this session', 'warn');
         setPlayerTickets([]);
         setCurrentWinningTickets([]);
-      } else {
-        logWithTimestamp(`Found ${data.length} tickets`, 'info');
-        
-        // Map the data to ensure we have the expected properties
-        const mappedTickets: PlayerTicket[] = data.map(ticket => ({
-          id: ticket.id,
-          session_id: ticket.session_id,
-          player_id: ticket.player_id,
-          serial: ticket.serial,
-          perm: ticket.perm,
-          position: ticket.position,
-          layout_mask: ticket.layout_mask,
-          numbers: ticket.numbers,
-          called_numbers: ticket.called_numbers,
-          time_stamp: ticket.time_stamp,
-          is_winning: false,
-          winning_pattern: null
-        }));
-        
-        setPlayerTickets(mappedTickets);
-        
-        // Check for winning tickets
-        const winners = mappedTickets.filter(ticket => 
-          ticket.is_winning || ticket.winning_pattern
-        );
-        setCurrentWinningTickets(winners);
+        return;
       }
       
-      setTicketError(null);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to load tickets';
-      setTicketError(errorMessage);
-      logWithTimestamp(`Error loading tickets: ${errorMessage}`, 'error');
+      logWithTimestamp(`Found ${data.length} tickets`, 'info');
+      
+      // Also fetch the current win pattern and called numbers
+      const { data: sessionData } = await supabase
+        .from('sessions_progress')
+        .select('current_win_pattern, called_numbers')
+        .eq('session_id', sessionId)
+        .single();
+        
+      const currentWinPattern = sessionData?.current_win_pattern || 'oneLine';
+      const calledNumbers = sessionData?.called_numbers || [];
+      
+      // Process tickets to check for winners
+      const processedTickets = processTickets(data, calledNumbers, currentWinPattern);
+      setPlayerTickets(processedTickets);
+      
+      // Find winning tickets
+      const winningTickets = processedTickets.filter(t => t.is_winning);
+      setCurrentWinningTickets(winningTickets);
+      
+      if (winningTickets.length > 0) {
+        logWithTimestamp(`Found ${winningTickets.length} winning tickets!`, 'info');
+      } else {
+        logWithTimestamp('No winning tickets found', 'warn');
+      }
+      
+    } catch (err) {
+      setTicketError(`An error occurred while fetching tickets: ${err}`);
+      console.error('Error fetching tickets:', err);
     } finally {
       setIsLoadingTickets(false);
+      setIsRefreshingTickets(false);
     }
-  }, [sessionId]);
-
-  // Initial fetch
+  }, [sessionId, processTickets]);
+  
+  // Initial fetch of tickets
   useEffect(() => {
     fetchTickets();
   }, [fetchTickets]);
   
-  // Function to refresh tickets
-  const refreshTickets = useCallback(async () => {
-    setIsRefreshingTickets(true);
-    await fetchTickets();
-    setIsRefreshingTickets(false);
-    logWithTimestamp('Tickets refreshed', 'info');
+  // Function to manually refresh tickets
+  const refreshTickets = useCallback(() => {
+    return fetchTickets(true);
   }, [fetchTickets]);
+  
+  // Function to update the winning status of tickets
+  const updateWinningStatus = useCallback((calledNumbers: number[], currentWinPattern: string | null) => {
+    setPlayerTickets(tickets => {
+      const updatedTickets = processTickets(tickets, calledNumbers, currentWinPattern);
+      const winningTickets = updatedTickets.filter(t => t.is_winning);
+      setCurrentWinningTickets(winningTickets);
+      return updatedTickets;
+    });
+  }, [processTickets]);
 
   return {
     playerTickets,
     isLoadingTickets,
     ticketError,
-    currentWinningTickets,
     refreshTickets,
-    isRefreshingTickets
+    isRefreshingTickets,
+    currentWinningTickets,
+    updateWinningStatus
   };
 }

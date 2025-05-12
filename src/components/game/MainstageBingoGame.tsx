@@ -11,6 +11,7 @@ interface MainstageBingoGameProps {
   lastCalledNumber: number | null;
   autoMarking?: boolean;
   setAutoMarking?: (value: boolean) => void;
+  currentWinPattern?: string | null;
 }
 
 export default function MainstageBingoGame({
@@ -18,10 +19,11 @@ export default function MainstageBingoGame({
   calledNumbers,
   lastCalledNumber,
   autoMarking = true,
-  setAutoMarking
+  setAutoMarking,
+  currentWinPattern = 'oneLine'
 }: MainstageBingoGameProps) {
   // Always use MAINSTAGE_ prefixed patterns for this game type
-  const currentWinPattern = normalizeWinPattern('oneLine', 'mainstage');
+  const normalizedWinPattern = normalizeWinPattern(currentWinPattern, 'MAINSTAGE');
 
   return (
     <div className="bg-white rounded-lg shadow p-4">
@@ -55,7 +57,7 @@ export default function MainstageBingoGame({
                 perm={ticket.perm || 0}
                 position={ticket.position}
                 autoMarking={autoMarking}
-                currentWinPattern={currentWinPattern}
+                currentWinPattern={normalizedWinPattern}
                 showProgress={true}
               />
             </div>
