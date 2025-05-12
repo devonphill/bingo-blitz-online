@@ -15,6 +15,8 @@ export default function PaymentSuccess() {
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get('session_id');
   const purchaseId = searchParams.get('purchase_id');
+  const paymentIntentId = searchParams.get('payment_intent');
+  const paymentIntentClientSecret = searchParams.get('payment_intent_client_secret');
   
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);
@@ -24,16 +26,27 @@ export default function PaymentSuccess() {
   
   useEffect(() => {
     // Check local storage to prevent duplicate verification
-    const verificationKey = `payment_verified_${purchaseId}`;
+    const verificationKey = purchaseId ? `payment_verified_${purchaseId}` : '';
     
     const verifyPayment = async () => {
-      if (!user || !sessionId || !purchaseId) {
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      // Check which type of payment we're verifying
+      const isCheckoutSession = sessionId && purchaseId;
+      const isPaymentIntent = paymentIntentId || paymentIntentClientSecret;
+      
+      if (!isCheckoutSession && !isPaymentIntent) {
+        setSuccess(false);
+        setMessage('Missing payment information. Please return to add credits page.');
         setLoading(false);
         return;
       }
       
       // Check if this payment has already been verified
-      if (localStorage.getItem(verificationKey)) {
+      if (verificationKey && localStorage.getItem(verificationKey)) {
         console.log('Payment already verified, skipping verification');
         
         try {
@@ -61,11 +74,26 @@ export default function PaymentSuccess() {
       setVerifying(true);
       
       try {
-        const { data, error } = await supabase.functions.invoke('verify-payment', {
-          body: {
+        let requestBody = {};
+        
+        if (isCheckoutSession) {
+          // For Stripe Checkout redirects
+          requestBody = {
             sessionId,
             purchaseId
-          }
+          };
+        } else if (isPaymentIntent && purchaseId) {
+          // For Payment Intent verification (used with Elements)
+          requestBody = {
+            paymentIntentId,
+            purchaseId
+          };
+        } else {
+          throw new Error('Invalid payment parameters');
+        }
+        
+        const { data, error } = await supabase.functions.invoke('verify-payment', {
+          body: requestBody
         });
         
         if (error) {
@@ -77,7 +105,9 @@ export default function PaymentSuccess() {
         
         if (data.success) {
           // Mark this payment as verified in local storage
-          localStorage.setItem(verificationKey, 'true');
+          if (verificationKey) {
+            localStorage.setItem(verificationKey, 'true');
+          }
           
           setTokenCount(data.token_count);
           toast.success('Credits added to your account!');
@@ -100,7 +130,7 @@ export default function PaymentSuccess() {
     } else {
       setLoading(false);
     }
-  }, [user, sessionId, purchaseId]);
+  }, [user, sessionId, purchaseId, paymentIntentId, paymentIntentClientSecret]);
   
   if (loading) {
     return (
@@ -131,7 +161,7 @@ export default function PaymentSuccess() {
     );
   }
   
-  if (!sessionId || !purchaseId) {
+  if ((!sessionId && !paymentIntentId) || !purchaseId) {
     return (
       <div className="container mx-auto py-8">
         <Card>

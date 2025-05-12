@@ -27,14 +27,15 @@ serve(async (req) => {
   try {
     log("Function started");
     
-    // Get request data
-    const { sessionId, purchaseId } = await req.json();
+    // Get request data - now we can accept either sessionId+purchaseId OR paymentIntentId+purchaseId
+    const requestData = await req.json();
+    const { sessionId, purchaseId, paymentIntentId } = requestData;
     
-    if (!sessionId || !purchaseId) {
+    if (!purchaseId || (!sessionId && !paymentIntentId)) {
       throw new Error("Missing required parameters");
     }
     
-    log("Request data", { sessionId, purchaseId });
+    log("Request data", { sessionId, purchaseId, paymentIntentId });
 
     // Setup Supabase client with the provided authorization header
     const authHeader = req.headers.get("Authorization");
@@ -87,24 +88,47 @@ serve(async (req) => {
       log("Error getting purchase record", purchaseError);
       throw new Error("Purchase record not found or not accessible");
     }
-    
-    // Verify the session belongs to this purchase
-    if (purchaseData.stripe_session_id !== sessionId) {
-      log("Session ID mismatch", { 
-        expected: purchaseData.stripe_session_id, 
-        received: sessionId 
-      });
-      throw new Error("Invalid session ID");
+
+    // For payment intent verification
+    if (paymentIntentId) {
+      // Verify the payment intent belongs to this purchase
+      if (purchaseData.stripe_payment_intent_id && purchaseData.stripe_payment_intent_id !== paymentIntentId) {
+        log("Payment intent ID mismatch", {
+          expected: purchaseData.stripe_payment_intent_id,
+          received: paymentIntentId
+        });
+        throw new Error("Invalid payment intent ID");
+      }
+    }
+    // For checkout session verification
+    else if (sessionId) {
+      // Verify the session belongs to this purchase
+      if (purchaseData.stripe_session_id !== sessionId) {
+        log("Session ID mismatch", { 
+          expected: purchaseData.stripe_session_id, 
+          received: sessionId 
+        });
+        throw new Error("Invalid session ID");
+      }
     }
 
     // Check if the purchase was already completed
     if (purchaseData.status === "completed") {
       log("Purchase already completed");
+      
+      // Get current token count
+      const { data: profileData } = await supabaseAdmin
+        .from("profiles")
+        .select("token_count")
+        .eq("id", userId)
+        .single();
+      
       return new Response(
         JSON.stringify({ 
           success: true,
           message: "Payment was already processed",
-          purchase: purchaseData
+          purchase: purchaseData,
+          token_count: profileData?.token_count
         }),
         { 
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -113,17 +137,29 @@ serve(async (req) => {
       );
     }
     
-    // Get session from Stripe to verify payment status
-    log("Fetching Stripe session");
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    let paymentCompleted = false;
+    let paymentStatus = null;
     
-    if (!session || session.payment_status !== "paid") {
-      log("Payment not completed", { status: session?.payment_status });
+    // Check payment status based on verification method
+    if (paymentIntentId) {
+      log("Fetching payment intent");
+      const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+      paymentStatus = paymentIntent.status;
+      paymentCompleted = paymentIntent.status === "succeeded";
+    } else if (sessionId) {
+      log("Fetching Stripe session");
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      paymentStatus = session.payment_status;
+      paymentCompleted = session.payment_status === "paid";
+    }
+    
+    if (!paymentCompleted) {
+      log("Payment not completed", { status: paymentStatus });
       return new Response(
         JSON.stringify({ 
           success: false, 
           message: "Payment not completed",
-          status: session?.payment_status
+          status: paymentStatus
         }),
         { 
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -137,7 +173,7 @@ serve(async (req) => {
     await supabaseAdmin.rpc("complete_token_purchase", {
       p_user_id: userId,
       p_purchase_id: purchaseId,
-      p_payment_intent_id: session.payment_intent as string,
+      p_payment_intent_id: paymentIntentId || "checkout_" + sessionId,
       p_amount: purchaseData.amount
     });
     

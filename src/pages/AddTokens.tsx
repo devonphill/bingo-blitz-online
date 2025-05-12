@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -8,6 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Banknote, Coins, AlertCircle, ArrowLeft, Check, Package, Info } from 'lucide-react';
+import StripeCheckout from '@/components/payment/StripeCheckout';
 
 type TokenPackage = {
   id: string;
@@ -27,11 +27,11 @@ const tokenPackages: TokenPackage[] = [
 
 export default function AddTokens() {
   const navigate = useNavigate();
-  const { user, session } = useAuth();
-  const [loading, setLoading] = useState(false);
+  const { user } = useAuth();
   const [selectedPackage, setSelectedPackage] = useState<TokenPackage>(tokenPackages[2]); // Default to popular pack
   const [tokenCount, setTokenCount] = useState<number | null>(null);
   const [isLoadingTokens, setIsLoadingTokens] = useState(true);
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   
   useEffect(() => {
     const fetchTokens = async () => {
@@ -62,42 +62,19 @@ export default function AddTokens() {
     }
   }, [user?.id]);
   
-  const handlePurchase = async (pkg: TokenPackage) => {
-    if (!user) {
-      toast.error('Please sign in to purchase tokens');
-      return;
-    }
-    
-    setLoading(true);
-    
-    try {
-      const { data, error } = await supabase.functions.invoke('create-checkout', {
-        body: {
-          amount: pkg.tokens,
-          tokenPackage: pkg.id
-        }
-      });
-      
-      if (error) {
-        throw new Error(error.message || 'Failed to create checkout session');
-      }
-      
-      if (!data.url) {
-        throw new Error('Invalid response from checkout service');
-      }
-      
-      // Open Stripe checkout in a new tab
-      window.open(data.url, '_blank');
-      
-      // Navigate to a tracking page that will check the payment status
-      navigate(`/payment-success?session_id=${data.sessionId}&purchase_id=${data.purchaseId}`);
-      
-    } catch (error) {
-      console.error('Checkout error:', error);
-      toast.error('Failed to start checkout process');
-    } finally {
-      setLoading(false);
-    }
+  const handleProceedToCheckout = () => {
+    setIsCheckoutOpen(true);
+  };
+  
+  const handlePaymentSuccess = (newTokenCount: number) => {
+    setTokenCount(newTokenCount);
+    setIsCheckoutOpen(false);
+    // No redirection needed as payment happens in the page
+  };
+  
+  const handlePaymentError = (error: Error) => {
+    console.error('Payment error:', error);
+    // Keep the checkout open so user can try again
   };
   
   if (!user) {
@@ -171,84 +148,86 @@ export default function AddTokens() {
             )}
           </div>
           
-          <h3 className="font-semibold text-lg mb-4">Select a Package</h3>
-          
-          <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
-            {tokenPackages.map((pkg) => (
-              <Card 
-                key={pkg.id}
-                className={`cursor-pointer transition-all ${
-                  selectedPackage.id === pkg.id 
-                    ? 'ring-2 ring-blue-500' 
-                    : 'hover:shadow-md'
-                } ${pkg.popular ? 'relative' : ''}`}
-                onClick={() => setSelectedPackage(pkg)}
-              >
-                {pkg.popular && (
-                  <div className="absolute -top-3 -right-3 bg-blue-500 text-white text-xs px-3 py-1 rounded-full">
-                    Popular
-                  </div>
-                )}
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-lg">{pkg.name}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-col space-y-3">
-                    <div className="flex items-center space-x-2">
-                      <Package className="h-4 w-4 text-gray-500" />
-                      <span className="font-semibold text-lg">{pkg.tokens} Credits</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <div className="font-bold text-lg">£{pkg.price}.00</div>
-                      <div className="text-sm text-gray-500">{pkg.pricePerToken}</div>
-                    </div>
-                  </div>
-                </CardContent>
-                <CardFooter className="pt-0">
-                  <div className="w-full">
-                    {selectedPackage.id === pkg.id && (
-                      <div className="flex items-center text-blue-500 mb-2">
-                        <Check className="h-4 w-4 mr-1" />
-                        <span className="text-sm">Selected</span>
+          {isCheckoutOpen ? (
+            <StripeCheckout
+              packageId={selectedPackage.id}
+              tokens={selectedPackage.tokens}
+              amount={selectedPackage.price}
+              onPaymentSuccess={handlePaymentSuccess}
+              onPaymentError={handlePaymentError}
+            />
+          ) : (
+            <>
+              <h3 className="font-semibold text-lg mb-4">Select a Package</h3>
+              
+              <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
+                {tokenPackages.map((pkg) => (
+                  <Card 
+                    key={pkg.id}
+                    className={`cursor-pointer transition-all ${
+                      selectedPackage.id === pkg.id 
+                        ? 'ring-2 ring-blue-500' 
+                        : 'hover:shadow-md'
+                    } ${pkg.popular ? 'relative' : ''}`}
+                    onClick={() => setSelectedPackage(pkg)}
+                  >
+                    {pkg.popular && (
+                      <div className="absolute -top-3 -right-3 bg-blue-500 text-white text-xs px-3 py-1 rounded-full">
+                        Popular
                       </div>
                     )}
-                  </div>
-                </CardFooter>
-              </Card>
-            ))}
-          </div>
-          
-          <div className="mt-8">
-            <Button 
-              className="w-full md:w-auto" 
-              size="lg" 
-              onClick={() => handlePurchase(selectedPackage)}
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <Spinner size="sm" className="mr-2" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <Banknote className="mr-2 h-4 w-4" />
-                  Purchase {selectedPackage.tokens} Credits for £{selectedPackage.price}
-                </>
-              )}
-            </Button>
-          </div>
-          
-          <div className="mt-6 bg-amber-50 p-4 rounded-lg border border-amber-200">
-            <div className="flex items-start space-x-2">
-              <AlertCircle className="h-5 w-5 text-amber-500 mt-0.5" />
-              <div className="text-sm text-amber-800">
-                <p className="font-medium">Important Information</p>
-                <p className="mt-1">Credits will be added to your account instantly after successful payment. You can use these credits to add players to your bingo sessions.</p>
-                <p className="mt-1">All prices include any applicable processing fees. No additional charges will be added during checkout.</p>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-lg">{pkg.name}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-col space-y-3">
+                        <div className="flex items-center space-x-2">
+                          <Package className="h-4 w-4 text-gray-500" />
+                          <span className="font-semibold text-lg">{pkg.tokens} Credits</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <div className="font-bold text-lg">£{pkg.price}.00</div>
+                          <div className="text-sm text-gray-500">{pkg.pricePerToken}</div>
+                        </div>
+                      </div>
+                    </CardContent>
+                    <CardFooter className="pt-0">
+                      <div className="w-full">
+                        {selectedPackage.id === pkg.id && (
+                          <div className="flex items-center text-blue-500 mb-2">
+                            <Check className="h-4 w-4 mr-1" />
+                            <span className="text-sm">Selected</span>
+                          </div>
+                        )}
+                      </div>
+                    </CardFooter>
+                  </Card>
+                ))}
               </div>
-            </div>
-          </div>
+              
+              <div className="mt-8">
+                <Button 
+                  className="w-full md:w-auto" 
+                  size="lg" 
+                  onClick={handleProceedToCheckout}
+                >
+                  <Banknote className="mr-2 h-4 w-4" />
+                  Continue to Payment
+                </Button>
+              </div>
+              
+              <div className="mt-6 bg-amber-50 p-4 rounded-lg border border-amber-200">
+                <div className="flex items-start space-x-2">
+                  <AlertCircle className="h-5 w-5 text-amber-500 mt-0.5" />
+                  <div className="text-sm text-amber-800">
+                    <p className="font-medium">Important Information</p>
+                    <p className="mt-1">Credits will be added to your account instantly after successful payment. You can use these credits to add players to your bingo sessions.</p>
+                    <p className="mt-1">All prices include any applicable processing fees. No additional charges will be added during checkout.</p>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </CardContent>
         
         <CardFooter className="border-t pt-6 flex justify-between">
@@ -256,6 +235,12 @@ export default function AddTokens() {
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Dashboard
           </Button>
+          
+          {isCheckoutOpen && (
+            <Button variant="outline" onClick={() => setIsCheckoutOpen(false)}>
+              Back to Packages
+            </Button>
+          )}
         </CardFooter>
       </Card>
     </div>
