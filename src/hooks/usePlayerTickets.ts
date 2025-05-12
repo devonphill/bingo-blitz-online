@@ -41,7 +41,7 @@ export function usePlayerTickets(sessionId: string | undefined) {
       logWithTimestamp(`Fetching tickets for session ${sessionId} with player code ${playerCode}`, 'info');
       
       // Get tickets for this player in this session
-      const { data: tickets, error } = await supabase
+      const { data, error } = await supabase
         .from('assigned_tickets')
         .select('*')
         .eq('session_id', sessionId)
@@ -52,7 +52,7 @@ export function usePlayerTickets(sessionId: string | undefined) {
       }
       
       // If player_code doesn't work, try getting the player ID and use that instead
-      if (!tickets || tickets.length === 0) {
+      if (!data || data.length === 0) {
         // Try to get player ID from localStorage
         const playerId = localStorage.getItem('playerId');
         
@@ -70,7 +70,7 @@ export function usePlayerTickets(sessionId: string | undefined) {
           if (playerTickets && playerTickets.length > 0) {
             logWithTimestamp(`Found ${playerTickets.length} tickets using player ID`, 'info');
             
-            const mappedTickets = playerTickets.map(ticket => ({
+            const mappedTickets: PlayerTicket[] = playerTickets.map(ticket => ({
               ...ticket,
               is_winning: false,
               winning_pattern: null
@@ -87,14 +87,14 @@ export function usePlayerTickets(sessionId: string | undefined) {
         logWithTimestamp('No tickets found', 'info');
         setPlayerTickets([]);
       } else {
-        logWithTimestamp(`Found ${tickets.length} tickets`, 'info');
+        logWithTimestamp(`Found ${data.length} tickets`, 'info');
         
         // Map the data to ensure we have the expected properties
-        const mappedTickets = tickets.map(ticket => ({
+        const mappedTickets: PlayerTicket[] = data.map(ticket => ({
           ...ticket,
           is_winning: false, // Default value for is_winning
           winning_pattern: null // Default value for winning_pattern
-        })) as PlayerTicket[];
+        }));
         
         setPlayerTickets(mappedTickets);
         
