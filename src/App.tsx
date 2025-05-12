@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Spinner } from "@/components/ui/spinner";
 import MainLayout from '@/components/layout/MainLayout';
 import LoginForm from '@/components/auth/LoginForm';
+import { PlayerContextProvider } from '@/contexts/PlayerContext';
 
 // Simplified loading spinner component
 const LoadingSpinner = ({ size = "md" }: { size?: "sm" | "md" | "lg" }) => {
@@ -54,6 +55,18 @@ const CallerHome = () => <div className="p-8"><h1 className="text-2xl">Caller Ho
 const GameSetup = () => <div className="p-8"><h1 className="text-2xl">Game Setup</h1><p>This page is not yet implemented.</p></div>;
 const GameManagement = () => <div className="p-8"><h1 className="text-2xl">Game Management</h1><p>This page is not yet implemented.</p></div>;
 
+// PlayerRoutes component wrapped with PlayerContextProvider
+const PlayerRoutes = () => (
+  <PlayerContextProvider>
+    <Suspense fallback={<LoadingSpinner size="lg" />}>
+      <Routes>
+        <Route path="/join" element={<PlayerJoin />} />
+        <Route path="/game/:playerCode?" element={<PlayerGame />} />
+      </Routes>
+    </Suspense>
+  </PlayerContextProvider>
+);
+
 function App() {
   return (
     <>
@@ -91,9 +104,8 @@ function App() {
           {/* Players management */}
           <Route path="/session/:sessionId/players/add" element={<PrivateRoute><MainLayout><AddPlayers /></MainLayout></PrivateRoute>} />
           
-          {/* Player routes (publicly accessible) */}
-          <Route path="/player/join" element={<PlayerJoin />} />
-          <Route path="/player/game/:playerCode?" element={<PlayerGame />} />
+          {/* Player routes with PlayerContextProvider */}
+          <Route path="/player/*" element={<PlayerRoutes />} />
         </Routes>
       </Suspense>
       <Toaster />
