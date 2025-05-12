@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -30,6 +31,12 @@ export function usePlayerClaimManagement(
   const claimCheckingChannelRef = useRef<any>(null);
   const isMountedRef = useRef(true);
   const instanceIdRef = useRef(`claim-${Math.random().toString(36).substring(2, 9)}`);
+  const sessionIdRef = useRef<string | null>(sessionId);
+  
+  // Update sessionId ref when it changes
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
   
   // Custom logger with instance ID
   const log = useCallback((message: string, level: 'info' | 'warn' | 'error' | 'debug' = 'info') => {
@@ -44,21 +51,45 @@ export function usePlayerClaimManagement(
 
   // Set up or clean up channels based on session availability
   const setupCommunicationChannels = useCallback(() => {
-    if (!sessionId) {
+    if (!sessionIdRef.current) {
       log('No session ID available for communication channels', 'warn');
       return;
     }
     
-    // Setup claim result channel if needed
-    if (!claimChannelRef.current) {
-      log(`Setting up claim result channel for session ${sessionId}`, 'info');
+    const currentSessionId = sessionIdRef.current;
+    
+    // Cleanup existing channels first to avoid duplicates
+    if (claimChannelRef.current) {
+      try {
+        log('Removing existing claim result channel before re-creating', 'info');
+        supabase.removeChannel(claimChannelRef.current);
+        claimChannelRef.current = null;
+      } catch (err) {
+        console.error('Error removing claim channel:', err);
+      }
+    }
+    
+    if (claimCheckingChannelRef.current) {
+      try {
+        log('Removing existing claim checking channel before re-creating', 'info');
+        supabase.removeChannel(claimCheckingChannelRef.current);
+        claimCheckingChannelRef.current = null;
+      } catch (err) {
+        console.error('Error removing claim checking channel:', err);
+      }
+    }
+    
+    // Setup claim result channel
+    log(`Setting up claim result channel for session ${currentSessionId}`, 'info');
       
-      // Use the consistent channel name with proper configuration
+    // Use the consistent channel name with proper configuration
+    try {
       const resultChannel = supabase
         .channel(GAME_UPDATES_CHANNEL, {
           config: {
             broadcast: { 
-              self: true // Receive own broadcasts
+              self: true, // Receive own broadcasts
+              ack: true   // Request acknowledgment
             }
           }
         })
@@ -70,7 +101,7 @@ export function usePlayerClaimManagement(
           const result = payload.payload;
           
           // Check if this result is for us or our session
-          if (result.sessionId === sessionId) {
+          if (result.sessionId === currentSessionId) {
             if ((result.playerId === playerId || result.playerId === playerCode) || result.isGlobalBroadcast) {
               log(`Processing claim result: ${result.result}`, 'info');
               
@@ -103,18 +134,21 @@ export function usePlayerClaimManagement(
       
       // Store the channel for cleanup  
       claimChannelRef.current = resultChannel;
+    } catch (err) {
+      log(`Error creating claim result channel: ${err}`, 'error');
     }
     
-    // Setup claim checking channel if needed
-    if (!claimCheckingChannelRef.current) {
-      log(`Setting up claim checking channel for session ${sessionId}`, 'info');
-      
+    // Setup claim checking channel
+    log(`Setting up claim checking channel for session ${currentSessionId}`, 'info');
+    
+    try {
       // Set up channel for claim checking broadcasts with proper config
       const checkChannel = supabase
         .channel(CLAIM_CHECKING_CHANNEL, {
           config: {
             broadcast: { 
-              self: true // Receive own broadcasts
+              self: true, // Receive own broadcasts
+              ack: true   // Request acknowledgment
             }
           }
         })
@@ -125,7 +159,9 @@ export function usePlayerClaimManagement(
           
           // We don't need additional processing here as the BingoClaim component
           // handles displaying the claim checking dialog
-          setHasActiveClaims(true);
+          if (payload.payload?.sessionId === currentSessionId) {
+            setHasActiveClaims(true);
+          }
         })
         .subscribe((status) => {
           log(`Claim checking channel status: ${status}`, 'info');
@@ -133,22 +169,25 @@ export function usePlayerClaimManagement(
       
       // Store channel reference for cleanup
       claimCheckingChannelRef.current = checkChannel;
+    } catch (err) {
+      log(`Error creating claim checking channel: ${err}`, 'error');
     }
-  }, [sessionId, playerId, playerCode, log]);
+  }, [playerId, playerCode, log]);
 
   // Set up/clean up effect with proper dependency array  
   useEffect(() => {
-    // Set mount state
+    // Mark as mounted
     isMountedRef.current = true;
     
     log(`Initializing claim management for session: ${sessionId || 'none'}`, 'info');
+    sessionIdRef.current = sessionId;
     
     // Setup channels with a delay to avoid race conditions
     const setupTimer = setTimeout(() => {
       if (isMountedRef.current && sessionId) {
         setupCommunicationChannels();
       }
-    }, 100);
+    }, 300);
     
     return () => {
       // Mark component as unmounted
@@ -160,21 +199,46 @@ export function usePlayerClaimManagement(
       // Clean up channels
       if (claimChannelRef.current) {
         log(`Removing claim result channel`, 'info');
-        supabase.removeChannel(claimChannelRef.current);
+        try {
+          supabase.removeChannel(claimChannelRef.current);
+        } catch (err) {
+          console.error('Error removing claim channel during cleanup:', err);
+        }
         claimChannelRef.current = null;
       }
       
       if (claimCheckingChannelRef.current) {
         log(`Removing claim checking channel`, 'info');
-        supabase.removeChannel(claimCheckingChannelRef.current);
+        try {
+          supabase.removeChannel(claimCheckingChannelRef.current);
+        } catch (err) {
+          console.error('Error removing claim checking channel during cleanup:', err);
+        }
         claimCheckingChannelRef.current = null;
       }
     };
   }, [sessionId, setupCommunicationChannels, log]);
 
+  // Handle session ID changes
+  useEffect(() => {
+    if (sessionIdRef.current !== sessionId && sessionId && isMountedRef.current) {
+      log(`Session ID changed from ${sessionIdRef.current} to ${sessionId}, reconnecting channels`, 'info');
+      sessionIdRef.current = sessionId;
+      
+      // Re-setup channels with delay
+      setTimeout(() => {
+        if (isMountedRef.current && sessionId) {
+          setupCommunicationChannels();
+        }
+      }, 200);
+    }
+  }, [sessionId, setupCommunicationChannels, log]);
+
   // Submit a claim
   const submitClaim = useCallback(async (ticket: any) => {
-    if (!playerCode || !sessionId) {
+    const currentSessionId = sessionIdRef.current;
+    
+    if (!playerCode || !currentSessionId) {
       toast({
         title: "Cannot Claim",
         description: "Missing player information or session ID",
@@ -183,7 +247,7 @@ export function usePlayerClaimManagement(
       return false;
     }
     
-    log(`Submitting claim for ${playerCode} in ${sessionId}`, 'info');
+    log(`Submitting claim for ${playerCode} in ${currentSessionId}`, 'info');
     setIsSubmittingClaim(true);
     setClaimStatus('pending');
     
@@ -195,7 +259,7 @@ export function usePlayerClaimManagement(
         payload: {
           playerCode,
           playerId,
-          sessionId,
+          sessionId: currentSessionId,
           playerName: playerName || playerCode,
           gameType,
           winPattern: currentWinPattern,
@@ -213,24 +277,53 @@ export function usePlayerClaimManagement(
       
       log(`Submitting claim with payload: ${JSON.stringify(payload.payload)}`, 'info');
       
-      // Send claim via real-time channel using the consistent channel name
-      const channel = supabase.channel(GAME_UPDATES_CHANNEL);
-      await channel.send(payload);
+      // Retry mechanism for more reliable claim submission
+      const sendClaimWithRetry = async (attempts = 0): Promise<boolean> => {
+        if (attempts >= 3) {
+          log(`Failed to submit claim after ${attempts} attempts`, 'error');
+          return false;
+        }
+        
+        try {
+          // Send claim via real-time channel using the consistent channel name
+          const channel = supabase.channel(GAME_UPDATES_CHANNEL, {
+            config: {
+              broadcast: { 
+                self: true, // Receive own broadcasts
+                ack: true   // Request acknowledgment
+              }
+            }
+          });
+          
+          await channel.send(payload);
+          log(`Claim broadcast sent successfully`, 'info');
+          return true;
+        } catch (err) {
+          log(`Error submitting claim (attempt ${attempts + 1}): ${err}`, 'error');
+          
+          // Retry with exponential backoff
+          await new Promise(resolve => setTimeout(resolve, 250 * Math.pow(2, attempts)));
+          return sendClaimWithRetry(attempts + 1);
+        }
+      };
       
-      log(`Claim broadcast sent successfully`, 'info');
+      const success = await sendClaimWithRetry();
       
-      // Show success toast
-      toast({
-        title: "Bingo Submitted!",
-        description: "Your claim has been submitted for verification.",
-        duration: 3000,
-      });
-      
-      // Update active claims state
-      setHasActiveClaims(true);
-      
-      // Keep the claim status as pending until we get a result
-      return true;
+      if (success) {
+        // Show success toast
+        toast({
+          title: "Bingo Submitted!",
+          description: "Your claim has been submitted for verification.",
+          duration: 3000,
+        });
+        
+        // Update active claims state
+        setHasActiveClaims(true);
+        
+        return true;
+      } else {
+        throw new Error("Failed to submit claim after multiple attempts");
+      }
     } catch (error) {
       console.error('Error submitting claim:', error);
       log(`Error submitting claim: ${error}`, 'error');
@@ -246,7 +339,7 @@ export function usePlayerClaimManagement(
       // Keep the claim status as pending but stop the submitting indicator
       setIsSubmittingClaim(false);
     }
-  }, [playerCode, playerId, sessionId, playerName, gameType, currentWinPattern, gameNumber, toast, log]);
+  }, [playerCode, playerId, playerName, gameType, currentWinPattern, gameNumber, toast, log]);
 
   return {
     claimStatus,

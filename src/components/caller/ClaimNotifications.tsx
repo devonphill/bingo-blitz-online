@@ -27,77 +27,172 @@ export default function ClaimNotifications({
   const { toast } = useToast();
   const mountedRef = useRef(true);
   const claimChannelRef = useRef<any>(null);
+  const sessionIdRef = useRef<string | null>(sessionId);
+  const instanceId = useRef(`ClaimNotif-${Math.random().toString(36).substring(2, 7)}`);
+
+  // Update session ID ref when it changes
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+  
+  // Custom logging function
+  const log = (message: string, level: 'info' | 'warn' | 'error' | 'debug' = 'info') => {
+    logWithTimestamp(`ClaimNotifications (${instanceId.current}): ${message}`, level);
+  };
 
   // Component lifecycle management
   useEffect(() => {
     mountedRef.current = true;
-    
-    // Set up real-time claim monitoring
-    if (sessionId) {
-      // Set up channel for claim submissions
-      if (!claimChannelRef.current) {
-        logWithTimestamp("ClaimNotifications: Setting up claim listener", 'info');
-        
-        const channel = supabase
-          .channel(GAME_UPDATES_CHANNEL, {
-            config: {
-              broadcast: { self: true }
-            }
-          })
-          .on('broadcast', { event: 'claim-submitted' }, payload => {
-            if (!mountedRef.current) return;
-            
-            // Check if this is for our session
-            if (payload.payload?.sessionId === sessionId) {
-              logWithTimestamp("ClaimNotifications: Real-time claim received", 'info');
-              
-              // Force refresh claims list
-              forceRefresh();
-              
-              // Get details from the payload
-              const playerName = payload.payload.playerName || 'Player';
-              
-              // Show toast
-              toast({
-                title: "New Bingo Claim!",
-                description: `${playerName} has claimed bingo`,
-                variant: "destructive",
-                duration: 8000
-              });
-            }
-          })
-          .subscribe();
-        
-        claimChannelRef.current = channel;
-      }
-    }
+    log('Component mounted', 'info');
     
     return () => { 
       mountedRef.current = false;
-      
-      // Clean up channel
-      if (claimChannelRef.current) {
+      log('Component unmounting', 'info');
+    };
+  }, []);
+  
+  // Set up real-time claim monitoring
+  useEffect(() => {
+    if (!sessionIdRef.current) {
+      log('No session ID provided, skipping channel setup', 'warn');
+      return;
+    }
+    
+    const currentSessionId = sessionIdRef.current;
+    
+    // Clean up existing channel if any
+    if (claimChannelRef.current) {
+      try {
+        log('Removing existing claim channel before re-creating', 'info');
         supabase.removeChannel(claimChannelRef.current);
+        claimChannelRef.current = null;
+      } catch (err) {
+        console.error('Error removing claim channel:', err);
+      }
+    }
+    
+    // Set up channel for claim submissions
+    log("Setting up claim listener", 'info');
+    
+    try {
+      const channel = supabase
+        .channel(GAME_UPDATES_CHANNEL, {
+          config: {
+            broadcast: { 
+              self: true, // Receive own broadcasts
+              ack: true   // Request acknowledgment
+            }
+          }
+        })
+        .on('broadcast', { event: 'claim-submitted' }, payload => {
+          if (!mountedRef.current) return;
+          
+          // Check if this is for our session
+          if (payload.payload?.sessionId === currentSessionId) {
+            log("Real-time claim received", 'info');
+            
+            // Force refresh claims list
+            forceRefresh();
+            
+            // Get details from the payload
+            const playerName = payload.payload.playerName || 'Player';
+            
+            // Show toast
+            toast({
+              title: "New Bingo Claim!",
+              description: `${playerName} has claimed bingo`,
+              variant: "destructive",
+              duration: 8000
+            });
+          }
+        })
+        .subscribe((status) => {
+          log(`Claim channel subscription status: ${status}`, 'info');
+        });
+      
+      claimChannelRef.current = channel;
+    } catch (err) {
+      log(`Error setting up claim channel: ${err}`, 'error');
+    }
+    
+    return () => { 
+      if (claimChannelRef.current) {
+        log('Cleaning up claim channel on unmount/sessionId change', 'info');
+        try {
+          supabase.removeChannel(claimChannelRef.current);
+        } catch (err) {
+          console.error('Error removing claim channel during cleanup:', err);
+        }
         claimChannelRef.current = null;
       }
     };
   }, [sessionId, toast, forceRefresh]);
 
+  // Handle sessionId changes
+  useEffect(() => {
+    if (sessionIdRef.current !== sessionId && sessionId) {
+      log(`Session ID changed from ${sessionIdRef.current} to ${sessionId}, reconnecting`, 'info');
+      sessionIdRef.current = sessionId;
+      
+      // Clean up existing channel
+      if (claimChannelRef.current) {
+        try {
+          supabase.removeChannel(claimChannelRef.current);
+          claimChannelRef.current = null;
+        } catch (err) {
+          console.error('Error removing claim channel on sessionId change:', err);
+        }
+      }
+      
+      // Set up new channel after a delay
+      setTimeout(() => {
+        if (mountedRef.current && sessionId) {
+          try {
+            const channel = supabase
+              .channel(GAME_UPDATES_CHANNEL, {
+                config: { broadcast: { self: true, ack: true } }
+              })
+              .on('broadcast', { event: 'claim-submitted' }, payload => {
+                if (!mountedRef.current) return;
+                
+                if (payload.payload?.sessionId === sessionId) {
+                  log("Real-time claim received on reconnected channel", 'info');
+                  forceRefresh();
+                  const playerName = payload.payload.playerName || 'Player';
+                  toast({
+                    title: "New Bingo Claim!",
+                    description: `${playerName} has claimed bingo`,
+                    variant: "destructive",
+                    duration: 8000
+                  });
+                }
+              })
+              .subscribe();
+            
+            claimChannelRef.current = channel;
+          } catch (err) {
+            log(`Error setting up new claim channel: ${err}`, 'error');
+          }
+        }
+      }, 300);
+    }
+  }, [sessionId, toast, forceRefresh]);
+
   // Refresh claims initially
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionIdRef.current) return;
     
-    logWithTimestamp("ClaimNotifications: Mounted, fetching initial claims", 'info');
+    log("Mounted, fetching initial claims", 'info');
     fetchClaims();
   }, [sessionId, fetchClaims]);
   
   // Set up periodic refresh
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionIdRef.current) return;
     
     const interval = setInterval(() => {
       if (mountedRef.current) {
-        logWithTimestamp("ClaimNotifications: Periodic refresh", 'debug');
+        log("Periodic refresh", 'debug');
         fetchClaims();
       }
     }, 5000); // Check every 5 seconds
@@ -108,15 +203,15 @@ export default function ClaimNotifications({
   // Enhanced debugging for claims data
   useEffect(() => {
     if (claims?.length > 0) {
-      logWithTimestamp(`ClaimNotifications: ${claims.length} claims found:`, 'info');
+      log(`${claims.length} claims found:`, 'info');
       claims.forEach((claim, i) => {
-        logWithTimestamp(`Claim ${i+1}: ID=${claim.id}, Player=${claim.playerName || claim.playerId}`, 'info');
+        log(`Claim ${i+1}: ID=${claim.id}, Player=${claim.playerName || claim.playerId}`, 'info');
       });
     }
     
     // Detect new claims and notify
     if (claimsCount > previousCount) {
-      logWithTimestamp(`ClaimNotifications: New claims detected (${previousCount} → ${claimsCount})`, 'info');
+      log(`New claims detected (${previousCount} → ${claimsCount})`, 'info');
       
       // Get details of the newest claim
       const newestClaim = claims && claims.length > 0 ? claims[0] : null;
@@ -138,7 +233,7 @@ export default function ClaimNotifications({
   // Animate when new claims arrive
   useEffect(() => {
     if (claimsCount > 0) {
-      logWithTimestamp(`ClaimNotifications: ${claimsCount} claims detected, animating`, 'info');
+      log(`${claimsCount} claims detected, animating`, 'info');
       setIsAnimating(true);
       
       // Animation cycles
@@ -169,7 +264,7 @@ export default function ClaimNotifications({
 
   // Handle click
   const handleClick = () => {
-    logWithTimestamp("ClaimNotifications: Bell clicked, opening claim sheet", 'info');
+    log("Bell clicked, opening claim sheet", 'info');
     onOpenClaimSheet();
     
     // Immediate refresh when opening
@@ -179,7 +274,7 @@ export default function ClaimNotifications({
   // Handle force refresh of claims
   const handleForceRefresh = (e: React.MouseEvent) => {
     e.stopPropagation(); // Don't trigger the parent click handler
-    logWithTimestamp("ClaimNotifications: Force refreshing claims", 'info');
+    log("Force refreshing claims", 'info');
     
     forceRefresh();
     

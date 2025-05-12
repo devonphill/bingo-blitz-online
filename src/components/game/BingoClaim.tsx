@@ -49,7 +49,7 @@ export default function BingoClaim({
   sessionId,
   playerId
 }: BingoClaimProps) {
-  // Debugging info
+  // Generate a consistent instance ID for this component
   const instanceId = useRef(`BingoClaim-${Math.random().toString(36).substring(2, 7)}`);
   
   // State for claim checking UI
@@ -62,11 +62,17 @@ export default function BingoClaim({
   const claimCheckingChannelRef = useRef<any>(null);
   const claimResultChannelRef = useRef<any>(null);
   
-  // Reference to track if component is mounted
+  // Reference to track if component is mounted and session ID
   const isMountedRef = useRef(true);
+  const sessionIdRef = useRef<string | null>(sessionId);
   
   // Track last received claim ID to avoid duplicates
   const lastClaimIdRef = useRef<string | null>(null);
+  
+  // Update session ID ref when it changes
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
   
   // Custom logger with instance ID
   const log = (message: string, level: 'info' | 'warn' | 'error' | 'debug' = 'info') => {
@@ -85,18 +91,45 @@ export default function BingoClaim({
   
   // Set up channels for claim checking and results
   useEffect(() => {
-    if (!sessionId) {
+    if (!sessionIdRef.current) {
       log(`No session ID provided, not setting up channels`, 'warn');
       return;
     }
     
+    const currentSessionId = sessionIdRef.current;
+    isMountedRef.current = true;
+    
+    // Clean up any existing channels first
+    const cleanupExistingChannels = () => {
+      if (claimCheckingChannelRef.current) {
+        try {
+          log('Removing existing claim checking channel', 'info');
+          supabase.removeChannel(claimCheckingChannelRef.current);
+          claimCheckingChannelRef.current = null;
+        } catch (err) {
+          log(`Error removing claim checking channel: ${err}`, 'error');
+        }
+      }
+      
+      if (claimResultChannelRef.current) {
+        try {
+          log('Removing existing claim result channel', 'info');
+          supabase.removeChannel(claimResultChannelRef.current);
+          claimResultChannelRef.current = null;
+        } catch (err) {
+          log(`Error removing claim result channel: ${err}`, 'error');
+        }
+      }
+    };
+    
+    cleanupExistingChannels();
+    
     // Function to set up communication channels only if they don't exist yet
     const setupChannels = () => {
-      log(`Setting up channels for session ${sessionId}`, 'info');
+      log(`Setting up channels for session ${currentSessionId}`, 'info');
       
-      // Only create the claim checking channel if it doesn't exist
-      if (!claimCheckingChannelRef.current) {
-        // Set up claim checking channel with improved configuration
+      // Set up claim checking channel
+      try {
         const checkingChannel = supabase
           .channel(CLAIM_CHECKING_CHANNEL, {
             config: {
@@ -112,7 +145,7 @@ export default function BingoClaim({
             log(`Received claim checking broadcast`, 'info');
             
             // Check if this broadcast is for our session
-            if (payload.payload?.sessionId === sessionId) {
+            if (payload.payload?.sessionId === currentSessionId) {
               log(`Claim checking broadcast matches current session`, 'info');
               
               // Prevent duplicate claims (check claim ID)
@@ -153,15 +186,20 @@ export default function BingoClaim({
           
         // Store channel reference
         claimCheckingChannelRef.current = checkingChannel;
+      } catch (err) {
+        log(`Error setting up claim checking channel: ${err}`, 'error');
       }
       
-      // Only create the result channel if it doesn't exist
-      if (!claimResultChannelRef.current) {
+      // Set up claim result channel
+      try {
         // Set up claim result channel with consistent channel name
         const resultChannel = supabase
           .channel(GAME_UPDATES_CHANNEL, {
             config: {
-              broadcast: { self: true } // Ensure we receive our own broadcasts
+              broadcast: { 
+                self: true, // Ensure we receive our own broadcasts
+                ack: true  // Request acknowledgment
+              }
             }
           })
           .on('broadcast', { event: 'claim-result' }, payload => {
@@ -172,7 +210,7 @@ export default function BingoClaim({
             const result = payload.payload;
             
             // Check if this result is for our session
-            if (result.sessionId === sessionId) {
+            if (result.sessionId === currentSessionId) {
               log(`Claim result broadcast matches current session`, 'info');
               
               // If global broadcast or specific to this player
@@ -224,45 +262,109 @@ export default function BingoClaim({
         
         // Store channel reference
         claimResultChannelRef.current = resultChannel;
+      } catch (err) {
+        log(`Error setting up claim result channel: ${err}`, 'error');
       }
     };
     
     // Add a small delay before setting up channels to prevent race conditions
     const timer = setTimeout(() => {
-      if (isMountedRef.current) {
+      if (isMountedRef.current && currentSessionId) {
         setupChannels();
       }
-    }, 100);
+    }, 300);
     
     // Clean up channels on unmount
     return () => {
       clearTimeout(timer);
+      cleanupExistingChannels();
+    };
+  }, []);
+  
+  // Handle changes to session ID
+  useEffect(() => {
+    if (sessionIdRef.current !== sessionId && sessionId) {
+      log(`Session ID changed from ${sessionIdRef.current} to ${sessionId}, resetting channels`, 'info');
+      sessionIdRef.current = sessionId;
       
+      // Clean up existing channels
       if (claimCheckingChannelRef.current) {
-        log(`Removing claim checking channel during cleanup`, 'info');
-        supabase.removeChannel(claimCheckingChannelRef.current)
-          .then(() => {
-            claimCheckingChannelRef.current = null;
-            log('Claim checking channel removed successfully', 'debug');
-          })
-          .catch(err => {
-            log(`Error removing claim checking channel: ${err}`, 'error');
-          });
+        try {
+          supabase.removeChannel(claimCheckingChannelRef.current);
+          claimCheckingChannelRef.current = null;
+        } catch (err) {
+          log(`Error removing claim checking channel: ${err}`, 'error');
+        }
       }
       
       if (claimResultChannelRef.current) {
-        log(`Removing claim result channel during cleanup`, 'info');
-        supabase.removeChannel(claimResultChannelRef.current)
-          .then(() => {
-            claimResultChannelRef.current = null;
-            log('Claim result channel removed successfully', 'debug');
-          })
-          .catch(err => {
-            log(`Error removing claim result channel: ${err}`, 'error');
-          });
+        try {
+          supabase.removeChannel(claimResultChannelRef.current);
+          claimResultChannelRef.current = null;
+        } catch (err) {
+          log(`Error removing claim result channel: ${err}`, 'error');
+        }
       }
-    };
-  }, [sessionId, playerId, resetClaimStatus, playerName]);
+      
+      // Set up new channels after a delay
+      setTimeout(() => {
+        if (isMountedRef.current && sessionId) {
+          // Set up claim checking channel
+          try {
+            const checkingChannel = supabase
+              .channel(CLAIM_CHECKING_CHANNEL, {
+                config: { broadcast: { self: true, ack: true } }
+              })
+              .on('broadcast', { event: 'claim-checking' }, payload => {
+                if (!isMountedRef.current) return;
+                if (payload.payload?.sessionId === sessionId) {
+                  log(`Claim checking broadcast matches updated session`, 'info');
+                  const claimId = payload.payload?.claimId;
+                  if (claimId && claimId === lastClaimIdRef.current) return;
+                  lastClaimIdRef.current = claimId;
+                  setClaimCheckData(payload.payload);
+                  setIsClaimSheetVisible(true);
+                  setClaimResult(null);
+                  setActiveClaims(prev => prev + 1);
+                }
+              })
+              .subscribe();
+            claimCheckingChannelRef.current = checkingChannel;
+          } catch (err) {
+            log(`Error setting up new claim checking channel: ${err}`, 'error');
+          }
+          
+          // Set up claim result channel
+          try {
+            const resultChannel = supabase
+              .channel(GAME_UPDATES_CHANNEL, {
+                config: { broadcast: { self: true, ack: true } }
+              })
+              .on('broadcast', { event: 'claim-result' }, payload => {
+                if (!isMountedRef.current) return;
+                const result = payload.payload;
+                if (result.sessionId === sessionId && 
+                   (result.isGlobalBroadcast || result.playerId === playerId)) {
+                  log(`Setting claim result to: ${result.result}`, 'info');
+                  setClaimResult(result.result);
+                  setClaimCheckData(prev => ({
+                    ...prev,
+                    playerName: result.playerName,
+                    ticket: result.ticket || prev?.ticket
+                  }));
+                  setIsClaimSheetVisible(true);
+                  setActiveClaims(prev => Math.max(0, prev - 1));
+                }
+              })
+              .subscribe();
+            claimResultChannelRef.current = resultChannel;
+          } catch (err) {
+            log(`Error setting up new claim result channel: ${err}`, 'error');
+          }
+        }
+      }, 300);
+    }
+  }, [sessionId, playerId]);
 
   // Handle drawer state changes
   const handleOpenChange = (open: boolean) => {
@@ -296,6 +398,27 @@ export default function BingoClaim({
       return () => clearTimeout(timer);
     }
   }, [activeClaims, isClaimSheetVisible, claimResult]);
+
+  // Listen for force open events from other components
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const handleForceOpen = (event: any) => {
+        if (isMountedRef.current && event.detail?.data) {
+          log(`Force open claim drawer with data: ${JSON.stringify(event.detail.data)}`, 'info');
+          setClaimCheckData(event.detail.data);
+          setIsClaimSheetVisible(true);
+          setClaimResult(null); // Reset result
+          setActiveClaims(prev => prev + 1);
+        }
+      };
+      
+      window.addEventListener('forceOpenClaimDrawer', handleForceOpen);
+      
+      return () => {
+        window.removeEventListener('forceOpenClaimDrawer', handleForceOpen);
+      };
+    }
+  }, []);
 
   // Only render the drawer if there are claims to show
   return (
