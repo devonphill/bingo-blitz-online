@@ -46,6 +46,7 @@ export default function CallerControls({
   const cardRef = useRef<HTMLDivElement>(null);
   const [currCalledNumber, setCurrCalledNumber] = useState<number | null>(null);
   const { toast } = useToast();
+  const [isCallingNumber, setIsCallingNumber] = useState(false);
   
   // Get the network context to help with calling numbers
   const network = useNetwork();
@@ -312,7 +313,7 @@ export default function CallerControls({
       </AlertDialog>
       
       {/* Force Close Confirmation Dialog */}
-      /*<AlertDialog 
+      {/*<AlertDialog 
         open={isForceCloseConfirmOpen} 
         onOpenChange={setIsForceCloseConfirmOpen}
       >
