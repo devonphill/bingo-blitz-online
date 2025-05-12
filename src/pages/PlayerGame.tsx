@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { usePlayerContext } from '@/contexts/PlayerContext';
 import { useAuth } from '@/hooks/useAuth';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import { X, AlertTriangle } from 'lucide-react';
+import { X, AlertTriangle, UserX } from 'lucide-react';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { setupClaimDebugging } from '@/utils/claimDebugUtils';
 import BingoClaim from '@/components/game/BingoClaim';
@@ -110,9 +110,9 @@ const PlayerGame = () => {
   }
 
   // Verify player info is available in context or localStorage
-  const playerId = player?.id || localStorage.getItem('playerId');
+  const savedPlayerId = player?.id || localStorage.getItem('playerId');
   
-  if (!playerId) {
+  if (!savedPlayerId) {
     logWithTimestamp('No player ID found in context or localStorage', 'warn');
     return (
       <div className="flex items-center justify-center h-screen">
@@ -139,7 +139,9 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
     isLoadingSession, 
     sessionError, 
     currentWinPattern,
-    gameType
+    gameType,
+    playerId: fetchedPlayerId,
+    playerName: fetchedPlayerName
   } = useGameSession(gameCode);
 
   const { 
@@ -165,9 +167,27 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
   const [claimDebuggingCleanup, setClaimDebuggingCleanup] = useState<(() => void) | null>(null);
   const { isConnected } = useNetwork();
   const navigate = useNavigate();
+  const { toast } = useToast();
 
-  // Get player ID from either context, auth session, or localStorage
-  const playerId = player?.id || session?.user?.id || localStorage.getItem('playerId');
+  // Get player ID from multiple possible sources in priority order
+  const playerId = fetchedPlayerId || player?.id || session?.user?.id || localStorage.getItem('playerId');
+  const playerName = fetchedPlayerName || player?.name || (session?.user ? session.user.email : null) || localStorage.getItem('playerName');
+
+  // Update the player context with the fetched player information if needed
+  useEffect(() => {
+    if (fetchedPlayerId && !player?.id && gameCode) {
+      logWithTimestamp(`Updating player context with fetched player info: ${fetchedPlayerId}`, 'info');
+      // If the PlayerContext doesn't have the player ID but we got it from the API, update it
+      if (player?.setPlayer) {
+        player.setPlayer({
+          id: fetchedPlayerId,
+          name: fetchedPlayerName || 'Player',
+          code: gameCode,
+          sessionId: sessionDetails?.id
+        });
+      }
+    }
+  }, [fetchedPlayerId, fetchedPlayerName, gameCode, player, sessionDetails?.id]);
 
   // Player claim management
   const {
@@ -178,9 +198,9 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
     hasActiveClaims
   } = usePlayerClaimManagement(
     gameCode,
-    playerId,
+    playerId || '',
     sessionDetails?.id || null,
-    player?.name || session?.user?.email || null,
+    playerName || 'Player',
     gameType || 'mainstage',
     currentWinPattern || null
   );
@@ -205,6 +225,11 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
   const handleClaimBingo = useCallback(async () => {
     if (!playerTickets || playerTickets.length === 0) {
       logWithTimestamp('Cannot claim: No tickets', 'warn');
+      toast({
+        title: "No Tickets Available",
+        description: "You don't have any tickets to claim a prize with.",
+        variant: "destructive"
+      });
       return false;
     }
 
@@ -215,27 +240,37 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
 
     if (!winningTicket) {
       logWithTimestamp('No winning tickets found', 'warn');
+      toast({
+        title: "No Winning Ticket",
+        description: "None of your tickets match the winning pattern yet.",
+        variant: "destructive"
+      });
       return false;
     }
 
     logWithTimestamp(`Submitting claim for ticket ${winningTicket.serial}`, 'info');
     return await submitClaim(winningTicket);
-  }, [playerTickets, currentWinPattern, submitClaim]);
+  }, [playerTickets, currentWinPattern, submitClaim, toast]);
 
   // Handle connection refresh
   const handleRefreshConnection = useCallback(() => {
     reconnectNumberUpdates();
     refreshTickets();
     logWithTimestamp('Manually refreshing connection and tickets', 'info');
-  }, [reconnectNumberUpdates, refreshTickets]);
+    toast({
+      title: "Refreshing",
+      description: "Reconnecting to game and refreshing tickets...",
+    });
+  }, [reconnectNumberUpdates, refreshTickets, toast]);
 
-  // If there's no player ID, we can't continue
+  // If there's no playerId, we can't continue
   if (!playerId) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
+          <UserX className="h-12 w-12 text-red-500 mx-auto mb-4" />
           <h1 className="text-2xl font-bold mb-4">Player Not Found</h1>
-          <p className="mb-4">Please join the game again to continue.</p>
+          <p className="mb-4">We couldn't find your player information. Please join the game again.</p>
           <Button onClick={() => navigate('/player/join')}>Join Game</Button>
         </div>
       </div>
@@ -245,17 +280,24 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
   // Handle various loading and error states
   if (isLoadingSession || isLoadingTickets) {
     return <div className="flex items-center justify-center h-screen">
-      <LoadingSpinner size="lg" />
+      <div className="text-center">
+        <LoadingSpinner size="lg" />
+        <p className="mt-4 text-gray-600">Loading your game...</p>
+      </div>
     </div>;
   }
 
-  if (sessionError || ticketError) {
+  if (sessionError) {
     return (
       <div className="flex flex-col items-center justify-center h-screen p-4">
         <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
-        <h1 className="text-xl font-bold mb-2">Error Loading Game</h1>
+        <h1 className="text-xl font-bold mb-2">Game Not Found</h1>
         <p className="text-gray-700 mb-4 text-center">
-          {sessionError || ticketError || "Failed to load the game. Please try again."}
+          {sessionError === 'Player not found with this code' 
+            ? "We couldn't find a player with your code. Please join again."
+            : sessionError === 'Player has no associated game session' 
+              ? "Your player code isn't linked to an active game session."
+              : sessionError}
         </p>
         <div className="space-x-2">
           <Button onClick={() => navigate('/player/join')}>
@@ -263,6 +305,26 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
           </Button>
           <Button variant="outline" onClick={() => window.location.reload()}>
             Try Again
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (ticketError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen p-4">
+        <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
+        <h1 className="text-xl font-bold mb-2">Error Loading Tickets</h1>
+        <p className="text-gray-700 mb-4 text-center">
+          {ticketError}
+        </p>
+        <div className="space-x-2">
+          <Button onClick={() => refreshTickets()} disabled={isRefreshingTickets}>
+            Refresh Tickets
+          </Button>
+          <Button variant="outline" onClick={() => navigate('/player/join')}>
+            Join a Different Game
           </Button>
         </div>
       </div>
@@ -334,7 +396,7 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
         claimStatus={claimStatus}
         isClaiming={isSubmittingClaim}
         resetClaimStatus={resetClaimStatus}
-        playerName={player?.name || session?.user?.email || 'Player'}
+        playerName={playerName || 'Player'}
         sessionId={sessionDetails.id}
         playerId={playerId}
         calledNumbers={calledNumbers}

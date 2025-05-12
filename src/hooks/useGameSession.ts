@@ -9,6 +9,8 @@ export function useGameSession(gameCode: string) {
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [currentWinPattern, setCurrentWinPattern] = useState<string | null>(null);
   const [gameType, setGameType] = useState<string | null>(null);
+  const [playerId, setPlayerId] = useState<string | null>(null);
+  const [playerName, setPlayerName] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchSessionDetails() {
@@ -18,13 +20,36 @@ export function useGameSession(gameCode: string) {
       setSessionError(null);
       
       try {
-        logWithTimestamp(`Fetching session details for gameCode ${gameCode}`, 'info');
+        logWithTimestamp(`Fetching player information for gameCode ${gameCode}`, 'info');
         
-        // Get the session ID for the access code
+        // Step 1: Get the player by player_code
+        const { data: playerData, error: playerError } = await supabase
+          .from('players')
+          .select('*')  // Select all columns including session_id and player_code
+          .eq('player_code', gameCode)
+          .single();
+        
+        if (playerError) {
+          throw new Error(`Failed to find player: ${playerError.message}`);
+        }
+        
+        if (!playerData) {
+          throw new Error('Player not found with this code');
+        }
+        
+        logWithTimestamp(`Player found: ${playerData.nickname || playerData.player_code}, session ID: ${playerData.session_id}`, 'info');
+        setPlayerId(playerData.id);
+        setPlayerName(playerData.nickname || playerData.player_code);
+        
+        if (!playerData.session_id) {
+          throw new Error('Player has no associated game session');
+        }
+        
+        // Step 2: Get the session using the player's session_id
         const { data: sessionData, error: sessionError } = await supabase
           .from('game_sessions')
           .select('*')  // Select all columns to avoid missing column errors
-          .eq('access_code', gameCode)
+          .eq('id', playerData.session_id)
           .single();
         
         if (sessionError) {
@@ -80,6 +105,8 @@ export function useGameSession(gameCode: string) {
     isLoadingSession,
     sessionError,
     currentWinPattern,
-    gameType
+    gameType,
+    playerId,
+    playerName
   };
 }
