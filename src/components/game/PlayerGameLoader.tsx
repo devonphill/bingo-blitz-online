@@ -62,11 +62,8 @@ export default function PlayerGameLoader({
     if (currentSession && 
         !isLoading && 
         (currentSession.lifecycle_state === 'setup' || 
-         // Fix: Check for 'lobby' state using string comparison instead of type checking
-         // This is the fix for the type error - checking as string value
-         currentSession.lifecycle_state === 'lobby' || 
-         (typeof currentSession.lifecycle_state === 'string' && 
-          currentSession.lifecycle_state.toLowerCase() === 'lobby'))) {
+         // Fix the type error by handling different possible values of lifecycle_state
+         String(currentSession.lifecycle_state).toLowerCase() === 'lobby')) {
       logLoaderEvent("Showing branded lobby for waiting state", { 
         lifecycle_state: currentSession.lifecycle_state,
         status: currentSession.status

@@ -1,21 +1,8 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
-import ClaimOverlayPortal from './ClaimOverlayPortal';
+import ClaimDrawer from './ClaimDrawer';
 import { toast } from 'sonner';
-
-interface BingoClaimProps {
-  onClaimBingo?: () => Promise<boolean>;
-  claimStatus?: 'none' | 'pending' | 'valid' | 'invalid';
-  isClaiming?: boolean;
-  resetClaimStatus?: () => void;
-  playerName?: string;
-  currentTicket?: any;
-  calledNumbers?: number[];
-  sessionId?: string | null;
-  playerId?: string | null;
-}
 
 // Create a global event system for claim events
 const claimEvents = {
@@ -34,6 +21,18 @@ const claimEvents = {
 // Export the event system so it can be used from anywhere
 export { claimEvents };
 
+interface BingoClaimProps {
+  onClaimBingo?: () => Promise<boolean>;
+  claimStatus?: 'none' | 'pending' | 'valid' | 'invalid';
+  isClaiming?: boolean;
+  resetClaimStatus?: () => void;
+  playerName?: string;
+  currentTicket?: any;
+  calledNumbers?: number[];
+  sessionId?: string | null;
+  playerId?: string | null;
+}
+
 export default function BingoClaim({
   onClaimBingo,
   claimStatus = 'none',
@@ -45,8 +44,8 @@ export default function BingoClaim({
   sessionId,
   playerId
 }: BingoClaimProps) {
-  // State for claim checking overlay
-  const [isClaimOverlayVisible, setIsClaimOverlayVisible] = useState(false);
+  // State for claim checking UI
+  const [isClaimSheetVisible, setIsClaimSheetVisible] = useState(false);
   const [claimCheckData, setClaimCheckData] = useState<any>(null);
   const [claimResult, setClaimResult] = useState<'valid' | 'invalid' | null>(null);
   
@@ -110,7 +109,7 @@ export default function BingoClaim({
           
           // Set claim data and force visibility to true
           setClaimCheckData(payload.payload);
-          setIsClaimOverlayVisible(true);
+          setIsClaimSheetVisible(true);
           setClaimResult(null); // Clear any previous result
           
           // Show toast notification for better visibility
@@ -160,14 +159,14 @@ export default function BingoClaim({
               data: result
             });
             
-            // Show result in the portal
+            // Show result in the drawer
             logWithTimestamp(`BingoClaim: Setting claim result to: ${result.result}`, 'info');
             setClaimResult(result.result);
             setClaimCheckData({
               playerName: result.playerName,
               ticket: result.ticket
             });
-            setIsClaimOverlayVisible(true);
+            setIsClaimSheetVisible(true);
             
             // Show toast notification as well for better visibility
             toast[isValidClaim ? 'success' : 'error'](
@@ -198,13 +197,33 @@ export default function BingoClaim({
     claimCheckingChannelRef.current = checkingChannel;
     claimResultChannelRef.current = resultChannel;
     
-    // Create portal container in body at mount time
-    const portalContainer = document.getElementById('portal-claim-overlay') || document.createElement('div');
-    if (!portalContainer.id) {
-      portalContainer.id = 'portal-claim-overlay';
-      document.body.appendChild(portalContainer);
-      console.log('Created portal container for claims');
-    }
+    // Debug window method
+    (window as any).debugClaimSheet = {
+      show: (data: any) => {
+        logWithTimestamp('Manually showing claim sheet', 'info');
+        setClaimCheckData(data || {
+          playerName: 'Test Player',
+          ticket: {
+            serial: 'TEST1234',
+            numbers: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+            layoutMask: 110616623,
+            calledNumbers: [1, 2, 3]
+          },
+          winPattern: 'oneLine'
+        });
+        setIsClaimSheetVisible(true);
+        return 'Showing claim sheet';
+      },
+      hide: () => {
+        setIsClaimSheetVisible(false);
+        return 'Hiding claim sheet';
+      },
+      getStatus: () => ({
+        visible: isClaimSheetVisible,
+        data: claimCheckData,
+        result: claimResult
+      })
+    };
     
     // Clean up channels on unmount
     return () => {
@@ -221,60 +240,25 @@ export default function BingoClaim({
         supabase.removeChannel(claimResultChannelRef.current);
         claimResultChannelRef.current = null;
       }
+      
+      delete (window as any).debugClaimSheet;
     };
   }, [sessionId, playerId, resetClaimStatus]);
   
-  // Log visibility state changes for debugging
-  useEffect(() => {
-    logWithTimestamp(`BingoClaim: Overlay visibility state: ${isClaimOverlayVisible}, result: ${claimResult || 'none'}`, 'info');
-    console.log(`Claim overlay visibility: ${isClaimOverlayVisible}, result: ${claimResult || 'none'}`);
-    
-    // Add debug method to window for testing
-    (window as any).debugClaimOverlay = {
-      show: (data: any) => {
-        logWithTimestamp('Manually showing claim overlay', 'info');
-        setClaimCheckData(data || {
-          playerName: 'Test Player',
-          ticket: {
-            serial: 'TEST1234',
-            numbers: [1, 2, 3, 4, 5, 6, 7, 8, 9],
-            layoutMask: 110616623,
-            calledNumbers: [1, 2, 3]
-          },
-          winPattern: 'oneLine'
-        });
-        setIsClaimOverlayVisible(true);
-        return 'Showing claim overlay';
-      },
-      hide: () => {
-        setIsClaimOverlayVisible(false);
-        return 'Hiding claim overlay';
-      },
-      getStatus: () => ({
-        visible: isClaimOverlayVisible,
-        data: claimCheckData,
-        result: claimResult
-      })
-    };
-    
-    return () => {
-      delete (window as any).debugClaimOverlay;
-    };
-  }, [isClaimOverlayVisible, claimResult, claimCheckData]);
-  
-  // Handle closing the overlay
-  const handleOverlayClose = () => {
-    logWithTimestamp(`BingoClaim: Closing claim overlay`, 'info');
-    setIsClaimOverlayVisible(false);
-    setClaimResult(null);
+  // Handle drawer state changes
+  const handleOpenChange = (open: boolean) => {
+    setIsClaimSheetVisible(open);
+    if (!open) {
+      setClaimResult(null);
+    }
   };
-  
+
   return (
     <>
-      {/* Portal-based Claim Overlay */}
-      <ClaimOverlayPortal
-        isOpen={isClaimOverlayVisible}
-        onClose={handleOverlayClose}
+      {/* New drawer-based claim UI */}
+      <ClaimDrawer
+        isOpen={isClaimSheetVisible}
+        onOpenChange={handleOpenChange}
         playerName={claimCheckData?.playerName || playerName}
         ticketData={claimCheckData?.ticket || currentTicket}
         winPattern={claimCheckData?.winPattern}
