@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from "react";
 import { getGameRulesForType } from '@/game-rules/gameRulesRegistry';
 import { checkMainstageWinPattern } from '@/utils/mainstageWinLogic';

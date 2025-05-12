@@ -1,4 +1,3 @@
-
 import { ClaimData } from '@/types/claim';
 import { logWithTimestamp } from '@/utils/logUtils';
 
@@ -100,9 +99,13 @@ export function isFinalPattern(
     return false;
   }
 
-  const currentIndex = activePatterns.indexOf(currentPattern);
+  // Normalize pattern by removing MAINSTAGE_ prefix if present
+  const normalizedCurrentPattern = currentPattern.replace(/^MAINSTAGE_/, '');
+  const normalizedPatterns = activePatterns.map(p => p.replace(/^MAINSTAGE_/, ''));
+  
+  const currentIndex = normalizedPatterns.indexOf(normalizedCurrentPattern);
   // If it's the last pattern in the array, it's the final pattern
-  return currentIndex === activePatterns.length - 1;
+  return currentIndex === normalizedPatterns.length - 1;
 }
 
 /**

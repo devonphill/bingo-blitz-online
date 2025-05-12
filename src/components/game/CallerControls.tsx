@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -109,7 +108,6 @@ export default function CallerControls({
         .from('sessions_progress')
         .update({
           called_numbers: updatedCalledNumbers,
-          last_called_number: number,
           updated_at: new Date().toISOString()
         })
         .eq('session_id', sessionId);

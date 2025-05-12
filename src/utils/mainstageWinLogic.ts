@@ -1,4 +1,5 @@
 
+
 interface WinCheckResult {
   isWinner: boolean;
   tg: number;
