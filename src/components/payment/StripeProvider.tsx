@@ -8,7 +8,7 @@ import type { StripeElementsOptions } from '@stripe/stripe-js';
 // This key is safe to expose in the browser
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || 
-  'pk_test_placeholder' // Replace with your actual test publishable key if not using env variables
+  'pk_test_51RMY5bG6JOh394jXEoBXqSqbgOihNjStif61qL4UETVPrfv3UtHqde1SUXMliT1vmbwZ1CzluBFOiIGLBTGlko2r00zY2wWAKY' // Using your provided key
 );
 
 interface StripeProviderProps {
