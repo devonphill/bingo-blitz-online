@@ -7,3 +7,9 @@ import_map = "./import_map.json"
 
 [functions.setup-tables]
 verify_jwt = false
+
+[functions.create-checkout]
+verify_jwt = false
+
+[functions.verify-payment]
+verify_jwt = false

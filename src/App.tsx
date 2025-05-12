@@ -32,6 +32,8 @@ const UserReports = lazy(() => import("./pages/UserReports"));
 const SuperuserManagement = lazy(() => import("./pages/SuperuserManagement"));
 const SuperuserReports = lazy(() => import("./pages/SuperuserReports"));
 const RegisterSuperuser = lazy(() => import("./pages/RegisterSuperuser"));
+const AddTokens = lazy(() => import("./pages/AddTokens"));
+const PaymentSuccess = lazy(() => import("./pages/PaymentSuccess"));
 
 // Setup simplified pages
 const ForgotPassword = () => <div className="p-8"><h1 className="text-2xl">Forgot Password</h1><p>This page is not yet implemented.</p></div>;
@@ -73,6 +75,8 @@ function App() {
           {/* Protected routes (require auth) */}
           <Route path="/dashboard" element={<PrivateRoute><MainLayout><Dashboard /></MainLayout></PrivateRoute>} />
           <Route path="/reports" element={<PrivateRoute><MainLayout><UserReports /></MainLayout></PrivateRoute>} />
+          <Route path="/add-tokens" element={<PrivateRoute><MainLayout><AddTokens /></MainLayout></PrivateRoute>} />
+          <Route path="/payment-success" element={<PrivateRoute><MainLayout><PaymentSuccess /></MainLayout></PrivateRoute>} />
           
           {/* Admin only routes */}
           <Route path="/caller" element={<AdminRoute><MainLayout><CallerHome /></MainLayout></AdminRoute>} />

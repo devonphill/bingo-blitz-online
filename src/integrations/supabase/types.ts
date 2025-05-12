@@ -305,6 +305,45 @@ export type Database = {
           },
         ]
       }
+      token_purchases: {
+        Row: {
+          amount: number
+          cost: number
+          created_at: string
+          currency: string
+          id: string
+          status: string
+          stripe_payment_intent_id: string | null
+          stripe_session_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          cost: number
+          created_at?: string
+          currency?: string
+          id?: string
+          status?: string
+          stripe_payment_intent_id?: string | null
+          stripe_session_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          cost?: number
+          created_at?: string
+          currency?: string
+          id?: string
+          status?: string
+          stripe_payment_intent_id?: string | null
+          stripe_session_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       universal_game_logs: {
         Row: {
           called_items: string | null
@@ -429,6 +468,15 @@ export type Database = {
           p_numbers: number[]
         }
         Returns: string
+      }
+      complete_token_purchase: {
+        Args: {
+          p_user_id: string
+          p_purchase_id: string
+          p_payment_intent_id: string
+          p_amount: number
+        }
+        Returns: undefined
       }
       get_available_bingo_tickets: {
         Args: { p_count: number }
