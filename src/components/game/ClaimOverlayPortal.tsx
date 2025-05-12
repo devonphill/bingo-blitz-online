@@ -72,11 +72,7 @@ export default function ClaimOverlayPortal({
       portalElement.style.display = 'block';
       
       // Log that we're showing the overlay
-      logWithTimestamp('ClaimOverlayPortal: Showing overlay', 'info', {
-        playerName,
-        validationResult,
-        ticketSerial: ticketData?.serial
-      });
+      logWithTimestamp(`ClaimOverlayPortal: Showing overlay for player ${playerName}, result: ${validationResult || 'checking'}, ticket: ${ticketData?.serial || 'unknown'}`, 'info');
     }
   }, [isOpen, portalElement, playerName, validationResult, ticketData]);
   

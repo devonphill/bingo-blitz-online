@@ -136,7 +136,7 @@ class ClaimBroadcastService {
         serial: claim.ticket.serial || '',
         numbers: claim.ticket.numbers || [],
         calledNumbers: claim.calledNumbers || [],
-        layoutMask: claim.ticket.layoutMask || claim.ticket.layout_mask || 0
+        layoutMask: claim.ticket.layoutMask || 0 // Fixed: using only layoutMask not layout_mask
       } : null;
       
       // Create a payload with claim details

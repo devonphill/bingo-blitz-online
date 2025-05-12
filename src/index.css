@@ -142,6 +142,26 @@
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+/* Make these animations really explicit */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  0% { transform: scale(0.8); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Also add classes for direct CSS usage in case Tailwind doesn't apply */
+.fadeIn {
+  animation: fadeIn 0.3s ease-in-out forwards;
+}
+
+.scaleIn {
+  animation: scaleIn 0.3s ease-in-out forwards;
+}
+
 .bingo-number-ball {
   display: flex;
   align-items: center;
@@ -196,3 +216,17 @@
   opacity: 0.5;
 }
 
+/* Ensure z-index for overlays and portals */
+#portal-claim-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 100000;
+  pointer-events: none;
+}
+
+#portal-claim-overlay > * {
+  pointer-events: auto;
+}

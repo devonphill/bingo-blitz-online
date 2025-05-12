@@ -1,4 +1,3 @@
-
 import React from "react";
 import { Spinner } from "@/components/ui/spinner";
 import { useSessionProgress } from '@/hooks/useSessionProgress';
@@ -40,17 +39,10 @@ export default function GameLobby({
   // Log session info for debugging
   React.useEffect(() => {
     if (currentSession) {
-      logWithTimestamp('GameLobby: Session info', 'info', {
-        id: currentSession.id,
-        name: currentSession.name,
-        status: currentSession.status,
-        lifecycle_state: currentSession.lifecycle_state
-      });
+      logWithTimestamp(`GameLobby: Session info - id: ${currentSession.id}, name: ${currentSession.name}, status: ${currentSession.status}, lifecycle_state: ${currentSession.lifecycle_state}`, 'info');
     }
     if (sessionProgress) {
-      logWithTimestamp('GameLobby: Session progress updated', 'info', {
-        game_status: sessionProgress.game_status
-      });
+      logWithTimestamp(`GameLobby: Session progress updated - game_status: ${sessionProgress.game_status}`, 'info');
     }
   }, [currentSession, sessionProgress]);
 
