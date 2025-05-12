@@ -19,6 +19,20 @@ export interface PlayerTicket {
   winning_pattern?: string | null;
 }
 
+// Define a type for the raw database row
+type AssignedTicketRow = {
+  id: string;
+  session_id: string;
+  player_id: string;
+  serial: string;
+  perm: number;
+  position: number;
+  layout_mask: number;
+  numbers: number[];
+  called_numbers: number | null;
+  time_stamp: string;
+};
+
 export function usePlayerTickets(sessionId: string | undefined) {
   const [playerTickets, setPlayerTickets] = useState<PlayerTicket[]>([]);
   const [currentWinningTickets, setCurrentWinningTickets] = useState<PlayerTicket[]>([]);
@@ -40,10 +54,10 @@ export function usePlayerTickets(sessionId: string | undefined) {
       
       logWithTimestamp(`Fetching tickets for session ${sessionId} with player code ${playerCode}`, 'info');
       
-      // Get tickets for this player in this session
+      // Get tickets for this player in this session - explicitly type the query result
       const { data, error } = await supabase
         .from('assigned_tickets')
-        .select('*')
+        .select<string, AssignedTicketRow>('*')
         .eq('session_id', sessionId)
         .eq('player_code', playerCode);
       
@@ -59,7 +73,7 @@ export function usePlayerTickets(sessionId: string | undefined) {
         if (playerId) {
           const { data: playerTickets, error: playerTicketsError } = await supabase
             .from('assigned_tickets')
-            .select('*')
+            .select<string, AssignedTicketRow>('*')
             .eq('session_id', sessionId)
             .eq('player_id', playerId);
             
