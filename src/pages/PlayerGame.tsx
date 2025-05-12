@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, ErrorInfo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import PlayerGameHeader from '@/components/player/PlayerGameHeader';
@@ -172,7 +173,7 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
 
     // Find the first winning ticket
     const winningTicket = playerTickets.find(ticket => 
-      ticket.isWinning || ticket.winningPattern === currentWinPattern
+      ticket.is_winning || ticket.winning_pattern === currentWinPattern
     );
 
     if (!winningTicket) {

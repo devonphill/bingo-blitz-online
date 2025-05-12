@@ -53,19 +53,21 @@ export function useNumberUpdates(sessionId: string | undefined) {
     const channel = supabase
       .channel(`number-updates-${sessionId}`)
       .on('broadcast', { event: 'number-called' }, payload => {
-        const { number, timestamp } = payload.payload;
-        
-        logWithTimestamp(`Real-time number update: ${number}`, 'info');
-        setCurrentNumber(number);
-        setNumberCallTimestamp(timestamp);
-        
-        // Add to called numbers list if not already there
-        setCalledNumbers(prev => {
-          if (!prev.includes(number)) {
-            return [...prev, number];
-          }
-          return prev;
-        });
+        if (payload && payload.payload) {
+          const { number, timestamp } = payload.payload;
+          
+          logWithTimestamp(`Real-time number update: ${number}`, 'info');
+          setCurrentNumber(number);
+          setNumberCallTimestamp(timestamp);
+          
+          // Add to called numbers list if not already there
+          setCalledNumbers(prev => {
+            if (!prev.includes(number)) {
+              return [...prev, number];
+            }
+            return prev;
+          });
+        }
         
         setIsConnected(true);
       })

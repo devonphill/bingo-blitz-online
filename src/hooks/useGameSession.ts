@@ -23,7 +23,7 @@ export function useGameSession(gameCode: string) {
         // Get the session ID for the access code
         const { data: sessionData, error: sessionError } = await supabase
           .from('game_sessions')
-          .select('id, name, created_by, status, game_type, current_pattern, session_config')
+          .select('id, name, created_by, status, game_type, session_config')
           .eq('access_code', gameCode)
           .single();
         
@@ -44,6 +44,13 @@ export function useGameSession(gameCode: string) {
           
         const callerName = creatorData?.username || 'Unknown Caller';
         
+        // Get session progress for current pattern
+        const { data: progressData } = await supabase
+          .from('sessions_progress')
+          .select('current_win_pattern, current_game_type')
+          .eq('session_id', sessionData.id)
+          .single();
+        
         setSessionDetails({
           id: sessionData.id,
           name: sessionData.name,
@@ -52,7 +59,7 @@ export function useGameSession(gameCode: string) {
           gameType: sessionData.game_type
         });
         
-        setCurrentWinPattern(sessionData.current_pattern);
+        setCurrentWinPattern(progressData?.current_win_pattern || null);
         setGameType(sessionData.game_type);
         
         logWithTimestamp(`Session found: ${sessionData.name}, type: ${sessionData.game_type}`, 'info');
