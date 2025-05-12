@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -195,7 +194,7 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
   } = usePlayerGame(playerCode);
   
   // Initialize session progress hook - only if we have a session
-  const { progress: sessionProgress, fetchProgress } = useSessionProgress(
+  const { progress: sessionProgress, fetchProgress, updateProgress } = useSessionProgress(
     currentSession?.id
   );
   

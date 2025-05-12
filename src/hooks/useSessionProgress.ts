@@ -59,6 +59,61 @@ export function useSessionProgress(sessionId: string | undefined) {
     }
   }, [subscription]);
 
+  // Function to fetch session progress data
+  const fetchProgress = useCallback(async () => {
+    if (!sessionId) {
+      return Promise.reject(new Error("No session ID provided"));
+    }
+
+    try {
+      setLoading(true);
+      logWithTimestamp(`[${hookId.current}] Manually fetching session progress for: ${sessionId}`, 'info');
+      
+      const { data, error: fetchError } = await supabase
+        .from('sessions_progress')
+        .select('*')
+        .eq('session_id', sessionId)
+        .single();
+
+      if (fetchError) {
+        if (fetchError.code === 'PGRST116') {
+          logWithTimestamp(`[${hookId.current}] No session progress found in manual fetch`, 'info');
+          return Promise.resolve(null);
+        } else {
+          throw new Error(`Error fetching session progress: ${fetchError.message}`);
+        }
+      }
+
+      if (data) {
+        logWithTimestamp(`[${hookId.current}] Manually loaded session progress successfully`, 'info');
+        
+        setProgress({
+          id: data.id,
+          session_id: data.session_id,
+          current_game_number: data.current_game_number,
+          max_game_number: data.max_game_number,
+          current_game_type: data.current_game_type,
+          current_win_pattern: data.current_win_pattern,
+          called_numbers: data.called_numbers || [],
+          game_status: data.game_status,
+          current_prize: data.current_prize,
+          current_prize_description: data.current_prize_description,
+          created_at: data.created_at,
+          updated_at: data.updated_at
+        });
+      }
+      
+      return Promise.resolve(data);
+    } catch (err) {
+      const errorMsg = `Error in manual fetch: ${(err as Error).message}`;
+      logWithTimestamp(`[${hookId.current}] ${errorMsg}`, 'error');
+      setError(errorMsg);
+      return Promise.reject(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [sessionId, hookId]);
+
   // Setup subscription and initial data load
   useEffect(() => {
     // If no sessionId is provided, just set loading to false and return
@@ -323,6 +378,7 @@ export function useSessionProgress(sessionId: string | undefined) {
     progress, 
     loading, 
     error,
-    updateProgress
+    updateProgress,
+    fetchProgress // Add the new method to the returned object
   };
 }

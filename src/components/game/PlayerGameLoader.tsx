@@ -62,7 +62,8 @@ export default function PlayerGameLoader({
   useEffect(() => {
     if (currentSession && 
         !isLoading && 
-        (currentSession.lifecycle_state === 'setup' || currentSession.lifecycle_state === 'lobby')) {
+        (currentSession.lifecycle_state === 'setup' || currentSession.lifecycle_state === 'lobby' || 
+         (typeof currentSession.lifecycle_state === 'string' && currentSession.lifecycle_state.toLowerCase() === 'lobby'))) {
       logLoaderEvent("Showing branded lobby for waiting state", { 
         lifecycle_state: currentSession.lifecycle_state,
         status: currentSession.status
