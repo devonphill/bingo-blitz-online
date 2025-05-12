@@ -20,7 +20,16 @@ interface SessionContextType {
   isLoading: boolean;
   error: string | null;
   players?: Player[];
-  joinSession: (playerCode: string) => Promise<{ success: boolean; playerCode?: string; playerId?: string; error?: string }>;
+  joinSession: (playerCode: string) => Promise<{
+    success: boolean;
+    playerCode?: string;
+    playerId?: string;
+    playerName?: string;
+    sessionId?: string;
+    sessionName?: string;
+    accessCode?: string;
+    error?: string;
+  }>;
   addPlayer: (sessionId: string, player: TempPlayer) => Promise<string | null>;
   bulkAddPlayers: (sessionId: string, newPlayers: AdminTempPlayer[]) => Promise<{ success: boolean; message?: string; count?: number; error?: string }>;
   fetchPlayers?: (sessionId: string) => Promise<void>;
@@ -124,7 +133,8 @@ export function SessionProvider({ children }: SessionProviderProps) {
         logWithTimestamp(`Provider: Error joining session: ${(error as Error).message}`, 'error');
         return { 
           success: false, 
-          error: (error as Error).message 
+          error: (error as Error).message,
+          playerCode
         };
       }
     },

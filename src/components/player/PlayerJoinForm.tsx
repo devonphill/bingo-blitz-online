@@ -45,17 +45,15 @@ export default function PlayerJoinForm() {
         }
         
         // Update player context
-        if (result.playerId) {
-          setPlayer({
-            id: result.playerId,
-            name: result.playerName || playerCode,
-            code: playerCode,
-            sessionId: result.sessionId
-          });
-          
-          if (result.sessionId) {
-            localStorage.setItem('playerSessionId', result.sessionId);
-          }
+        setPlayer({
+          id: result.playerId || '',
+          name: result.playerName || playerCode,
+          code: playerCode,
+          sessionId: result.sessionId
+        });
+        
+        if (result.sessionId) {
+          localStorage.setItem('playerSessionId', result.sessionId);
         }
         
         toast({

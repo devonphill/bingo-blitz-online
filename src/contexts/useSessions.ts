@@ -5,6 +5,7 @@ import { convertFromLegacyConfig } from '@/utils/callerSessionHelper';
 import { jsonToGameConfigs, gameConfigsToJson } from '@/utils/jsonUtils';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 export function useSessions() {
   const [sessions, setSessions] = useState<GameSession[]>([]);
@@ -241,14 +242,18 @@ export const usePlayers = (sessions?: any[], fetchSessions?: () => Promise<any>,
         logWithTimestamp(`Error fetching player: ${playerError.message}`, 'error');
         return { 
           success: false, 
-          error: 'Invalid player code or player not found'
+          error: 'Invalid player code or player not found',
+          playerCode,
+          playerId: null
         };
       }
       
       if (!playerData || !playerData.id) {
         return { 
           success: false, 
-          error: 'Player not found'
+          error: 'Player not found',
+          playerCode,
+          playerId: null
         };
       }
       
@@ -258,7 +263,9 @@ export const usePlayers = (sessions?: any[], fetchSessions?: () => Promise<any>,
       if (!playerData.session_id) {
         return { 
           success: false, 
-          error: 'No game session associated with this player'
+          error: 'No game session associated with this player',
+          playerCode,
+          playerId: playerData.id
         };
       }
       
@@ -272,14 +279,19 @@ export const usePlayers = (sessions?: any[], fetchSessions?: () => Promise<any>,
         logWithTimestamp(`Error fetching session: ${sessionError?.message}`, 'error');
         return { 
           success: false, 
-          error: 'Game session not found or has ended'
+          error: 'Game session not found or has ended',
+          playerCode,
+          playerId: playerData.id
         };
       }
       
       if (session.status !== 'active' && session.status !== 'pending') {
         return { 
           success: false, 
-          error: 'This game session is no longer active'
+          error: 'This game session is no longer active',
+          playerCode,
+          playerId: playerData.id,
+          sessionId: session.id
         };
       }
       
@@ -299,7 +311,8 @@ export const usePlayers = (sessions?: any[], fetchSessions?: () => Promise<any>,
       logWithTimestamp(`Exception in joinSession: ${(error as Error).message}`, 'error');
       return {
         success: false,
-        error: 'An error occurred while joining the session'
+        error: 'An error occurred while joining the session',
+        playerCode
       };
     }
   };
