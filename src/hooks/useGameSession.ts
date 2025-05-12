@@ -23,7 +23,7 @@ export function useGameSession(gameCode: string) {
         // Get the session ID for the access code
         const { data: sessionData, error: sessionError } = await supabase
           .from('game_sessions')
-          .select('id, name, caller_name, status, game_type, current_pattern, session_config')
+          .select('id, name, created_by, status, game_type, current_pattern, session_config')
           .eq('access_code', gameCode)
           .single();
         
@@ -35,10 +35,19 @@ export function useGameSession(gameCode: string) {
           throw new Error('Game session not found');
         }
         
+        // Get creator name from profiles
+        const { data: creatorData } = await supabase
+          .from('profiles')
+          .select('username')
+          .eq('id', sessionData.created_by)
+          .single();
+          
+        const callerName = creatorData?.username || 'Unknown Caller';
+        
         setSessionDetails({
           id: sessionData.id,
           name: sessionData.name,
-          callerName: sessionData.caller_name,
+          callerName: callerName,
           status: sessionData.status,
           gameType: sessionData.game_type
         });

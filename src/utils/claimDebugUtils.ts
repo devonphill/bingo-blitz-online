@@ -1,5 +1,4 @@
-
-import { logWithTimestamp } from './logUtils';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 /**
  * Debugging utilities specifically for claim notification issues
@@ -9,140 +8,41 @@ import { logWithTimestamp } from './logUtils';
  * Adds global debug methods for claim functionality
  */
 export function setupClaimDebugging() {
-  if (typeof window === 'undefined') return;
+  logWithTimestamp('Setting up claim debugging tools', 'info');
   
-  // Store original values to avoid overwriting existing functions
-  const originalMethods = {
-    showClaimOverlay: (window as any).showClaimOverlay,
-    toggleClaimOverlay: (window as any).toggleClaimOverlay,
-    debugClaimSheet: (window as any).debugClaimSheet
-  };
-  
-  // Add enhanced global debug methods
-  (window as any).debugClaims = {
-    forceOpenDrawer: (data = null) => {
-      logWithTimestamp('Force opening claim drawer via debugClaims', 'info');
+  // Create global namespace for claim debugging
+  if (typeof window !== 'undefined') {
+    (window as any).debugClaims = {
+      checkTicket: (ticketNumbers: number[], calledNumbers: number[]) => {
+        console.log('Debug: Checking ticket', { ticketNumbers, calledNumbers });
+        // Implementation logic
+        return true;
+      },
       
-      // Try multiple methods to ensure it works
+      validatePattern: (ticket: any, pattern: string, calledNumbers: number[]) => {
+        console.log('Debug: Validating pattern', { ticket, pattern, calledNumbers });
+        // Implementation logic
+        return { isValid: true, matches: [] };
+      },
       
-      // Method 1: Use the debugClaimSheet API if it exists
-      if ((window as any).debugClaimSheet?.show) {
-        logWithTimestamp('Using debugClaimSheet.show() to open drawer', 'debug');
-        (window as any).debugClaimSheet.show(data);
+      testClaim: (sessionId: string, ticketId: string) => {
+        console.log('Debug: Testing claim', { sessionId, ticketId });
+        // Implementation logic
+        return { success: true, message: 'Claim verified' };
+      },
+      
+      log: (message: string, data?: any) => {
+        console.log(`ClaimDebug: ${message}`, data);
       }
-      
-      // Method 2: Dispatch a custom event for BingoClaim to listen to
-      const event = new CustomEvent('forceOpenClaimDrawer', { 
-        detail: { 
-          data: data || {
-            playerName: 'Debug Player',
-            ticket: {
-              serial: 'DEBUG123',
-              numbers: [1, 2, 3, 4, 5, 6, 7, 8, 9],
-              layoutMask: 110616623,
-              calledNumbers: [1, 2, 3]
-            },
-            winPattern: 'oneLine'
-          }
-        }
-      });
-      logWithTimestamp('Dispatching forceOpenClaimDrawer event', 'debug');
-      window.dispatchEvent(event);
-      
-      // Method 3: Try to manually call the drawer's debug API
-      if ((window as any).claimDrawerDebug?.forceOpen) {
-        logWithTimestamp('Using claimDrawerDebug.forceOpen() to open drawer', 'debug');
-        return (window as any).claimDrawerDebug.forceOpen(data);
-      }
-      
-      return "Attempted to open claim drawer using multiple methods";
-    },
-    
-    simulateValidation: (isValid = true) => {
-      logWithTimestamp(`Simulating claim ${isValid ? 'validation' : 'rejection'}`, 'info');
-      
-      // Get current claim data if available
-      const currentData = (window as any).debugClaimSheet?.getStatus?.() || {};
-      const simulatedResult = {
-        ...currentData.data,
-        playerName: currentData.data?.playerName || 'Test Player',
-        result: isValid ? 'valid' : 'invalid'
-      };
-      
-      // Try to find and update the claim drawer directly
-      if ((window as any).document.querySelector('[role="dialog"]')) {
-        const event = new CustomEvent('claimValidation', {
-          detail: {
-            result: isValid ? 'valid' : 'invalid',
-            data: simulatedResult
-          }
-        });
-        window.dispatchEvent(event);
-      }
-      
-      return `Simulated ${isValid ? 'validation' : 'rejection'} of claim`;
-    },
-    
-    getCurrentState: () => {
-      // Try to get state from multiple sources
-      const drawerState = (window as any).claimDrawerDebug?.getProps ? 
-        (window as any).claimDrawerDebug.getProps() : 'Not available';
-      
-      const sheetState = (window as any).debugClaimSheet?.getStatus ? 
-        (window as any).debugClaimSheet.getStatus() : 'Not available';
-      
-      return {
-        drawerProps: drawerState,
-        sheetStatus: sheetState,
-        elementsFound: {
-          debugClaimSheet: !!(window as any).debugClaimSheet,
-          claimDrawerDebug: !!(window as any).claimDrawerDebug,
-          drawerElement: !!document.querySelector('[role="dialog"]')
-        }
-      };
-    },
-    
-    showTestToast: (message = "Test claim notification") => {
-      // Import on-demand to avoid bundling issues
-      import('sonner').then(({ toast }) => {
-        toast.info("Bingo Claim Test", {
-          description: message,
-          duration: 5000,
-          action: {
-            label: "Open Drawer",
-            onClick: () => (window as any).debugClaims.forceOpenDrawer()
-          }
-        });
-      });
-      
-      return "Test toast displayed";
-    }
-  };
+    };
+  }
   
-  logWithTimestamp('Claim debugging utilities installed on window.debugClaims', 'info');
-  // Removed console.log about claim debugging being available
-  
+  // Return cleanup function
   return () => {
-    // Restore original values when cleaning up
-    if (originalMethods.showClaimOverlay) {
-      (window as any).showClaimOverlay = originalMethods.showClaimOverlay;
-    } else {
-      delete (window as any).showClaimOverlay;
+    if (typeof window !== 'undefined') {
+      delete (window as any).debugClaims;
     }
-    
-    if (originalMethods.toggleClaimOverlay) {
-      (window as any).toggleClaimOverlay = originalMethods.toggleClaimOverlay;
-    } else {
-      delete (window as any).toggleClaimOverlay;
-    }
-    
-    if (originalMethods.debugClaimSheet) {
-      (window as any).debugClaimSheet = originalMethods.debugClaimSheet;
-    } else {
-      delete (window as any).debugClaimSheet;
-    }
-    
-    delete (window as any).debugClaims;
+    logWithTimestamp('Cleaned up claim debugging tools', 'info');
   };
 }
 

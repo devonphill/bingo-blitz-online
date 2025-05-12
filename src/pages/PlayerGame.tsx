@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, ErrorInfo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import PlayerGameHeader from '@/components/player/PlayerGameHeader';
@@ -9,7 +8,7 @@ import { usePlayerTickets } from '@/hooks/usePlayerTickets';
 import { useNumberUpdates } from '@/hooks/useNumberUpdates';
 import { Button } from '@/components/ui/button';
 import { usePlayerContext } from '@/contexts/PlayerContext';
-import { useAuth } from '@/hooks/useAuth'; // Fixed import
+import { useAuth } from '@/hooks/useAuth';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { X, AlertTriangle } from 'lucide-react';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -67,7 +66,7 @@ class PlayerGameErrorBoundary extends React.Component<
 // Main player game component
 const PlayerGame = () => {
   const { gameCode } = useParams();
-  const navigate = useNavigate(); // Fixed variable name
+  const navigate = useNavigate();
   const { toast } = useToast();
   const { isConnected } = useNetwork();
 
@@ -127,9 +126,10 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
 
   const [isTicketView, setIsTicketView] = useState(true);
   const { player } = usePlayerContext();
-  const { session } = useAuthContext();
+  const { session, user } = useAuth();
   const [claimDebuggingCleanup, setClaimDebuggingCleanup] = useState<(() => void) | null>(null);
   const { isConnected } = useNetwork();
+  const navigate = useNavigate();
 
   // Player claim management
   const {

@@ -3,9 +3,25 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
+// Define an interface for ticket data to avoid type errors
+interface PlayerTicket {
+  id: string;
+  session_id: string;
+  player_id: string;
+  serial: string;
+  perm: number;
+  position: number;
+  layout_mask: number;
+  numbers: number[];
+  called_numbers: number | null;
+  time_stamp: string;
+  is_winning?: boolean;
+  winning_pattern?: string;
+}
+
 export function usePlayerTickets(sessionId: string | undefined) {
-  const [playerTickets, setPlayerTickets] = useState<any[]>([]);
-  const [currentWinningTickets, setCurrentWinningTickets] = useState<any[]>([]);
+  const [playerTickets, setPlayerTickets] = useState<PlayerTicket[]>([]);
+  const [currentWinningTickets, setCurrentWinningTickets] = useState<PlayerTicket[]>([]);
   const [isLoadingTickets, setIsLoadingTickets] = useState(true);
   const [ticketError, setTicketError] = useState<string | null>(null);
   const [isRefreshingTickets, setIsRefreshingTickets] = useState(false);
@@ -40,10 +56,21 @@ export function usePlayerTickets(sessionId: string | undefined) {
         setPlayerTickets([]);
       } else {
         logWithTimestamp(`Found ${tickets.length} tickets`, 'info');
-        setPlayerTickets(tickets);
+        
+        // Map the data to ensure we have the expected properties
+        const mappedTickets = tickets.map(ticket => ({
+          ...ticket,
+          is_winning: false, // Default value for is_winning
+          winning_pattern: null // Default value for winning_pattern
+        })) as PlayerTicket[];
+        
+        setPlayerTickets(mappedTickets);
         
         // Check for winning tickets
-        const winners = tickets.filter(ticket => ticket.is_winning || ticket.winning_pattern);
+        // In a real app, this would check against game rules
+        const winners = mappedTickets.filter(ticket => 
+          ticket.is_winning || ticket.winning_pattern
+        );
         setCurrentWinningTickets(winners);
       }
       

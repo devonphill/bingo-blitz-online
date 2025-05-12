@@ -21,20 +21,21 @@ export function useNumberUpdates(sessionId: string | undefined) {
     // First get all existing called numbers
     async function fetchExistingNumbers() {
       try {
+        // Query called_numbers from sessions_progress table
         const { data, error } = await supabase
-          .from('called_numbers')
-          .select('number, created_at')
+          .from('sessions_progress')
+          .select('called_numbers, updated_at')
           .eq('session_id', sessionId)
-          .order('created_at', { ascending: true });
+          .single();
         
         if (error) {
           throw new Error(`Failed to fetch called numbers: ${error.message}`);
         }
         
-        if (data && data.length > 0) {
-          const numbers = data.map(item => item.number);
-          const lastNumber = data[data.length - 1].number;
-          const lastTimestamp = new Date(data[data.length - 1].created_at).getTime();
+        if (data && data.called_numbers && data.called_numbers.length > 0) {
+          const numbers = data.called_numbers;
+          const lastNumber = numbers[numbers.length - 1];
+          const lastTimestamp = new Date(data.updated_at).getTime();
           
           setCalledNumbers(numbers);
           setCurrentNumber(lastNumber);
