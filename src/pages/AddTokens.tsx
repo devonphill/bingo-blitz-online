@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { Banknote, Coins, AlertCircle, ArrowLeft, Check, Package } from 'lucide-react';
+import { Banknote, Coins, AlertCircle, ArrowLeft, Check, Package, Info } from 'lucide-react';
 
 type TokenPackage = {
   id: string;
@@ -134,6 +134,28 @@ export default function AddTokens() {
         </CardHeader>
         
         <CardContent>
+          <div className="mb-6">
+            <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <Info className="h-5 w-5 text-blue-500" />
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-blue-800">About Credits</h3>
+                  <div className="mt-2 text-sm text-blue-700">
+                    <p>Credits are used for manually adding players to your bingo sessions. This is useful when:</p>
+                    <ul className="list-disc ml-5 mt-1 space-y-1">
+                      <li>You manage your own ticket sales process outside the platform</li>
+                      <li>You want to provide free tickets to certain players</li>
+                      <li>You need to manage players who cannot purchase their own tickets</li>
+                    </ul>
+                    <p className="mt-2">Note: Players can also purchase their own tickets directly through the player join page.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="mb-6 p-4 bg-gray-50 rounded-lg">
             <h3 className="font-medium text-gray-700">Current Balance</h3>
             {isLoadingTokens ? (
@@ -223,6 +245,7 @@ export default function AddTokens() {
               <div className="text-sm text-amber-800">
                 <p className="font-medium">Important Information</p>
                 <p className="mt-1">Credits will be added to your account instantly after successful payment. You can use these credits to add players to your bingo sessions.</p>
+                <p className="mt-1">All prices include any applicable processing fees. No additional charges will be added during checkout.</p>
               </div>
             </div>
           </div>

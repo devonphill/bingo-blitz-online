@@ -23,9 +23,38 @@ export default function PaymentSuccess() {
   const [tokenCount, setTokenCount] = useState<number | null>(null);
   
   useEffect(() => {
+    // Check local storage to prevent duplicate verification
+    const verificationKey = `payment_verified_${purchaseId}`;
+    
     const verifyPayment = async () => {
       if (!user || !sessionId || !purchaseId) {
         setLoading(false);
+        return;
+      }
+      
+      // Check if this payment has already been verified
+      if (localStorage.getItem(verificationKey)) {
+        console.log('Payment already verified, skipping verification');
+        
+        try {
+          // Just fetch the current token count without verifying the payment again
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('token_count')
+            .eq('id', user.id)
+            .single();
+          
+          if (!error && data) {
+            setTokenCount(data.token_count);
+            setSuccess(true);
+            setMessage('Payment was previously verified');
+          }
+        } catch (error) {
+          console.error('Error fetching token count:', error);
+        } finally {
+          setLoading(false);
+        }
+        
         return;
       }
       
@@ -47,6 +76,9 @@ export default function PaymentSuccess() {
         setMessage(data.message);
         
         if (data.success) {
+          // Mark this payment as verified in local storage
+          localStorage.setItem(verificationKey, 'true');
+          
           setTokenCount(data.token_count);
           toast.success('Credits added to your account!');
         } else {

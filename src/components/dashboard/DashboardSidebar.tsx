@@ -1,7 +1,7 @@
 
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
-import { User, Settings, FileText, Users, FileBarChart, HelpCircle, Info } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { User, Settings, FileText, Users, FileBarChart, HelpCircle, Info, Coins } from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
@@ -15,23 +15,36 @@ import { Button } from '@/components/ui/button';
 
 export default function DashboardSidebar() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, role } = useAuth();
+
+  // Helper to check if the current route is active
+  const isActive = (path: string) => location.pathname === path;
 
   const adminMenuItems = [
     {
       title: 'Dashboard',
       icon: FileBarChart,
       onClick: () => navigate('/dashboard'),
+      path: '/dashboard'
+    },
+    {
+      title: 'Add Credits',
+      icon: Coins,
+      onClick: () => navigate('/add-tokens'),
+      path: '/add-tokens'
     },
     {
       title: 'Reports',
       icon: FileText,
       onClick: () => navigate('/reports'),
+      path: '/reports'
     },
     {
       title: 'Profile',
       icon: User,
       onClick: () => navigate('/profile'),
+      path: '/profile'
     },
   ];
 
@@ -40,11 +53,13 @@ export default function DashboardSidebar() {
       title: 'Manage Superusers',
       icon: Users,
       onClick: () => navigate('/superuser/manage'),
+      path: '/superuser/manage'
     },
     {
       title: 'System Reports',
       icon: FileBarChart,
       onClick: () => navigate('/superuser/reports'),
+      path: '/superuser/reports'
     }
   ];
 
@@ -53,16 +68,19 @@ export default function DashboardSidebar() {
       title: 'Host FAQ',
       icon: HelpCircle,
       onClick: () => navigate('/faq-hosts'),
+      path: '/faq-hosts'
     },
     {
       title: 'Player FAQ',
       icon: HelpCircle,
       onClick: () => navigate('/faq-players'),
+      path: '/faq-players'
     },
     {
       title: 'About Us',
       icon: Info,
       onClick: () => navigate('/about'),
+      path: '/about'
     },
   ];
 
@@ -89,8 +107,8 @@ export default function DashboardSidebar() {
               {adminMenuItems.map((item) => (
                 <div key={item.title}>
                   <Button 
-                    variant="ghost" 
-                    className="flex items-center gap-3 w-full justify-start"
+                    variant={isActive(item.path) ? "default" : "ghost"} 
+                    className={`flex items-center gap-3 w-full justify-start ${isActive(item.path) ? 'bg-blue-100 text-blue-800' : ''}`}
                     onClick={item.onClick}>
                     <item.icon className="h-4 w-4" />
                     <span>{item.title}</span>
@@ -109,8 +127,8 @@ export default function DashboardSidebar() {
                 {superuserMenuItems.map((item) => (
                   <div key={item.title}>
                     <Button 
-                      variant="ghost" 
-                      className="flex items-center gap-3 w-full justify-start"
+                      variant={isActive(item.path) ? "default" : "ghost"}
+                      className={`flex items-center gap-3 w-full justify-start ${isActive(item.path) ? 'bg-blue-100 text-blue-800' : ''}`}
                       onClick={item.onClick}>
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
@@ -129,8 +147,8 @@ export default function DashboardSidebar() {
               {helpMenuItems.map((item) => (
                 <div key={item.title}>
                   <Button 
-                    variant="ghost" 
-                    className="flex items-center gap-3 w-full justify-start"
+                    variant={isActive(item.path) ? "default" : "ghost"}
+                    className={`flex items-center gap-3 w-full justify-start ${isActive(item.path) ? 'bg-blue-100 text-blue-800' : ''}`}
                     onClick={item.onClick}>
                     <item.icon className="h-4 w-4" />
                     <span>{item.title}</span>
