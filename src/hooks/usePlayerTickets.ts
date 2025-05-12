@@ -57,7 +57,7 @@ export function usePlayerTickets(sessionId: string | undefined) {
       // Get tickets for this player in this session - explicitly type the query result
       const { data, error } = await supabase
         .from('assigned_tickets')
-        .select<string, AssignedTicketRow>('*')
+        .select('*')
         .eq('session_id', sessionId)
         .eq('player_code', playerCode);
       
@@ -73,7 +73,7 @@ export function usePlayerTickets(sessionId: string | undefined) {
         if (playerId) {
           const { data: playerTickets, error: playerTicketsError } = await supabase
             .from('assigned_tickets')
-            .select<string, AssignedTicketRow>('*')
+            .select('*')
             .eq('session_id', sessionId)
             .eq('player_id', playerId);
             
