@@ -70,11 +70,11 @@ export default function ClaimDrawer({
   useEffect(() => {
     if (validationResult && isOpen && autoClose) {
       logWithTimestamp(`ClaimDrawer: Auto-close timer started for ${validationResult} result`, 'info');
-      // Close after 3 seconds to give users time to see the result
+      // Increased to 5 seconds to give users more time to see the result
       const timer = setTimeout(() => {
         logWithTimestamp(`ClaimDrawer: Auto-closing now`, 'info');
         onOpenChange(false);
-      }, 3000);
+      }, 5000); // Changed from 3000 to 5000
       
       return () => clearTimeout(timer);
     }
@@ -108,6 +108,20 @@ export default function ClaimDrawer({
     };
   }, [ticketData]);
 
+  // Styles for validation overlay
+  const validationOverlayClasses = cn(
+    "absolute inset-0 flex items-center justify-center rounded-md z-20",
+    "transition-opacity duration-500",
+    validationResult ? "opacity-100" : "opacity-0",
+    validationResult === 'valid' ? "bg-green-500/30" : "bg-red-500/30"
+  );
+
+  const validationIconClasses = cn(
+    "h-24 w-24 transition-transform duration-500 transform-gpu",
+    validationResult ? "scale-100" : "scale-0",
+    validationResult === 'valid' ? "text-green-600" : "text-red-600"
+  );
+
   return (
     <Drawer 
       open={isOpen} 
@@ -124,39 +138,22 @@ export default function ClaimDrawer({
           
           <div className="p-4">
             <div className="flex flex-col items-center gap-4">
-              {/* Validation result indicator */}
-              {validationResult && (
-                <div className={cn(
-                  "absolute inset-0 z-[100] flex items-center justify-center bg-black/25 backdrop-blur-sm",
-                  "rounded-md overflow-hidden animate-fade-in"
-                )}>
-                  <div className={cn(
-                    "w-20 h-20 rounded-full flex items-center justify-center animate-scale-in",
-                    validationResult === 'valid' ? 'bg-green-100' : 'bg-red-100'
-                  )}>
-                    {validationResult === 'valid' ? (
-                      <Check className="h-12 w-12 text-green-600" />
-                    ) : (
-                      <X className="h-12 w-12 text-red-600" />
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Checking indicator */}
-              {!validationResult && (
-                <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center">
-                  <Loader className="h-8 w-8 text-amber-600 animate-spin" />
-                </div>
-              )}
-              
               <h3 className="text-lg font-semibold text-center">
                 {playerName} has claimed Bingo!
               </h3>
               
               {/* The player's ticket display */}
               {processedTicketData && (
-                <div className="w-full max-w-sm bg-gray-50 p-3 rounded-md border border-gray-200">
+                <div className="w-full max-w-sm bg-gray-50 p-3 rounded-md border border-gray-200 relative">
+                  {/* New validation overlay */}
+                  <div className={validationOverlayClasses}>
+                    {validationResult === 'valid' ? (
+                      <Check className={validationIconClasses} strokeWidth={3} />
+                    ) : validationResult === 'invalid' ? (
+                      <X className={validationIconClasses} strokeWidth={3} />
+                    ) : null}
+                  </div>
+
                   <SafeBingoTicketDisplay 
                     numbers={processedTicketData.numbers}
                     layoutMask={processedTicketData.layoutMask}
@@ -167,6 +164,12 @@ export default function ClaimDrawer({
                     autoMarking={true}
                     showProgress={true}
                   />
+                </div>
+              )}
+              
+              {!validationResult && (
+                <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center">
+                  <Loader className="h-8 w-8 text-amber-600 animate-spin" />
                 </div>
               )}
               
