@@ -120,7 +120,7 @@ export function setupClaimDebugging() {
   };
   
   logWithTimestamp('Claim debugging utilities installed on window.debugClaims', 'info');
-  console.log('Claim debugging available at window.debugClaims');
+  // Removed console.log about claim debugging being available
   
   return () => {
     // Restore original values when cleaning up
