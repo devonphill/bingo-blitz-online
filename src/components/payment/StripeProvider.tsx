@@ -2,6 +2,7 @@
 import React from 'react';
 import { Elements } from '@stripe/react-stripe-js';
 import { loadStripe } from '@stripe/stripe-js';
+import type { StripeElementsOptions } from '@stripe/stripe-js';
 
 // Initialize Stripe with your publishable key
 // This key is safe to expose in the browser
@@ -19,7 +20,7 @@ export const StripeProvider: React.FC<StripeProviderProps> = ({
   children,
   clientSecret
 }) => {
-  const options = clientSecret
+  const options: StripeElementsOptions = clientSecret
     ? { 
         clientSecret,
         appearance: {
