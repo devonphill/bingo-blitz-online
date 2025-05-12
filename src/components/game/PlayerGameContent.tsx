@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -213,7 +214,7 @@ export default function PlayerGameContent({
     }
     
     try {
-      // Initialize connection once
+      // Initialize connection with proper method chaining
       connectionManager.init(currentSession.id)
         .onNumberCalled((number, allNumbers) => {
           if (number === null) {

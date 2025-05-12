@@ -23,12 +23,14 @@ class ConnectionManager {
   private maxReconnectAttempts: number = 10;
   private lastPingTime: number | null = null;
   private _connectionState: ConnectionState = 'disconnected';
+  private numberCalledListeners: Set<(number: number | null, allNumbers: number[]) => void> = new Set();
+  private sessionProgressListeners: Set<(progress: any) => void> = new Set();
   
   /**
    * Initialize the connection manager with a session ID
    */
-  public init(sessionId: string): void {
-    if (this.sessionId === sessionId && this._isConnected) return;
+  public init(sessionId: string) {
+    if (this.sessionId === sessionId && this._isConnected) return this;
     
     logWithTimestamp(`ConnectionManager initialized with session ID: ${sessionId}`, 'info');
     
@@ -38,15 +40,17 @@ class ConnectionManager {
     
     // Setup the heartbeat
     this.startHeartbeat();
+    
+    return this;
   }
 
   /**
    * Connect to a session
    */
-  public connect(sessionId: string): void {
+  public connect(sessionId: string) {
     if (this.sessionId === sessionId && this._isConnected) {
       logWithTimestamp(`Already connected to session: ${sessionId}`, 'info');
-      return;
+      return this;
     }
     
     this.init(sessionId);
@@ -58,6 +62,24 @@ class ConnectionManager {
     });
     
     logWithTimestamp(`Connection to session ${sessionId} initiated`, 'info');
+    
+    return this;
+  }
+  
+  /**
+   * Register a number called listener
+   */
+  public onNumberCalled(listener: (number: number | null, allNumbers: number[]) => void) {
+    this.numberCalledListeners.add(listener);
+    return this;
+  }
+  
+  /**
+   * Register a session progress update listener
+   */
+  public onSessionProgressUpdate(listener: (progress: any) => void) {
+    this.sessionProgressListeners.add(listener);
+    return this;
   }
   
   /**

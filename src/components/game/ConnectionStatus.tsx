@@ -1,9 +1,11 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw } from 'lucide-react';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { useNetwork, ConnectionState } from '@/contexts/NetworkStatusContext';
+import { useNetwork } from '@/contexts/NetworkStatusContext';
 import { supabase } from '@/integrations/supabase/client';
+import type { ConnectionState } from '@/contexts/NetworkStatusContext';
 
 interface ConnectionStatusProps {
   showFull?: boolean;

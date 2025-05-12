@@ -1,10 +1,13 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { connectionManager, ConnectionState } from '@/utils/connectionManager';
+import { connectionManager } from '@/utils/connectionManager';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { claimService } from '@/services/ClaimManagementService';
 import { validateChannelType } from '@/utils/typeUtils';
+
+// Export the ConnectionState type for use in other components
+export type ConnectionState = 'connected' | 'connecting' | 'disconnected' | 'error' | 'unknown';
 
 // Interface to include all required methods
 interface NetworkContextType {

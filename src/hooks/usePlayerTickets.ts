@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -18,6 +17,9 @@ export interface PlayerTicket {
   to_go?: number;
 }
 
+// Define the allowed win pattern types to match mainstageWinLogic expectations
+type AllowedWinPattern = 'oneLine' | 'twoLines' | 'fullHouse' | 'MAINSTAGE_oneLine' | 'MAINSTAGE_twoLines' | 'MAINSTAGE_fullHouse';
+
 export function usePlayerTickets(sessionId?: string | null) {
   const [playerTickets, setPlayerTickets] = useState<PlayerTicket[]>([]);
   const [isLoadingTickets, setIsLoadingTickets] = useState(false);
@@ -30,7 +32,8 @@ export function usePlayerTickets(sessionId?: string | null) {
     if (!tickets || tickets.length === 0) return [];
     
     // ALWAYS normalize the win pattern for consistent checking
-    const normalizedWinPattern = normalizeWinPattern(currentWinPattern || 'oneLine', 'MAINSTAGE');
+    // Convert the string to the expected format for the checkMainstageWinPattern function
+    const normalizedPattern = normalizeWinPattern(currentWinPattern || 'oneLine', 'MAINSTAGE') as AllowedWinPattern;
     
     return tickets.map(ticket => {
       // Convert ticket data into the format needed for win checking
@@ -64,7 +67,7 @@ export function usePlayerTickets(sessionId?: string | null) {
       const result = checkMainstageWinPattern(
         grid, 
         calledNumbers,
-        normalizedWinPattern
+        normalizedPattern
       );
       
       return { 
