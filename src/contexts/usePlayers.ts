@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Player, TempPlayer } from '@/types';
 import { generatePlayerCode } from '@/utils/accessCodeGenerator';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 // Export the AdminTempPlayer interface
 export interface AdminTempPlayer {
@@ -132,31 +133,54 @@ export function usePlayers(
     success: boolean;
     playerCode?: string;
     playerId?: string;
-    sessionId?: string; // Add sessionId to the return type
+    playerName?: string;
+    sessionId?: string; 
+    sessionName?: string;
+    accessCode?: string;
     error?: string;
   }> => {
     try {
+      logWithTimestamp(`usePlayers: Joining session with player code: ${playerCode}`, 'info');
       const { data, error } = await supabase
         .from('players')
-        .select('id, player_code, session_id')
+        .select('id, player_code, session_id, nickname, email')
         .eq('player_code', playerCode)
         .single();
 
       if (error) {
+        logWithTimestamp(`usePlayers: Error finding player: ${error.message}`, 'error');
         return {
           success: false,
           error: 'Player not found with this code'
         };
       }
 
+      // Get session name if available
+      let sessionName = '';
+      if (data.session_id) {
+        const { data: sessionData, error: sessionError } = await supabase
+          .from('game_sessions')
+          .select('name')
+          .eq('id', data.session_id)
+          .single();
+          
+        if (!sessionError && sessionData) {
+          sessionName = sessionData.name;
+        }
+      }
+
+      logWithTimestamp(`usePlayers: Successfully joined session with player ID: ${data.id}, name: ${data.nickname || data.email || 'Unknown'}`, 'info');
+      
       return {
         success: true,
         playerCode: data.player_code,
         playerId: data.id,
-        sessionId: data.session_id  // Return the session ID to the caller
+        playerName: data.nickname || data.email || 'Player',
+        sessionId: data.session_id,
+        sessionName: sessionName
       };
     } catch (err: any) {
-      console.error('Error joining session:', err);
+      logWithTimestamp(`usePlayers: Error joining session: ${(err as Error).message}`, 'error');
       return {
         success: false,
         error: err.message

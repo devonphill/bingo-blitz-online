@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, ErrorInfo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import PlayerGameHeader from '@/components/player/PlayerGameHeader';
@@ -65,10 +66,13 @@ class PlayerGameErrorBoundary extends React.Component<
 
 // Main player game component
 const PlayerGame = () => {
-  const { gameCode } = useParams();
+  const { playerCode } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { isConnected } = useNetwork();
+  const { player } = usePlayerContext();
+
+  logWithTimestamp(`PlayerGame init with URL param playerCode: ${playerCode}`, 'info');
 
   const handleError = useCallback((error: Error) => {
     logWithTimestamp(`Player Game Critical Error: ${error.message}`, 'error');
@@ -79,8 +83,22 @@ const PlayerGame = () => {
     });
   }, [toast]);
 
+  // Get the game code from either URL param or localStorage
+  const gameCode = playerCode || localStorage.getItem('playerCode');
+
+  // Ensure we have a game code, either from URL parameters or localStorage
+  useEffect(() => {
+    if (!gameCode) {
+      logWithTimestamp('No game code found in URL or localStorage, redirecting to join page', 'warn');
+      navigate('/player/join');
+    } else {
+      logWithTimestamp(`Using game code for session: ${gameCode}`, 'info');
+    }
+  }, [gameCode, navigate]);
+
   // Verify we have a game code
   if (!gameCode) {
+    logWithTimestamp('Missing Game Code - rendering join suggestion', 'warn');
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
@@ -91,11 +109,11 @@ const PlayerGame = () => {
     );
   }
 
-  // Ensure player info is available in localStorage
-  const storedPlayerCode = localStorage.getItem('playerCode');
-  const storedPlayerId = localStorage.getItem('playerId');
+  // Verify player info is available in context or localStorage
+  const playerId = player?.id || localStorage.getItem('playerId');
   
-  if (!storedPlayerCode || !storedPlayerId) {
+  if (!playerId) {
+    logWithTimestamp('No player ID found in context or localStorage', 'warn');
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">

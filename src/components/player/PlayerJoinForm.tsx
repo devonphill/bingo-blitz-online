@@ -8,6 +8,7 @@ import { useSessionContext } from '@/contexts/SessionProvider';
 import { useToast } from '@/hooks/use-toast';
 import { Loader } from 'lucide-react';
 import { usePlayerContext } from '@/contexts/PlayerContext';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 export default function PlayerJoinForm() {
   const [playerCode, setPlayerCode] = useState('');
@@ -32,28 +33,33 @@ export default function PlayerJoinForm() {
     setIsLoading(true);
     
     try {
-      console.log("Joining game with player code:", playerCode);
+      logWithTimestamp(`PlayerJoinForm: Joining game with player code: ${playerCode}`, 'info');
       const result = await joinSession(playerCode);
       
       if (result.success) {
-        console.log("Successfully joined game:", result);
+        logWithTimestamp(`PlayerJoinForm: Successfully joined game with result: ${JSON.stringify(result)}`, 'info');
         
-        // Save player code and player ID to localStorage
+        // Save player info to localStorage 
         localStorage.setItem('playerCode', playerCode);
+        localStorage.setItem('playerName', result.playerName || 'Player');
+        
         if (result.playerId) {
           localStorage.setItem('playerId', result.playerId);
+          logWithTimestamp(`PlayerJoinForm: Saved playerId to localStorage: ${result.playerId}`, 'info');
         }
         
         // Update player context
         setPlayer({
           id: result.playerId || '',
-          name: result.playerName || playerCode,
+          name: result.playerName || 'Player',
           code: playerCode,
           sessionId: result.sessionId
         });
+        logWithTimestamp(`PlayerJoinForm: Updated player context with id: ${result.playerId}`, 'info');
         
         if (result.sessionId) {
           localStorage.setItem('playerSessionId', result.sessionId);
+          logWithTimestamp(`PlayerJoinForm: Saved sessionId to localStorage: ${result.sessionId}`, 'info');
         }
         
         toast({
@@ -62,10 +68,10 @@ export default function PlayerJoinForm() {
         });
         
         // Navigate to the player game page with the player code in the URL
-        console.log("Navigating to game page with player code:", playerCode);
+        logWithTimestamp(`PlayerJoinForm: Navigating to game page with player code: ${playerCode}`, 'info');
         navigate(`/player/game/${playerCode}`, { replace: true });
       } else {
-        console.error("Error joining game:", result.error);
+        logWithTimestamp(`PlayerJoinForm: Error joining game: ${result.error}`, 'error');
         toast({
           title: "Could Not Join Game",
           description: result.error || "Invalid player code. Please try again.",
@@ -73,7 +79,7 @@ export default function PlayerJoinForm() {
         });
       }
     } catch (error) {
-      console.error("Exception during join:", error);
+      logWithTimestamp(`PlayerJoinForm: Exception during join: ${(error as Error).message}`, 'error');
       toast({
         title: "Error",
         description: "Something went wrong. Please try again.",

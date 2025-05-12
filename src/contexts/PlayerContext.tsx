@@ -1,6 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 interface PlayerContextType {
   player: Player | null;
@@ -25,18 +26,22 @@ export function PlayerContextProvider({ children }: { children: React.ReactNode 
 
   // Load player from localStorage on mount
   useEffect(() => {
+    logWithTimestamp('PlayerContext: Initializing from localStorage', 'info');
     const storedPlayerCode = localStorage.getItem('playerCode');
-    const storedPlayerName = localStorage.getItem('playerName');
     const storedPlayerId = localStorage.getItem('playerId');
+    const storedPlayerName = localStorage.getItem('playerName') || 'Player';
     const storedSessionId = localStorage.getItem('playerSessionId');
     
-    if (storedPlayerCode && storedPlayerName) {
+    if (storedPlayerCode && storedPlayerId) {
+      logWithTimestamp(`PlayerContext: Found stored player with code: ${storedPlayerCode}, id: ${storedPlayerId}`, 'info');
       setPlayer({
-        id: storedPlayerId || `temp-${Date.now()}`,
+        id: storedPlayerId,
         name: storedPlayerName,
         code: storedPlayerCode,
         sessionId: storedSessionId || undefined
       });
+    } else {
+      logWithTimestamp('PlayerContext: No valid player data in localStorage', 'info');
     }
     
     setIsLoading(false);
@@ -45,6 +50,7 @@ export function PlayerContextProvider({ children }: { children: React.ReactNode 
   // Update localStorage when player changes
   useEffect(() => {
     if (player) {
+      logWithTimestamp(`PlayerContext: Updating localStorage with player data, code: ${player.code}`, 'info');
       localStorage.setItem('playerCode', player.code);
       localStorage.setItem('playerName', player.name);
       localStorage.setItem('playerId', player.id);
@@ -56,6 +62,7 @@ export function PlayerContextProvider({ children }: { children: React.ReactNode 
 
   // Logout function
   const logout = () => {
+    logWithTimestamp('PlayerContext: Logging out player', 'info');
     localStorage.removeItem('playerCode');
     localStorage.removeItem('playerName');
     localStorage.removeItem('playerId');

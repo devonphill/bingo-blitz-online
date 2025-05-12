@@ -1,10 +1,24 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Link, useNavigate } from 'react-router-dom';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 const Index = () => {
   const navigate = useNavigate();
+
+  // Check for existing player code and redirect if needed
+  useEffect(() => {
+    const storedPlayerCode = localStorage.getItem('playerCode');
+    const storedPlayerId = localStorage.getItem('playerId');
+    
+    if (storedPlayerCode && storedPlayerId) {
+      logWithTimestamp(`Found existing player code: ${storedPlayerCode}, redirecting to game`, 'info');
+      navigate(`/player/game/${storedPlayerCode}`);
+    } else {
+      logWithTimestamp('No stored player code found, staying on index page', 'info');
+    }
+  }, [navigate]);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-100 to-purple-100 p-4 text-center">

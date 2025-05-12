@@ -3,29 +3,50 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PlayerJoinForm from '@/components/player/PlayerJoinForm';
 import { Button } from '@/components/ui/button';
+import { logWithTimestamp } from '@/utils/logUtils';
+import { usePlayerContext } from '@/contexts/PlayerContext';
 
 export default function PlayerJoin() {
   const navigate = useNavigate();
   const [hasStoredCode, setHasStoredCode] = useState(false);
   const [storedCode, setStoredCode] = useState<string | null>(null);
+  const { player, setPlayer } = usePlayerContext();
   
   // Check if player already has a code stored
   useEffect(() => {
     const storedPlayerCode = localStorage.getItem('playerCode');
-    if (storedPlayerCode && storedPlayerCode.trim() !== '') {
-      console.log("Found existing player code:", storedPlayerCode);
+    const storedPlayerId = localStorage.getItem('playerId');
+    const storedPlayerName = localStorage.getItem('playerName') || 'Player';
+    
+    if (storedPlayerCode && storedPlayerCode.trim() !== '' && storedPlayerId) {
+      logWithTimestamp(`PlayerJoin: Found existing player code: ${storedPlayerCode}`, 'info');
       setHasStoredCode(true);
       setStoredCode(storedPlayerCode);
+      
+      // Update the player context with the stored data
+      if (!player) {
+        setPlayer({
+          id: storedPlayerId,
+          name: storedPlayerName,
+          code: storedPlayerCode,
+          sessionId: localStorage.getItem('playerSessionId')
+        });
+        logWithTimestamp('PlayerJoin: Updated player context with stored data', 'info');
+      }
     } else {
       // Clean up any invalid stored codes
       localStorage.removeItem('playerCode');
+      localStorage.removeItem('playerId');
+      localStorage.removeItem('playerName');
+      localStorage.removeItem('playerSessionId');
+      logWithTimestamp('PlayerJoin: No valid stored player code found', 'info');
     }
-  }, []);
+  }, [player, setPlayer]);
 
   // Function to handle continuing with stored code
   const handleContinueWithStoredCode = () => {
     if (storedCode && storedCode.trim() !== '') {
-      console.log("Navigating to game with stored code:", storedCode);
+      logWithTimestamp(`PlayerJoin: Navigating to game with stored code: ${storedCode}`, 'info');
       navigate(`/player/game/${storedCode}`);
     }
   };
@@ -33,9 +54,12 @@ export default function PlayerJoin() {
   // Function to start fresh with a new code
   const handleUseNewCode = () => {
     localStorage.removeItem('playerCode');
+    localStorage.removeItem('playerId');
+    localStorage.removeItem('playerName');
+    localStorage.removeItem('playerSessionId');
     setHasStoredCode(false);
     setStoredCode(null);
-    console.log("Cleared stored player code");
+    logWithTimestamp('PlayerJoin: Cleared stored player code', 'info');
   };
 
   if (hasStoredCode && storedCode) {
