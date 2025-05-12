@@ -2,6 +2,11 @@
 import { logWithTimestamp } from "./logUtils";
 import { supabase } from "@/integrations/supabase/client";
 
+// Define consistent channel names used across the application
+const GAME_UPDATES_CHANNEL = 'game-updates';
+const NUMBER_CALLED_EVENT = 'number-called';
+const GAME_RESET_EVENT = 'game-reset';
+
 // This singleton manages WebSocket connections for real-time number updates
 class PlayerNumbersWebSocketService {
   private static instance: PlayerNumbersWebSocketService;
@@ -9,9 +14,11 @@ class PlayerNumbersWebSocketService {
   private callbacks: Map<string, Set<(number: number, allNumbers: number[]) => void>> = new Map();
   private lastBroadcastIds: Map<string, string> = new Map();
   private lastCalledNumbers: Map<string, number[]> = new Map();
+  private instanceId: string;
 
   private constructor() {
-    logWithTimestamp('[PlayerNumbersWebSocket] Service initialized', 'debug');
+    this.instanceId = `NumWS-${Math.random().toString(36).substring(2, 7)}`;
+    logWithTimestamp(`[${this.instanceId}] Service initialized`, 'info');
   }
 
   static getInstance() {
@@ -26,7 +33,12 @@ class PlayerNumbersWebSocketService {
     sessionId: string, 
     callback: (number: number, allNumbers: number[]) => void
   ): () => void {
-    logWithTimestamp(`[PlayerNumbersWebSocket] Subscribing to session ${sessionId}`, 'info');
+    logWithTimestamp(`[${this.instanceId}] Subscribing to session ${sessionId}`, 'info');
+    
+    if (!sessionId) {
+      logWithTimestamp(`[${this.instanceId}] Cannot subscribe: empty session ID`, 'error');
+      return () => {};
+    }
     
     // Initialize callback set for this session
     if (!this.callbacks.has(sessionId)) {
@@ -37,25 +49,33 @@ class PlayerNumbersWebSocketService {
     this.callbacks.get(sessionId)?.add(callback);
 
     // Initialize connection if it doesn't exist
-    if (!this.channels.has(sessionId)) {
+    if (!this.channels.has(`${GAME_UPDATES_CHANNEL}-${sessionId}`)) {
       this.initializeConnection(sessionId);
     } else {
       // If we have already received numbers, send them to the new subscriber immediately
       const existingNumbers = this.lastCalledNumbers.get(sessionId);
       if (existingNumbers && existingNumbers.length > 0) {
         const lastNumber = existingNumbers[existingNumbers.length - 1];
-        callback(lastNumber, existingNumbers);
+        try {
+          callback(lastNumber, [...existingNumbers]);
+          logWithTimestamp(`[${this.instanceId}] Sent existing numbers to new subscriber: ${existingNumbers.length} numbers`, 'info');
+        } catch (err) {
+          logWithTimestamp(`[${this.instanceId}] Error sending existing numbers to new subscriber: ${err}`, 'error');
+        }
       }
     }
 
     // Return unsubscribe function
     return () => {
-      logWithTimestamp(`[PlayerNumbersWebSocket] Unsubscribing from session ${sessionId}`, 'debug');
-      this.callbacks.get(sessionId)?.delete(callback);
-
-      // Remove channel if no more callbacks for this session
-      if (this.callbacks.get(sessionId)?.size === 0) {
-        this.removeSession(sessionId);
+      logWithTimestamp(`[${this.instanceId}] Unsubscribing from session ${sessionId}`, 'info');
+      const callbacks = this.callbacks.get(sessionId);
+      if (callbacks) {
+        callbacks.delete(callback);
+        
+        // Remove channel if no more callbacks for this session
+        if (callbacks.size === 0) {
+          this.removeSession(sessionId);
+        }
       }
     };
   }
@@ -71,190 +91,140 @@ class PlayerNumbersWebSocketService {
     return numbers && numbers.length > 0 ? numbers[numbers.length - 1] : null;
   }
 
+  // Force a reconnection for a specific session
+  public reconnect(sessionId: string): void {
+    logWithTimestamp(`[${this.instanceId}] Forcing reconnection for session ${sessionId}`, 'info');
+    
+    if (!sessionId) {
+      logWithTimestamp(`[${this.instanceId}] Cannot reconnect with empty session ID`, 'error');
+      return;
+    }
+    
+    // Remove the existing channel
+    this.removeSession(sessionId, false); // Don't remove callbacks
+    
+    // Wait a moment before reconnecting
+    setTimeout(() => {
+      if (this.callbacks.has(sessionId) && this.callbacks.get(sessionId)!.size > 0) {
+        this.initializeConnection(sessionId);
+        
+        // Also fetch latest state from database as a backup
+        this.fetchStateFromDatabase(sessionId).then(numbers => {
+          if (numbers.length > 0) {
+            logWithTimestamp(`[${this.instanceId}] Reconnected and fetched ${numbers.length} numbers from DB`, 'info');
+          }
+        });
+      }
+    }, 300);
+  }
+
   // Initialize WebSocket channels for a session
   private initializeConnection(sessionId: string) {
     try {
-      logWithTimestamp(`[PlayerNumbersWebSocket] Initializing connection for session ${sessionId}`, 'info');
+      logWithTimestamp(`[${this.instanceId}] Initializing connection for session ${sessionId}`, 'info');
 
       // Initialize with empty arrays if not already set
       if (!this.lastCalledNumbers.has(sessionId)) {
         this.lastCalledNumbers.set(sessionId, []);
       }
 
-      // Set up multiple broadcast channels for redundancy
-      const channelNames = [
-        `number-broadcast-${sessionId}`,
-        `number-broadcast-backup-${sessionId}`,
-        `game-reset-broadcast-${sessionId}`,
-        `game-reset-backup-${sessionId}`
-      ];
-
-      // Create channels and store them
-      channelNames.forEach(channelName => {
-        const eventType = channelName.includes('reset') ? 
-          (channelName.includes('backup') ? 'game-reset-backup' : 'game-reset') :
-          (channelName.includes('backup') ? 'number-called-backup' : 'number-called');
-
-        const channel = supabase.channel(channelName)
-          .on('broadcast', { event: eventType }, this.handleBroadcast(sessionId, eventType))
-          .subscribe(status => {
-            logWithTimestamp(`[PlayerNumbersWebSocket] Channel ${channelName} status: ${status}`, 'debug');
-          });
-        
-        this.channels.set(channelName, channel);
-      });
+      // Set up the primary channel for number updates
+      const mainChannel = supabase
+        .channel(GAME_UPDATES_CHANNEL, {
+          config: {
+            broadcast: { self: true, ack: true }
+          }
+        })
+        .on('broadcast', { event: NUMBER_CALLED_EVENT }, payload => {
+          try {
+            if (payload.payload && payload.payload.sessionId === sessionId) {
+              const { number, timestamp, broadcastId } = payload.payload;
+              
+              logWithTimestamp(`[${this.instanceId}] Received number update: ${number}, sessionId: ${sessionId}`, 'info');
+              
+              // Update our stored numbers
+              const currentNumbers = this.lastCalledNumbers.get(sessionId) || [];
+              if (!currentNumbers.includes(number)) {
+                const updatedNumbers = [...currentNumbers, number];
+                this.lastCalledNumbers.set(sessionId, updatedNumbers);
+                
+                // Store broadcast ID to prevent duplicates
+                if (broadcastId) {
+                  this.lastBroadcastIds.set(sessionId, broadcastId);
+                }
+                
+                // Store in local storage for backup
+                this.saveNumbersToLocalStorage(sessionId, updatedNumbers, number);
+                
+                // Notify all callbacks
+                this.notifyCallbacks(sessionId, number, updatedNumbers);
+              }
+            }
+          } catch (error) {
+            logWithTimestamp(`[${this.instanceId}] Error handling number update: ${error}`, 'error');
+          }
+        })
+        .on('broadcast', { event: GAME_RESET_EVENT }, payload => {
+          try {
+            if (payload.payload && payload.payload.sessionId === sessionId) {
+              logWithTimestamp(`[${this.instanceId}] Received game reset event for session ${sessionId}`, 'info');
+              
+              // Reset stored numbers
+              this.lastCalledNumbers.set(sessionId, []);
+              
+              // Clear localStorage
+              localStorage.removeItem(`bingo-numbers-session-${sessionId}`);
+              
+              // Notify callbacks with null to signal reset
+              this.callbacks.get(sessionId)?.forEach(callback => {
+                try {
+                  callback(0, []);
+                } catch (error) {
+                  logWithTimestamp(`[${this.instanceId}] Error in reset callback: ${error}`, 'error');
+                }
+              });
+            }
+          } catch (error) {
+            logWithTimestamp(`[${this.instanceId}] Error handling reset event: ${error}`, 'error');
+          }
+        })
+        .subscribe(status => {
+          logWithTimestamp(`[${this.instanceId}] Main channel status: ${status}`, 'info');
+        });
+      
+      this.channels.set(`${GAME_UPDATES_CHANNEL}-${sessionId}`, mainChannel);
 
       // Also fetch latest state from database as a backup
       this.fetchStateFromDatabase(sessionId);
 
-      // Add a listener for the generic 'number-broadcast' channel too
-      const genericChannel = supabase.channel('number-broadcast')
-        .on('broadcast', { event: 'number-called' }, payload => {
-          try {
-            if (payload.payload && payload.payload.sessionId === sessionId) {
-              const { lastCalledNumber, calledNumbers, timestamp, broadcastId } = payload.payload;
-              
-              logWithTimestamp(`[PlayerNumbersWebSocket] Received number update from generic channel: ${lastCalledNumber}, sessionId: ${sessionId}`, 'info');
-              
-              this.handleNumberCalledEvent(sessionId, payload.payload);
-            }
-          } catch (error) {
-            logWithTimestamp(`[PlayerNumbersWebSocket] Error handling generic broadcast: ${error}`, 'error');
-          }
-        })
-        .subscribe(status => {
-          logWithTimestamp(`[PlayerNumbersWebSocket] Generic channel status: ${status}`, 'debug');
-        });
-      
-      this.channels.set('number-broadcast', genericChannel);
-
     } catch (error) {
-      logWithTimestamp(`[PlayerNumbersWebSocket] Error initializing connection: ${error}`, 'error');
+      logWithTimestamp(`[${this.instanceId}] Error initializing connection: ${error}`, 'error');
     }
   }
 
   // Remove a session and clean up
-  private removeSession(sessionId: string) {
-    logWithTimestamp(`[PlayerNumbersWebSocket] Removing session ${sessionId}`, 'debug');
+  private removeSession(sessionId: string, removeCallbacks = true) {
+    logWithTimestamp(`[${this.instanceId}] Removing session ${sessionId}`, 'info');
     
-    // Clean up channels
-    const channelsToRemove = Array.from(this.channels.keys())
-      .filter(name => name.includes(sessionId));
-
-    channelsToRemove.forEach(name => {
+    // Clean up channel
+    const channelKey = `${GAME_UPDATES_CHANNEL}-${sessionId}`;
+    
+    if (this.channels.has(channelKey)) {
       try {
-        const channel = this.channels.get(name);
+        const channel = this.channels.get(channelKey);
         if (channel) {
           supabase.removeChannel(channel);
         }
-        this.channels.delete(name);
+        this.channels.delete(channelKey);
       } catch (e) {
-        logWithTimestamp(`[PlayerNumbersWebSocket] Error removing channel: ${e}`, 'error');
+        logWithTimestamp(`[${this.instanceId}] Error removing channel: ${e}`, 'error');
       }
-    });
-
-    // Clean up data
-    this.callbacks.delete(sessionId);
-    this.lastCalledNumbers.delete(sessionId);
-    this.lastBroadcastIds.delete(sessionId);
-  }
-
-  // Handle broadcast messages from WebSocket
-  private handleBroadcast(sessionId: string, eventType: string) {
-    return (payload: any) => {
-      try {
-        // Validate payload
-        if (!payload.payload || payload.payload.sessionId !== sessionId) {
-          return;
-        }
-
-        // Handle based on event type
-        if (eventType.includes('reset')) {
-          this.handleResetEvent(sessionId, payload.payload);
-        } else {
-          this.handleNumberCalledEvent(sessionId, payload.payload);
-        }
-      } catch (error) {
-        logWithTimestamp(`[PlayerNumbersWebSocket] Error handling broadcast: ${error}`, 'error');
-      }
-    };
-  }
-
-  // Handle number called events
-  private handleNumberCalledEvent(sessionId: string, payload: any) {
-    const { lastCalledNumber, calledNumbers, timestamp, broadcastId } = payload;
-    
-    // Skip if we've already processed this broadcast
-    if (broadcastId && broadcastId === this.lastBroadcastIds.get(sessionId)) {
-      return;
     }
 
-    logWithTimestamp(`[PlayerNumbersWebSocket] Received number update: ${lastCalledNumber}, total: ${calledNumbers?.length || 0}`, 'info');
-    
-    // Update local state
-    if (calledNumbers && Array.isArray(calledNumbers)) {
-      this.lastCalledNumbers.set(sessionId, [...calledNumbers]);
-      
-      if (broadcastId) {
-        this.lastBroadcastIds.set(sessionId, broadcastId);
-      }
-
-      // Store in local storage for backup/offline support
-      try {
-        const storageKey = `bingo-numbers-session-${sessionId}`;
-        localStorage.setItem(storageKey, JSON.stringify({
-          sessionId,
-          calledNumbers,
-          lastCalledNumber,
-          timestamp: timestamp || new Date().toISOString(),
-          broadcastId,
-          synced: true
-        }));
-      } catch (e) {
-        // Ignore storage errors
-      }
-      
-      // Notify all callbacks
-      this.notifyCallbacks(sessionId, lastCalledNumber, calledNumbers);
+    // Clean up data if needed
+    if (removeCallbacks) {
+      this.callbacks.delete(sessionId);
     }
-  }
-
-  // Handle reset events
-  private handleResetEvent(sessionId: string, payload: any) {
-    const { timestamp, broadcastId } = payload;
-    
-    // Skip if we've already processed this broadcast
-    if (broadcastId && broadcastId === this.lastBroadcastIds.get(sessionId)) {
-      return;
-    }
-
-    logWithTimestamp(`[PlayerNumbersWebSocket] Received game reset event for session ${sessionId}`, 'info');
-    
-    // Reset local state
-    this.lastCalledNumbers.set(sessionId, []);
-    
-    if (broadcastId) {
-      this.lastBroadcastIds.set(sessionId, broadcastId);
-    }
-
-    // Clear local storage
-    try {
-      const storageKey = `bingo-numbers-session-${sessionId}`;
-      localStorage.setItem(storageKey, JSON.stringify({
-        sessionId,
-        calledNumbers: [],
-        lastCalledNumber: null,
-        timestamp: timestamp || new Date().toISOString(),
-        broadcastId,
-        synced: true,
-        reset: true
-      }));
-    } catch (e) {
-      // Ignore storage errors
-    }
-    
-    // Notify all callbacks with null to signal reset
-    this.notifyCallbacks(sessionId, null, []);
   }
 
   // Notify all callbacks for a session
@@ -263,15 +233,15 @@ class PlayerNumbersWebSocketService {
       try {
         callback(lastCalledNumber!, [...allNumbers]);
       } catch (error) {
-        logWithTimestamp(`[PlayerNumbersWebSocket] Error in callback: ${error}`, 'error');
+        logWithTimestamp(`[${this.instanceId}] Error in callback: ${error}`, 'error');
       }
     });
   }
 
   // Fetch current state from database as a backup
-  private async fetchStateFromDatabase(sessionId: string) {
+  private async fetchStateFromDatabase(sessionId: string): Promise<number[]> {
     try {
-      logWithTimestamp(`[PlayerNumbersWebSocket] Fetching state from database for session ${sessionId}`, 'info');
+      logWithTimestamp(`[${this.instanceId}] Fetching state from database for session ${sessionId}`, 'info');
       
       const { data, error } = await supabase
         .from('sessions_progress')
@@ -283,13 +253,13 @@ class PlayerNumbersWebSocketService {
         throw error;
       }
       
-      if (data && data.called_numbers) {
+      if (data && data.called_numbers && Array.isArray(data.called_numbers)) {
         const dbNumbers = data.called_numbers;
         const lastNumber = dbNumbers.length > 0 ? dbNumbers[dbNumbers.length - 1] : null;
         
         // Only update if we have numbers
         if (dbNumbers.length > 0) {
-          logWithTimestamp(`[PlayerNumbersWebSocket] Loaded ${dbNumbers.length} numbers from DB, last: ${lastNumber}`, 'info');
+          logWithTimestamp(`[${this.instanceId}] Loaded ${dbNumbers.length} numbers from DB, last: ${lastNumber}`, 'info');
           
           // Check if this is newer than what we have
           const currentNumbers = this.lastCalledNumbers.get(sessionId) || [];
@@ -302,20 +272,34 @@ class PlayerNumbersWebSocketService {
             this.notifyCallbacks(sessionId, lastNumber, dbNumbers);
             
             // Update local storage
-            const storageKey = `bingo-numbers-session-${sessionId}`;
-            localStorage.setItem(storageKey, JSON.stringify({
-              sessionId,
-              calledNumbers: dbNumbers,
-              lastCalledNumber: lastNumber,
-              timestamp: new Date(data.updated_at).toISOString(),
-              synced: true,
-              source: 'db-fetch'
-            }));
+            this.saveNumbersToLocalStorage(sessionId, dbNumbers, lastNumber);
           }
+          
+          return dbNumbers;
         }
       }
+      
+      return [];
     } catch (error) {
-      logWithTimestamp(`[PlayerNumbersWebSocket] Error fetching from DB: ${error}`, 'error');
+      logWithTimestamp(`[${this.instanceId}] Error fetching from DB: ${error}`, 'error');
+      return [];
+    }
+  }
+  
+  // Save numbers to local storage
+  private saveNumbersToLocalStorage(sessionId: string, numbers: number[], lastNumber: number | null) {
+    try {
+      const storageKey = `bingo-numbers-session-${sessionId}`;
+      localStorage.setItem(storageKey, JSON.stringify({
+        sessionId,
+        calledNumbers: numbers,
+        lastCalledNumber: lastNumber,
+        timestamp: new Date().toISOString(),
+        broadcastId: this.lastBroadcastIds.get(sessionId) || `local-${Date.now()}`,
+        synced: true
+      }));
+    } catch (e) {
+      // Ignore storage errors
     }
   }
 }

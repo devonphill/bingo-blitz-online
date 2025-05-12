@@ -8,9 +8,9 @@ import { logWithTimestamp } from '@/utils/logUtils';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 
-// Define consistent channel names used across the application
+// Define consistent channel name used across the application
 const GAME_UPDATES_CHANNEL = 'game-updates';
-const CLAIM_CHECKING_CHANNEL = 'claim_checking_broadcaster';
+const CLAIM_SUBMITTED_EVENT = 'claim-submitted';
 
 interface ClaimNotificationsProps {
   sessionId: string | null;
@@ -58,64 +58,71 @@ export default function ClaimNotifications({
       return;
     }
     
-    const currentSessionId = sessionIdRef.current;
-    
-    // Clean up existing channel if any
-    if (claimChannelRef.current) {
-      try {
-        log('Removing existing claim channel before re-creating', 'info');
-        supabase.removeChannel(claimChannelRef.current);
-        claimChannelRef.current = null;
-      } catch (err) {
-        console.error('Error removing claim channel:', err);
-      }
-    }
-    
-    // Set up channel for claim submissions
-    log("Setting up claim listener", 'info');
-    
-    try {
-      const channel = supabase
-        .channel(GAME_UPDATES_CHANNEL, {
-          config: {
-            broadcast: { 
-              self: true, // Receive own broadcasts
-              ack: true   // Request acknowledgment
-            }
-          }
-        })
-        .on('broadcast', { event: 'claim-submitted' }, payload => {
-          if (!mountedRef.current) return;
-          
-          // Check if this is for our session
-          if (payload.payload?.sessionId === currentSessionId) {
-            log("Real-time claim received", 'info');
-            
-            // Force refresh claims list
-            forceRefresh();
-            
-            // Get details from the payload
-            const playerName = payload.payload.playerName || 'Player';
-            
-            // Show toast
-            toast({
-              title: "New Bingo Claim!",
-              description: `${playerName} has claimed bingo`,
-              variant: "destructive",
-              duration: 8000
-            });
-          }
-        })
-        .subscribe((status) => {
-          log(`Claim channel subscription status: ${status}`, 'info');
-        });
+    // Allow time for component to fully initialize
+    const setupTimer = setTimeout(() => {
+      if (!mountedRef.current) return;
       
-      claimChannelRef.current = channel;
-    } catch (err) {
-      log(`Error setting up claim channel: ${err}`, 'error');
-    }
+      const currentSessionId = sessionIdRef.current;
+      
+      // Clean up existing channel if any
+      if (claimChannelRef.current) {
+        try {
+          log('Removing existing claim channel before re-creating', 'info');
+          supabase.removeChannel(claimChannelRef.current);
+          claimChannelRef.current = null;
+        } catch (err) {
+          console.error('Error removing claim channel:', err);
+        }
+      }
+      
+      // Set up channel for claim submissions
+      log(`Setting up claim listener for session ${currentSessionId}`, 'info');
+      
+      try {
+        const channel = supabase
+          .channel(GAME_UPDATES_CHANNEL, {
+            config: {
+              broadcast: { 
+                self: true, // Receive own broadcasts
+                ack: true   // Request acknowledgment
+              }
+            }
+          })
+          .on('broadcast', { event: CLAIM_SUBMITTED_EVENT }, payload => {
+            if (!mountedRef.current) return;
+            
+            // Check if this is for our session
+            if (payload.payload?.sessionId === currentSessionId) {
+              log("Real-time claim received", 'info');
+              
+              // Force refresh claims list
+              forceRefresh();
+              
+              // Get details from the payload
+              const playerName = payload.payload.playerName || 'Player';
+              
+              // Show toast
+              toast({
+                title: "New Bingo Claim!",
+                description: `${playerName} has claimed bingo`,
+                variant: "destructive",
+                duration: 8000
+              });
+            }
+          })
+          .subscribe((status) => {
+            log(`Claim channel subscription status: ${status}`, 'info');
+          });
+        
+        claimChannelRef.current = channel;
+      } catch (err) {
+        log(`Error setting up claim channel: ${err}`, 'error');
+      }
+    }, 500);
     
     return () => { 
+      clearTimeout(setupTimer);
+      
       if (claimChannelRef.current) {
         log('Cleaning up claim channel on unmount/sessionId change', 'info');
         try {
@@ -152,7 +159,7 @@ export default function ClaimNotifications({
               .channel(GAME_UPDATES_CHANNEL, {
                 config: { broadcast: { self: true, ack: true } }
               })
-              .on('broadcast', { event: 'claim-submitted' }, payload => {
+              .on('broadcast', { event: CLAIM_SUBMITTED_EVENT }, payload => {
                 if (!mountedRef.current) return;
                 
                 if (payload.payload?.sessionId === sessionId) {

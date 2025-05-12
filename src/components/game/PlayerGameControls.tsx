@@ -1,61 +1,65 @@
 
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Wifi, WifiOff, TicketIcon, GridIcon } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { ArrowUpRight, RefreshCw, Undo2 } from 'lucide-react';
+import ConnectionStatus from './ConnectionStatus';
 
 interface PlayerGameControlsProps {
-  isConnected: boolean;
-  onToggleTicketView?: () => void;
-  onRefreshConnection?: () => void;
-  isTicketView?: boolean;
-  showTicketToggle?: boolean;
+  onClaimBingo?: () => Promise<boolean>;
+  claimStatus?: 'none' | 'pending' | 'valid' | 'invalid';
+  isClaiming?: boolean;
+  onRefreshTickets?: () => void;
+  onReconnect?: () => void;
+  sessionId?: string | null;
+  playerId?: string | null;
 }
 
 export default function PlayerGameControls({
-  isConnected,
-  onToggleTicketView,
-  onRefreshConnection,
-  isTicketView = true,
-  showTicketToggle = true,
+  onClaimBingo,
+  claimStatus = 'none',
+  isClaiming = false,
+  onRefreshTickets,
+  onReconnect,
+  sessionId,
+  playerId
 }: PlayerGameControlsProps) {
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-3 flex justify-between items-center z-20">
-      <div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onRefreshConnection}
-          className={cn(
-            'text-xs flex items-center gap-1 px-2',
-            isConnected ? 'text-green-600' : 'text-red-600 animate-pulse'
-          )}
+    <div className="fixed bottom-4 left-4 flex flex-col gap-2">
+      {/* Connection status indicator */}
+      <ConnectionStatus 
+        showFull={true} 
+        className="bg-white p-2 rounded-md shadow-md" 
+        onReconnect={onReconnect} 
+      />
+      
+      {/* Refresh tickets button */}
+      {onRefreshTickets && (
+        <Button 
+          variant="outline" 
+          size="sm" 
+          className="bg-white shadow-md flex items-center gap-2"
+          onClick={onRefreshTickets}
         >
-          {isConnected ? (
-            <Wifi className="h-3 w-3 text-green-600" />
-          ) : (
-            <WifiOff className="h-3 w-3 text-red-600" />
-          )}
-          {isConnected ? 'Connected' : 'Reconnecting...'}
+          <RefreshCw className="h-4 w-4" />
+          <span className="text-xs">Refresh tickets</span>
         </Button>
-      </div>
-
-      {showTicketToggle && onToggleTicketView && (
+      )}
+      
+      {/* Claim bingo button - shown in small controls */}
+      {onClaimBingo && (
         <Button
-          variant="outline"
+          variant="default"
           size="sm"
-          onClick={onToggleTicketView}
-          className="text-xs flex items-center gap-1"
+          className="bg-red-600 hover:bg-red-700 shadow-md flex items-center gap-2"
+          onClick={onClaimBingo}
+          disabled={isClaiming || claimStatus === 'valid'}
         >
-          {isTicketView ? (
-            <>
-              <GridIcon className="h-3 w-3" /> View Grid
-            </>
-          ) : (
-            <>
-              <TicketIcon className="h-3 w-3" /> View Tickets
-            </>
-          )}
+          <ArrowUpRight className="h-4 w-4" />
+          <span className="text-xs">
+            {claimStatus === 'valid' ? 'Bingo confirmed!' : 
+             claimStatus === 'invalid' ? 'Claim rejected' :
+             isClaiming ? 'Claiming...' : 'BINGO!'}
+          </span>
         </Button>
       )}
     </div>

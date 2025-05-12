@@ -7,6 +7,8 @@ import { logWithTimestamp } from '@/utils/logUtils';
 // Define consistent channel names used across the application
 const GAME_UPDATES_CHANNEL = 'game-updates';
 const CLAIM_CHECKING_CHANNEL = 'claim_checking_broadcaster';
+const CLAIM_RESULT_EVENT = 'claim-result';
+const CLAIM_CHECKING_EVENT = 'claim-checking';
 
 /**
  * Hook for broadcasting claim validation results to players
@@ -64,7 +66,7 @@ export function useClaimBroadcaster() {
           // Send to everyone in the session via broadcast
           await broadcastChannel.send({
             type: validateChannelType('broadcast'),
-            event: 'claim-result',
+            event: CLAIM_RESULT_EVENT,
             payload
           });
           
@@ -72,7 +74,7 @@ export function useClaimBroadcaster() {
           if (actualPlayerId && actualPlayerId !== playerId) {
             await broadcastChannel.send({
               type: validateChannelType('broadcast'),
-              event: 'claim-result',
+              event: CLAIM_RESULT_EVENT,
               payload: {
                 ...payload,
                 playerId: ensureString(playerId), // Original player code
@@ -123,14 +125,15 @@ export function useClaimBroadcaster() {
         }
         
         try {
-          const broadcastChannel = supabase.channel(CLAIM_CHECKING_CHANNEL, {
-            config: {
-              broadcast: { 
-                self: true, // Receive own broadcasts
-                ack: true   // Request acknowledgment
-              }
-            }
-          });
+          // Use both channels for maximum compatibility during transition
+          const channels = [
+            supabase.channel(GAME_UPDATES_CHANNEL, {
+              config: { broadcast: { self: true, ack: true } }
+            }),
+            supabase.channel(CLAIM_CHECKING_CHANNEL, {
+              config: { broadcast: { self: true, ack: true } }
+            })
+          ];
           
           // Ensure we have properly formatted ticket data for display
           const ticketData = claim.ticket ? {
@@ -142,7 +145,7 @@ export function useClaimBroadcaster() {
           
           // Create a payload with claim details including ticket information
           const payload = {
-            claimId: ensureString(claim.id || `claim-${Date.now()}`), // Ensure we have a unique claim ID
+            claimId: ensureString(claim.id || `claim-${Date.now()}`),
             sessionId: ensureString(sessionId),
             playerId: ensureString(claim.playerId),
             playerName: ensureString(claim.playerName || 'Player'),
@@ -155,25 +158,14 @@ export function useClaimBroadcaster() {
           
           logWithTimestamp(`Sending claim checking broadcast with payload: ${JSON.stringify(payload)}`, 'debug');
           
-          // Send to all players via broadcast
-          await broadcastChannel.send({
-            type: validateChannelType('broadcast'),
-            event: 'claim-checking',
-            payload
-          });
-          
-          // Also send to the game-updates channel to ensure wider reception
-          const gameChannel = supabase.channel(GAME_UPDATES_CHANNEL, {
-            config: {
-              broadcast: { self: true, ack: true }
-            }
-          });
-          
-          await gameChannel.send({
-            type: validateChannelType('broadcast'),
-            event: 'claim-checking',
-            payload
-          });
+          // Send to all players via both channels for maximum compatibility
+          for (const channel of channels) {
+            await channel.send({
+              type: validateChannelType('broadcast'),
+              event: CLAIM_CHECKING_EVENT,
+              payload
+            });
+          }
           
           logWithTimestamp(`Claim checking broadcast sent to session ${sessionId}`, 'info');
           return true;

@@ -1,9 +1,15 @@
-
 import React, { useState, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { X, AlertOctagon } from 'lucide-react';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
+import { supabase } from '@/integrations/supabase/client';
+import { logWithTimestamp } from '@/utils/logUtils';
+import { useToast } from '@/hooks/use-toast';
+
+// Add this function toward the top of the file - right after imports
+const GAME_UPDATES_CHANNEL = 'game-updates';
+const NUMBER_CALLED_EVENT = 'number-called';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -38,26 +44,114 @@ export default function CallerControls({
 }: CallerControlsProps) {
   const [isLoading, setIsLoading] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
+  const [currCalledNumber, setCurrCalledNumber] = useState<number | null>(null);
+  const { toast } = useToast();
   
   // Get the network context to help with calling numbers
   const network = useNetwork();
   
-  // Handle calling a random number
-  const handleCallNumber = async () => {
-    setIsLoading(true);
+  const handleCallNumber = async (number: number) => {
+    if (remainingNumbers.length === 0) {
+      toast({
+        title: "Game Over",
+        description: "All numbers have been called!",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!remainingNumbers.includes(number)) {
+      toast({
+        title: "Already Called",
+        description: `Number ${number} has already been called!`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (claimCount > 0) {
+      toast({
+        title: "Claims Pending",
+        description: "Please review pending claims before calling more numbers",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
-      if (remainingNumbers.length === 0) {
-        console.error("No remaining numbers to call");
-        return;
+      // Update UI state immediately
+      setIsCallingNumber(true);
+      setCurrCalledNumber(number);
+
+      // Log the action
+      logWithTimestamp(`Calling number: ${number} for session: ${sessionId}`, 'info');
+      
+      // First update the database
+      const { error } = await supabase
+        .from('sessions_progress')
+        .update({
+          called_numbers: supabase.sql`array_append(called_numbers, ${number})`,
+          last_called_number: number,
+          updated_at: new Date().toISOString()
+        })
+        .eq('session_id', sessionId);
+
+      if (error) {
+        throw new Error(`Database error: ${error.message}`);
       }
-      
-      // Select a random number from the remaining numbers
-      const randomIndex = Math.floor(Math.random() * remainingNumbers.length);
-      const randomNumber = remainingNumbers[randomIndex];
-      
-      onCallNumber(randomNumber);
+
+      // Then broadcast the new number to all players
+      try {
+        // Create a broadcast channel with the standardized name
+        const broadcastChannel = supabase.channel(GAME_UPDATES_CHANNEL, {
+          config: {
+            broadcast: { self: true, ack: true }
+          }
+        });
+
+        // Generate a unique ID for this broadcast
+        const broadcastId = `${sessionId}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        
+        // Create the payload with all necessary information
+        const payload = {
+          number,
+          sessionId,
+          timestamp: Date.now(),
+          broadcastId
+        };
+        
+        // Send the broadcast event
+        await broadcastChannel.send({
+          type: 'broadcast',
+          event: NUMBER_CALLED_EVENT,
+          payload
+        });
+        
+        logWithTimestamp(`Number ${number} broadcast sent successfully`, 'info');
+      } catch (broadcastError) {
+        logWithTimestamp(`Error broadcasting number ${number}: ${broadcastError}`, 'error');
+        // This is non-fatal since we already updated the database
+      }
+
+      // Call the parent onCallNumber function
+      onCallNumber(number);
+
+      // Success toast
+      toast({
+        title: `Called: ${number}`,
+        description: `Number ${number} has been called`,
+        variant: "default",
+      });
+
+    } catch (error) {
+      console.error('Error calling number:', error);
+      toast({
+        title: "Error Calling Number",
+        description: (error as Error).message,
+        variant: "destructive",
+      });
     } finally {
-      setIsLoading(false);
+      setIsCallingNumber(false);
     }
   };
   
@@ -68,92 +162,183 @@ export default function CallerControls({
                               sessionStatus !== 'active';
 
   return (
-    <Card ref={cardRef}>
-      <CardHeader>
-        <CardTitle className="flex justify-between items-center">
-          <span>Caller Controls</span>
-          {claimCount > 0 && (
-            <Button 
-              size="sm" 
-              variant="destructive" 
-              className="animate-pulse flex items-center gap-1"
-              onClick={openClaimSheet}
-            >
-              <AlertOctagon className="h-4 w-4" />
-              <span>{claimCount} {claimCount === 1 ? 'Claim' : 'Claims'}</span>
-            </Button>
-          )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          {/* Next number controls */}
-          <div className="bg-gray-100 p-4 rounded-md">
-            <h3 className="text-sm font-medium mb-3">Next Number</h3>
-            
+    <>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-xl font-bold flex items-center justify-between">
+            <div className="flex items-center">
+              <span>Caller Controls</span>
+              {/*<Badge className="ml-2" variant={sessionStatus === 'active' ? 'default' : 'outline'}>
+                {sessionStatus === 'active' ? 'Live' : 'Pending'}
+              </Badge>
+              {currentGameNumber && numberOfGames && (
+                <Badge className="ml-2" variant="outline">
+                  Game {currentGameNumber} of {numberOfGames}
+                </Badge>
+              )}
+              {callerHub.isConnected && (
+                <Badge className="ml-2 bg-green-500 text-white">
+                  Connected
+                </Badge>
+              )}*/}
+            </div>
+            {claimCount > 0 && (
+              <Button 
+                size="sm" 
+                variant="outline" 
+                className="relative"
+                onClick={openClaimSheet}
+              >
+                <AlertOctagon className="h-4 w-4 text-amber-500" />
+                {/*<Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center bg-amber-500">
+                  {claimCount}
+                </Badge>*/}
+              </Button>
+            )}
+            {claimCount === 0 && (
+              <Button 
+                size="sm" 
+                variant="outline" 
+                className="relative"
+                onClick={openClaimSheet}
+              >
+                <AlertOctagon className="h-4 w-4 text-gray-500" />
+              </Button>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="bg-gray-100 p-3 rounded-md text-center">
+            <div className="text-sm text-gray-500 mb-1">Remaining Numbers</div>
+            <div className="text-2xl font-bold">{remainingNumbers.length}</div>
+          </div>
+          
+          <div className="grid grid-cols-1 gap-3">
             <Button
-              className="w-full"
-              onClick={handleCallNumber}
+              className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
               disabled={isCallButtonDisabled}
+              onClick={() => {
+                if (remainingNumbers.length > 0) {
+                  const randomIndex = Math.floor(Math.random() * remainingNumbers.length);
+                  const number = remainingNumbers[randomIndex];
+                  handleCallNumber(number);
+                }
+              }}
             >
               {disableCallButton && claimCount > 0 ? (
                 <>
                   <X className="h-4 w-4 mr-2" />
                   Review Claims First
                 </>
-              ) : (
-                isLoading ? 'Calling...' : 'Call Next Number'
-              )}
+              ) : (isLoading ? 'Calling...' : 'Call Next Number')}
             </Button>
             
             {disableCallButton && claimCount > 0 && (
-              <p className="text-xs text-red-600 mt-2 text-center">
+              <p className="text-xs text-red-600 text-center">
                 You must verify all pending claims before calling more numbers
               </p>
             )}
             
-            <p className="text-xs text-gray-500 mt-2 text-center">
-              {remainingNumbers.length} numbers remaining
-            </p>
+            {/*{onCloseGame && (
+              <Button
+                variant="secondary"
+                onClick={handleCloseGame}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {isLastGame ? 'Complete Session' : 'Close Game'}
+              </Button>
+            )}
+            
+            {/* Add FORCE close button */}
+            {/*{onForceClose && (
+              <Button
+                variant="outline"
+                onClick={handleForceClose}
+                className="bg-amber-600 hover:bg-amber-700 text-white flex items-center gap-2"
+              >
+                <AlertTriangle className="h-4 w-4" />
+                {isLastGame ? 'FORCE Complete Session' : 'FORCE Close Game'}
+              </Button>
+            )}
+            
+            <Button 
+              variant="destructive"
+              onClick={onEndGame}
+            >
+              End Game
+            </Button>
+            
+            <GoLiveButton
+              sessionId={sessionId}
+              disabled={false}
+              className="w-full"
+              onSuccess={() => {
+                handleGoLiveClick();
+              }}
+            >
+              Go Live
+            </GoLiveButton>*/}
           </div>
           
-          {/* Game controls */}
-          <div className="bg-gray-100 p-4 rounded-md">
-            <h3 className="text-sm font-medium mb-3">Game Controls</h3>
-            
-            <div className="space-y-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full"
-                onClick={onEndGame}
-              >
-                End Game
-              </Button>
-              
-              {onForceClose && (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="w-full"
-                  onClick={onForceClose}
-                >
-                  Force Close &amp; Next Game
-                </Button>
-              )}
-              
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full"
-                onClick={openClaimSheet}
-              >
-                View Claims
-              </Button>
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+          {/*{renderConnectionStatus()}*/}
+        </CardContent>
+      </Card>
+
+      {/*<AlertDialog 
+        open={isClosingConfirmOpen} 
+        onOpenChange={setIsClosingConfirmOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {isLastGame ? 'Complete Session?' : 'Close Game?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {isLastGame 
+                ? 'This will mark the session as completed. This action cannot be undone.' 
+                : 'This will close the current game and advance to the next one. This action cannot be undone.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmCloseGame}
+              className={isLastGame ? "bg-purple-600 hover:bg-purple-700" : "bg-blue-600 hover:bg-blue-700"}
+            >
+              {isLastGame ? 'Complete Session' : 'Close Game'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      
+      {/* Force Close Confirmation Dialog */}
+      /*<AlertDialog 
+        open={isForceCloseConfirmOpen} 
+        onOpenChange={setIsForceCloseConfirmOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle className="h-5 w-5" />
+              {isLastGame ? 'FORCE Complete Session?' : 'FORCE Close Game?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {isLastGame 
+                ? 'This will FORCE complete the session, resetting all game data. This action cannot be undone and may disrupt active players.' 
+                : 'This will FORCE close the current game, reset all numbers, and advance to the next one. This action cannot be undone and may disrupt active players.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmForceClose}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              {isLastGame ? 'FORCE Complete' : 'FORCE Close'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>*/}
+    </>
   );
 }

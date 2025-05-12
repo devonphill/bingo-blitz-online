@@ -1,25 +1,55 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw } from 'lucide-react';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { useNetwork, ConnectionState } from '@/contexts/NetworkStatusContext';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ConnectionStatusProps {
   showFull?: boolean;
   className?: string;
+  onReconnect?: () => void;
 }
 
 export default function ConnectionStatus({ 
   showFull = false,
-  className = ''
+  className = '',
+  onReconnect
 }: ConnectionStatusProps) {
   const [expanded, setExpanded] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
+  const [lastConnectionCheck, setLastConnectionCheck] = useState(Date.now());
+  const instanceId = useRef(`conn-${Math.random().toString(36).substring(2, 7)}`);
   
   // Use the network context
   const network = useNetwork();
   const { connectionState, isConnected, sessionId } = network;
+  
+  // Check if Supabase is connected
+  const checkSupabaseConnection = useCallback(async () => {
+    try {
+      // Send a ping to Supabase
+      const { data, error } = await supabase.rpc('ping', {});
+      return !error;
+    } catch (err) {
+      return false;
+    }
+  }, []);
+  
+  // Periodically check connection status
+  useEffect(() => {
+    const timer = setInterval(() => {
+      checkSupabaseConnection().then(connected => {
+        if (!connected && !isReconnecting) {
+          logWithTimestamp(`[${instanceId.current}] Detected potential connection issue`, 'warn');
+        }
+        setLastConnectionCheck(Date.now());
+      });
+    }, 30000); // Check every 30 seconds
+    
+    return () => clearInterval(timer);
+  }, [checkSupabaseConnection, isReconnecting]);
   
   const getStatusColor = useCallback(() => {
     if (isReconnecting) return 'bg-amber-500 animate-pulse';
@@ -48,11 +78,17 @@ export default function ConnectionStatus({
   const handleReconnectClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsReconnecting(true);
-    logWithTimestamp('User requested manual reconnection', 'info');
+    logWithTimestamp(`[${instanceId.current}] User requested manual reconnection`, 'info');
     
+    // Call both reconnect methods
     if (sessionId) {
       // Use the network context to reconnect
       network.connect(sessionId);
+    }
+    
+    // Also call the provided reconnect callback if any
+    if (onReconnect) {
+      onReconnect();
     }
     
     // Reset reconnecting UI after a delay
@@ -93,9 +129,8 @@ export default function ConnectionStatus({
             <h4 className="font-bold mb-2">Connection Details</h4>
             <div className="text-xs space-y-1">
               <div>Status: <span className="font-semibold">{getStatusText()}</span></div>
-              
-              {/* Enhanced status details */}
               <div>Session ID: <span className="font-mono">{sessionId || 'Not connected'}</span></div>
+              <div>Last Check: <span className="font-mono">{new Date(lastConnectionCheck).toLocaleTimeString()}</span></div>
               
               <div className="pt-2">
                 <button 
