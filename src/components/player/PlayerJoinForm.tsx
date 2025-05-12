@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useSessionContext } from '@/contexts/SessionProvider';
 import { useToast } from '@/hooks/use-toast';
 import { Loader } from 'lucide-react';
+import { usePlayerContext } from '@/contexts/PlayerContext';
 
 export default function PlayerJoinForm() {
   const [playerCode, setPlayerCode] = useState('');
@@ -14,6 +15,7 @@ export default function PlayerJoinForm() {
   const navigate = useNavigate();
   const { joinSession } = useSessionContext();
   const { toast } = useToast();
+  const { setPlayer } = usePlayerContext();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,7 +37,27 @@ export default function PlayerJoinForm() {
       
       if (result.success) {
         console.log("Successfully joined game:", result);
+        
+        // Save player code and player ID to localStorage
         localStorage.setItem('playerCode', playerCode);
+        if (result.playerId) {
+          localStorage.setItem('playerId', result.playerId);
+        }
+        
+        // Update player context
+        if (result.playerId) {
+          setPlayer({
+            id: result.playerId,
+            name: result.playerName || playerCode,
+            code: playerCode,
+            sessionId: result.sessionId
+          });
+          
+          if (result.sessionId) {
+            localStorage.setItem('playerSessionId', result.sessionId);
+          }
+        }
+        
         toast({
           title: "Success",
           description: "You have joined the game!",

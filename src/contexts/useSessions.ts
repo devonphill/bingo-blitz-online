@@ -1,4 +1,3 @@
-
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { GameSession, GameConfig } from '@/types';
@@ -212,5 +211,108 @@ export function useSessions() {
     updateSession,
     isLoading,
     error
+  };
+}
+
+export const usePlayers = (sessions?: any[], fetchSessions?: () => Promise<any>, assignTicketsToPlayer?: any) => {
+  const [playerId, setPlayerId] = useState<string | null>(null);
+  const [playerName, setPlayerName] = useState<string | null>(null);
+  const [playerCode, setPlayerCode] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionName, setSessionName] = useState<string | null>(null);
+  const [accessCode, setAccessCode] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+  const { user } = useAuth();
+
+  const joinSession = async (playerCode: string) => {
+    try {
+      logWithTimestamp(`Joining session with player code: ${playerCode}`, 'info');
+      
+      // Get the player by code
+      const { data: playerData, error: playerError } = await supabase
+        .from('players')
+        .select('id, nickname, session_id')
+        .eq('player_code', playerCode)
+        .single();
+        
+      if (playerError) {
+        logWithTimestamp(`Error fetching player: ${playerError.message}`, 'error');
+        return { 
+          success: false, 
+          error: 'Invalid player code or player not found'
+        };
+      }
+      
+      if (!playerData || !playerData.id) {
+        return { 
+          success: false, 
+          error: 'Player not found'
+        };
+      }
+      
+      logWithTimestamp(`Found player: ${JSON.stringify(playerData)}`, 'info');
+      
+      // Get session by id
+      if (!playerData.session_id) {
+        return { 
+          success: false, 
+          error: 'No game session associated with this player'
+        };
+      }
+      
+      const { data: session, error: sessionError } = await supabase
+        .from('game_sessions')
+        .select('id, name, status, access_code')
+        .eq('id', playerData.session_id)
+        .single();
+        
+      if (sessionError || !session) {
+        logWithTimestamp(`Error fetching session: ${sessionError?.message}`, 'error');
+        return { 
+          success: false, 
+          error: 'Game session not found or has ended'
+        };
+      }
+      
+      if (session.status !== 'active' && session.status !== 'pending') {
+        return { 
+          success: false, 
+          error: 'This game session is no longer active'
+        };
+      }
+      
+      logWithTimestamp(`Successfully joined session: ${session.name}`, 'info');
+      
+      // Return player ID and session data
+      return {
+        success: true,
+        playerId: playerData.id,
+        playerName: playerData.nickname,
+        playerCode: playerCode,
+        sessionId: session.id,
+        sessionName: session.name,
+        accessCode: session.access_code
+      };
+    } catch (error) {
+      logWithTimestamp(`Exception in joinSession: ${(error as Error).message}`, 'error');
+      return {
+        success: false,
+        error: 'An error occurred while joining the session'
+      };
+    }
+  };
+
+  return {
+    playerId,
+    playerName,
+    playerCode,
+    sessionId,
+    sessionName,
+    accessCode,
+    isLoading,
+    error,
+    joinSession
   };
 }

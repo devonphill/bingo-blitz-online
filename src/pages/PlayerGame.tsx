@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, ErrorInfo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import PlayerGameHeader from '@/components/player/PlayerGameHeader';
@@ -80,12 +79,29 @@ const PlayerGame = () => {
     });
   }, [toast]);
 
+  // Verify we have a game code
   if (!gameCode) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
           <h1 className="text-2xl font-bold mb-4">Missing Game Code</h1>
-          <Button onClick={() => navigate('/')}>Return Home</Button>
+          <Button onClick={() => navigate('/player/join')}>Join a Game</Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Ensure player info is available in localStorage
+  const storedPlayerCode = localStorage.getItem('playerCode');
+  const storedPlayerId = localStorage.getItem('playerId');
+  
+  if (!storedPlayerCode || !storedPlayerId) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-4">Player Information Missing</h1>
+          <p className="mb-4">Please join the game again to continue.</p>
+          <Button onClick={() => navigate('/player/join')}>Join Game</Button>
         </div>
       </div>
     );
@@ -132,6 +148,9 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
   const { isConnected } = useNetwork();
   const navigate = useNavigate();
 
+  // Get player ID from either context, auth session, or localStorage
+  const playerId = player?.id || session?.user?.id || localStorage.getItem('playerId');
+
   // Player claim management
   const {
     claimStatus,
@@ -141,7 +160,7 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
     hasActiveClaims
   } = usePlayerClaimManagement(
     gameCode,
-    player?.id || session?.user?.id || null,
+    playerId,
     sessionDetails?.id || null,
     player?.name || session?.user?.email || null,
     gameType || 'mainstage',
@@ -192,6 +211,19 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
     logWithTimestamp('Manually refreshing connection and tickets', 'info');
   }, [reconnectNumberUpdates, refreshTickets]);
 
+  // If there's no player ID, we can't continue
+  if (!playerId) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-4">Player Not Found</h1>
+          <p className="mb-4">Please join the game again to continue.</p>
+          <Button onClick={() => navigate('/player/join')}>Join Game</Button>
+        </div>
+      </div>
+    );
+  }
+
   // Handle various loading and error states
   if (isLoadingSession || isLoadingTickets) {
     return <div className="flex items-center justify-center h-screen">
@@ -208,8 +240,8 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
           {sessionError || ticketError || "Failed to load the game. Please try again."}
         </p>
         <div className="space-x-2">
-          <Button onClick={() => navigate('/')}>
-            Return Home
+          <Button onClick={() => navigate('/player/join')}>
+            Return to Join
           </Button>
           <Button variant="outline" onClick={() => window.location.reload()}>
             Try Again
@@ -227,8 +259,8 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
         <p className="text-gray-700 mb-4">
           The game you're looking for doesn't exist or has ended.
         </p>
-        <Button onClick={() => navigate('/')}>
-          Return Home
+        <Button onClick={() => navigate('/player/join')}>
+          Join a Game
         </Button>
       </div>
     );
@@ -277,7 +309,7 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
         winningTickets={currentWinningTickets?.length || 0}
         totalTickets={playerTickets?.length || 0}
         sessionId={sessionDetails.id}
-        playerId={player?.id || session?.user?.id}
+        playerId={playerId}
       />
 
       <BingoClaim
@@ -286,7 +318,7 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
         resetClaimStatus={resetClaimStatus}
         playerName={player?.name || session?.user?.email || 'Player'}
         sessionId={sessionDetails.id}
-        playerId={player?.id || session?.user?.id}
+        playerId={playerId}
         calledNumbers={calledNumbers}
         currentTicket={currentWinningTickets && currentWinningTickets.length > 0 
           ? currentWinningTickets[0] 

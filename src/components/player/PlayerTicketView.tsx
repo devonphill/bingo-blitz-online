@@ -46,11 +46,11 @@ export default function PlayerTicketView({
           <CardContent>
             {ticket ? (
               <BingoTicketDisplay
-                numbers={ticket.numbers || []}
-                layoutMask={ticket.layout_mask || 0}
+                numbers={ticket.numbers}
+                layoutMask={ticket.layout_mask}
                 calledNumbers={calledNumbers}
                 serial={ticket.serial || `T${index}`}
-                perm={ticket.perm || 0}
+                perm={ticket.perm}
                 autoMarking={true}
                 currentWinPattern={currentWinPattern}
                 showProgress={true}
