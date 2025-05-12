@@ -14,108 +14,88 @@ export function setupClaimDebugging() {
   // Store original values to avoid overwriting existing functions
   const originalMethods = {
     showClaimOverlay: (window as any).showClaimOverlay,
-    toggleClaimOverlay: (window as any).toggleClaimOverlay
+    toggleClaimOverlay: (window as any).toggleClaimOverlay,
+    debugClaimSheet: (window as any).debugClaimSheet
   };
   
-  // Add global methods for debugging
+  // Add enhanced global debug methods
   (window as any).debugClaims = {
-    checkOverlayStatus: () => {
-      const overlayElement = document.querySelector('.fixed-claim-overlay');
-      logWithTimestamp(`Claim overlay element exists: ${!!overlayElement}`, 'info');
+    forceOpenDrawer: (data = null) => {
+      logWithTimestamp('Force opening claim drawer via debugClaims', 'info');
       
-      if (overlayElement) {
-        const styles = window.getComputedStyle(overlayElement);
-        logWithTimestamp(`Overlay styles - display: ${styles.display}, visibility: ${styles.visibility}, z-index: ${styles.zIndex}`, 'info');
-        
-        // Check if it's actually visible
-        const rect = overlayElement.getBoundingClientRect();
-        logWithTimestamp(`Overlay size: ${rect.width}x${rect.height}, position: (${rect.top}, ${rect.left})`, 'info');
+      // Try multiple methods to ensure it works
+      
+      // Method 1: Use the debugClaimSheet API if it exists
+      if ((window as any).debugClaimSheet?.show) {
+        logWithTimestamp('Using debugClaimSheet.show() to open drawer', 'debug');
+        (window as any).debugClaimSheet.show(data);
       }
       
-      return {
-        exists: !!overlayElement,
-        visible: !!overlayElement && overlayElement.getBoundingClientRect().height > 0
-      };
-    },
-    
-    showTestOverlay: (data = null) => {
-      const testData = data || {
-        playerName: 'Test Player',
-        ticket: {
-          serial: 'TEST1234',
-          numbers: [1, 2, 3, 4, 5, 6, 7, 8, 9],
-          layoutMask: 110616623,
-          calledNumbers: [1, 2, 3]
-        },
-        winPattern: 'oneLine'
-      };
-      
-      if ((window as any).showClaimOverlay) {
-        (window as any).showClaimOverlay(testData);
-        return true;
-      }
-      
-      return false;
-    },
-    
-    forceShowOverlay: () => {
-      // Create an overlay element and attach it directly to the body
-      // as a last resort for testing
-      const div = document.createElement('div');
-      div.className = 'emergency-test-overlay';
-      div.style.position = 'fixed';
-      div.style.top = '0';
-      div.style.left = '0';
-      div.style.right = '0';
-      div.style.bottom = '0';
-      div.style.background = 'rgba(0,0,0,0.7)';
-      div.style.zIndex = '100002';
-      div.style.display = 'flex';
-      div.style.alignItems = 'center';
-      div.style.justifyContent = 'center';
-      
-      const content = document.createElement('div');
-      content.style.background = 'white';
-      content.style.padding = '20px';
-      content.style.borderRadius = '8px';
-      content.innerHTML = `
-        <h2>Emergency Test Overlay</h2>
-        <p>This is a direct DOM test of overlay visibility</p>
-        <button id="close-test-overlay" style="padding: 8px 16px; background: red; color: white; border: none; border-radius: 4px; cursor: pointer;">Close</button>
-      `;
-      
-      div.appendChild(content);
-      document.body.appendChild(div);
-      
-      // Add close handler
-      document.getElementById('close-test-overlay')?.addEventListener('click', () => {
-        document.body.removeChild(div);
-      });
-      
-      return true;
-    },
-    
-    checkZIndexes: () => {
-      // Find the highest z-index in the page to debug stacking issues
-      const elements = document.querySelectorAll('*');
-      let highestZ = 0;
-      let highestElement = null;
-      
-      elements.forEach(el => {
-        const style = window.getComputedStyle(el);
-        const zIndex = parseInt(style.zIndex);
-        if (!isNaN(zIndex) && zIndex > highestZ) {
-          highestZ = zIndex;
-          highestElement = el;
+      // Method 2: Dispatch a custom event for BingoClaim to listen to
+      const event = new CustomEvent('forceOpenClaimDrawer', { 
+        detail: { 
+          data: data || {
+            playerName: 'Debug Player',
+            ticket: {
+              serial: 'DEBUG123',
+              numbers: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+              layoutMask: 110616623,
+              calledNumbers: [1, 2, 3]
+            },
+            winPattern: 'oneLine'
+          }
         }
       });
+      logWithTimestamp('Dispatching forceOpenClaimDrawer event', 'debug');
+      window.dispatchEvent(event);
+      
+      // Method 3: Try to manually call the drawer's debug API
+      if ((window as any).claimDrawerDebug?.forceOpen) {
+        logWithTimestamp('Using claimDrawerDebug.forceOpen() to open drawer', 'debug');
+        return (window as any).claimDrawerDebug.forceOpen(data);
+      }
+      
+      return "Attempted to open claim drawer using multiple methods";
+    },
+    
+    getCurrentState: () => {
+      // Try to get state from multiple sources
+      const drawerState = (window as any).claimDrawerDebug?.getProps ? 
+        (window as any).claimDrawerDebug.getProps() : 'Not available';
+      
+      const sheetState = (window as any).debugClaimSheet?.getStatus ? 
+        (window as any).debugClaimSheet.getStatus() : 'Not available';
       
       return {
-        highestZ,
-        highestElement: highestElement ? `${highestElement.tagName}${highestElement.className ? '.' + highestElement.className : ''}` : null
+        drawerProps: drawerState,
+        sheetStatus: sheetState,
+        elementsFound: {
+          debugClaimSheet: !!(window as any).debugClaimSheet,
+          claimDrawerDebug: !!(window as any).claimDrawerDebug,
+          drawerElement: !!document.querySelector('[role="dialog"]')
+        }
       };
+    },
+    
+    showTestToast: (message = "Test claim notification") => {
+      // Import on-demand to avoid bundling issues
+      import('sonner').then(({ toast }) => {
+        toast.info("Bingo Claim Test", {
+          description: message,
+          duration: 5000,
+          action: {
+            label: "Open Drawer",
+            onClick: () => (window as any).debugClaims.forceOpenDrawer()
+          }
+        });
+      });
+      
+      return "Test toast displayed";
     }
   };
+  
+  logWithTimestamp('Claim debugging utilities installed on window.debugClaims', 'info');
+  console.log('Claim debugging available at window.debugClaims');
   
   return () => {
     // Restore original values when cleaning up
@@ -131,56 +111,60 @@ export function setupClaimDebugging() {
       delete (window as any).toggleClaimOverlay;
     }
     
+    if (originalMethods.debugClaimSheet) {
+      (window as any).debugClaimSheet = originalMethods.debugClaimSheet;
+    } else {
+      delete (window as any).debugClaimSheet;
+    }
+    
     delete (window as any).debugClaims;
   };
 }
 
 /**
- * Check if any element could block the claim overlay
+ * Test the drawer functionality by attempting to open it
  */
-export function checkForBlockingElements() {
-  if (typeof window === 'undefined') return null;
-  
-  const overlayElement = document.querySelector('.fixed-claim-overlay');
-  if (!overlayElement) return null;
-  
-  const overlayZIndex = parseInt(window.getComputedStyle(overlayElement).zIndex) || 0;
-  const potentialBlockers: {element: string, zIndex: number}[] = [];
-  
-  document.querySelectorAll('*').forEach(el => {
-    if (el === overlayElement) return;
+export function testDrawerVisibility() {
+  try {
+    // Show info in console for debugging
+    logWithTimestamp('Testing claim drawer visibility...', 'info');
     
-    const style = window.getComputedStyle(el);
-    const zIndex = parseInt(style.zIndex);
-    
-    if (!isNaN(zIndex) && zIndex >= overlayZIndex && style.position !== 'static') {
-      potentialBlockers.push({
-        element: `${el.tagName}${el.className ? '.' + el.className.split(' ').join('.') : ''}`,
-        zIndex
-      });
+    // Try multiple methods to open the drawer
+    if ((window as any).debugClaimSheet?.show) {
+      logWithTimestamp('Using debugClaimSheet.show()', 'debug');
+      (window as any).debugClaimSheet.show();
     }
-  });
-  
-  return potentialBlockers;
-}
-
-/**
- * Test the overlay visibility by trying different methods
- */
-export function testOverlayVisibility() {
-  // Method 1: Check if in DOM
-  const overlayInDom = !!document.querySelector('.fixed-claim-overlay');
-  
-  // Method 2: Check if visible (has dimensions)
-  const overlayElement = document.querySelector('.fixed-claim-overlay');
-  const hasVisibleDimensions = overlayElement ? overlayElement.getBoundingClientRect().height > 0 : false;
-  
-  // Method 3: Check if blocked by other elements
-  const blockers = checkForBlockingElements();
-  
-  return {
-    inDom: overlayInDom,
-    hasVisibleDimensions,
-    potentialBlockers: blockers
-  };
+    
+    if ((window as any).claimDrawerDebug?.forceOpen) {
+      logWithTimestamp('Using claimDrawerDebug.forceOpen()', 'debug');
+      (window as any).claimDrawerDebug.forceOpen();
+    }
+    
+    if ((window as any).debugClaims?.forceOpenDrawer) {
+      logWithTimestamp('Using debugClaims.forceOpenDrawer()', 'debug');
+      (window as any).debugClaims.forceOpenDrawer();
+    }
+    
+    // Dispatch event as a fallback
+    const event = new CustomEvent('forceOpenClaimDrawer', { 
+      detail: { 
+        data: {
+          playerName: 'Visibility Test',
+          ticket: {
+            serial: 'VISTEST',
+            numbers: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+            layoutMask: 110616623, 
+            calledNumbers: [1, 2, 3]
+          },
+          winPattern: 'oneLine'
+        }
+      }
+    });
+    window.dispatchEvent(event);
+    
+    return true;
+  } catch (err) {
+    console.error("Error testing drawer visibility:", err);
+    return false;
+  }
 }

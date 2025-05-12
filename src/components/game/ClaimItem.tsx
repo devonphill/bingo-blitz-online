@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Button } from "@/components/ui/button";
 import { Loader, CheckCircle, XCircle, Share2 } from 'lucide-react';
@@ -32,11 +31,21 @@ export default function ClaimItem({
 }: ClaimItemProps) {
   const { toast } = useToast();
   const [isSendingToPlayers, setIsSendingToPlayers] = React.useState(false);
+  
+  // For debugging
+  const instanceId = React.useRef(`ClaimItem-${Math.random().toString(36).substring(2, 7)}`);
+  
+  React.useEffect(() => {
+    logWithTimestamp(`ClaimItem (${instanceId.current}): Component mounted for ${claim.playerName || claim.playerId}`, 'debug');
+    return () => {
+      logWithTimestamp(`ClaimItem (${instanceId.current}): Component unmounting`, 'debug');
+    };
+  }, [claim.playerName, claim.playerId]);
 
   const handleSendToPlayers = async () => {
     setIsSendingToPlayers(true);
     try {
-      logWithTimestamp(`ClaimItem: Broadcasting claim check for ${claim.playerName || claim.playerId}`, 'info');
+      logWithTimestamp(`ClaimItem (${instanceId.current}): Broadcasting claim check for ${claim.playerName || claim.playerId}`, 'info');
       console.log('BROADCASTING CLAIM CHECK TO PLAYERS:', {
         playerName: claim.playerName || claim.playerId,
         sessionId: claim.sessionId,
@@ -51,19 +60,44 @@ export default function ClaimItem({
         lastCalledNumber: currentNumber
       });
       
+      if (!claimBroadcastService) {
+        throw new Error('ClaimBroadcastService is not available');
+      }
+      
+      // Ensure we have a claimId for tracking
+      const claimWithId = {
+        ...claim,
+        calledNumbers: currentCalledNumbers,
+        lastCalledNumber: currentNumber,
+        claimId: claim.id
+      };
+      
+      logWithTimestamp(`ClaimItem (${instanceId.current}): Calling broadcastClaimChecking with sessionId=${claim.sessionId}`, 'debug');
+      
       // Send the current claim to all players
       const success = await claimBroadcastService.broadcastClaimChecking(
-        {
-          ...claim,
-          calledNumbers: currentCalledNumbers,
-          lastCalledNumber: currentNumber
-        },
+        claimWithId,
         claim.sessionId // Pass sessionId as second parameter
       );
       
       if (success) {
-        logWithTimestamp(`ClaimItem: Successfully broadcasted claim check for ${claim.playerName || claim.playerId}`, 'info');
+        logWithTimestamp(`ClaimItem (${instanceId.current}): Successfully broadcasted claim check for ${claim.playerName || claim.playerId}`, 'info');
         console.log('BROADCAST CLAIM CHECK SUCCESS');
+        
+        // Manually trigger the drawer to open via custom event
+        if (typeof window !== 'undefined') {
+          logWithTimestamp(`ClaimItem (${instanceId.current}): Dispatching forceOpenClaimDrawer event`, 'info');
+          const event = new CustomEvent('forceOpenClaimDrawer', { 
+            detail: { 
+              data: {
+                ...claimWithId,
+                playerName: claim.playerName || claim.playerId,
+                ticket: claim.ticket
+              }
+            }
+          });
+          window.dispatchEvent(event);
+        }
         
         // Show toast with both libraries for maximum visibility
         toast({
@@ -76,7 +110,7 @@ export default function ClaimItem({
           description: `${claim.playerName || claim.playerId}'s ticket is now visible to everyone`
         });
       } else {
-        logWithTimestamp(`ClaimItem: Failed to broadcast claim check for ${claim.playerName || claim.playerId}`, 'error');
+        logWithTimestamp(`ClaimItem (${instanceId.current}): Failed to broadcast claim check for ${claim.playerName || claim.playerId}`, 'error');
         console.error('BROADCAST CLAIM CHECK FAILED');
         
         toast({
@@ -88,7 +122,7 @@ export default function ClaimItem({
       }
     } catch (error) {
       console.error("Error broadcasting claim to players:", error);
-      logWithTimestamp(`ClaimItem: Error broadcasting claim check: ${error}`, 'error');
+      logWithTimestamp(`ClaimItem (${instanceId.current}): Error broadcasting claim check: ${error}`, 'error');
       
       toast({
         title: "Broadcast Error",

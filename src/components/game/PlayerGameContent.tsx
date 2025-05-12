@@ -114,10 +114,18 @@ export default function PlayerGameContent({
     currentGameNumber
   );
   
-  // Setup claim debugging
+  // Setup claim debugging - Enhanced with immediate testing
   useEffect(() => {
     logWithTimestamp(`PlayerGameContent (${componentId.current}): Setting up claim debugging`, 'info');
     const cleanup = setupClaimDebugging();
+    
+    // After a short delay, test the drawer visibility
+    setTimeout(() => {
+      if (typeof window !== 'undefined' && (window as any).debugClaims) {
+        logWithTimestamp(`PlayerGameContent: Testing claim drawer visibility`, 'info');
+        (window as any).debugClaims.showTestToast("Claim system initialized - click to test");
+      }
+    }, 2000);
     
     return cleanup;
   }, []);

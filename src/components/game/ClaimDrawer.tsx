@@ -1,11 +1,12 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerFooter } from '../ui/drawer';
 import { Button } from '../ui/button';
 import { Trophy, Loader, X, Check } from 'lucide-react';
 import SafeBingoTicketDisplay from './SafeBingoTicketDisplay';
 import { cn } from '@/lib/utils';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { toast } from 'sonner';
 
 interface ClaimDrawerProps {
   isOpen: boolean;
@@ -29,11 +30,49 @@ export default function ClaimDrawer({
   validationResult = null,
   autoClose = true
 }: ClaimDrawerProps) {
+  // Enhanced logging for component lifecycle
+  useEffect(() => {
+    logWithTimestamp(`ClaimDrawer: Component mounted/updated - isOpen=${isOpen}`, 'debug');
+    
+    // Add component to window for debugging
+    if (typeof window !== 'undefined') {
+      (window as any).claimDrawerDebug = {
+        getProps: () => ({ isOpen, playerName, ticketData, winPattern, validationResult }),
+        forceOpen: (data: any = null) => {
+          logWithTimestamp(`ClaimDrawer: Force opening via debug method`, 'info');
+          if (data) {
+            // Create a custom event that BingoClaim can listen to
+            const event = new CustomEvent('forceOpenClaimDrawer', { 
+              detail: { 
+                data: data || {
+                  playerName: 'Debug Player',
+                  ticketData: ticketData || { serial: 'DEBUG123' }
+                }
+              }
+            });
+            window.dispatchEvent(event);
+          }
+          onOpenChange(true);
+          return 'Drawer should be opening now';
+        }
+      };
+    }
+    
+    return () => {
+      logWithTimestamp(`ClaimDrawer: Component will unmount`, 'debug');
+      if (typeof window !== 'undefined') {
+        delete (window as any).claimDrawerDebug;
+      }
+    };
+  }, [isOpen, playerName, ticketData, winPattern, validationResult, onOpenChange]);
+  
   // Auto-close logic for when a validation result is received
-  React.useEffect(() => {
+  useEffect(() => {
     if (validationResult && isOpen && autoClose) {
+      logWithTimestamp(`ClaimDrawer: Auto-close timer started for ${validationResult} result`, 'info');
       // Close after 3 seconds to give users time to see the result
       const timer = setTimeout(() => {
+        logWithTimestamp(`ClaimDrawer: Auto-closing now`, 'info');
         onOpenChange(false);
       }, 3000);
       
@@ -42,24 +81,38 @@ export default function ClaimDrawer({
   }, [validationResult, isOpen, onOpenChange, autoClose]);
 
   // Log when the drawer opens or closes
-  React.useEffect(() => {
+  useEffect(() => {
     if (isOpen) {
-      logWithTimestamp(`ClaimDrawer: Showing drawer for player ${playerName}, result: ${validationResult || 'checking'}, ticket: ${ticketData?.serial || 'unknown'}`, 'info');
+      logWithTimestamp(`ClaimDrawer: OPENED for player ${playerName}, result: ${validationResult || 'checking'}, ticket: ${ticketData?.serial || 'unknown'}`, 'info');
+      // Show a toast when the drawer opens for additional visibility
+      toast.info(`Claim check for ${playerName}`, { 
+        id: `claim-drawer-${Date.now()}`,
+        description: "Checking ticket details..."
+      });
+    } else {
+      logWithTimestamp(`ClaimDrawer: CLOSED`, 'info');
     }
   }, [isOpen, playerName, validationResult, ticketData]);
 
   // Process ticket data if available
-  const processedTicketData = ticketData ? {
-    numbers: ticketData.numbers || [],
-    layoutMask: ticketData.layoutMask || ticketData.layout_mask || 0,
-    calledNumbers: ticketData.calledNumbers || [],
-    serial: ticketData.serial || 'Unknown',
-    perm: ticketData.perm || 0,
-    position: ticketData.position || 0
-  } : null;
+  const processedTicketData = React.useMemo(() => {
+    if (!ticketData) return null;
+    
+    return {
+      numbers: ticketData.numbers || [],
+      layoutMask: ticketData.layoutMask || ticketData.layout_mask || 0,
+      calledNumbers: ticketData.calledNumbers || [],
+      serial: ticketData.serial || 'Unknown',
+      perm: ticketData.perm || 0,
+      position: ticketData.position || 0
+    };
+  }, [ticketData]);
 
   return (
-    <Drawer open={isOpen} onOpenChange={onOpenChange}>
+    <Drawer 
+      open={isOpen} 
+      onOpenChange={onOpenChange}
+    >
       <DrawerContent className="px-4">
         <div className="mx-auto w-full max-w-sm">
           <DrawerHeader className="relative">
