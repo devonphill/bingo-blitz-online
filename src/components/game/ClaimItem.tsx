@@ -7,6 +7,7 @@ import { ClaimData } from '@/types/claim';
 import { claimBroadcastService } from '@/services/ClaimBroadcastService';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { toast as sonnerToast } from 'sonner';
 
 interface ClaimItemProps {
   claim: ClaimData;
@@ -42,6 +43,14 @@ export default function ClaimItem({
         ticketSerial: claim.ticket?.serial
       });
       
+      // Add additional debugging
+      console.log('ClaimBroadcastService available:', !!claimBroadcastService);
+      console.log('Claim data being sent:', {
+        ...claim,
+        calledNumbers: currentCalledNumbers,
+        lastCalledNumber: currentNumber
+      });
+      
       // Send the current claim to all players
       const success = await claimBroadcastService.broadcastClaimChecking(
         {
@@ -49,17 +58,22 @@ export default function ClaimItem({
           calledNumbers: currentCalledNumbers,
           lastCalledNumber: currentNumber
         },
-        "Caller is reviewing this claim now"
+        claim.sessionId // Pass sessionId as second parameter
       );
       
       if (success) {
         logWithTimestamp(`ClaimItem: Successfully broadcasted claim check for ${claim.playerName || claim.playerId}`, 'info');
         console.log('BROADCAST CLAIM CHECK SUCCESS');
         
+        // Show toast with both libraries for maximum visibility
         toast({
           title: "Sent to Players",
           description: `Claim by ${claim.playerName || claim.playerId} shared with all players`,
           duration: 3000,
+        });
+        
+        sonnerToast.success("Claim sent to all players", {
+          description: `${claim.playerName || claim.playerId}'s ticket is now visible to everyone`
         });
       } else {
         logWithTimestamp(`ClaimItem: Failed to broadcast claim check for ${claim.playerName || claim.playerId}`, 'error');

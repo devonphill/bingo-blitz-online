@@ -80,11 +80,19 @@ export default function BingoClaim({
       claimResultChannelRef.current = null;
     }
     
-    // Set up claim checking channel
+    // Set up claim checking channel with improved configuration
     const checkingChannel = supabase
-      .channel('claim_checking_broadcaster')
+      .channel('claim_checking_broadcaster', {
+        config: {
+          broadcast: { 
+            self: true, // Ensure we receive our own broadcasts 
+            ack: true // Request acknowledgment for debugging
+          }
+        }
+      })
       .on('broadcast', { event: 'claim-checking' }, payload => {
-        logWithTimestamp(`BingoClaim: Received claim checking broadcast: ${JSON.stringify(payload.payload)}`, 'info');
+        console.log('Received claim checking broadcast:', payload);
+        logWithTimestamp(`BingoClaim: Received claim checking broadcast`, 'info');
         
         // Check if this broadcast is for our session
         if (payload.payload?.sessionId === sessionId) {
@@ -105,6 +113,12 @@ export default function BingoClaim({
           setIsClaimOverlayVisible(true);
           setClaimResult(null); // Clear any previous result
           
+          // Show toast notification for better visibility
+          toast.info("Bingo Claim Being Checked", {
+            description: `${payload.payload.playerName || 'Player'}'s ticket is being verified`,
+            duration: 4000
+          });
+          
           // Dispatch to global event system
           claimEvents.dispatch({
             type: 'claim-checking',
@@ -114,13 +128,19 @@ export default function BingoClaim({
       })
       .subscribe((status) => {
         logWithTimestamp(`BingoClaim: Claim checking channel status: ${status}`, 'info');
+        console.log('Claim checking channel status:', status);
       });
     
     // Set up claim result channel
     const resultChannel = supabase
-      .channel('game-updates')
+      .channel('game-updates', {
+        config: {
+          broadcast: { self: true } // Ensure we receive our own broadcasts
+        }
+      })
       .on('broadcast', { event: 'claim-result' }, payload => {
-        logWithTimestamp(`BingoClaim: Received claim result: ${JSON.stringify(payload.payload)}`, 'info');
+        logWithTimestamp(`BingoClaim: Received claim result`, 'info');
+        console.log('Received claim result:', payload.payload);
         
         if (!isMountedRef.current) return;
         
@@ -149,6 +169,15 @@ export default function BingoClaim({
             });
             setIsClaimOverlayVisible(true);
             
+            // Show toast notification as well for better visibility
+            toast[isValidClaim ? 'success' : 'error'](
+              isValidClaim ? "Bingo Verified!" : "Invalid Claim", 
+              { 
+                description: `${result.playerName}'s claim was ${isValidClaim ? 'verified' : 'rejected'}`,
+                duration: 5000
+              }
+            );
+            
             // Reset claim status if this was our claim and we have the function
             if (result.playerId === playerId && resetClaimStatus) {
               setTimeout(() => {
@@ -162,11 +191,20 @@ export default function BingoClaim({
       })
       .subscribe((status) => {
         logWithTimestamp(`BingoClaim: Claim result channel status: ${status}`, 'info');
+        console.log('Claim result channel status:', status);
       });
     
     // Store channels for cleanup
     claimCheckingChannelRef.current = checkingChannel;
     claimResultChannelRef.current = resultChannel;
+    
+    // Create portal container in body at mount time
+    const portalContainer = document.getElementById('portal-claim-overlay') || document.createElement('div');
+    if (!portalContainer.id) {
+      portalContainer.id = 'portal-claim-overlay';
+      document.body.appendChild(portalContainer);
+      console.log('Created portal container for claims');
+    }
     
     // Clean up channels on unmount
     return () => {
@@ -189,27 +227,40 @@ export default function BingoClaim({
   // Log visibility state changes for debugging
   useEffect(() => {
     logWithTimestamp(`BingoClaim: Overlay visibility state: ${isClaimOverlayVisible}, result: ${claimResult || 'none'}`, 'info');
+    console.log(`Claim overlay visibility: ${isClaimOverlayVisible}, result: ${claimResult || 'none'}`);
     
     // Add debug method to window for testing
-    (window as any).showClaimOverlay = (data: any) => {
-      logWithTimestamp('Manually showing claim overlay', 'info');
-      setClaimCheckData(data || {
-        playerName: 'Test Player',
-        ticket: {
-          serial: 'TEST1234',
-          numbers: [1, 2, 3, 4, 5, 6, 7, 8, 9],
-          layoutMask: 110616623,
-          calledNumbers: [1, 2, 3]
-        },
-        winPattern: 'oneLine'
-      });
-      setIsClaimOverlayVisible(true);
+    (window as any).debugClaimOverlay = {
+      show: (data: any) => {
+        logWithTimestamp('Manually showing claim overlay', 'info');
+        setClaimCheckData(data || {
+          playerName: 'Test Player',
+          ticket: {
+            serial: 'TEST1234',
+            numbers: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+            layoutMask: 110616623,
+            calledNumbers: [1, 2, 3]
+          },
+          winPattern: 'oneLine'
+        });
+        setIsClaimOverlayVisible(true);
+        return 'Showing claim overlay';
+      },
+      hide: () => {
+        setIsClaimOverlayVisible(false);
+        return 'Hiding claim overlay';
+      },
+      getStatus: () => ({
+        visible: isClaimOverlayVisible,
+        data: claimCheckData,
+        result: claimResult
+      })
     };
     
     return () => {
-      delete (window as any).showClaimOverlay;
+      delete (window as any).debugClaimOverlay;
     };
-  }, [isClaimOverlayVisible, claimResult]);
+  }, [isClaimOverlayVisible, claimResult, claimCheckData]);
   
   // Handle closing the overlay
   const handleOverlayClose = () => {

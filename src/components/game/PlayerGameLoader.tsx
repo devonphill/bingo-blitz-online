@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { GameSession } from "@/types";
@@ -62,8 +61,9 @@ export default function PlayerGameLoader({
   useEffect(() => {
     if (currentSession && 
         !isLoading && 
-        (currentSession.lifecycle_state === 'setup' || currentSession.lifecycle_state === 'lobby' || 
-         (typeof currentSession.lifecycle_state === 'string' && currentSession.lifecycle_state.toLowerCase() === 'lobby'))) {
+        (currentSession.lifecycle_state === 'setup' || 
+         // Use strict comparison with string literals that are part of the allowed type
+         currentSession.lifecycle_state === 'lobby')) {
       logLoaderEvent("Showing branded lobby for waiting state", { 
         lifecycle_state: currentSession.lifecycle_state,
         status: currentSession.status

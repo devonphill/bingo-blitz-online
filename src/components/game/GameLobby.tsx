@@ -1,3 +1,4 @@
+
 import React from "react";
 import { Spinner } from "@/components/ui/spinner";
 import { useSessionProgress } from '@/hooks/useSessionProgress';
@@ -25,7 +26,7 @@ export default function GameLobby({
 }: GameLobbyProps) {
   const {
     progress: sessionProgress
-  } = useSessionProgress(currentSession?.id);
+  } = useSessionProgress(currentSession?.id || '');
 
   // Use default placeholder images if no branding is provided
   const {

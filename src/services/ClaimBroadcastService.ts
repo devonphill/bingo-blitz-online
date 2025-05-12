@@ -115,52 +115,58 @@ class ClaimBroadcastService {
   /**
    * Broadcast a claim being checked to all players in the session
    */
-  public async broadcastClaimChecking(claim: ClaimData, message?: string): Promise<boolean> {
+  public async broadcastClaimChecking(claim: ClaimData, sessionId: string): Promise<boolean> {
     try {
-      if (!claim || !claim.sessionId) {
+      if (!claim || !sessionId) {
         logWithTimestamp('Cannot broadcast claim check: Missing session ID', 'error');
         console.error('Cannot broadcast claim check: Missing session ID');
         return false;
       }
 
-      logWithTimestamp(`Broadcasting claim check for ${claim.playerName || claim.playerId} in session ${claim.sessionId}`, 'info');
+      logWithTimestamp(`Broadcasting claim check for ${claim.playerName || claim.playerId} in session ${sessionId}`, 'info');
       console.log('BROADCASTING CLAIM CHECK:', {
         playerName: claim.playerName || claim.playerId,
-        sessionId: claim.sessionId,
+        sessionId: sessionId,
         channel: this.CLAIM_CHECKING_CHANNEL,
         event: this.CLAIM_CHECKING_EVENT
       });
       
-      // Clean up the payload to avoid circular references and ensure proper data
+      // Ensure we have properly formatted ticket data for display
+      const ticketData = claim.ticket ? {
+        serial: claim.ticket.serial || '',
+        numbers: claim.ticket.numbers || [],
+        calledNumbers: claim.calledNumbers || [],
+        layoutMask: claim.ticket.layoutMask || claim.ticket.layout_mask || 0
+      } : null;
+      
+      // Create a payload with claim details
       const broadcastPayload = {
         claimId: ensureString(claim.id || 'unknown'),
-        sessionId: ensureString(claim.sessionId),
+        sessionId: ensureString(sessionId),
         playerId: ensureString(claim.playerId),
         playerName: ensureString(claim.playerName || 'unknown'),
         timestamp: new Date().toISOString(),
-        message: message || 'Claim being verified by caller',
+        message: 'Claim being verified by caller',
         gameType: ensureString(claim.gameType || 'mainstage'),
         winPattern: ensureString(claim.winPattern || 'oneLine'),
         // Sanitize ticket data to avoid circular references
-        ticket: claim.ticket ? {
-          serial: ensureString(claim.ticket.serial || 'unknown'),
-          numbers: claim.ticket.numbers || [],
-          calledNumbers: claim.calledNumbers || [],
-          layoutMask: claim.ticket.layoutMask || 0  // Changed layout_mask to layoutMask
-        } : null,
+        ticket: ticketData,
         calledNumbers: claim.calledNumbers || []
       };
       
       console.log('CLAIM CHECK PAYLOAD:', broadcastPayload);
       
-      // Use the correct channel name consistently
+      // Use the dedicated channel with improved config
       const broadcastChannel = supabase.channel(this.CLAIM_CHECKING_CHANNEL, {
         config: {
-          broadcast: { self: true } // Ensure sender receives their own events
+          broadcast: { 
+            self: true, // Ensure sender receives their own events
+            ack: true   // Request acknowledgement
+          }
         }
       });
       
-      // Broadcast the claim check to all listeners with correct event name
+      // Broadcast the claim check to all listeners
       await broadcastChannel.send({
         type: validateChannelType('broadcast'),
         event: this.CLAIM_CHECKING_EVENT,

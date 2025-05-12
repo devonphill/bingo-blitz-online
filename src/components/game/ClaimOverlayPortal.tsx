@@ -33,10 +33,10 @@ export default function ClaimOverlayPortal({
 }: ClaimOverlayPortalProps) {
   const [domReady, setDomReady] = useState(false);
   const [shouldAutoClose, setShouldAutoClose] = useState(false);
+  const [portalElement, setPortalElement] = useState<HTMLElement | null>(null);
   
-  // Set up the portal container
+  // Set up the portal container as early as possible
   useEffect(() => {
-    // Only run in browser
     if (typeof document === 'undefined') return;
     
     // Check if container already exists
@@ -46,9 +46,16 @@ export default function ClaimOverlayPortal({
     if (!container) {
       container = document.createElement('div');
       container.id = 'portal-claim-overlay';
+      
+      // Set a very high z-index to ensure it appears above everything else
+      container.style.zIndex = '100000';
       document.body.appendChild(container);
+      
       logWithTimestamp('ClaimOverlayPortal: Created portal container', 'info');
     }
+    
+    // Store the portal element for later use
+    setPortalElement(container);
     
     // Mark DOM as ready
     setDomReady(true);
@@ -57,6 +64,21 @@ export default function ClaimOverlayPortal({
       // Don't remove container on unmount - other instances might use it
     };
   }, []);
+  
+  // Ensure portal visibility when needed
+  useEffect(() => {
+    if (isOpen && portalElement) {
+      // Make sure the portal container is visible
+      portalElement.style.display = 'block';
+      
+      // Log that we're showing the overlay
+      logWithTimestamp('ClaimOverlayPortal: Showing overlay', 'info', {
+        playerName,
+        validationResult,
+        ticketSerial: ticketData?.serial
+      });
+    }
+  }, [isOpen, portalElement, playerName, validationResult, ticketData]);
   
   // Auto-close logic for when a validation result is received
   useEffect(() => {
@@ -72,8 +94,25 @@ export default function ClaimOverlayPortal({
     }
   }, [validationResult, isOpen, onClose, autoClose]);
   
+  // Add debugging method to window for testing
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).debugClaimOverlay = {
+        isOpen,
+        portalExists: !!portalElement,
+        domReady,
+        ticketData,
+        forceShow: () => {
+          setDomReady(true);
+          if (portalElement) portalElement.style.display = 'block';
+          logWithTimestamp('ClaimOverlayPortal: Forced show from debug', 'info');
+        }
+      };
+    }
+  }, [isOpen, portalElement, domReady, ticketData]);
+  
   // Don't render anything if not open or DOM not ready
-  if (!isOpen || !domReady) return null;
+  if (!isOpen || !domReady || !portalElement) return null;
   
   // Process ticket data if available
   const processedTicketData = ticketData ? {
@@ -88,7 +127,7 @@ export default function ClaimOverlayPortal({
   // Create the portal content
   const overlayContent = (
     <div 
-      className="fixed inset-0 flex items-center justify-center bg-black/70 z-[100000] animate-fade-in"
+      className="fixed inset-0 flex items-center justify-center bg-black/70 z-[100000]"
       style={{ 
         backdropFilter: 'blur(3px)',
       }}
@@ -98,8 +137,8 @@ export default function ClaimOverlayPortal({
         {/* Validation overlay - only shows when there's a result */}
         {validationResult && (
           <div className={cn(
-            "absolute inset-0 flex items-center justify-center z-[100] bg-black/40 backdrop-blur-sm animate-fade-in",
-            "rounded-md overflow-hidden"
+            "absolute inset-0 flex items-center justify-center z-[100] bg-black/40 backdrop-blur-sm",
+            "rounded-md overflow-hidden animate-fade-in"
           )}>
             <div className={cn(
               "w-32 h-32 rounded-full flex items-center justify-center animate-scale-in",
@@ -188,6 +227,6 @@ export default function ClaimOverlayPortal({
   // Render using createPortal to ensure it's attached to the body
   return createPortal(
     overlayContent,
-    document.getElementById('portal-claim-overlay')!
+    portalElement
   );
 }
