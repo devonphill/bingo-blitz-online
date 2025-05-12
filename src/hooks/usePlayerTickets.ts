@@ -5,12 +5,25 @@ import { logWithTimestamp } from '@/utils/logUtils';
 import { checkMainstageWinPattern } from '@/utils/mainstageWinLogic';
 import { normalizeWinPattern } from '@/utils/winPatternUtils';
 
+// Export the PlayerTicket type so it can be imported elsewhere
+export interface PlayerTicket {
+  id: string;
+  serial: string;
+  perm: number;
+  position?: number;
+  layout_mask: number;
+  numbers: number[];
+  is_winning?: boolean;
+  winning_pattern?: string | null;
+  to_go?: number;
+}
+
 export function usePlayerTickets(sessionId?: string | null) {
-  const [playerTickets, setPlayerTickets] = useState<any[]>([]);
+  const [playerTickets, setPlayerTickets] = useState<PlayerTicket[]>([]);
   const [isLoadingTickets, setIsLoadingTickets] = useState(false);
   const [ticketError, setTicketError] = useState<string | null>(null);
   const [isRefreshingTickets, setIsRefreshingTickets] = useState(false);
-  const [currentWinningTickets, setCurrentWinningTickets] = useState<any[]>([]);
+  const [currentWinningTickets, setCurrentWinningTickets] = useState<PlayerTicket[]>([]);
 
   // Function to process tickets and check if they're winning
   const processTickets = useCallback((tickets: any[], calledNumbers: number[], currentWinPattern: string | null) => {
