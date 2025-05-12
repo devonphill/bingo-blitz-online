@@ -12,6 +12,7 @@ interface MainstageBingoGameProps {
   autoMarking?: boolean;
   setAutoMarking?: (value: boolean) => void;
   currentWinPattern?: string | null;
+  isConnected?: boolean;
 }
 
 export default function MainstageBingoGame({
@@ -20,7 +21,8 @@ export default function MainstageBingoGame({
   lastCalledNumber,
   autoMarking = true,
   setAutoMarking,
-  currentWinPattern = 'oneLine'
+  currentWinPattern = 'oneLine',
+  isConnected = true
 }: MainstageBingoGameProps) {
   // Always use MAINSTAGE_ prefixed patterns for this game type
   const normalizedWinPattern = normalizeWinPattern(currentWinPattern, 'MAINSTAGE');
@@ -33,16 +35,22 @@ export default function MainstageBingoGame({
           Your bingo tickets will appear here
         </p>
         
-        {setAutoMarking && (
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <Switch
-              id="auto-marking"
-              checked={autoMarking}
-              onCheckedChange={setAutoMarking}
-            />
-            <Label htmlFor="auto-marking">Auto Marking</Label>
+        <div className="flex items-center justify-between gap-2 mb-4">
+          {setAutoMarking && (
+            <div className="flex items-center gap-2">
+              <Switch
+                id="auto-marking"
+                checked={autoMarking}
+                onCheckedChange={setAutoMarking}
+              />
+              <Label htmlFor="auto-marking">Auto Marking</Label>
+            </div>
+          )}
+          
+          <div className={`text-xs px-2 py-1 rounded ${isConnected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+            {isConnected ? 'Connected' : 'Reconnecting...'}
           </div>
-        )}
+        </div>
       </div>
       
       {tickets && tickets.length > 0 ? (

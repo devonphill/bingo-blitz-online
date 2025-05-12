@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { checkMainstageWinPattern } from '@/utils/mainstageWinLogic';
-import { normalizeWinPattern } from '@/utils/winPatternUtils';
+import { normalizeWinPattern, areWinPatternsEquivalent } from '@/utils/winPatternUtils';
 
 // Export the PlayerTicket type so it can be imported elsewhere
 export interface PlayerTicket {
@@ -29,6 +29,7 @@ export function usePlayerTickets(sessionId?: string | null) {
   const processTickets = useCallback((tickets: any[], calledNumbers: number[], currentWinPattern: string | null) => {
     if (!tickets || tickets.length === 0) return [];
     
+    // ALWAYS normalize the win pattern for consistent checking
     const normalizedWinPattern = normalizeWinPattern(currentWinPattern, 'MAINSTAGE');
     
     return tickets.map(ticket => {
@@ -63,7 +64,7 @@ export function usePlayerTickets(sessionId?: string | null) {
       const result = checkMainstageWinPattern(
         grid, 
         calledNumbers,
-        normalizedWinPattern as any
+        normalizedWinPattern
       );
       
       return { 
@@ -92,7 +93,7 @@ export function usePlayerTickets(sessionId?: string | null) {
     setTicketError(null);
     
     try {
-      logWithTimestamp(`Fetching tickets for session ${sessionId} with player ID ${sessionId}`, 'info');
+      logWithTimestamp(`Fetching tickets for session ${sessionId}`, 'info');
       
       const { data, error } = await supabase
         .from('assigned_tickets')
@@ -123,8 +124,9 @@ export function usePlayerTickets(sessionId?: string | null) {
       const currentWinPattern = sessionData?.current_win_pattern || 'oneLine';
       const calledNumbers = sessionData?.called_numbers || [];
       
-      // Process tickets to check for winners
-      const processedTickets = processTickets(data, calledNumbers, currentWinPattern);
+      // Process tickets to check for winners - always use normalized pattern
+      const normalizedPattern = normalizeWinPattern(currentWinPattern, 'MAINSTAGE');
+      const processedTickets = processTickets(data, calledNumbers, normalizedPattern);
       setPlayerTickets(processedTickets);
       
       // Find winning tickets
@@ -159,9 +161,17 @@ export function usePlayerTickets(sessionId?: string | null) {
   // Function to update the winning status of tickets
   const updateWinningStatus = useCallback((calledNumbers: number[], currentWinPattern: string | null) => {
     setPlayerTickets(tickets => {
-      const updatedTickets = processTickets(tickets, calledNumbers, currentWinPattern);
+      // Always normalize the win pattern for consistent checking
+      const normalizedPattern = normalizeWinPattern(currentWinPattern, 'MAINSTAGE');
+      const updatedTickets = processTickets(tickets, calledNumbers, normalizedPattern);
       const winningTickets = updatedTickets.filter(t => t.is_winning);
+      
       setCurrentWinningTickets(winningTickets);
+      
+      if (winningTickets.length > 0) {
+        logWithTimestamp(`Found ${winningTickets.length} winning tickets after update!`, 'info');
+      }
+      
       return updatedTickets;
     });
   }, [processTickets]);

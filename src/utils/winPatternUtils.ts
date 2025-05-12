@@ -8,13 +8,36 @@
 export function normalizeWinPattern(pattern: string | null | undefined, gameType: string = 'mainstage'): string {
   if (!pattern) return `${gameType.toUpperCase()}_oneLine`;
   
-  // If pattern already has the prefix, return as is
-  if (pattern.toUpperCase().startsWith(`${gameType.toUpperCase()}_`)) {
-    return pattern;
+  // First standardize the pattern name itself
+  let standardizedPattern = pattern.toLowerCase();
+  
+  // Handle common variations
+  if (standardizedPattern === 'one line' || standardizedPattern === '1line' || standardizedPattern === '1 line') {
+    standardizedPattern = 'oneline';
+  } else if (standardizedPattern === 'two lines' || standardizedPattern === '2lines' || standardizedPattern === '2 lines') {
+    standardizedPattern = 'twolines';
+  } else if (standardizedPattern === 'full house' || standardizedPattern === 'fullhouse') {
+    standardizedPattern = 'fullhouse';
+  } else if (standardizedPattern === 'four corners' || standardizedPattern === '4corners') {
+    standardizedPattern = 'fourcorners';
+  } else if (standardizedPattern === 'center square' || standardizedPattern === 'centersquare') {
+    standardizedPattern = 'centersquare';
   }
   
-  // Add the prefix
-  return `${gameType.toUpperCase()}_${pattern}`;
+  // If pattern already has the prefix (case-insensitive), extract just the pattern part
+  const prefixRegex = new RegExp(`^${gameType}_`, 'i');
+  if (prefixRegex.test(standardizedPattern)) {
+    standardizedPattern = standardizedPattern.replace(prefixRegex, '');
+  }
+  
+  // If pattern already has any game type prefix, strip it
+  const anyPrefixRegex = /^[a-zA-Z]+_/;
+  if (anyPrefixRegex.test(standardizedPattern)) {
+    standardizedPattern = standardizedPattern.replace(anyPrefixRegex, '');
+  }
+  
+  // Now add the correct prefix
+  return `${gameType.toUpperCase()}_${standardizedPattern}`;
 }
 
 /**
@@ -28,13 +51,41 @@ export function getWinPatternDisplayName(pattern: string | null | undefined): st
   // Remove any prefix like MAINSTAGE_
   const normalizedPattern = pattern.replace(/^[A-Z]+_/i, '');
   
+  // Convert to lowercase for consistent matching
+  const patternLower = normalizedPattern.toLowerCase();
+  
   // Map to display name
-  switch (normalizedPattern.toLowerCase()) {
+  switch (patternLower) {
     case 'oneline': return 'One Line';
     case 'twolines': return 'Two Lines';
     case 'fullhouse': return 'Full House';
     case 'fourcorners': return 'Four Corners';
     case 'centersquare': return 'Center Square';
-    default: return normalizedPattern.charAt(0).toUpperCase() + normalizedPattern.slice(1);
+    // Add more patterns as needed
+    default: 
+      // Convert to title case if no match
+      return normalizedPattern.charAt(0).toUpperCase() + 
+             normalizedPattern.slice(1).replace(/([A-Z])/g, ' $1');
   }
+}
+
+/**
+ * Checks if two win patterns are equivalent, regardless of formatting
+ * @param pattern1 First pattern to compare
+ * @param pattern2 Second pattern to compare
+ * @param gameType Game type to use for normalization
+ * @returns True if patterns are equivalent
+ */
+export function areWinPatternsEquivalent(
+  pattern1: string | null | undefined, 
+  pattern2: string | null | undefined,
+  gameType: string = 'mainstage'
+): boolean {
+  if (!pattern1 && !pattern2) return true;
+  if (!pattern1 || !pattern2) return false;
+  
+  const normalized1 = normalizeWinPattern(pattern1, gameType);
+  const normalized2 = normalizeWinPattern(pattern2, gameType);
+  
+  return normalized1.toLowerCase() === normalized2.toLowerCase();
 }
