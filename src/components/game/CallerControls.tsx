@@ -87,11 +87,11 @@ export default function CallerControls({
       // Log the action
       logWithTimestamp(`Calling number: ${number} for session: ${sessionId}`, 'info');
       
-      // First update the database
+      // First update the database - use the correct Supabase syntax for array append
       const { error } = await supabase
         .from('sessions_progress')
         .update({
-          called_numbers: supabase.sql`array_append(called_numbers, ${number})`,
+          called_numbers: supabase.rpc('array_append', { arr: 'called_numbers', item: number }),
           last_called_number: number,
           updated_at: new Date().toISOString()
         })
@@ -169,19 +169,6 @@ export default function CallerControls({
           <CardTitle className="text-xl font-bold flex items-center justify-between">
             <div className="flex items-center">
               <span>Caller Controls</span>
-              {/*<Badge className="ml-2" variant={sessionStatus === 'active' ? 'default' : 'outline'}>
-                {sessionStatus === 'active' ? 'Live' : 'Pending'}
-              </Badge>
-              {currentGameNumber && numberOfGames && (
-                <Badge className="ml-2" variant="outline">
-                  Game {currentGameNumber} of {numberOfGames}
-                </Badge>
-              )}
-              {callerHub.isConnected && (
-                <Badge className="ml-2 bg-green-500 text-white">
-                  Connected
-                </Badge>
-              )}*/}
             </div>
             {claimCount > 0 && (
               <Button 
@@ -191,9 +178,6 @@ export default function CallerControls({
                 onClick={openClaimSheet}
               >
                 <AlertOctagon className="h-4 w-4 text-amber-500" />
-                {/*<Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center bg-amber-500">
-                  {claimCount}
-                </Badge>*/}
               </Button>
             )}
             {claimCount === 0 && (

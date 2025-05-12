@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { ArrowUpRight, RefreshCw, Undo2 } from 'lucide-react';
+import { ArrowUpRight, RefreshCw, Undo2, RefreshCcw, Wifi, WifiOff } from 'lucide-react';
 import ConnectionStatus from './ConnectionStatus';
 
 interface PlayerGameControlsProps {
@@ -12,6 +12,12 @@ interface PlayerGameControlsProps {
   onReconnect?: () => void;
   sessionId?: string | null;
   playerId?: string | null;
+  // Add the missing props
+  isConnected?: boolean;
+  onToggleTicketView?: () => void;
+  onRefreshConnection?: () => void;
+  isTicketView?: boolean;
+  showTicketToggle?: boolean;
 }
 
 export default function PlayerGameControls({
@@ -21,7 +27,13 @@ export default function PlayerGameControls({
   onRefreshTickets,
   onReconnect,
   sessionId,
-  playerId
+  playerId,
+  // Add the missing props with defaults
+  isConnected = true,
+  onToggleTicketView,
+  onRefreshConnection,
+  isTicketView = true,
+  showTicketToggle = false
 }: PlayerGameControlsProps) {
   return (
     <div className="fixed bottom-4 left-4 flex flex-col gap-2">
@@ -29,7 +41,7 @@ export default function PlayerGameControls({
       <ConnectionStatus 
         showFull={true} 
         className="bg-white p-2 rounded-md shadow-md" 
-        onReconnect={onReconnect} 
+        onReconnect={onRefreshConnection || onReconnect} 
       />
       
       {/* Refresh tickets button */}
@@ -42,6 +54,40 @@ export default function PlayerGameControls({
         >
           <RefreshCw className="h-4 w-4" />
           <span className="text-xs">Refresh tickets</span>
+        </Button>
+      )}
+      
+      {/* Toggle ticket view button */}
+      {showTicketToggle && onToggleTicketView && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="bg-white shadow-md flex items-center gap-2"
+          onClick={onToggleTicketView}
+        >
+          <RefreshCcw className="h-4 w-4" />
+          <span className="text-xs">
+            {isTicketView ? 'Show List View' : 'Show Ticket View'}
+          </span>
+        </Button>
+      )}
+      
+      {/* Connection status button */}
+      {onRefreshConnection && (
+        <Button
+          variant="outline"
+          size="sm"
+          className={`shadow-md flex items-center gap-2 ${isConnected ? 'bg-green-50' : 'bg-red-50'}`}
+          onClick={onRefreshConnection}
+        >
+          {isConnected ? (
+            <Wifi className="h-4 w-4 text-green-600" />
+          ) : (
+            <WifiOff className="h-4 w-4 text-red-600" />
+          )}
+          <span className="text-xs">
+            {isConnected ? 'Connected' : 'Reconnect'}
+          </span>
         </Button>
       )}
       

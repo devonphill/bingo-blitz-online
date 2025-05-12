@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw } from 'lucide-react';
@@ -29,8 +28,12 @@ export default function ConnectionStatus({
   // Check if Supabase is connected
   const checkSupabaseConnection = useCallback(async () => {
     try {
-      // Send a ping to Supabase
-      const { data, error } = await supabase.rpc('ping', {});
+      // Try a simple query instead of using rpc with "ping"
+      const { data, error } = await supabase
+        .from('sessions_progress')
+        .select('id')
+        .limit(1);
+      
       return !error;
     } catch (err) {
       return false;

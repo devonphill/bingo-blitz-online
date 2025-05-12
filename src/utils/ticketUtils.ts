@@ -113,6 +113,9 @@ export function calculateTicketProgress(
     console.warn('Missing input to calculateTicketProgress', { grid, calledNumbers, winPattern });
     return result;
   }
+
+  // Normalize pattern name - strip MAINSTAGE_ prefix if present
+  const patternName = winPattern.replace('MAINSTAGE_', '');
   
   // Count marked numbers in each row
   const rowCounts: number[] = [0, 0, 0];
@@ -136,7 +139,7 @@ export function calculateTicketProgress(
   const numbersInRow: number[] = grid.map(row => row.filter(cell => cell !== null).length);
   
   // Calculate patterns based on win pattern type
-  switch (winPattern.replace('MAINSTAGE_', '')) {
+  switch (patternName) {
     case 'oneLine': {
       // Check if any row is complete
       const completedLines = rowCounts.filter((marked, index) => marked === numbersInRow[index] && marked > 0).length;
@@ -162,13 +165,49 @@ export function calculateTicketProgress(
     }
     
     case 'twoLines': {
+      // Debug logging for twoLines pattern
+      console.log('Checking twoLines pattern');
+      console.log('Row counts:', rowCounts);
+      console.log('Numbers in row:', numbersInRow);
+      
       // Check if at least two rows are complete
-      const completedLines = rowCounts.filter((marked, index) => marked === numbersInRow[index] && marked > 0).length;
+      const completedLines = rowCounts.filter((marked, index) => 
+        marked === numbersInRow[index] && marked > 0
+      ).length;
+      
+      console.log('Completed lines:', completedLines);
+      
       const isWinner = completedLines >= 2;
+      console.log('Is winner:', isWinner);
+      
+      // Calculate missing numbers to complete 2 lines
+      let numbersToGo = 0;
+      if (!isWinner) {
+        // If no lines completed yet, calculate numbers needed for 2 shortest lines
+        if (completedLines === 0) {
+          // Get the number of missing marks for each row, sort them
+          const missingPerRow = numbersInRow.map((total, idx) => total - rowCounts[idx])
+                               .sort((a, b) => a - b);
+          // Take the sum of the 2 shortest rows
+          numbersToGo = missingPerRow[0] + missingPerRow[1];
+        } 
+        // If one line completed, calculate numbers needed for shortest remaining line
+        else if (completedLines === 1) {
+          // Find the row with the least numbers to mark
+          const incompleteRows = rowCounts.map((marked, idx) => ({
+            index: idx,
+            remaining: numbersInRow[idx] - marked
+          }))
+          .filter(r => r.remaining > 0)
+          .sort((a, b) => a.remaining - b.remaining);
+          
+          numbersToGo = incompleteRows.length > 0 ? incompleteRows[0].remaining : 0;
+        }
+      }
       
       return {
         isWinner,
-        numbersToGo: isWinner ? 0 : (numbersInRow[0] + numbersInRow[1] + numbersInRow[2]) - (rowCounts[0] + rowCounts[1] + rowCounts[2]),
+        numbersToGo,
         completedLines,
         linesToGo: isWinner ? 0 : 2 - completedLines
       };
@@ -319,14 +358,17 @@ export function sortTicketsByWinProximity(
     return tickets;
   }
   
+  // Normalize pattern name consistently
+  const normalizedPattern = currentWinPattern.replace('MAINSTAGE_', '');
+  
   return [...tickets].sort((a, b) => {
     // Process ticket A
     const gridA = processTicketLayout(a.numbers, a.layoutMask || a.layout_mask);
-    const scoreA = calculateTicketScore(gridA, calledNumbers, currentWinPattern, a.lastCalledNumber);
+    const scoreA = calculateTicketScore(gridA, calledNumbers, normalizedPattern, a.lastCalledNumber);
     
     // Process ticket B
     const gridB = processTicketLayout(b.numbers, b.layoutMask || b.layout_mask);
-    const scoreB = calculateTicketScore(gridB, calledNumbers, currentWinPattern, b.lastCalledNumber);
+    const scoreB = calculateTicketScore(gridB, calledNumbers, normalizedPattern, b.lastCalledNumber);
     
     // Prioritize tickets with score 0 (perfect claim time)
     if (scoreA === 0 && scoreB !== 0) return -1;
