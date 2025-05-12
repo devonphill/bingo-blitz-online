@@ -1,9 +1,11 @@
-import React, { useEffect } from "react";
+
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { GameSession } from "@/types";
 import { AlertCircle, RefreshCw, Info, Calendar, Clock, Wifi, WifiOff } from "lucide-react";
 import { logWithTimestamp, logError } from "@/utils/logUtils";
 import { logReactEnvironment } from "@/utils/reactUtils";
+import GameLobby from "./GameLobby";
 
 // Helper function for consistent timestamped logging with additional component info
 const logLoaderEvent = (message: string, data?: any) => {
@@ -21,6 +23,7 @@ interface Props {
   currentSession: GameSession | null;
   loadingStep?: string;
   sessionProgress?: any;
+  onRefreshTickets?: () => void;
 }
 
 export default function PlayerGameLoader({ 
@@ -28,10 +31,14 @@ export default function PlayerGameLoader({
   errorMessage, 
   currentSession, 
   loadingStep = "initializing",
-  sessionProgress 
+  sessionProgress,
+  onRefreshTickets
 }: Props) {
   // Generate a component instance ID for debugging
   const componentId = React.useMemo(() => `pgloader-${Math.random().toString(36).substring(2, 7)}`, []);
+  
+  // Track if we should show the branded lobby instead of loading state
+  const [showBrandedLobby, setShowBrandedLobby] = useState(false);
   
   // Log React environment information on mount
   useEffect(() => {
@@ -50,6 +57,21 @@ export default function PlayerGameLoader({
       logLoaderEvent("PlayerGameLoader unmounting", { componentId });
     };
   }, [loadingStep, componentId]);
+  
+  // Determine if we should show the branded lobby
+  useEffect(() => {
+    if (currentSession && 
+        !isLoading && 
+        (currentSession.lifecycle_state === 'setup' || currentSession.lifecycle_state === 'lobby')) {
+      logLoaderEvent("Showing branded lobby for waiting state", { 
+        lifecycle_state: currentSession.lifecycle_state,
+        status: currentSession.status
+      });
+      setShowBrandedLobby(true);
+    } else {
+      setShowBrandedLobby(false);
+    }
+  }, [currentSession, isLoading]);
   
   // Log component rendering
   logLoaderEvent("Component rendering", { isLoading, loadingStep, hasError: !!errorMessage, componentId });
@@ -128,6 +150,17 @@ export default function PlayerGameLoader({
       console.error = originalError;
     };
   }, [componentId]);
+
+  // Show the branded lobby if we have a valid session in waiting state
+  if (showBrandedLobby) {
+    return (
+      <GameLobby 
+        currentSession={currentSession}
+        onRefreshTickets={onRefreshTickets}
+        errorMessage={errorMessage}
+      />
+    );
+  }
 
   // If we're in a loading state, show the loading indicator
   if (isLoading) {

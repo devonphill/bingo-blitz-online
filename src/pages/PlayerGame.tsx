@@ -94,6 +94,11 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
   const [finalCalledNumbers, setFinalCalledNumbers] = useState<number[]>([]);
   const [finalLastCalledNumber, setFinalLastCalledNumber] = useState<number | null>(null);
   
+  // New state for auto-refresh timer
+  const [lastRefreshTime, setLastRefreshTime] = useState(Date.now());
+  const autoRefreshIntervalRef = useRef<number | null>(null);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  
   // If there was an error caught by the error boundary, log it and show error UI
   if (error) {
     logWithTimestamp(`PlayerGame (${instanceId}) rendering error state due to caught error: ${error.message}`, 'error', 'PlayerGame');
@@ -190,7 +195,7 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
   } = usePlayerGame(playerCode);
   
   // Initialize session progress hook - only if we have a session
-  const { progress: sessionProgress } = useSessionProgress(
+  const { progress: sessionProgress, fetchProgress } = useSessionProgress(
     currentSession?.id
   );
   
@@ -203,6 +208,51 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
     lastCalledNumber: wsLastCalledNumber,
     isConnected: wsIsConnected
   } = usePlayerWebSocketNumbers(currentSession?.id);
+  
+  // Auto-refresh tickets and game state for lobby mode
+  useEffect(() => {
+    if (!currentSession?.id || !autoRefreshEnabled) return;
+
+    const isWaitingForGame = 
+      (currentSession.lifecycle_state === 'setup' || 
+       currentSession.lifecycle_state === 'lobby') &&
+      (!tickets || tickets.length === 0);
+    
+    if (isWaitingForGame) {
+      logWithTimestamp(`Setting up auto-refresh for waiting state`, 'info');
+      
+      // Clear any existing interval
+      if (autoRefreshIntervalRef.current) {
+        clearInterval(autoRefreshIntervalRef.current);
+      }
+      
+      // Set up new interval for polling
+      autoRefreshIntervalRef.current = window.setInterval(() => {
+        logWithTimestamp(`Auto-refreshing game state and tickets`, 'info');
+        setLastRefreshTime(Date.now());
+        
+        // Refresh session progress to check game state
+        if (fetchProgress) {
+          fetchProgress().catch(err => {
+            logWithTimestamp(`Error refreshing session progress: ${err.message}`, 'error');
+          });
+        }
+        
+        // Refresh tickets in case they've been assigned
+        if (refreshTickets) {
+          refreshTickets().catch(err => {
+            logWithTimestamp(`Error refreshing tickets: ${err.message}`, 'error');
+          });
+        }
+      }, 10000); // Poll every 10 seconds
+      
+      return () => {
+        if (autoRefreshIntervalRef.current) {
+          clearInterval(autoRefreshIntervalRef.current);
+        }
+      };
+    }
+  }, [currentSession?.id, currentSession?.lifecycle_state, tickets, autoRefreshEnabled, fetchProgress, refreshTickets]);
   
   // Set up number called listener using the network context - only if we have a session
   useEffect(() => {
@@ -292,6 +342,33 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
     return submitBingoClaim(bestTicket);
   }, [submitBingoClaim, tickets, finalCalledNumbers, instanceId]);
   
+  // Forced refresh handler (exposed to child components)
+  const handleForceRefresh = React.useCallback(() => {
+    logWithTimestamp(`Forced refresh triggered by user`, 'info');
+    setLastRefreshTime(Date.now());
+    
+    // Promise.all to run both refreshes in parallel
+    return Promise.all([
+      fetchProgress ? fetchProgress() : Promise.resolve(),
+      refreshTickets ? refreshTickets() : Promise.resolve()
+    ]).then(() => {
+      toast({
+        title: "Refresh Complete",
+        description: "Game status and tickets have been refreshed",
+        duration: 2000
+      });
+      return true;
+    }).catch(error => {
+      logWithTimestamp(`Error during forced refresh: ${error.message}`, 'error');
+      toast({
+        title: "Refresh Failed",
+        description: "Could not refresh game status. Please try again.",
+        variant: "destructive"
+      });
+      return false;
+    });
+  }, [fetchProgress, refreshTickets, toast]);
+  
   // Only consider connection issues as non-critical errors
   const effectiveErrorMessage = !playerCode && window.location.pathname.includes('/player/game')
     ? "Player code is required. Please join the game again."
@@ -329,16 +406,18 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
     (!hasSession && !!effectiveErrorMessage) || // Only block on critical errors
     !hasSession;
 
-  if (shouldShowLoader) {
-    logWithTimestamp(`PlayerGame (${instanceId}): Showing loader: isLoading=${isLoading}, hasSession=${hasSession}, effectiveErrorMessage=${effectiveErrorMessage || 'none'}`, 'info');
+  // If showing the loader with a session but no tickets, we should use the branded lobby
+  if (shouldShowLoader || (hasSession && !hasTickets)) {
+    logWithTimestamp(`PlayerGame (${instanceId}): Showing loader or branded lobby: isLoading=${isLoading}, hasSession=${hasSession}, effectiveErrorMessage=${effectiveErrorMessage || 'none'}`, 'info');
     
     return (
       <PlayerGameLoader 
         isLoading={isLoading} 
-        errorMessage={effectiveErrorMessage}
+        errorMessage={errorMessage}
         currentSession={currentSession}
         loadingStep={loadingStep}
         sessionProgress={sessionProgress}
+        onRefreshTickets={handleForceRefresh}
       />
     );
   }
@@ -359,7 +438,7 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
             You don't have any tickets assigned for this game. Please contact the game organizer.
           </p>
           <button 
-            onClick={() => window.location.reload()} 
+            onClick={handleForceRefresh} 
             className="w-full rounded-md bg-blue-500 hover:bg-blue-600 text-white px-4 py-2"
           >
             Refresh
@@ -430,7 +509,7 @@ function PlayerGameContent({ instanceId, error }: { instanceId: string, error: E
         currentGameNumber={currentGameNumber}
         numberOfGames={numberOfGames}
         connectionState={effectiveConnectionState}
-        onRefreshTickets={refreshTickets}
+        onRefreshTickets={handleForceRefresh}
         sessionId={currentSession?.id}
       >
         <GameTypePlayspace

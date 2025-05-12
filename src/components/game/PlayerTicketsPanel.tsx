@@ -5,6 +5,7 @@ import { calculateTicketProgress, processTicketLayout } from "@/utils/ticketUtil
 import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
 import { logWithTimestamp } from "@/utils/logUtils";
+import { Spinner } from "@/components/ui/spinner";
 
 interface PlayerTicketsPanelProps {
   tickets: any[];
@@ -26,6 +27,22 @@ export default function PlayerTicketsPanel({
   onRefreshTickets
 }: PlayerTicketsPanelProps) {
   const [showGameLobby, setShowGameLobby] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Handle refresh with animation
+  const handleRefresh = () => {
+    if (onRefreshTickets) {
+      setIsRefreshing(true);
+      
+      // Call the refresh function
+      Promise.resolve(onRefreshTickets())
+        .finally(() => {
+          setTimeout(() => {
+            setIsRefreshing(false);
+          }, 1000); // Keep spinner for at least 1 second for better UX
+        });
+    }
+  };
 
   // Determine if we should show the game lobby
   useEffect(() => {
@@ -37,8 +54,6 @@ export default function PlayerTicketsPanel({
       setShowGameLobby(false);
     }
   }, [tickets, sessionId]);
-  
-  console.log(`Rendering PlayerTicketsPanel with ${tickets?.length || 0} tickets`);
   
   // Debug ticket data in more detail
   if (tickets && tickets.length > 0) {
@@ -66,10 +81,20 @@ export default function PlayerTicketsPanel({
           <Button 
             variant="outline" 
             className="w-full flex items-center justify-center gap-2"
-            onClick={onRefreshTickets}
+            onClick={handleRefresh}
+            disabled={isRefreshing}
           >
-            <RefreshCw className="h-4 w-4" />
-            Check for Tickets
+            {isRefreshing ? (
+              <>
+                <Spinner size="sm" className="mr-2" />
+                Checking...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-4 w-4" />
+                Check for Tickets
+              </>
+            )}
           </Button>
         )}
       </div>
@@ -88,10 +113,20 @@ export default function PlayerTicketsPanel({
           <Button 
             variant="outline" 
             className="w-full mt-4 flex items-center justify-center gap-2"
-            onClick={onRefreshTickets}
+            onClick={handleRefresh}
+            disabled={isRefreshing}
           >
-            <RefreshCw className="h-4 w-4" />
-            Refresh Tickets
+            {isRefreshing ? (
+              <>
+                <Spinner size="sm" className="mr-2" />
+                Refreshing...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-4 w-4" />
+                Refresh Tickets
+              </>
+            )}
           </Button>
         )}
       </div>
@@ -148,11 +183,21 @@ export default function PlayerTicketsPanel({
           <Button 
             size="sm" 
             variant="outline" 
-            onClick={onRefreshTickets} 
+            onClick={handleRefresh} 
+            disabled={isRefreshing}
             className="flex items-center gap-1"
           >
-            <RefreshCw className="h-3 w-3" />
-            Refresh
+            {isRefreshing ? (
+              <>
+                <Spinner size="sm" />
+                <span className="ml-1">Refreshing...</span>
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-3 w-3" />
+                <span className="ml-1">Refresh</span>
+              </>
+            )}
           </Button>
         )}
       </div>
