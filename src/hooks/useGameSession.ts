@@ -23,7 +23,7 @@ export function useGameSession(gameCode: string) {
         // Get the session ID for the access code
         const { data: sessionData, error: sessionError } = await supabase
           .from('game_sessions')
-          .select('id, name, created_by, status, game_type, session_config')
+          .select('*')  // Select all columns to avoid missing column errors
           .eq('access_code', gameCode)
           .single();
         

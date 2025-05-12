@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
 // Define an interface for ticket data to avoid type errors
-interface PlayerTicket {
+export interface PlayerTicket {
   id: string;
   session_id: string;
   player_id: string;
@@ -16,7 +16,7 @@ interface PlayerTicket {
   called_numbers: number | null;
   time_stamp: string;
   is_winning?: boolean;
-  winning_pattern?: string;
+  winning_pattern?: string | null;
 }
 
 export function usePlayerTickets(sessionId: string | undefined) {
@@ -51,7 +51,39 @@ export function usePlayerTickets(sessionId: string | undefined) {
         throw new Error(`Failed to fetch tickets: ${error.message}`);
       }
       
+      // If player_code doesn't work, try getting the player ID and use that instead
       if (!tickets || tickets.length === 0) {
+        // Try to get player ID from localStorage
+        const playerId = localStorage.getItem('playerId');
+        
+        if (playerId) {
+          const { data: playerTickets, error: playerTicketsError } = await supabase
+            .from('assigned_tickets')
+            .select('*')
+            .eq('session_id', sessionId)
+            .eq('player_id', playerId);
+            
+          if (playerTicketsError) {
+            throw new Error(`Failed to fetch tickets by player ID: ${playerTicketsError.message}`);
+          }
+          
+          if (playerTickets && playerTickets.length > 0) {
+            logWithTimestamp(`Found ${playerTickets.length} tickets using player ID`, 'info');
+            
+            const mappedTickets = playerTickets.map(ticket => ({
+              ...ticket,
+              is_winning: false,
+              winning_pattern: null
+            }));
+            
+            setPlayerTickets(mappedTickets);
+            setCurrentWinningTickets([]);
+            setTicketError(null);
+            setIsLoadingTickets(false);
+            return;
+          }
+        }
+        
         logWithTimestamp('No tickets found', 'info');
         setPlayerTickets([]);
       } else {

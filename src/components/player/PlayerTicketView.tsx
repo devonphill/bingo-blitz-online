@@ -3,9 +3,10 @@ import React from 'react';
 import BingoTicketDisplay from '@/components/game/BingoTicketDisplay';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PlayerTicket } from '@/hooks/usePlayerTickets';
 
 interface PlayerTicketViewProps {
-  tickets: any[];
+  tickets: PlayerTicket[];
   calledNumbers: number[];
   lastCalledNumber?: number | null;
   currentWinPattern?: string | null;
@@ -39,14 +40,14 @@ export default function PlayerTicketView({
           <CardHeader className="pb-0">
             <CardTitle className="text-sm flex justify-between">
               <span>Ticket #{ticket.serial || index + 1}</span>
-              {ticket.isWinning && <span className="text-green-500">Winning!</span>}
+              {ticket.is_winning && <span className="text-green-500">Winning!</span>}
             </CardTitle>
           </CardHeader>
           <CardContent>
             {ticket ? (
               <BingoTicketDisplay
                 numbers={ticket.numbers || []}
-                layoutMask={ticket.layoutMask || 0}
+                layoutMask={ticket.layout_mask || 0}
                 calledNumbers={calledNumbers}
                 serial={ticket.serial || `T${index}`}
                 perm={ticket.perm || 0}
