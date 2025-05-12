@@ -9,7 +9,7 @@ import { usePlayerTickets } from '@/hooks/usePlayerTickets';
 import { useNumberUpdates } from '@/hooks/useNumberUpdates';
 import { Button } from '@/components/ui/button';
 import { usePlayerContext } from '@/contexts/PlayerContext';
-import { useAuthContext } from '@/contexts/AuthContext';
+import { useAuth } from '@/hooks/useAuth'; // Fixed import
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { X, AlertTriangle } from 'lucide-react';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -67,7 +67,7 @@ class PlayerGameErrorBoundary extends React.Component<
 // Main player game component
 const PlayerGame = () => {
   const { gameCode } = useParams();
-  const navigate = useNavigate();
+  const navigate = useNavigate(); // Fixed variable name
   const { toast } = useToast();
   const { isConnected } = useNetwork();
 
