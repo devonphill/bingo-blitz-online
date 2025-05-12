@@ -3,31 +3,86 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
+// Consistent channel name used across the application
+const GAME_UPDATES_CHANNEL = 'game-updates';
+
 export function useNumberUpdates(sessionId: string | undefined) {
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const [currentNumber, setCurrentNumber] = useState<number | null>(null);
   const [numberCallTimestamp, setNumberCallTimestamp] = useState<number | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const channelRef = useRef<any>(null);
+  
+  // Track component mount state
+  const isMountedRef = useRef(true);
 
-  // Connect to the real-time channel
+  // Connect to the real-time channel with improved channel management
   useEffect(() => {
-    if (!sessionId) {
-      logWithTimestamp('No session ID for number updates', 'warn');
-      return;
-    }
+    // Set initial mounted state
+    isMountedRef.current = true;
     
-    // Clean up existing channel if it exists
-    if (channelRef.current) {
-      logWithTimestamp(`Cleaning up existing number updates channel before creating a new one`, 'info');
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
-    }
+    // Function to safely create and set up the channel
+    const setupChannel = () => {
+      if (!sessionId) {
+        logWithTimestamp('No session ID for number updates', 'warn');
+        return null;
+      }
+      
+      if (channelRef.current) {
+        logWithTimestamp('Number updates channel already exists, reusing', 'info');
+        return channelRef.current;
+      }
+      
+      logWithTimestamp(`Setting up number updates channel for session ${sessionId}`, 'info');
+      
+      // Create channel with proper configuration
+      const channel = supabase
+        .channel(GAME_UPDATES_CHANNEL, {
+          config: {
+            broadcast: { 
+              self: true, // Receive own broadcasts
+              ack: true   // Request acknowledgment
+            }
+          }
+        })
+        .on('broadcast', { event: 'number-called' }, payload => {
+          if (!isMountedRef.current) return; // Safety check
+          
+          if (payload && payload.payload) {
+            const { number, timestamp, sessionId: payloadSessionId } = payload.payload;
+            
+            // Only process updates for our session
+            if (payloadSessionId === sessionId) {
+              logWithTimestamp(`Real-time number update: ${number}`, 'info');
+              setCurrentNumber(number);
+              setNumberCallTimestamp(timestamp);
+              
+              // Add to called numbers list if not already there
+              setCalledNumbers(prev => {
+                if (!prev.includes(number)) {
+                  return [...prev, number];
+                }
+                return prev;
+              });
+            }
+          }
+          
+          setIsConnected(true);
+        })
+        .subscribe((status) => {
+          if (!isMountedRef.current) return; // Safety check
+          
+          logWithTimestamp(`Number updates channel status: ${status}`, 'info');
+          setIsConnected(status === 'SUBSCRIBED');
+        });
+      
+      return channel;
+    };
     
-    logWithTimestamp(`Setting up number updates for session ${sessionId}`, 'info');
-    
-    // First get all existing called numbers
-    async function fetchExistingNumbers() {
+    // First get all existing called numbers - separated from channel creation
+    const fetchExistingNumbers = async () => {
+      if (!sessionId) return;
+      
       try {
         // Query called_numbers from sessions_progress table
         const { data, error } = await supabase
@@ -45,52 +100,35 @@ export function useNumberUpdates(sessionId: string | undefined) {
           const lastNumber = numbers[numbers.length - 1];
           const lastTimestamp = new Date(data.updated_at).getTime();
           
-          setCalledNumbers(numbers);
-          setCurrentNumber(lastNumber);
-          setNumberCallTimestamp(lastTimestamp);
-          logWithTimestamp(`Loaded ${numbers.length} existing called numbers`, 'info');
+          if (isMountedRef.current) {
+            setCalledNumbers(numbers);
+            setCurrentNumber(lastNumber);
+            setNumberCallTimestamp(lastTimestamp);
+            logWithTimestamp(`Loaded ${numbers.length} existing called numbers`, 'info');
+          }
         }
       } catch (error) {
         logWithTimestamp(`Error fetching existing numbers: ${error}`, 'error');
       }
-    }
-    
+    };
+
+    // Execute initialization
     fetchExistingNumbers();
     
-    // Subscribe to real-time updates using consistent channel name
-    const channel = supabase
-      .channel('game-updates')
-      .on('broadcast', { event: 'number-called' }, payload => {
-        if (payload && payload.payload) {
-          const { number, timestamp, sessionId: payloadSessionId } = payload.payload;
-          
-          // Only process updates for our session
-          if (payloadSessionId === sessionId) {
-            logWithTimestamp(`Real-time number update: ${number}`, 'info');
-            setCurrentNumber(number);
-            setNumberCallTimestamp(timestamp);
-            
-            // Add to called numbers list if not already there
-            setCalledNumbers(prev => {
-              if (!prev.includes(number)) {
-                return [...prev, number];
-              }
-              return prev;
-            });
-          }
-        }
-        
-        setIsConnected(true);
-      })
-      .subscribe((status) => {
-        logWithTimestamp(`Number updates channel status: ${status}`, 'info');
-        setIsConnected(status === 'SUBSCRIBED');
-      });
+    // Set up channel after a small delay to avoid race conditions
+    const channelTimer = setTimeout(() => {
+      if (isMountedRef.current) {
+        // Store channel reference for cleanup
+        channelRef.current = setupChannel();
+      }
+    }, 100);
     
-    // Store channel reference for cleanup
-    channelRef.current = channel;
-    
+    // Cleanup function
     return () => {
+      isMountedRef.current = false;
+      
+      clearTimeout(channelTimer);
+      
       if (channelRef.current) {
         logWithTimestamp('Cleaning up number updates channel', 'info');
         supabase.removeChannel(channelRef.current);
@@ -99,7 +137,7 @@ export function useNumberUpdates(sessionId: string | undefined) {
     };
   }, [sessionId]);
   
-  // Function to reconnect
+  // Function to reconnect with exponential backoff
   const reconnect = useCallback(() => {
     if (!sessionId) return;
     
@@ -111,8 +149,50 @@ export function useNumberUpdates(sessionId: string | undefined) {
       channelRef.current = null;
     }
     
-    // Set isConnected to false to trigger the useEffect to run again
+    // Set isConnected to false to indicate reconnection attempt
     setIsConnected(false);
+    
+    // Create a new channel with a slight delay
+    setTimeout(() => {
+      if (isMountedRef.current && !channelRef.current) {
+        channelRef.current = supabase
+          .channel(GAME_UPDATES_CHANNEL, {
+            config: {
+              broadcast: { self: true, ack: true }
+            }
+          })
+          .on('broadcast', { event: 'number-called' }, payload => {
+            if (!isMountedRef.current) return;
+            
+            if (payload && payload.payload) {
+              const { number, timestamp, sessionId: payloadSessionId } = payload.payload;
+              
+              if (payloadSessionId === sessionId) {
+                logWithTimestamp(`Real-time number update after reconnect: ${number}`, 'info');
+                setCurrentNumber(number);
+                setNumberCallTimestamp(timestamp);
+                
+                setCalledNumbers(prev => {
+                  if (!prev.includes(number)) {
+                    return [...prev, number];
+                  }
+                  return prev;
+                });
+              }
+            }
+            
+            setIsConnected(true);
+          })
+          .subscribe((status) => {
+            if (!isMountedRef.current) return;
+            
+            logWithTimestamp(`Number updates channel status after reconnect: ${status}`, 'info');
+            setIsConnected(status === 'SUBSCRIBED');
+          });
+          
+        logWithTimestamp('Number updates reconnection attempt complete', 'info');
+      }
+    }, 500);
   }, [sessionId]);
 
   return {

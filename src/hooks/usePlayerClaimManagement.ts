@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -6,6 +5,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { validateChannelType, ensureString } from '@/utils/typeUtils';
 import { processTicketLayout } from '@/utils/ticketUtils';
 import { toast as sonnerToast } from 'sonner';
+
+// Define consistent channel names used across the application
+const GAME_UPDATES_CHANNEL = 'game-updates';
+const CLAIM_CHECKING_CHANNEL = 'claim_checking_broadcaster';
 
 /**
  * Hook for managing bingo claims from the player perspective
@@ -25,49 +28,150 @@ export function usePlayerClaimManagement(
   const { toast } = useToast();
   const claimChannelRef = useRef<any>(null);
   const claimCheckingChannelRef = useRef<any>(null);
+  const isMountedRef = useRef(true);
+  const instanceIdRef = useRef(`claim-${Math.random().toString(36).substring(2, 9)}`);
+  
+  // Custom logger with instance ID
+  const log = useCallback((message: string, level: 'info' | 'warn' | 'error' | 'debug' = 'info') => {
+    logWithTimestamp(`PlayerClaimManagement[${instanceIdRef.current}]: ${message}`, level);
+  }, []);
   
   // Reset claim status
   const resetClaimStatus = useCallback(() => {
-    logWithTimestamp(`PlayerClaimManagement: Resetting claim status from ${claimStatus} to none`, 'info');
+    log(`Resetting claim status from ${claimStatus} to none`, 'info');
     setClaimStatus('none');
-  }, [claimStatus]);
+  }, [claimStatus, log]);
 
-  // Set up or clean up the claim checking channel based on session availability
-  const setupClaimCheckingChannel = useCallback(() => {
-    // Only set up if we have a session ID and no existing channel
+  // Set up or clean up channels based on session availability
+  const setupCommunicationChannels = useCallback(() => {
     if (!sessionId) {
+      log('No session ID available for communication channels', 'warn');
+      return;
+    }
+    
+    // Setup claim result channel if needed
+    if (!claimChannelRef.current) {
+      log(`Setting up claim result channel for session ${sessionId}`, 'info');
+      
+      // Use the consistent channel name with proper configuration
+      const resultChannel = supabase
+        .channel(GAME_UPDATES_CHANNEL, {
+          config: {
+            broadcast: { 
+              self: true // Receive own broadcasts
+            }
+          }
+        })
+        .on('broadcast', { event: 'claim-result' }, payload => {
+          if (!isMountedRef.current) return;
+          
+          log(`Received claim result: ${JSON.stringify(payload.payload)}`, 'info');
+          
+          const result = payload.payload;
+          
+          // Check if this result is for us or our session
+          if (result.sessionId === sessionId) {
+            if ((result.playerId === playerId || result.playerId === playerCode) || result.isGlobalBroadcast) {
+              log(`Processing claim result: ${result.result}`, 'info');
+              
+              // Update claim status based on result
+              if (result.result === 'valid') {
+                setClaimStatus('valid');
+                setHasActiveClaims(false);
+                
+                // Show toast notification for valid claim
+                sonnerToast.success('Bingo Verified!', {
+                  description: `${result.playerName}'s claim was verified`,
+                  duration: 5000
+                });
+              } else if (result.result === 'invalid' || result.result === 'rejected') {
+                setClaimStatus('invalid');
+                setHasActiveClaims(false);
+                
+                // Show toast notification for invalid claim
+                sonnerToast.error('Claim Rejected', {
+                  description: `${result.playerName}'s claim was rejected`,
+                  duration: 5000
+                });
+              }
+            }
+          }
+        })
+        .subscribe((status) => {
+          log(`Claim result channel subscription status: ${status}`, 'info');
+        });
+      
+      // Store the channel for cleanup  
+      claimChannelRef.current = resultChannel;
+    }
+    
+    // Setup claim checking channel if needed
+    if (!claimCheckingChannelRef.current) {
+      log(`Setting up claim checking channel for session ${sessionId}`, 'info');
+      
+      // Set up channel for claim checking broadcasts with proper config
+      const checkChannel = supabase
+        .channel(CLAIM_CHECKING_CHANNEL, {
+          config: {
+            broadcast: { 
+              self: true // Receive own broadcasts
+            }
+          }
+        })
+        .on('broadcast', { event: 'claim-checking' }, payload => {
+          if (!isMountedRef.current) return;
+          
+          log(`Received claim checking broadcast: ${JSON.stringify(payload.payload)}`, 'info');
+          
+          // We don't need additional processing here as the BingoClaim component
+          // handles displaying the claim checking dialog
+          setHasActiveClaims(true);
+        })
+        .subscribe((status) => {
+          log(`Claim checking channel status: ${status}`, 'info');
+        });
+      
+      // Store channel reference for cleanup
+      claimCheckingChannelRef.current = checkChannel;
+    }
+  }, [sessionId, playerId, playerCode, log]);
+
+  // Set up/clean up effect with proper dependency array  
+  useEffect(() => {
+    // Set mount state
+    isMountedRef.current = true;
+    
+    log(`Initializing claim management for session: ${sessionId || 'none'}`, 'info');
+    
+    // Setup channels with a delay to avoid race conditions
+    const setupTimer = setTimeout(() => {
+      if (isMountedRef.current && sessionId) {
+        setupCommunicationChannels();
+      }
+    }, 100);
+    
+    return () => {
+      // Mark component as unmounted
+      isMountedRef.current = false;
+      
+      // Clear timer
+      clearTimeout(setupTimer);
+      
+      // Clean up channels
+      if (claimChannelRef.current) {
+        log(`Removing claim result channel`, 'info');
+        supabase.removeChannel(claimChannelRef.current);
+        claimChannelRef.current = null;
+      }
+      
       if (claimCheckingChannelRef.current) {
-        logWithTimestamp(`PlayerClaimManagement: Removing claim checking channel - no session`, 'info');
+        log(`Removing claim checking channel`, 'info');
         supabase.removeChannel(claimCheckingChannelRef.current);
         claimCheckingChannelRef.current = null;
       }
-      return;
-    }
-    
-    // If we already have a channel, don't create another
-    if (claimCheckingChannelRef.current) {
-      logWithTimestamp(`PlayerClaimManagement: Claim checking channel already exists for session ${sessionId}`, 'info');
-      return;
-    }
-    
-    logWithTimestamp(`PlayerClaimManagement: Setting up claim checking listener for session ${sessionId}`, 'info');
-    
-    // Set up channel to listen for claim checking broadcasts
-    const channel = supabase
-      .channel('claim_checking_broadcaster')
-      .on('broadcast', { event: 'claim-checking' }, payload => {
-        logWithTimestamp(`PlayerClaimManagement: Received claim checking broadcast: ${JSON.stringify(payload.payload)}`, 'info');
-        // We don't need any additional processing here as the BingoClaim component
-        // now handles displaying the claim checking dialog
-      })
-      .subscribe((status) => {
-        logWithTimestamp(`PlayerClaimManagement: Claim checking channel status: ${status}`, 'info');
-      });
-    
-    // Store channel reference for cleanup
-    claimCheckingChannelRef.current = channel;
-  }, [sessionId]);
-  
+    };
+  }, [sessionId, setupCommunicationChannels, log]);
+
   // Submit a claim
   const submitClaim = useCallback(async (ticket: any) => {
     if (!playerCode || !sessionId) {
@@ -79,14 +183,11 @@ export function usePlayerClaimManagement(
       return false;
     }
     
-    logWithTimestamp(`PlayerClaimManagement: Submitting claim for ${playerCode} in ${sessionId}`, 'info');
+    log(`Submitting claim for ${playerCode} in ${sessionId}`, 'info');
     setIsSubmittingClaim(true);
     setClaimStatus('pending');
     
     try {
-      // Use correct channel name "game-updates" and event name "claim-submitted"
-      const channel = supabase.channel('game-updates');
-      
       // Create payload to send
       const payload = {
         type: validateChannelType('broadcast'),
@@ -110,13 +211,15 @@ export function usePlayerClaimManagement(
         }
       };
       
-      logWithTimestamp(`PlayerClaimManagement: Submitting claim with payload: ${JSON.stringify(payload.payload)}`, 'info');
+      log(`Submitting claim with payload: ${JSON.stringify(payload.payload)}`, 'info');
       
-      // Send claim via real-time channel
+      // Send claim via real-time channel using the consistent channel name
+      const channel = supabase.channel(GAME_UPDATES_CHANNEL);
       await channel.send(payload);
       
-      logWithTimestamp(`PlayerClaimManagement: Claim broadcast sent successfully`, 'info');
+      log(`Claim broadcast sent successfully`, 'info');
       
+      // Show success toast
       toast({
         title: "Bingo Submitted!",
         description: "Your claim has been submitted for verification.",
@@ -126,13 +229,12 @@ export function usePlayerClaimManagement(
       // Update active claims state
       setHasActiveClaims(true);
       
-      // Make sure the claim checking channel is set up
-      setupClaimCheckingChannel();
-      
       // Keep the claim status as pending until we get a result
       return true;
     } catch (error) {
       console.error('Error submitting claim:', error);
+      log(`Error submitting claim: ${error}`, 'error');
+      
       toast({
         title: "Claim Error",
         description: "Failed to submit your bingo claim.",
@@ -144,77 +246,7 @@ export function usePlayerClaimManagement(
       // Keep the claim status as pending but stop the submitting indicator
       setIsSubmittingClaim(false);
     }
-  }, [playerCode, playerId, sessionId, playerName, gameType, currentWinPattern, gameNumber, toast, setupClaimCheckingChannel]);
-  
-  // Set up listener for claim results - FIXED: Use the same channel as the broadcaster
-  useEffect(() => {
-    if (!sessionId) {
-      logWithTimestamp(`PlayerClaimManagement: No session ID available for claim result listener`, 'warn');
-      return;
-    }
-    
-    // Clean up existing channel if it exists
-    if (claimChannelRef.current) {
-      logWithTimestamp(`PlayerClaimManagement: Cleaning up existing claim result channel before creating a new one`, 'info');
-      supabase.removeChannel(claimChannelRef.current);
-      claimChannelRef.current = null;
-    }
-    
-    logWithTimestamp(`PlayerClaimManagement: Setting up claim result listener for session ${sessionId}`, 'info');
-    
-    // FIXED: Use 'game-updates' channel consistently to match the server broadcast
-    const channel = supabase.channel('game-updates')
-      .on('broadcast', { event: 'claim-result' }, payload => {
-        const result = payload.payload?.result;
-        const targetPlayerId = payload.payload?.playerId;
-        const targetSessionId = payload.payload?.sessionId;
-        const ticket = payload.payload?.ticket;
-        const calledNumbers = payload.payload?.calledNumbers || [];
-        
-        logWithTimestamp(`PlayerClaimManagement: Received claim result: ${JSON.stringify(payload.payload)}`, 'info');
-        
-        // Check if this result is for us
-        if ((targetPlayerId === playerId || targetPlayerId === playerCode) && targetSessionId === sessionId) {
-          // Update our claim status based on the result
-          if (result === 'valid') {
-            logWithTimestamp(`PlayerClaimManagement: Claim was validated!`, 'info');
-            setClaimStatus('valid');
-            setHasActiveClaims(false);
-          } else if (result === 'invalid' || result === 'rejected') {
-            logWithTimestamp(`PlayerClaimManagement: Claim was rejected`, 'info');
-            setClaimStatus('invalid');
-            setHasActiveClaims(false);
-          }
-        } else if (targetSessionId === sessionId) {
-          // This is a claim result for someone else in our session
-          logWithTimestamp(`PlayerClaimManagement: Received claim result for another player in our session`, 'info');
-          // BingoClaim component will handle displaying it
-        }
-      })
-      .subscribe((status) => {
-        logWithTimestamp(`PlayerClaimManagement: Result channel subscription status: ${status}`, 'info');
-      });
-    
-    // Store the channel for cleanup  
-    claimChannelRef.current = channel;
-    
-    // Also set up the claim checking channel
-    setupClaimCheckingChannel();
-    
-    return () => {
-      if (claimChannelRef.current) {
-        logWithTimestamp(`PlayerClaimManagement: Removing claim result channel`, 'info');
-        supabase.removeChannel(claimChannelRef.current);
-        claimChannelRef.current = null;
-      }
-      
-      if (claimCheckingChannelRef.current) {
-        logWithTimestamp(`PlayerClaimManagement: Removing claim checking channel`, 'info');
-        supabase.removeChannel(claimCheckingChannelRef.current);
-        claimCheckingChannelRef.current = null;
-      }
-    };
-  }, [sessionId, playerId, playerCode, setupClaimCheckingChannel]);
+  }, [playerCode, playerId, sessionId, playerName, gameType, currentWinPattern, gameNumber, toast, log]);
 
   return {
     claimStatus,

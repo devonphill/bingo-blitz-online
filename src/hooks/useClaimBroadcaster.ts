@@ -4,14 +4,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { validateChannelType, ensureString } from '@/utils/typeUtils';
 import { logWithTimestamp } from '@/utils/logUtils';
 
+// Define consistent channel names used across the application
+const GAME_UPDATES_CHANNEL = 'game-updates';
+const CLAIM_CHECKING_CHANNEL = 'claim_checking_broadcaster';
+
 /**
  * Hook for broadcasting claim validation results to players
  */
 export function useClaimBroadcaster() {
-  // Channel name constant for consistency
-  const CLAIM_CHANNEL = 'game-updates';
-  const CLAIM_CHECKING_CHANNEL = 'claim_checking_broadcaster';
-
   /**
    * Broadcasts claim validation result to the player and everyone in the session
    */
@@ -26,8 +26,12 @@ export function useClaimBroadcaster() {
     try {
       logWithTimestamp(`Broadcasting claim result: ${result} to player ${playerId} and session ${sessionId || 'unknown'}`, 'info');
       
-      // Use the consistent channel for all game updates
-      const broadcastChannel = supabase.channel(CLAIM_CHANNEL);
+      // Use the consistent channel name for all game updates
+      const broadcastChannel = supabase.channel(GAME_UPDATES_CHANNEL, {
+        config: {
+          broadcast: { self: true } // Receive own broadcasts
+        }
+      });
       
       // Create a payload with all information needed for UI components
       const payload = {
@@ -82,7 +86,14 @@ export function useClaimBroadcaster() {
       logWithTimestamp(`Broadcasting claim checking to all players in session ${sessionId}`, 'info');
       
       // Use the dedicated channel for claim checking broadcasts
-      const broadcastChannel = supabase.channel(CLAIM_CHECKING_CHANNEL);
+      const broadcastChannel = supabase.channel(CLAIM_CHECKING_CHANNEL, {
+        config: {
+          broadcast: { 
+            self: true, // Receive own broadcasts
+            ack: true   // Request acknowledgment
+          }
+        }
+      });
       
       // Ensure we have properly formatted ticket data for display
       const ticketData = claim.ticket ? {
@@ -94,12 +105,18 @@ export function useClaimBroadcaster() {
       
       // Create a payload with claim details including ticket information
       const payload = {
-        ...claim,
+        claimId: ensureString(claim.id || `claim-${Date.now()}`), // Ensure we have a unique claim ID
         sessionId: ensureString(sessionId),
+        playerId: ensureString(claim.playerId),
+        playerName: ensureString(claim.playerName || 'Player'),
         timestamp: new Date().toISOString(),
         message: message || 'Claim being verified by caller',
+        gameType: ensureString(claim.gameType || 'mainstage'),
+        winPattern: ensureString(claim.winPattern || 'oneLine'),
         ticket: ticketData
       };
+      
+      logWithTimestamp(`Sending claim checking broadcast with payload: ${JSON.stringify(payload)}`, 'debug');
       
       // Send to all players via broadcast
       await broadcastChannel.send({

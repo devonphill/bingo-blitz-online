@@ -6,6 +6,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+
+// Define consistent channel names used across the application
+const GAME_UPDATES_CHANNEL = 'game-updates';
+const CLAIM_CHECKING_CHANNEL = 'claim_checking_broadcaster';
 
 interface ClaimNotificationsProps {
   sessionId: string | null;
@@ -21,12 +26,62 @@ export default function ClaimNotifications({
   const [previousCount, setPreviousCount] = useState(0);
   const { toast } = useToast();
   const mountedRef = useRef(true);
+  const claimChannelRef = useRef<any>(null);
 
   // Component lifecycle management
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false };
-  }, []);
+    
+    // Set up real-time claim monitoring
+    if (sessionId) {
+      // Set up channel for claim submissions
+      if (!claimChannelRef.current) {
+        logWithTimestamp("ClaimNotifications: Setting up claim listener", 'info');
+        
+        const channel = supabase
+          .channel(GAME_UPDATES_CHANNEL, {
+            config: {
+              broadcast: { self: true }
+            }
+          })
+          .on('broadcast', { event: 'claim-submitted' }, payload => {
+            if (!mountedRef.current) return;
+            
+            // Check if this is for our session
+            if (payload.payload?.sessionId === sessionId) {
+              logWithTimestamp("ClaimNotifications: Real-time claim received", 'info');
+              
+              // Force refresh claims list
+              forceRefresh();
+              
+              // Get details from the payload
+              const playerName = payload.payload.playerName || 'Player';
+              
+              // Show toast
+              toast({
+                title: "New Bingo Claim!",
+                description: `${playerName} has claimed bingo`,
+                variant: "destructive",
+                duration: 8000
+              });
+            }
+          })
+          .subscribe();
+        
+        claimChannelRef.current = channel;
+      }
+    }
+    
+    return () => { 
+      mountedRef.current = false;
+      
+      // Clean up channel
+      if (claimChannelRef.current) {
+        supabase.removeChannel(claimChannelRef.current);
+        claimChannelRef.current = null;
+      }
+    };
+  }, [sessionId, toast, forceRefresh]);
 
   // Refresh claims initially
   useEffect(() => {
@@ -45,7 +100,7 @@ export default function ClaimNotifications({
         logWithTimestamp("ClaimNotifications: Periodic refresh", 'debug');
         fetchClaims();
       }
-    }, 3000); // Check more frequently
+    }, 5000); // Check every 5 seconds
     
     return () => clearInterval(interval);
   }, [sessionId, fetchClaims]);
