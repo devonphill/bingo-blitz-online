@@ -12,7 +12,7 @@ interface PlayerGameControlsProps {
   onReconnect?: () => void;
   sessionId?: string | null;
   playerId?: string | null;
-  // Add the missing props
+  // Additional props
   isConnected?: boolean;
   onToggleTicketView?: () => void;
   onRefreshConnection?: () => void;
@@ -28,7 +28,6 @@ export default function PlayerGameControls({
   onReconnect,
   sessionId,
   playerId,
-  // Add the missing props with defaults
   isConnected = true,
   onToggleTicketView,
   onRefreshConnection,

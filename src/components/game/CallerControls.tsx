@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -87,11 +88,27 @@ export default function CallerControls({
       // Log the action
       logWithTimestamp(`Calling number: ${number} for session: ${sessionId}`, 'info');
       
-      // First update the database - use the correct Supabase syntax for array append
+      // First update the database - use correct approach for array append
+      const { data: currentProgressData, error: fetchError } = await supabase
+        .from('sessions_progress')
+        .select('called_numbers')
+        .eq('session_id', sessionId)
+        .single();
+        
+      if (fetchError) {
+        throw new Error(`Database fetch error: ${fetchError.message}`);
+      }
+      
+      // Create an updated array with the new number
+      const updatedCalledNumbers = Array.isArray(currentProgressData?.called_numbers) 
+        ? [...currentProgressData.called_numbers, number] 
+        : [number];
+        
+      // Now update with the new array
       const { error } = await supabase
         .from('sessions_progress')
         .update({
-          called_numbers: supabase.rpc('array_append', { arr: 'called_numbers', item: number }),
+          called_numbers: updatedCalledNumbers,
           last_called_number: number,
           updated_at: new Date().toISOString()
         })

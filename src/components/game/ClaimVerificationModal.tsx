@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Check, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -12,6 +11,7 @@ import {
 import CallerTicketDisplay from './CallerTicketDisplay';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import BingoWinProgress from './BingoWinProgress';
+import { normalizeWinPattern, getWinPatternDisplayName } from '@/utils/winPatternUtils';
 
 interface ClaimVerificationModalProps {
   isOpen: boolean;
@@ -47,7 +47,10 @@ export default function ClaimVerificationModal({
   const [validTickets, setValidTickets] = useState<any[]>([]);
   const [missedClaims, setMissedClaims] = useState<any[]>([]);
   
-  console.log("ClaimVerificationModal rendered with isOpen:", isOpen, "playerName:", playerName, "currentWinPattern:", currentWinPattern);
+  // Always normalize the currentWinPattern to ensure it has the MAINSTAGE_ prefix
+  const normalizedWinPattern = normalizeWinPattern(currentWinPattern, 'mainstage');
+  
+  console.log("ClaimVerificationModal rendered with isOpen:", isOpen, "playerName:", playerName, "currentWinPattern:", currentWinPattern, "normalized pattern:", normalizedWinPattern);
   
   // Debug use useEffect to log when isOpen changes
   useEffect(() => {
@@ -56,9 +59,9 @@ export default function ClaimVerificationModal({
     if (isOpen) {
       console.log("MODAL IS OPEN NOW with player:", playerName);
       console.log("Ticket data:", tickets);
-      console.log("Current win pattern:", currentWinPattern);
+      console.log("Current win pattern:", normalizedWinPattern);
     }
-  }, [isOpen, playerName, tickets, currentWinPattern]);
+  }, [isOpen, playerName, tickets, normalizedWinPattern]);
   
   // Recalculate claim validity and rank tickets when props change
   useEffect(() => {
@@ -79,8 +82,8 @@ export default function ClaimVerificationModal({
       let isValid = false;
       let missedBy = 0;
       
-      // Convert ticket to check against the current win pattern
-      if (currentWinPattern === "oneLine" || !currentWinPattern) {
+      // Convert ticket to check against the normalized win pattern
+      if (normalizedWinPattern === "MAINSTAGE_oneLine" || !normalizedWinPattern) {
         // For one line, check if any row is complete
         const layoutMask = ticket.layoutMask || 0;
         const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
@@ -117,7 +120,7 @@ export default function ClaimVerificationModal({
             }
           }
         }
-      } else if (currentWinPattern === "twoLines") {
+      } else if (normalizedWinPattern === "MAINSTAGE_twoLines") {
         // For two lines, we need to check if any two rows are complete
         const layoutMask = ticket.layoutMask || 0;
         const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
@@ -155,7 +158,7 @@ export default function ClaimVerificationModal({
             }
           }
         }
-      } else {
+      } else if (normalizedWinPattern === "MAINSTAGE_fullHouse") {
         // For full house or default, check if all numbers have been called
         isValid = ticket.numbers.every(number => calledNumbers.includes(number));
         
@@ -180,7 +183,7 @@ export default function ClaimVerificationModal({
           ...ticket,
           score: matchedNumbers.length,
           percentMatched,
-          validPattern: currentWinPattern || 'oneLine',
+          validPattern: normalizedWinPattern,
           missedBy
         };
         
@@ -214,7 +217,7 @@ export default function ClaimVerificationModal({
       return b.score - a.score;
     });
     
-    console.log("Claim validity for pattern", currentWinPattern, ":", validTicketsFound.length > 0);
+    console.log("Claim validity for pattern", normalizedWinPattern, ":", validTicketsFound.length > 0);
     console.log("Valid tickets found:", validTicketsFound.length);
     console.log("Missed claims found:", missedClaimsFound.length);
     
@@ -223,7 +226,7 @@ export default function ClaimVerificationModal({
     setMissedClaims(missedClaimsFound);
     setRankedTickets(sortedTickets);
     
-  }, [tickets, calledNumbers, currentWinPattern]);
+  }, [tickets, calledNumbers, normalizedWinPattern]);
 
   const handleValidClaim = () => {
     console.log("Valid claim button clicked");
@@ -259,7 +262,7 @@ export default function ClaimVerificationModal({
               {isClaimValid ? 'CLAIM VALID' : 'CLAIM INVALID'} - {playerName}
             </DialogTitle>
             <div className="text-sm text-gray-500">
-              Current win pattern: <span className="font-semibold">{currentWinPattern || 'Full House'}</span>
+              Current win pattern: <span className="font-semibold">{getWinPatternDisplayName(normalizedWinPattern)}</span>
             </div>
             {validTickets.length > 0 && (
               <div className="text-sm text-green-600 font-medium mt-1">
@@ -314,8 +317,8 @@ export default function ClaimVerificationModal({
                         numbers={ticket.numbers}
                         layoutMask={ticket.layoutMask}
                         calledNumbers={calledNumbers}
-                        activeWinPatterns={currentWinPattern ? [currentWinPattern] : ["fullHouse"]}
-                        currentWinPattern={currentWinPattern}
+                        activeWinPatterns={normalizedWinPattern ? [normalizedWinPattern] : ["MAINSTAGE_fullHouse"]}
+                        currentWinPattern={normalizedWinPattern}
                       />
                     </div>
                   )}

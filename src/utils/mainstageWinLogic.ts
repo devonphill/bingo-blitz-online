@@ -4,13 +4,23 @@ interface WinCheckResult {
   tg: number;
 }
 
+/**
+ * Normalizes a pattern ID to remove the MAINSTAGE_ prefix
+ * @param pattern The pattern to normalize
+ * @returns The normalized pattern without prefix
+ */
+function normalizePattern(pattern: string): 'oneLine' | 'twoLines' | 'fullHouse' {
+  const normalizedPattern = pattern.replace(/^MAINSTAGE_/, '') as 'oneLine' | 'twoLines' | 'fullHouse';
+  return normalizedPattern;
+}
+
 export function checkMainstageWinPattern(
   card: (number | null)[][],
   calledNumbers: number[],
   pattern: 'oneLine' | 'twoLines' | 'fullHouse' | 'MAINSTAGE_oneLine' | 'MAINSTAGE_twoLines' | 'MAINSTAGE_fullHouse'
 ): WinCheckResult {
   // Normalize pattern by removing MAINSTAGE_ prefix if present
-  const normalizedPattern = pattern.replace(/^MAINSTAGE_/, '') as 'oneLine' | 'twoLines' | 'fullHouse';
+  const normalizedPattern = normalizePattern(pattern);
   
   // Debug log to verify pattern being checked
   console.log(`Checking win pattern: ${pattern} (normalized to: ${normalizedPattern})`);

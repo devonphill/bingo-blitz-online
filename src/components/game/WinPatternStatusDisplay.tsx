@@ -3,6 +3,7 @@ import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { GameType } from '@/types';
+import { normalizeWinPattern, getWinPatternDisplayName } from '@/utils/winPatternUtils';
 
 interface WinPatternStatusDisplayProps {
   gameType?: GameType;
@@ -15,7 +16,7 @@ interface WinPatternStatusDisplayProps {
 }
 
 export function WinPatternStatusDisplay({ 
-  gameType,
+  gameType = 'mainstage',
   activePatternId,
   completedPatternIds = [],
   // New props
@@ -30,7 +31,8 @@ export function WinPatternStatusDisplay({
         <h3 className="text-sm font-medium mb-2">Win Patterns</h3>
         <div className="flex flex-wrap gap-2">
           {patterns.map(pattern => {
-            const isActive = currentActive === pattern.id;
+            const normalizedId = normalizeWinPattern(pattern.id, gameType);
+            const isActive = normalizeWinPattern(currentActive, gameType) === normalizedId;
             const isCompleted = pattern.active && !isActive;
             
             let variant: 'outline' | 'secondary' | 'default' = 'outline';
@@ -39,7 +41,7 @@ export function WinPatternStatusDisplay({
             
             return (
               <Badge key={pattern.id} variant={variant}>
-                {pattern.name}
+                {pattern.name || getWinPatternDisplayName(pattern.id)}
               </Badge>
             );
           })}
@@ -51,22 +53,14 @@ export function WinPatternStatusDisplay({
   // Legacy pattern order support
   const patternOrder = gameType ? getDefaultPatternsForType(gameType) : ['oneLine', 'twoLines', 'fullHouse'];
   
-  const patternNames: Record<string, string> = {
-    'oneLine': 'One Line',
-    'twoLines': 'Two Lines',
-    'fullHouse': 'Full House',
-    'corners': 'Corners',
-    'threeLines': 'Three Lines',
-    'coverAll': 'Cover All'
-  };
-  
   return (
     <Card className="p-4">
       <h3 className="text-sm font-medium mb-2">Win Patterns</h3>
       <div className="flex flex-wrap gap-2">
         {patternOrder.map(patternId => {
-          const isActive = activePatternId === patternId;
-          const isCompleted = completedPatternIds.includes(patternId);
+          const normalizedId = normalizeWinPattern(patternId, gameType);
+          const isActive = normalizeWinPattern(activePatternId, gameType) === normalizedId;
+          const isCompleted = completedPatternIds.includes(normalizedId) || completedPatternIds.includes(patternId);
           
           let variant: 'outline' | 'secondary' | 'default' = 'outline';
           if (isActive) variant = 'default';
@@ -74,7 +68,7 @@ export function WinPatternStatusDisplay({
           
           return (
             <Badge key={patternId} variant={variant}>
-              {patternNames[patternId] || patternId}
+              {getWinPatternDisplayName(patternId)}
             </Badge>
           );
         })}

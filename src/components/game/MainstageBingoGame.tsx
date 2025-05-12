@@ -3,6 +3,7 @@ import React from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import SafeBingoTicketDisplay from './SafeBingoTicketDisplay';
+import { normalizeWinPattern } from '@/utils/winPatternUtils';
 
 interface MainstageBingoGameProps {
   tickets: any[];
@@ -19,6 +20,9 @@ export default function MainstageBingoGame({
   autoMarking = true,
   setAutoMarking
 }: MainstageBingoGameProps) {
+  // Always use MAINSTAGE_ prefixed patterns for this game type
+  const currentWinPattern = normalizeWinPattern('oneLine', 'mainstage');
+
   return (
     <div className="bg-white rounded-lg shadow p-4">
       <div className="text-center mb-4">
@@ -51,7 +55,7 @@ export default function MainstageBingoGame({
                 perm={ticket.perm || 0}
                 position={ticket.position}
                 autoMarking={autoMarking}
-                currentWinPattern="oneLine"
+                currentWinPattern={currentWinPattern}
                 showProgress={true}
               />
             </div>
