@@ -1,3 +1,4 @@
+
 import React, { useEffect } from 'react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerFooter } from '../ui/drawer';
 import { Button } from '../ui/button';
@@ -6,6 +7,7 @@ import SafeBingoTicketDisplay from './SafeBingoTicketDisplay';
 import { cn } from '@/lib/utils';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { toast } from 'sonner';
+
 interface ClaimDrawerProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -75,11 +77,11 @@ export default function ClaimDrawer({
   useEffect(() => {
     if (validationResult && isOpen && autoClose) {
       logWithTimestamp(`ClaimDrawer: Auto-close timer started for ${validationResult} result`, 'info');
-      // Increased to 5 seconds to give users more time to see the result
+      // Set to 5 seconds as requested
       const timer = setTimeout(() => {
         logWithTimestamp(`ClaimDrawer: Auto-closing now`, 'info');
         onOpenChange(false);
-      }, 5000); // Changed from 3000 to 5000
+      }, 5000); // 5 seconds
 
       return () => clearTimeout(timer);
     }
@@ -112,11 +114,22 @@ export default function ClaimDrawer({
     };
   }, [ticketData]);
 
-  // Styles for validation overlay
-  const validationOverlayClasses = cn("absolute inset-0 flex items-center justify-center rounded-md z-20", "transition-opacity duration-500", validationResult ? "opacity-100" : "opacity-0", validationResult === 'valid' ? "bg-green-500/30" : "bg-red-500/30");
-  const validationIconClasses = cn("h-24 w-24 transition-transform duration-500 transform-gpu", validationResult ? "scale-100" : "scale-0", validationResult === 'valid' ? "text-green-600" : "text-red-600");
+  // Enhanced styles for validation overlay with animation
+  const validationOverlayClasses = cn(
+    "absolute inset-0 flex items-center justify-center rounded-md z-20",
+    "transition-opacity duration-500",
+    validationResult ? "opacity-100" : "opacity-0",
+    validationResult === 'valid' ? "bg-green-500/30" : "bg-red-500/30"
+  );
+  
+  const validationIconClasses = cn(
+    "h-24 w-24 transition-transform duration-500 transform-gpu",
+    validationResult ? "scale-100 animate-scale-in" : "scale-0",
+    validationResult === 'valid' ? "text-green-600" : "text-red-600"
+  );
+
   return <Drawer open={isOpen} onOpenChange={onOpenChange}>
-      <DrawerContent className="px-4">
+      <DrawerContent className="px-4 pb-6">
         <div className="mx-auto w-full max-w-sm">
           <DrawerHeader className="relative">
             <div className="flex items-center gap-2 justify-center">
@@ -131,14 +144,26 @@ export default function ClaimDrawer({
                 {playerName} has claimed Bingo!
               </h3>
               
-              {/* The player's ticket display */}
+              {/* The player's ticket display with enhanced validation overlay */}
               {processedTicketData && <div className="w-full max-w-sm bg-gray-50 p-3 rounded-md border border-gray-200 relative">
-                  {/* New validation overlay */}
+                  {/* Improved validation overlay with animation */}
                   <div className={validationOverlayClasses}>
-                    {validationResult === 'valid' ? <Check className={validationIconClasses} strokeWidth={3} /> : validationResult === 'invalid' ? <X className={validationIconClasses} strokeWidth={3} /> : null}
+                    {validationResult === 'valid' ? 
+                      <Check className={validationIconClasses} strokeWidth={3} /> : 
+                      validationResult === 'invalid' ? 
+                      <X className={validationIconClasses} strokeWidth={3} /> : null}
                   </div>
 
-                  <SafeBingoTicketDisplay numbers={processedTicketData.numbers} layoutMask={processedTicketData.layoutMask} calledNumbers={processedTicketData.calledNumbers} serial={processedTicketData.serial} perm={processedTicketData.perm} position={processedTicketData.position} autoMarking={true} showProgress={true} />
+                  <SafeBingoTicketDisplay 
+                    numbers={processedTicketData.numbers} 
+                    layoutMask={processedTicketData.layoutMask} 
+                    calledNumbers={processedTicketData.calledNumbers} 
+                    serial={processedTicketData.serial} 
+                    perm={processedTicketData.perm} 
+                    position={processedTicketData.position} 
+                    autoMarking={true} 
+                    showProgress={true} 
+                  />
                 </div>}
               
               {!validationResult && <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center">
@@ -152,6 +177,13 @@ export default function ClaimDrawer({
               {winPattern && <div className="mt-2 px-4 py-2 bg-amber-50 rounded-md text-amber-700 text-center">
                   Pattern: <span className="font-semibold">{winPattern}</span>
                 </div>}
+              
+              {validationResult && <div className={cn("mt-2 px-4 py-2 rounded-md text-center animate-fade-in", 
+                validationResult === 'valid' ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700")}>
+                {validationResult === 'valid' ? 
+                  "Claim Verified ✓" : 
+                  "Claim Rejected ✗"}
+              </div>}
             </div>
           </div>
           

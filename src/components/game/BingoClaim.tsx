@@ -52,6 +52,7 @@ export default function BingoClaim({
   const [isClaimSheetVisible, setIsClaimSheetVisible] = useState(false);
   const [claimCheckData, setClaimCheckData] = useState<any>(null);
   const [claimResult, setClaimResult] = useState<'valid' | 'invalid' | null>(null);
+  const [activeClaims, setActiveClaims] = useState(0);
   
   // Channels for real-time communication
   const claimCheckingChannelRef = useRef<any>(null);
@@ -125,6 +126,7 @@ export default function BingoClaim({
           setClaimCheckData(payload.payload);
           setIsClaimSheetVisible(true);
           setClaimResult(null); // Clear any previous result
+          setActiveClaims(prev => prev + 1); // Increment active claims
           
           // Show toast notification for better visibility
           toast.info("Bingo Claim Being Checked", {
@@ -140,13 +142,10 @@ export default function BingoClaim({
           
           // Debug logs
           logWithTimestamp(`BingoClaim (${instanceId.current}): Set claim sheet visible`, 'info');
-          console.log("▶️ CLAIM CHECK DATA SET:", payload.payload);
-          console.log("▶️ DRAWER VISIBILITY CHANGED TO:", true);
         }
       })
       .subscribe((status) => {
         logWithTimestamp(`BingoClaim (${instanceId.current}): Claim checking channel status: ${status}`, 'info');
-        console.log('Claim checking channel status:', status);
       });
     
     // Set up claim result channel
@@ -158,7 +157,6 @@ export default function BingoClaim({
       })
       .on('broadcast', { event: 'claim-result' }, payload => {
         logWithTimestamp(`BingoClaim (${instanceId.current}): Received claim result`, 'info');
-        console.log('Received claim result:', payload.payload);
         
         if (!isMountedRef.current) return;
         
@@ -188,6 +186,9 @@ export default function BingoClaim({
             }));
             setIsClaimSheetVisible(true);
             
+            // Decrement active claims after result is received
+            setActiveClaims(prev => Math.max(0, prev - 1));
+            
             // Show toast notification as well for better visibility
             toast[isValidClaim ? 'success' : 'error'](
               isValidClaim ? "Bingo Verified!" : "Invalid Claim", 
@@ -197,24 +198,19 @@ export default function BingoClaim({
               }
             );
             
-            // Debug logs
-            console.log("▶️ CLAIM RESULT SET:", result.result);
-            console.log("▶️ DRAWER VISIBILITY CHANGED TO:", true);
-            
             // Reset claim status if this was our claim and we have the function
             if (result.playerId === playerId && resetClaimStatus) {
               setTimeout(() => {
                 if (isMountedRef.current && resetClaimStatus) {
                   resetClaimStatus();
                 }
-              }, 3000); // Match the auto-close timing
+              }, 5000); // Match the auto-close timing
             }
           }
         }
       })
       .subscribe((status) => {
         logWithTimestamp(`BingoClaim (${instanceId.current}): Claim result channel status: ${status}`, 'info');
-        console.log('Claim result channel status:', status);
       });
     
     // Store channels for cleanup
@@ -236,16 +232,19 @@ export default function BingoClaim({
           winPattern: 'oneLine'
         });
         setIsClaimSheetVisible(true);
+        setActiveClaims(prev => prev + 1);
         return 'Showing claim sheet';
       },
       hide: () => {
         setIsClaimSheetVisible(false);
+        setActiveClaims(0);
         return 'Hiding claim sheet';
       },
       getStatus: () => ({
         visible: isClaimSheetVisible,
         data: claimCheckData,
-        result: claimResult
+        result: claimResult,
+        activeClaims: activeClaims
       }),
       forceOpen: (payload: any) => {
         logWithTimestamp(`BingoClaim (${instanceId.current}): Manually forcing drawer open`, 'info');
@@ -263,6 +262,7 @@ export default function BingoClaim({
         
         setClaimCheckData(claimData);
         setIsClaimSheetVisible(true);
+        setActiveClaims(prev => prev + 1);
         return 'Manually opened claim drawer';
       }
     };
@@ -302,29 +302,47 @@ export default function BingoClaim({
   // Handle drawer state changes
   const handleOpenChange = (open: boolean) => {
     logWithTimestamp(`BingoClaim (${instanceId.current}): Drawer open state changed to: ${open}`, 'info');
-    setIsClaimSheetVisible(open);
+    
     if (!open) {
-      setClaimResult(null);
+      // Only close if there are no active claims
+      if (activeClaims === 0) {
+        setIsClaimSheetVisible(false);
+        setClaimResult(null);
+      } else {
+        // If there are active claims, don't allow manual closing
+        logWithTimestamp(`BingoClaim (${instanceId.current}): Preventing drawer close - ${activeClaims} active claims`, 'warn');
+      }
+    } else {
+      setIsClaimSheetVisible(open);
     }
   };
   
-  // This effect will force the drawer to open when claimData changes
+  // Effect to auto-close when no active claims
   useEffect(() => {
-    if (claimCheckData && !isClaimSheetVisible) {
-      logWithTimestamp(`BingoClaim (${instanceId.current}): Force opening drawer because claimCheckData exists`, 'info');
-      setIsClaimSheetVisible(true);
+    if (activeClaims === 0 && isClaimSheetVisible && claimResult !== null) {
+      // Auto-close after result is shown and no more active claims
+      const timer = setTimeout(() => {
+        if (isMountedRef.current) {
+          logWithTimestamp(`BingoClaim (${instanceId.current}): Auto-closing drawer - no active claims`, 'info');
+          setIsClaimSheetVisible(false);
+        }
+      }, 5000); // Match the ClaimDrawer auto-close timing
+      
+      return () => clearTimeout(timer);
     }
-  }, [claimCheckData, isClaimSheetVisible]);
+  }, [activeClaims, isClaimSheetVisible, claimResult]);
 
+  // Only render the drawer if there are claims to show
   return (
     <>
       <ClaimDrawer
-        isOpen={isClaimSheetVisible}
+        isOpen={isClaimSheetVisible && (!!claimCheckData || activeClaims > 0)}
         onOpenChange={handleOpenChange}
         playerName={claimCheckData?.playerName || playerName}
         ticketData={claimCheckData?.ticket || currentTicket}
         winPattern={claimCheckData?.winPattern}
         validationResult={claimResult}
+        autoClose={activeClaims === 0} // Only auto-close when no active claims
       />
     </>
   );

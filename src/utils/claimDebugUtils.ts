@@ -58,6 +58,31 @@ export function setupClaimDebugging() {
       return "Attempted to open claim drawer using multiple methods";
     },
     
+    simulateValidation: (isValid = true) => {
+      logWithTimestamp(`Simulating claim ${isValid ? 'validation' : 'rejection'}`, 'info');
+      
+      // Get current claim data if available
+      const currentData = (window as any).debugClaimSheet?.getStatus?.() || {};
+      const simulatedResult = {
+        ...currentData.data,
+        playerName: currentData.data?.playerName || 'Test Player',
+        result: isValid ? 'valid' : 'invalid'
+      };
+      
+      // Try to find and update the claim drawer directly
+      if ((window as any).document.querySelector('[role="dialog"]')) {
+        const event = new CustomEvent('claimValidation', {
+          detail: {
+            result: isValid ? 'valid' : 'invalid',
+            data: simulatedResult
+          }
+        });
+        window.dispatchEvent(event);
+      }
+      
+      return `Simulated ${isValid ? 'validation' : 'rejection'} of claim`;
+    },
+    
     getCurrentState: () => {
       // Try to get state from multiple sources
       const drawerState = (window as any).claimDrawerDebug?.getProps ? 
@@ -122,45 +147,54 @@ export function setupClaimDebugging() {
 }
 
 /**
- * Test the drawer functionality by attempting to open it
+ * Test the drawer visibility by attempting to open it
  */
 export function testDrawerVisibility() {
   try {
     // Show info in console for debugging
     logWithTimestamp('Testing claim drawer visibility...', 'info');
     
+    // Create a test claim with validation state
+    const testClaim = {
+      id: `test-${Date.now()}`,
+      playerName: 'Visibility Test',
+      ticket: {
+        serial: 'VISTEST',
+        numbers: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+        layoutMask: 110616623, 
+        calledNumbers: [1, 2, 3]
+      },
+      winPattern: 'oneLine'
+    };
+    
     // Try multiple methods to open the drawer
     if ((window as any).debugClaimSheet?.show) {
       logWithTimestamp('Using debugClaimSheet.show()', 'debug');
-      (window as any).debugClaimSheet.show();
+      (window as any).debugClaimSheet.show(testClaim);
     }
     
     if ((window as any).claimDrawerDebug?.forceOpen) {
       logWithTimestamp('Using claimDrawerDebug.forceOpen()', 'debug');
-      (window as any).claimDrawerDebug.forceOpen();
+      (window as any).claimDrawerDebug.forceOpen(testClaim);
     }
     
     if ((window as any).debugClaims?.forceOpenDrawer) {
       logWithTimestamp('Using debugClaims.forceOpenDrawer()', 'debug');
-      (window as any).debugClaims.forceOpenDrawer();
+      (window as any).debugClaims.forceOpenDrawer(testClaim);
     }
     
     // Dispatch event as a fallback
     const event = new CustomEvent('forceOpenClaimDrawer', { 
-      detail: { 
-        data: {
-          playerName: 'Visibility Test',
-          ticket: {
-            serial: 'VISTEST',
-            numbers: [1, 2, 3, 4, 5, 6, 7, 8, 9],
-            layoutMask: 110616623, 
-            calledNumbers: [1, 2, 3]
-          },
-          winPattern: 'oneLine'
-        }
-      }
+      detail: { data: testClaim }
     });
     window.dispatchEvent(event);
+    
+    // After a delay, simulate validation
+    setTimeout(() => {
+      if ((window as any).debugClaims?.simulateValidation) {
+        (window as any).debugClaims.simulateValidation(true);
+      }
+    }, 2000);
     
     return true;
   } catch (err) {

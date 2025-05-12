@@ -1,3 +1,4 @@
+
 import type { Config } from "tailwindcss";
 
 export default {
@@ -156,6 +157,16 @@ export default {
 					'100%': {
 						opacity: '0'
 					}
+				},
+				// New animations for validation visual effects
+				'validation-pulse': {
+					'0%, 100%': { transform: "scale(1)", opacity: "0.8" },
+					'50%': { transform: "scale(1.1)", opacity: "1" }
+				},
+				'validation-appear': {
+					'0%': { transform: "scale(0.5) rotate(-15deg)", opacity: "0" },
+					'60%': { transform: "scale(1.2) rotate(5deg)" },
+					'100%': { transform: "scale(1) rotate(0deg)", opacity: "1" }
 				}
 			},
 			animation: {
@@ -166,7 +177,10 @@ export default {
 				'bounce-light': 'bounce-light 2s infinite',
 				"pulse-subtle": "pulse-subtle 2s ease-in-out infinite",
 				'scale-in': 'scale-in 0.5s ease-out',
-				'fade-in-out': 'fade-in-out 5s ease-in-out'
+				'fade-in-out': 'fade-in-out 5s ease-in-out',
+				// New animations for validation visual effects
+				'validation-pulse': 'validation-pulse 2s ease-in-out infinite',
+				'validation-appear': 'validation-appear 0.6s ease-out forwards'
 			}
 		}
 	},

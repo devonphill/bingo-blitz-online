@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Button } from "@/components/ui/button";
 import { Loader, CheckCircle, XCircle, Share2 } from 'lucide-react';
@@ -32,101 +33,80 @@ export default function ClaimItem({
   const { toast } = useToast();
   const [isSendingToPlayers, setIsSendingToPlayers] = React.useState(false);
   
-  // For debugging
-  const instanceId = React.useRef(`ClaimItem-${Math.random().toString(36).substring(2, 7)}`);
-  
-  React.useEffect(() => {
-    logWithTimestamp(`ClaimItem (${instanceId.current}): Component mounted for ${claim.playerName || claim.playerId}`, 'debug');
-    return () => {
-      logWithTimestamp(`ClaimItem (${instanceId.current}): Component unmounting`, 'debug');
-    };
-  }, [claim.playerName, claim.playerId]);
-
+  // Enhanced broadcasting to ensure claim checks reach players
   const handleSendToPlayers = async () => {
     setIsSendingToPlayers(true);
     try {
-      logWithTimestamp(`ClaimItem (${instanceId.current}): Broadcasting claim check for ${claim.playerName || claim.playerId}`, 'info');
-      console.log('BROADCASTING CLAIM CHECK TO PLAYERS:', {
-        playerName: claim.playerName || claim.playerId,
-        sessionId: claim.sessionId,
-        ticketSerial: claim.ticket?.serial
-      });
+      logWithTimestamp(`ClaimItem: Broadcasting claim check for ${claim.playerName || claim.playerId}`, 'info');
       
-      // Add additional debugging
-      console.log('ClaimBroadcastService available:', !!claimBroadcastService);
-      console.log('Claim data being sent:', {
-        ...claim,
-        calledNumbers: currentCalledNumbers,
-        lastCalledNumber: currentNumber
-      });
-      
-      if (!claimBroadcastService) {
-        throw new Error('ClaimBroadcastService is not available');
-      }
-      
-      // Ensure we have a claimId for tracking
-      const claimWithId = {
+      // Ensure we have properly formatted data for broadcasting
+      const enhancedClaim = {
         ...claim,
         calledNumbers: currentCalledNumbers,
         lastCalledNumber: currentNumber,
-        claimId: claim.id
+        winPattern: claim.winPattern || currentWinPattern,
+        gameType: claim.gameType || gameType,
+        ticket: claim.ticket ? {
+          ...claim.ticket,
+          calledNumbers: currentCalledNumbers
+        } : null
       };
       
-      logWithTimestamp(`ClaimItem (${instanceId.current}): Calling broadcastClaimChecking with sessionId=${claim.sessionId}`, 'debug');
+      // More reliable broadcasting with multiple attempts if needed
+      let success = false;
+      let attempts = 0;
+      const maxAttempts = 2;
       
-      // Send the current claim to all players
-      const success = await claimBroadcastService.broadcastClaimChecking(
-        claimWithId,
-        claim.sessionId // Pass sessionId as second parameter
-      );
+      while (!success && attempts < maxAttempts) {
+        attempts++;
+        logWithTimestamp(`ClaimItem: Broadcast attempt ${attempts} for claim ${claim.id}`, 'info');
+        
+        success = await claimBroadcastService.broadcastClaimChecking(
+          enhancedClaim,
+          claim.sessionId
+        );
+        
+        if (!success && attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 500)); // Wait before retry
+        }
+      }
       
       if (success) {
-        logWithTimestamp(`ClaimItem (${instanceId.current}): Successfully broadcasted claim check for ${claim.playerName || claim.playerId}`, 'info');
-        console.log('BROADCAST CLAIM CHECK SUCCESS');
+        logWithTimestamp(`ClaimItem: Successfully broadcasted claim check`, 'info');
         
-        // Manually trigger the drawer to open via custom event
-        if (typeof window !== 'undefined') {
-          logWithTimestamp(`ClaimItem (${instanceId.current}): Dispatching forceOpenClaimDrawer event`, 'info');
+        // Trigger global events for better coordination
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
           const event = new CustomEvent('forceOpenClaimDrawer', { 
-            detail: { 
-              data: {
-                ...claimWithId,
-                playerName: claim.playerName || claim.playerId,
-                ticket: claim.ticket
-              }
-            }
+            detail: { data: enhancedClaim }
           });
           window.dispatchEvent(event);
+          
+          // Also dispatch a custom event that other components might listen to
+          const broadcastEvent = new CustomEvent('claimBroadcast', {
+            detail: { claim: enhancedClaim, type: 'checking' }
+          });
+          window.dispatchEvent(broadcastEvent);
         }
         
-        // Show toast with both libraries for maximum visibility
+        // Show confirmation using both toast systems for maximum visibility
         toast({
-          title: "Sent to Players",
+          title: "Sent to All Players",
           description: `Claim by ${claim.playerName || claim.playerId} shared with all players`,
           duration: 3000,
         });
         
-        sonnerToast.success("Claim sent to all players", {
+        sonnerToast.success("Claim sent to players", {
           description: `${claim.playerName || claim.playerId}'s ticket is now visible to everyone`
         });
       } else {
-        logWithTimestamp(`ClaimItem (${instanceId.current}): Failed to broadcast claim check for ${claim.playerName || claim.playerId}`, 'error');
-        console.error('BROADCAST CLAIM CHECK FAILED');
-        
-        toast({
-          title: "Broadcast Error",
-          description: "Failed to send claim to players",
-          variant: "destructive",
-          duration: 3000,
-        });
+        throw new Error(`Failed to broadcast claim after ${maxAttempts} attempts`);
       }
     } catch (error) {
       console.error("Error broadcasting claim to players:", error);
-      logWithTimestamp(`ClaimItem (${instanceId.current}): Error broadcasting claim check: ${error}`, 'error');
       
       toast({
         title: "Broadcast Error",
-        description: "An unexpected error occurred",
+        description: "Failed to send claim to players. Please try again.",
         variant: "destructive",
         duration: 3000,
       });
