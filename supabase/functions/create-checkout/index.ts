@@ -18,6 +18,14 @@ const log = (message: string, data?: any) => {
   console.log(`[create-checkout] ${message}`, data ? JSON.stringify(data) : "");
 };
 
+// Token package pricing
+const tokenPackages = {
+  'trial': { tokens: 13, price: 10 },
+  'starter': { tokens: 50, price: 36 },
+  'popular': { tokens: 100, price: 70 },
+  'pro': { tokens: 500, price: 300 }
+};
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
@@ -74,9 +82,17 @@ serve(async (req) => {
       { auth: { persistSession: false } }
     );
 
-    // Calculate price in cents
-    const unitPrice = 10; // $10 per 100 tokens
-    const costInCents = unitPrice * 100; // Convert to cents
+    // Get package price
+    let tokenAmount = amount;
+    let costInPounds = 10; // Default price
+    
+    if (tokenPackage && tokenPackages[tokenPackage]) {
+      tokenAmount = tokenPackages[tokenPackage].tokens;
+      costInPounds = tokenPackages[tokenPackage].price;
+    }
+    
+    // Convert pounds to pence for Stripe
+    const costInPence = costInPounds * 100;
     
     // Create token purchase record in database
     log("Creating token purchase record");
@@ -84,9 +100,9 @@ serve(async (req) => {
       .from("token_purchases")
       .insert({
         user_id: userId,
-        amount: amount,
-        cost: unitPrice,
-        currency: "usd",
+        amount: tokenAmount,
+        cost: costInPounds,
+        currency: "gbp", // Changed from USD to GBP
         status: "pending",
       })
       .select()
@@ -105,12 +121,12 @@ serve(async (req) => {
       line_items: [
         {
           price_data: {
-            currency: "usd",
+            currency: "gbp", // Changed from USD to GBP
             product_data: {
-              name: `${amount} Bingo Tokens`,
-              description: `Purchase ${amount} tokens for your Bingo Blitz account`,
+              name: `${tokenAmount} Bingo Tokens`,
+              description: `Purchase ${tokenAmount} tokens for your Bingo Blitz account`,
             },
-            unit_amount: costInCents,
+            unit_amount: costInPence,
           },
           quantity: 1,
         },
@@ -121,7 +137,7 @@ serve(async (req) => {
       metadata: {
         purchase_id: purchaseData.id,
         user_id: userId,
-        token_amount: amount,
+        token_amount: tokenAmount,
       },
     });
     

@@ -14,20 +14,22 @@ type TokenPackage = {
   name: string;
   tokens: number;
   price: number;
+  pricePerToken: string;
   popular?: boolean;
 };
 
 const tokenPackages: TokenPackage[] = [
-  { id: 'small', name: 'Starter Pack', tokens: 100, price: 10 },
-  { id: 'medium', name: 'Popular Pack', tokens: 250, price: 20, popular: true },
-  { id: 'large', name: 'Pro Pack', tokens: 500, price: 35 }
+  { id: 'trial', name: 'Trial Pack', tokens: 13, price: 10, pricePerToken: '76p per token' },
+  { id: 'starter', name: 'Starter Pack', tokens: 50, price: 36, pricePerToken: '72p per token' },
+  { id: 'popular', name: 'Popular Pack', tokens: 100, price: 70, pricePerToken: '70p per token', popular: true },
+  { id: 'pro', name: 'Pro Pack', tokens: 500, price: 300, pricePerToken: '60p per token' }
 ];
 
 export default function AddTokens() {
   const navigate = useNavigate();
   const { user, session } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [selectedPackage, setSelectedPackage] = useState<TokenPackage>(tokenPackages[1]);
+  const [selectedPackage, setSelectedPackage] = useState<TokenPackage>(tokenPackages[2]); // Default to popular pack
   const [tokenCount, setTokenCount] = useState<number | null>(null);
   const [isLoadingTokens, setIsLoadingTokens] = useState(true);
   
@@ -149,7 +151,7 @@ export default function AddTokens() {
           
           <h3 className="font-semibold text-lg mb-4">Select a Package</h3>
           
-          <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
             {tokenPackages.map((pkg) => (
               <Card 
                 key={pkg.id}
@@ -169,12 +171,15 @@ export default function AddTokens() {
                   <CardTitle className="text-lg">{pkg.name}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex justify-between items-center">
+                  <div className="flex flex-col space-y-3">
                     <div className="flex items-center space-x-2">
                       <Package className="h-4 w-4 text-gray-500" />
                       <span className="font-semibold text-lg">{pkg.tokens} Credits</span>
                     </div>
-                    <div className="font-bold text-lg">${pkg.price}.00</div>
+                    <div className="flex justify-between items-center">
+                      <div className="font-bold text-lg">£{pkg.price}.00</div>
+                      <div className="text-sm text-gray-500">{pkg.pricePerToken}</div>
+                    </div>
                   </div>
                 </CardContent>
                 <CardFooter className="pt-0">
@@ -206,7 +211,7 @@ export default function AddTokens() {
               ) : (
                 <>
                   <Banknote className="mr-2 h-4 w-4" />
-                  Purchase {selectedPackage.tokens} Credits for ${selectedPackage.price}
+                  Purchase {selectedPackage.tokens} Credits for £{selectedPackage.price}
                 </>
               )}
             </Button>
