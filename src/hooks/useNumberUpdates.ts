@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
@@ -8,12 +8,20 @@ export function useNumberUpdates(sessionId: string | undefined) {
   const [currentNumber, setCurrentNumber] = useState<number | null>(null);
   const [numberCallTimestamp, setNumberCallTimestamp] = useState<number | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const channelRef = useRef<any>(null);
 
   // Connect to the real-time channel
   useEffect(() => {
     if (!sessionId) {
       logWithTimestamp('No session ID for number updates', 'warn');
       return;
+    }
+    
+    // Clean up existing channel if it exists
+    if (channelRef.current) {
+      logWithTimestamp(`Cleaning up existing number updates channel before creating a new one`, 'info');
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
     }
     
     logWithTimestamp(`Setting up number updates for session ${sessionId}`, 'info');
@@ -49,24 +57,27 @@ export function useNumberUpdates(sessionId: string | undefined) {
     
     fetchExistingNumbers();
     
-    // Subscribe to real-time updates
+    // Subscribe to real-time updates using consistent channel name
     const channel = supabase
-      .channel(`number-updates-${sessionId}`)
+      .channel('game-updates')
       .on('broadcast', { event: 'number-called' }, payload => {
         if (payload && payload.payload) {
-          const { number, timestamp } = payload.payload;
+          const { number, timestamp, sessionId: payloadSessionId } = payload.payload;
           
-          logWithTimestamp(`Real-time number update: ${number}`, 'info');
-          setCurrentNumber(number);
-          setNumberCallTimestamp(timestamp);
-          
-          // Add to called numbers list if not already there
-          setCalledNumbers(prev => {
-            if (!prev.includes(number)) {
-              return [...prev, number];
-            }
-            return prev;
-          });
+          // Only process updates for our session
+          if (payloadSessionId === sessionId) {
+            logWithTimestamp(`Real-time number update: ${number}`, 'info');
+            setCurrentNumber(number);
+            setNumberCallTimestamp(timestamp);
+            
+            // Add to called numbers list if not already there
+            setCalledNumbers(prev => {
+              if (!prev.includes(number)) {
+                return [...prev, number];
+              }
+              return prev;
+            });
+          }
         }
         
         setIsConnected(true);
@@ -76,9 +87,15 @@ export function useNumberUpdates(sessionId: string | undefined) {
         setIsConnected(status === 'SUBSCRIBED');
       });
     
+    // Store channel reference for cleanup
+    channelRef.current = channel;
+    
     return () => {
-      logWithTimestamp('Cleaning up number updates channel', 'info');
-      supabase.removeChannel(channel);
+      if (channelRef.current) {
+        logWithTimestamp('Cleaning up number updates channel', 'info');
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
   }, [sessionId]);
   
@@ -88,7 +105,13 @@ export function useNumberUpdates(sessionId: string | undefined) {
     
     logWithTimestamp('Attempting to reconnect number updates', 'info');
     
-    // This will trigger the useEffect to run again
+    // Clean up existing channel if it exists
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+    
+    // Set isConnected to false to trigger the useEffect to run again
     setIsConnected(false);
   }, [sessionId]);
 

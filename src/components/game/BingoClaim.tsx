@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -81,208 +80,149 @@ export default function BingoClaim({
       return;
     }
     
-    logWithTimestamp(`BingoClaim (${instanceId.current}): Setting up channels for session ${sessionId}`, 'info');
-    
-    // Clear any existing channels first
-    if (claimCheckingChannelRef.current) {
-      supabase.removeChannel(claimCheckingChannelRef.current);
-      claimCheckingChannelRef.current = null;
-    }
-    
-    if (claimResultChannelRef.current) {
-      supabase.removeChannel(claimResultChannelRef.current);
-      claimResultChannelRef.current = null;
-    }
-    
-    // Set up claim checking channel with improved configuration
-    const checkingChannel = supabase
-      .channel('claim_checking_broadcaster', {
-        config: {
-          broadcast: { 
-            self: true, // Ensure we receive our own broadcasts 
-            ack: true // Request acknowledgment for debugging
-          }
-        }
-      })
-      .on('broadcast', { event: 'claim-checking' }, payload => {
-        console.log('Received claim checking broadcast:', payload);
-        logWithTimestamp(`BingoClaim (${instanceId.current}): Received claim checking broadcast`, 'info');
-        
-        // Check if this broadcast is for our session
-        if (payload.payload?.sessionId === sessionId) {
-          logWithTimestamp(`BingoClaim (${instanceId.current}): Claim checking broadcast matches current session`, 'info');
-          
-          // Prevent duplicate claims (check claim ID)
-          const claimId = payload.payload?.claimId;
-          if (claimId && claimId === lastClaimIdRef.current) {
-            logWithTimestamp(`BingoClaim (${instanceId.current}): Ignoring duplicate claim with ID ${claimId}`, 'info');
-            return;
-          }
-          
-          // Update last claim ID
-          lastClaimIdRef.current = claimId;
-          
-          // Set claim data and force visibility to true
-          setClaimCheckData(payload.payload);
-          setIsClaimSheetVisible(true);
-          setClaimResult(null); // Clear any previous result
-          setActiveClaims(prev => prev + 1); // Increment active claims
-          
-          // Show toast notification for better visibility
-          toast.info("Bingo Claim Being Checked", {
-            description: `${payload.payload.playerName || 'Player'}'s ticket is being verified`,
-            duration: 4000
-          });
-          
-          // Dispatch to global event system
-          claimEvents.dispatch({
-            type: 'claim-checking',
-            data: payload.payload
-          });
-          
-          // Debug logs
-          logWithTimestamp(`BingoClaim (${instanceId.current}): Set claim sheet visible`, 'info');
-        }
-      })
-      .subscribe((status) => {
-        logWithTimestamp(`BingoClaim (${instanceId.current}): Claim checking channel status: ${status}`, 'info');
-      });
-    
-    // Set up claim result channel
-    const resultChannel = supabase
-      .channel('game-updates', {
-        config: {
-          broadcast: { self: true } // Ensure we receive our own broadcasts
-        }
-      })
-      .on('broadcast', { event: 'claim-result' }, payload => {
-        logWithTimestamp(`BingoClaim (${instanceId.current}): Received claim result`, 'info');
-        
-        if (!isMountedRef.current) return;
-        
-        const result = payload.payload;
-        
-        // Check if this result is for our session
-        if (result.sessionId === sessionId) {
-          logWithTimestamp(`BingoClaim (${instanceId.current}): Claim result broadcast matches current session`, 'info');
-          
-          // If global broadcast or specific to this player
-          if (result.isGlobalBroadcast || result.playerId === playerId) {
-            const isValidClaim = result.result === 'valid';
-            
-            // Dispatch to global event system
-            claimEvents.dispatch({
-              type: 'claim-result',
-              data: result
-            });
-            
-            // Show result in the drawer
-            logWithTimestamp(`BingoClaim (${instanceId.current}): Setting claim result to: ${result.result}`, 'info');
-            setClaimResult(result.result);
-            setClaimCheckData(prev => ({
-              ...prev,
-              playerName: result.playerName,
-              ticket: result.ticket || prev?.ticket
-            }));
-            setIsClaimSheetVisible(true);
-            
-            // Decrement active claims after result is received
-            setActiveClaims(prev => Math.max(0, prev - 1));
-            
-            // Show toast notification as well for better visibility
-            toast[isValidClaim ? 'success' : 'error'](
-              isValidClaim ? "Bingo Verified!" : "Invalid Claim", 
-              { 
-                description: `${result.playerName}'s claim was ${isValidClaim ? 'verified' : 'rejected'}`,
-                duration: 5000
+    // Function to prevent rapid channel creation/destruction
+    const setupChannels = () => {
+      logWithTimestamp(`BingoClaim (${instanceId.current}): Setting up channels for session ${sessionId}`, 'info');
+      
+      // Only create the claim checking channel if it doesn't exist
+      if (!claimCheckingChannelRef.current) {
+        // Set up claim checking channel with improved configuration
+        const checkingChannel = supabase
+          .channel('claim_checking_broadcaster', {
+            config: {
+              broadcast: { 
+                self: true, // Ensure we receive our own broadcasts 
+                ack: true // Request acknowledgment for debugging
               }
-            );
-            
-            // Reset claim status if this was our claim and we have the function
-            if (result.playerId === playerId && resetClaimStatus) {
-              setTimeout(() => {
-                if (isMountedRef.current && resetClaimStatus) {
-                  resetClaimStatus();
-                }
-              }, 5000); // Match the auto-close timing
             }
-          }
-        }
-      })
-      .subscribe((status) => {
-        logWithTimestamp(`BingoClaim (${instanceId.current}): Claim result channel status: ${status}`, 'info');
-      });
-    
-    // Store channels for cleanup
-    claimCheckingChannelRef.current = checkingChannel;
-    claimResultChannelRef.current = resultChannel;
-    
-    // Debug window method
-    (window as any).debugClaimSheet = {
-      show: (data: any) => {
-        logWithTimestamp('Manually showing claim sheet', 'info');
-        setClaimCheckData(data || {
-          playerName: 'Test Player',
-          ticket: {
-            serial: 'TEST1234',
-            numbers: [1, 2, 3, 4, 5, 6, 7, 8, 9],
-            layoutMask: 110616623,
-            calledNumbers: [1, 2, 3]
-          },
-          winPattern: 'oneLine'
-        });
-        setIsClaimSheetVisible(true);
-        setActiveClaims(prev => prev + 1);
-        return 'Showing claim sheet';
-      },
-      hide: () => {
-        setIsClaimSheetVisible(false);
-        setActiveClaims(0);
-        return 'Hiding claim sheet';
-      },
-      getStatus: () => ({
-        visible: isClaimSheetVisible,
-        data: claimCheckData,
-        result: claimResult,
-        activeClaims: activeClaims
-      }),
-      forceOpen: (payload: any) => {
-        logWithTimestamp(`BingoClaim (${instanceId.current}): Manually forcing drawer open`, 'info');
-        const claimData = payload || {
-          playerName: 'Test Player',
-          ticket: currentTicket || {
-            serial: 'TEST1234',
-            numbers: [1, 2, 3, 4, 5, 6, 7, 8, 9],
-            layoutMask: 110616623,
-            calledNumbers: calledNumbers
-          },
-          sessionId: sessionId,
-          winPattern: 'oneLine'
-        };
+          })
+          .on('broadcast', { event: 'claim-checking' }, payload => {
+            if (!isMountedRef.current) return;
+            
+            console.log('Received claim checking broadcast:', payload);
+            logWithTimestamp(`BingoClaim (${instanceId.current}): Received claim checking broadcast`, 'info');
+            
+            // Check if this broadcast is for our session
+            if (payload.payload?.sessionId === sessionId) {
+              logWithTimestamp(`BingoClaim (${instanceId.current}): Claim checking broadcast matches current session`, 'info');
+              
+              // Prevent duplicate claims (check claim ID)
+              const claimId = payload.payload?.claimId;
+              if (claimId && claimId === lastClaimIdRef.current) {
+                logWithTimestamp(`BingoClaim (${instanceId.current}): Ignoring duplicate claim with ID ${claimId}`, 'info');
+                return;
+              }
+              
+              // Update last claim ID
+              lastClaimIdRef.current = claimId;
+              
+              // Set claim data and force visibility to true
+              setClaimCheckData(payload.payload);
+              setIsClaimSheetVisible(true);
+              setClaimResult(null); // Clear any previous result
+              setActiveClaims(prev => prev + 1); // Increment active claims
+              
+              // Show toast notification for better visibility
+              toast.info("Bingo Claim Being Checked", {
+                description: `${payload.payload.playerName || 'Player'}'s ticket is being verified`,
+                duration: 4000
+              });
+              
+              // Dispatch to global event system
+              claimEvents.dispatch({
+                type: 'claim-checking',
+                data: payload.payload
+              });
+              
+              // Debug logs
+              logWithTimestamp(`BingoClaim (${instanceId.current}): Set claim sheet visible`, 'info');
+            }
+          })
+          .subscribe((status) => {
+            logWithTimestamp(`BingoClaim (${instanceId.current}): Claim checking channel status: ${status}`, 'info');
+          });
+          
+        // Store channel reference
+        claimCheckingChannelRef.current = checkingChannel;
+      }
+      
+      // Only create the result channel if it doesn't exist
+      if (!claimResultChannelRef.current) {
+        // Set up claim result channel
+        const resultChannel = supabase
+          .channel('game-updates', {
+            config: {
+              broadcast: { self: true } // Ensure we receive our own broadcasts
+            }
+          })
+          .on('broadcast', { event: 'claim-result' }, payload => {
+            if (!isMountedRef.current) return;
+            
+            logWithTimestamp(`BingoClaim (${instanceId.current}): Received claim result`, 'info');
+            
+            const result = payload.payload;
+            
+            // Check if this result is for our session
+            if (result.sessionId === sessionId) {
+              logWithTimestamp(`BingoClaim (${instanceId.current}): Claim result broadcast matches current session`, 'info');
+              
+              // If global broadcast or specific to this player
+              if (result.isGlobalBroadcast || result.playerId === playerId) {
+                const isValidClaim = result.result === 'valid';
+                
+                // Dispatch to global event system
+                claimEvents.dispatch({
+                  type: 'claim-result',
+                  data: result
+                });
+                
+                // Show result in the drawer
+                logWithTimestamp(`BingoClaim (${instanceId.current}): Setting claim result to: ${result.result}`, 'info');
+                setClaimResult(result.result);
+                setClaimCheckData(prev => ({
+                  ...prev,
+                  playerName: result.playerName,
+                  ticket: result.ticket || prev?.ticket
+                }));
+                setIsClaimSheetVisible(true);
+                
+                // Decrement active claims after result is received
+                setActiveClaims(prev => Math.max(0, prev - 1));
+                
+                // Show toast notification as well for better visibility
+                toast[isValidClaim ? 'success' : 'error'](
+                  isValidClaim ? "Bingo Verified!" : "Invalid Claim", 
+                  { 
+                    description: `${result.playerName}'s claim was ${isValidClaim ? 'verified' : 'rejected'}`,
+                    duration: 5000
+                  }
+                );
+                
+                // Reset claim status if this was our claim and we have the function
+                if (result.playerId === playerId && resetClaimStatus) {
+                  setTimeout(() => {
+                    if (isMountedRef.current && resetClaimStatus) {
+                      resetClaimStatus();
+                    }
+                  }, 5000); // Match the auto-close timing
+                }
+              }
+            }
+          })
+          .subscribe((status) => {
+            logWithTimestamp(`BingoClaim (${instanceId.current}): Claim result channel status: ${status}`, 'info');
+          });
         
-        setClaimCheckData(claimData);
-        setIsClaimSheetVisible(true);
-        setActiveClaims(prev => prev + 1);
-        return 'Manually opened claim drawer';
+        // Store channel reference
+        claimResultChannelRef.current = resultChannel;
       }
     };
     
-    // Listen for force open events
-    const handleForceOpen = (e: any) => {
-      if (e.detail && e.detail.data) {
-        logWithTimestamp(`BingoClaim (${instanceId.current}): Received force open event`, 'info');
-        (window as any).debugClaimSheet.forceOpen(e.detail.data);
-      }
-    };
-    
-    window.addEventListener('forceOpenClaimDrawer', handleForceOpen);
+    // Initial channel setup
+    setupChannels();
     
     // Clean up channels on unmount
     return () => {
-      isMountedRef.current = false;
-      
-      window.removeEventListener('forceOpenClaimDrawer', handleForceOpen);
-      
       if (claimCheckingChannelRef.current) {
         logWithTimestamp(`BingoClaim (${instanceId.current}): Removing claim checking channel during cleanup`, 'info');
         supabase.removeChannel(claimCheckingChannelRef.current);
@@ -294,11 +234,9 @@ export default function BingoClaim({
         supabase.removeChannel(claimResultChannelRef.current);
         claimResultChannelRef.current = null;
       }
-      
-      delete (window as any).debugClaimSheet;
     };
-  }, [sessionId, playerId, resetClaimStatus, calledNumbers, currentTicket, playerName]);
-  
+  }, [sessionId, playerId, resetClaimStatus]);
+
   // Handle drawer state changes
   const handleOpenChange = (open: boolean) => {
     logWithTimestamp(`BingoClaim (${instanceId.current}): Drawer open state changed to: ${open}`, 'info');

@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -33,7 +34,7 @@ export function usePlayerClaimManagement(
 
   // Set up or clean up the claim checking channel based on session availability
   const setupClaimCheckingChannel = useCallback(() => {
-    // Only set up if we have a session ID
+    // Only set up if we have a session ID and no existing channel
     if (!sessionId) {
       if (claimCheckingChannelRef.current) {
         logWithTimestamp(`PlayerClaimManagement: Removing claim checking channel - no session`, 'info');
@@ -44,7 +45,10 @@ export function usePlayerClaimManagement(
     }
     
     // If we already have a channel, don't create another
-    if (claimCheckingChannelRef.current) return;
+    if (claimCheckingChannelRef.current) {
+      logWithTimestamp(`PlayerClaimManagement: Claim checking channel already exists for session ${sessionId}`, 'info');
+      return;
+    }
     
     logWithTimestamp(`PlayerClaimManagement: Setting up claim checking listener for session ${sessionId}`, 'info');
     
@@ -53,7 +57,6 @@ export function usePlayerClaimManagement(
       .channel('claim_checking_broadcaster')
       .on('broadcast', { event: 'claim-checking' }, payload => {
         logWithTimestamp(`PlayerClaimManagement: Received claim checking broadcast: ${JSON.stringify(payload.payload)}`, 'info');
-        
         // We don't need any additional processing here as the BingoClaim component
         // now handles displaying the claim checking dialog
       })
@@ -150,9 +153,16 @@ export function usePlayerClaimManagement(
       return;
     }
     
+    // Clean up existing channel if it exists
+    if (claimChannelRef.current) {
+      logWithTimestamp(`PlayerClaimManagement: Cleaning up existing claim result channel before creating a new one`, 'info');
+      supabase.removeChannel(claimChannelRef.current);
+      claimChannelRef.current = null;
+    }
+    
     logWithTimestamp(`PlayerClaimManagement: Setting up claim result listener for session ${sessionId}`, 'info');
     
-    // FIXED: Use 'game-updates' channel to match the server broadcast
+    // FIXED: Use 'game-updates' channel consistently to match the server broadcast
     const channel = supabase.channel('game-updates')
       .on('broadcast', { event: 'claim-result' }, payload => {
         const result = payload.payload?.result;
@@ -170,21 +180,15 @@ export function usePlayerClaimManagement(
             logWithTimestamp(`PlayerClaimManagement: Claim was validated!`, 'info');
             setClaimStatus('valid');
             setHasActiveClaims(false);
-            
-            // We no longer need to show a toast here as the BingoClaim component
-            // will handle showing the result dialog
           } else if (result === 'invalid' || result === 'rejected') {
             logWithTimestamp(`PlayerClaimManagement: Claim was rejected`, 'info');
             setClaimStatus('invalid');
             setHasActiveClaims(false);
-            
-            // We no longer need to show a toast here as the BingoClaim component
-            // will handle showing the result dialog
           }
         } else if (targetSessionId === sessionId) {
           // This is a claim result for someone else in our session
           logWithTimestamp(`PlayerClaimManagement: Received claim result for another player in our session`, 'info');
-          // We don't need to do anything here as the BingoClaim component will handle displaying it
+          // BingoClaim component will handle displaying it
         }
       })
       .subscribe((status) => {
@@ -210,7 +214,7 @@ export function usePlayerClaimManagement(
         claimCheckingChannelRef.current = null;
       }
     };
-  }, [playerId, playerCode, sessionId, toast, setupClaimCheckingChannel]);
+  }, [sessionId, playerId, playerCode, setupClaimCheckingChannel]);
 
   return {
     claimStatus,

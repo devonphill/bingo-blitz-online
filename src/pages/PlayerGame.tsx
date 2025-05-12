@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, ErrorInfo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import PlayerGameHeader from '@/components/player/PlayerGameHeader';
@@ -70,7 +69,7 @@ const PlayerGame = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { isConnected } = useNetwork();
-  const { player } = usePlayerContext();
+  const { player, setPlayer } = usePlayerContext();
 
   logWithTimestamp(`PlayerGame init with URL param playerCode: ${playerCode}`, 'info');
 
@@ -162,7 +161,7 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
   } = useNumberUpdates(sessionDetails?.id);
 
   const [isTicketView, setIsTicketView] = useState(true);
-  const { player } = usePlayerContext();
+  const { player, setPlayer } = usePlayerContext();
   const { session, user } = useAuth();
   const [claimDebuggingCleanup, setClaimDebuggingCleanup] = useState<(() => void) | null>(null);
   const { isConnected } = useNetwork();
@@ -178,8 +177,8 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
     if (fetchedPlayerId && !player?.id && gameCode) {
       logWithTimestamp(`Updating player context with fetched player info: ${fetchedPlayerId}`, 'info');
       // If the PlayerContext doesn't have the player ID but we got it from the API, update it
-      if (player?.setPlayer) {
-        player.setPlayer({
+      if (setPlayer) {
+        setPlayer({
           id: fetchedPlayerId,
           name: fetchedPlayerName || 'Player',
           code: gameCode,
@@ -187,7 +186,7 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
         });
       }
     }
-  }, [fetchedPlayerId, fetchedPlayerName, gameCode, player, sessionDetails?.id]);
+  }, [fetchedPlayerId, fetchedPlayerName, gameCode, player, sessionDetails?.id, setPlayer]);
 
   // Player claim management
   const {
