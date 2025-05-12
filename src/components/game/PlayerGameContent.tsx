@@ -214,7 +214,7 @@ export default function PlayerGameContent({
     
     try {
       // Initialize connection once
-      connectionManager.initialize(currentSession.id)
+      connectionManager.init(currentSession.id)
         .onNumberCalled((number, allNumbers) => {
           if (number === null) {
             // Handle reset event

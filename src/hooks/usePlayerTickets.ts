@@ -30,7 +30,7 @@ export function usePlayerTickets(sessionId?: string | null) {
     if (!tickets || tickets.length === 0) return [];
     
     // ALWAYS normalize the win pattern for consistent checking
-    const normalizedWinPattern = normalizeWinPattern(currentWinPattern, 'MAINSTAGE');
+    const normalizedWinPattern = normalizeWinPattern(currentWinPattern || 'oneLine', 'MAINSTAGE');
     
     return tickets.map(ticket => {
       // Convert ticket data into the format needed for win checking
@@ -162,7 +162,7 @@ export function usePlayerTickets(sessionId?: string | null) {
   const updateWinningStatus = useCallback((calledNumbers: number[], currentWinPattern: string | null) => {
     setPlayerTickets(tickets => {
       // Always normalize the win pattern for consistent checking
-      const normalizedPattern = normalizeWinPattern(currentWinPattern, 'MAINSTAGE');
+      const normalizedPattern = normalizeWinPattern(currentWinPattern || 'oneLine', 'MAINSTAGE');
       const updatedTickets = processTickets(tickets, calledNumbers, normalizedPattern);
       const winningTickets = updatedTickets.filter(t => t.is_winning);
       

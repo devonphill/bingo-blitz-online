@@ -1,15 +1,12 @@
+
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { connectionManager } from '@/utils/connectionManager';
+import { connectionManager, ConnectionState } from '@/utils/connectionManager';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { claimService } from '@/services/ClaimManagementService';
 import { validateChannelType } from '@/utils/typeUtils';
 
-// Export the ConnectionState type so it can be used by other components
-// Fix: Use 'export type' for re-exporting when isolatedModules is enabled
-export type { ConnectionState } from '@/utils/connectionManager';
-
-// Extended interface to include all required methods
+// Interface to include all required methods
 interface NetworkContextType {
   connectionState: ConnectionState;
   isConnected: boolean;
@@ -19,7 +16,7 @@ interface NetworkContextType {
   callNumber: (number: number, sessionId?: string) => Promise<boolean>;
   fetchClaims: (sessionId?: string) => Promise<any[]>;
   
-  // Add missing methods for all the components
+  // Add methods for all the components
   updatePlayerPresence: (presenceData: any) => Promise<boolean>;
   addGameStateUpdateListener: (callback: (gameState: any) => void) => () => void;
   addConnectionStatusListener: (callback: (isConnected: boolean) => void) => () => void;
@@ -27,9 +24,6 @@ interface NetworkContextType {
   submitBingoClaim: (ticket: any, playerCode: string, sessionId: string) => boolean;
   validateClaim: (claim: any, isValid: boolean) => Promise<boolean>;
 }
-
-// Type import to avoid the isolatedModules error
-import type { ConnectionState } from '@/utils/connectionManager';
 
 const NetworkContext = createContext<NetworkContextType | undefined>(undefined);
 

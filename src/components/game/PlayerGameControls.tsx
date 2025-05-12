@@ -24,7 +24,7 @@ export default function PlayerGameControls({
       {showTicketToggle && onToggleTicketView && (
         <TooltipProvider>
           <Tooltip>
-            <TooltipTrigger asChild>
+            <TooltipTrigger>
               <Button
                 size="icon"
                 variant="secondary"
@@ -44,7 +44,7 @@ export default function PlayerGameControls({
       {onRefreshConnection && (
         <TooltipProvider>
           <Tooltip>
-            <TooltipTrigger asChild>
+            <TooltipTrigger>
               <Button
                 size="icon"
                 variant={isConnected ? "outline" : "destructive"}
@@ -64,7 +64,7 @@ export default function PlayerGameControls({
       {onRefreshConnection && (
         <TooltipProvider>
           <Tooltip>
-            <TooltipTrigger asChild>
+            <TooltipTrigger>
               <Button
                 size="icon"
                 variant="outline"

@@ -39,7 +39,7 @@ export default function DebugPanel({
       const connectionIsActive = network.isConnected || connectionManager.isConnected();
       const pingTime = connectionManager.getLastPing();
       
-      if (pingTime > 0) {
+      if (pingTime) {
         const now = Date.now();
         const diff = Math.floor((now - pingTime) / 1000);
         
