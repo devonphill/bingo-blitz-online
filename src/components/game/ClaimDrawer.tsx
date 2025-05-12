@@ -1,4 +1,3 @@
-
 import React, { useEffect } from 'react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerFooter } from '../ui/drawer';
 import { Button } from '../ui/button';
@@ -7,7 +6,6 @@ import SafeBingoTicketDisplay from './SafeBingoTicketDisplay';
 import { cn } from '@/lib/utils';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { toast } from 'sonner';
-
 interface ClaimDrawerProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -33,20 +31,28 @@ export default function ClaimDrawer({
   // Enhanced logging for component lifecycle
   useEffect(() => {
     logWithTimestamp(`ClaimDrawer: Component mounted/updated - isOpen=${isOpen}`, 'debug');
-    
+
     // Add component to window for debugging
     if (typeof window !== 'undefined') {
       (window as any).claimDrawerDebug = {
-        getProps: () => ({ isOpen, playerName, ticketData, winPattern, validationResult }),
+        getProps: () => ({
+          isOpen,
+          playerName,
+          ticketData,
+          winPattern,
+          validationResult
+        }),
         forceOpen: (data: any = null) => {
           logWithTimestamp(`ClaimDrawer: Force opening via debug method`, 'info');
           if (data) {
             // Create a custom event that BingoClaim can listen to
-            const event = new CustomEvent('forceOpenClaimDrawer', { 
-              detail: { 
+            const event = new CustomEvent('forceOpenClaimDrawer', {
+              detail: {
                 data: data || {
                   playerName: 'Debug Player',
-                  ticketData: ticketData || { serial: 'DEBUG123' }
+                  ticketData: ticketData || {
+                    serial: 'DEBUG123'
+                  }
                 }
               }
             });
@@ -57,7 +63,6 @@ export default function ClaimDrawer({
         }
       };
     }
-    
     return () => {
       logWithTimestamp(`ClaimDrawer: Component will unmount`, 'debug');
       if (typeof window !== 'undefined') {
@@ -65,7 +70,7 @@ export default function ClaimDrawer({
       }
     };
   }, [isOpen, playerName, ticketData, winPattern, validationResult, onOpenChange]);
-  
+
   // Auto-close logic for when a validation result is received
   useEffect(() => {
     if (validationResult && isOpen && autoClose) {
@@ -75,7 +80,7 @@ export default function ClaimDrawer({
         logWithTimestamp(`ClaimDrawer: Auto-closing now`, 'info');
         onOpenChange(false);
       }, 5000); // Changed from 3000 to 5000
-      
+
       return () => clearTimeout(timer);
     }
   }, [validationResult, isOpen, onOpenChange, autoClose]);
@@ -85,7 +90,7 @@ export default function ClaimDrawer({
     if (isOpen) {
       logWithTimestamp(`ClaimDrawer: OPENED for player ${playerName}, result: ${validationResult || 'checking'}, ticket: ${ticketData?.serial || 'unknown'}`, 'info');
       // Show a toast when the drawer opens for additional visibility
-      toast.info(`Claim check for ${playerName}`, { 
+      toast.info(`Claim check for ${playerName}`, {
         id: `claim-drawer-${Date.now()}`,
         description: "Checking ticket details..."
       });
@@ -97,7 +102,6 @@ export default function ClaimDrawer({
   // Process ticket data if available
   const processedTicketData = React.useMemo(() => {
     if (!ticketData) return null;
-    
     return {
       numbers: ticketData.numbers || [],
       layoutMask: ticketData.layoutMask || ticketData.layout_mask || 0,
@@ -109,24 +113,9 @@ export default function ClaimDrawer({
   }, [ticketData]);
 
   // Styles for validation overlay
-  const validationOverlayClasses = cn(
-    "absolute inset-0 flex items-center justify-center rounded-md z-20",
-    "transition-opacity duration-500",
-    validationResult ? "opacity-100" : "opacity-0",
-    validationResult === 'valid' ? "bg-green-500/30" : "bg-red-500/30"
-  );
-
-  const validationIconClasses = cn(
-    "h-24 w-24 transition-transform duration-500 transform-gpu",
-    validationResult ? "scale-100" : "scale-0",
-    validationResult === 'valid' ? "text-green-600" : "text-red-600"
-  );
-
-  return (
-    <Drawer 
-      open={isOpen} 
-      onOpenChange={onOpenChange}
-    >
+  const validationOverlayClasses = cn("absolute inset-0 flex items-center justify-center rounded-md z-20", "transition-opacity duration-500", validationResult ? "opacity-100" : "opacity-0", validationResult === 'valid' ? "bg-green-500/30" : "bg-red-500/30");
+  const validationIconClasses = cn("h-24 w-24 transition-transform duration-500 transform-gpu", validationResult ? "scale-100" : "scale-0", validationResult === 'valid' ? "text-green-600" : "text-red-600");
+  return <Drawer open={isOpen} onOpenChange={onOpenChange}>
       <DrawerContent className="px-4">
         <div className="mx-auto w-full max-w-sm">
           <DrawerHeader className="relative">
@@ -143,63 +132,36 @@ export default function ClaimDrawer({
               </h3>
               
               {/* The player's ticket display */}
-              {processedTicketData && (
-                <div className="w-full max-w-sm bg-gray-50 p-3 rounded-md border border-gray-200 relative">
+              {processedTicketData && <div className="w-full max-w-sm bg-gray-50 p-3 rounded-md border border-gray-200 relative">
                   {/* New validation overlay */}
                   <div className={validationOverlayClasses}>
-                    {validationResult === 'valid' ? (
-                      <Check className={validationIconClasses} strokeWidth={3} />
-                    ) : validationResult === 'invalid' ? (
-                      <X className={validationIconClasses} strokeWidth={3} />
-                    ) : null}
+                    {validationResult === 'valid' ? <Check className={validationIconClasses} strokeWidth={3} /> : validationResult === 'invalid' ? <X className={validationIconClasses} strokeWidth={3} /> : null}
                   </div>
 
-                  <SafeBingoTicketDisplay 
-                    numbers={processedTicketData.numbers}
-                    layoutMask={processedTicketData.layoutMask}
-                    calledNumbers={processedTicketData.calledNumbers}
-                    serial={processedTicketData.serial}
-                    perm={processedTicketData.perm}
-                    position={processedTicketData.position}
-                    autoMarking={true}
-                    showProgress={true}
-                  />
-                </div>
-              )}
+                  <SafeBingoTicketDisplay numbers={processedTicketData.numbers} layoutMask={processedTicketData.layoutMask} calledNumbers={processedTicketData.calledNumbers} serial={processedTicketData.serial} perm={processedTicketData.perm} position={processedTicketData.position} autoMarking={true} showProgress={true} />
+                </div>}
               
-              {!validationResult && (
-                <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center">
+              {!validationResult && <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center">
                   <Loader className="h-8 w-8 text-amber-600 animate-spin" />
-                </div>
-              )}
+                </div>}
               
-              {!validationResult && (
-                <p className="text-center text-gray-600">
+              {!validationResult && <p className="text-center text-gray-600">
                   The caller is checking this claim now...
-                </p>
-              )}
+                </p>}
               
-              {winPattern && (
-                <div className="mt-2 px-4 py-2 bg-amber-50 rounded-md text-amber-700 text-center">
+              {winPattern && <div className="mt-2 px-4 py-2 bg-amber-50 rounded-md text-amber-700 text-center">
                   Pattern: <span className="font-semibold">{winPattern}</span>
-                </div>
-              )}
+                </div>}
             </div>
           </div>
           
           <DrawerFooter className="flex justify-center">
             {/* Show close button only if we're not auto-closing */}
-            {validationResult && !autoClose && (
-              <Button 
-                onClick={() => onOpenChange(false)}
-                className="mt-2 bg-blue-500 hover:bg-blue-600 text-white"
-              >
+            {validationResult && !autoClose && <Button onClick={() => onOpenChange(false)} className="mt-2 bg-blue-500 hover:bg-blue-600 text-white">
                 Close
-              </Button>
-            )}
+              </Button>}
           </DrawerFooter>
         </div>
       </DrawerContent>
-    </Drawer>
-  );
+    </Drawer>;
 }
