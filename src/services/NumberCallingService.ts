@@ -1,7 +1,6 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { webSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/WebSocketService';
+import { webSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 
 // Type for number updates subscriber
 type NumberSubscriber = (numbers: number[], lastNumber: number | null) => void;

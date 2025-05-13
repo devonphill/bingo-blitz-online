@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { webSocketService, CHANNEL_NAMES, WEBSOCKET_STATUS } from '@/services/WebSocketService';
+import { webSocketService, CHANNEL_NAMES, WEBSOCKET_STATUS } from '@/services/websocket';
 import { toast } from '@/hooks/use-toast';
 
 interface ConnectionStatusProps {

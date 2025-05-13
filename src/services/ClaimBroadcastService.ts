@@ -1,7 +1,6 @@
-
 import { logWithTimestamp } from '@/utils/logUtils';
 import { ClaimData, ClaimResult } from '@/types/claim';
-import { webSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/WebSocketService';
+import { webSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 
 /**
  * Service for broadcasting claim events using WebSocketService

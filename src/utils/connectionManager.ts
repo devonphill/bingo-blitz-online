@@ -1,7 +1,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from './logUtils';
-import { webSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/WebSocketService';
+import { webSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 import { ConnectionState } from '@/constants/connectionConstants';
 import { ConnectionListenerManager } from './connectionListeners';
 import { ConnectionHeartbeatManager } from './connectionHeartbeat';
