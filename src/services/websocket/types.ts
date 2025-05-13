@@ -1,25 +1,15 @@
 
-import { WEBSOCKET_STATUS } from '@/constants/websocketConstants';
+/**
+ * Types for WebSocket service
+ */
 
-export interface WebSocketChannel {
-  on: (eventType: string, options: any, callback: (payload: any) => void) => any;
-  subscribe: (callback?: (status: string) => void) => any;
-}
-
-export interface BroadcastOptions {
-  maxRetries?: number;
-}
-
-export interface ChannelConfig {
-  config?: {
-    broadcast?: {
-      self?: boolean;
-      ack?: boolean;
-    };
-    presence?: {
-      key?: string;
-    };
-  };
-}
-
+// Connection status listener type
 export type ConnectionListener = (status: string) => void;
+
+// Options for broadcast
+export interface BroadcastOptions {
+  retries?: number;
+  retryDelayMs?: number;
+  timeout?: number;
+  broadcastId?: string;
+}
