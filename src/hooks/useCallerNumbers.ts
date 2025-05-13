@@ -1,236 +1,206 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { toast } from '@/components/ui/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { webSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
-import { supabase } from '@/integrations/supabase/client';
+import { getNumberCallingService } from '@/services/number-calling';
+import { connectionManager } from '@/utils/connectionManager';
 
 /**
- * Hook for managing called numbers from the caller's perspective
- * Enhanced with better WebSocket broadcasting
+ * Hook for managing called numbers as a caller
  */
-export function useCallerNumbers(sessionId: string | undefined, gameType: string = 'mainstage') {
+export function useCallerNumbers(sessionId: string | undefined, autoConnect: boolean = true) {
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
-  const [isCallInProgress, setIsCallInProgress] = useState(false);
-  const [lastUpdateTime, setLastUpdateTime] = useState<number>(Date.now());
-  const [saveToDatabase, setSaveToDatabase] = useState(true);
-  const [isConnected, setIsConnected] = useState(false);
-
-  // Calculate remaining numbers based on game type and called numbers
-  const remainingNumbers = useCallback(() => {
-    const maxNumber = gameType === '75-ball' || gameType === 'party' ? 75 : 90;
-    const allNumbers = Array.from({ length: maxNumber }, (_, i) => i + 1);
-    
-    // Filter out numbers that have already been called
-    return allNumbers.filter(num => !calledNumbers.includes(num));
-  }, [calledNumbers, gameType]);
-
-  // Subscribe to number updates from the service with improved stability
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Get a reference to the number calling service
+  const numberCallingService = useRef(getNumberCallingService());
+  
+  // Initialize the connection
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || !autoConnect) return;
     
-    const service = getNumberCallingService(sessionId);
-    
-    // Initialize with current state
-    const initialNumbers = service.getCalledNumbers();
-    const initialLastNumber = service.getLastCalledNumber();
-    
-    setCalledNumbers(initialNumbers);
-    setLastCalledNumber(initialLastNumber);
-    setLastUpdateTime(Date.now());
-    setSaveToDatabase(service.getSaveToDatabase());
-    
-    // Setup WebSocket connection for the caller
-    const channel = webSocketService.createChannel(CHANNEL_NAMES.GAME_UPDATES);
-    
-    // Subscribe with connection monitoring
-    webSocketService.subscribeWithReconnect(CHANNEL_NAMES.GAME_UPDATES, (status) => {
-      setIsConnected(status === 'SUBSCRIBED');
-    });
-    
-    // Subscribe to updates with enhanced stability
-    const unsubscribe = service.subscribe((numbers, last) => {
-      // Only update if there's an actual change
-      const isActualUpdate = last !== lastCalledNumber || numbers.length !== calledNumbers.length;
-      
-      if (isActualUpdate) {
-        logWithTimestamp(`Caller received update: ${numbers.length} numbers, last: ${last}`, 'info');
-        setCalledNumbers([...numbers]);
-        setLastCalledNumber(last);
-        setLastUpdateTime(Date.now());
+    // Initialize connection
+    const initializeConnection = async () => {
+      try {
+        logWithTimestamp(`Initializing Caller Number connection for session: ${sessionId}`, 'info');
+        
+        // Subscribe to number updates
+        const unsubscribe = numberCallingService.current.subscribe(sessionId, (number, numbers) => {
+          setLastCalledNumber(number);
+          setCalledNumbers(numbers);
+        });
+        
+        // Mark as initialized
+        setIsInitialized(true);
+        
+        // Clean up on unmount
+        return () => {
+          logWithTimestamp(`Cleaning up Caller Number connection for session: ${sessionId}`, 'info');
+          unsubscribe();
+        };
+      } catch (e) {
+        logWithTimestamp(`Error initializing Caller Number connection: ${e}`, 'error');
+        setError('Failed to initialize number calling service');
       }
-    });
-    
-    return () => {
-      unsubscribe();
-      // We don't remove the channel here since the WebSocketService
-      // manages channel lifecycle globally
     };
-  }, [sessionId, calledNumbers.length, lastCalledNumber]);
-
-  // Call a new number - this generates a random number from the remaining ones
-  const callNextNumber = useCallback(async () => {
-    if (!sessionId || isCallInProgress) return null;
     
-    try {
-      setIsCallInProgress(true);
-      
-      const remaining = remainingNumbers();
-      if (remaining.length === 0) {
-        logWithTimestamp('No more numbers to call', 'info');
-        return null;
-      }
-      
-      // Pick a random number from the remaining ones
-      const index = Math.floor(Math.random() * remaining.length);
-      const number = remaining[index];
-      
-      logWithTimestamp(`Calling number ${number}`, 'info');
-      
-      // STEP 1: Broadcast the new number immediately via WebSocket
-      // This is critical for real-time updates - do this FIRST
-      const broadcastSuccess = await webSocketService.broadcastWithRetry(
-        CHANNEL_NAMES.GAME_UPDATES,
-        EVENT_TYPES.NUMBER_CALLED,
-        {
-          number,
-          sessionId,
-          timestamp: Date.now(),
-        }
-      );
-      
-      if (!broadcastSuccess) {
-        logWithTimestamp(`Warning: Failed to broadcast number ${number} via WebSocket`, 'warn');
-        // We continue anyway since we'll also update the database
-      }
-      
-      // STEP 2: Use service to call the number and update database
-      const success = await getNumberCallingService(sessionId).callNumber(number);
-      
-      if (!success && saveToDatabase) {
-        // If the service fails, attempt a direct database update as backup
-        try {
-          logWithTimestamp(`Attempting direct database update for number ${number}`, 'info');
-          
-          // First get current numbers
-          const { data: currentData } = await supabase
-            .from('sessions_progress')
-            .select('called_numbers')
-            .eq('session_id', sessionId)
-            .single();
-            
-          // Update with the new number
-          if (currentData) {
-            const updatedNumbers = [...(currentData.called_numbers || []), number];
-            
-            const { error } = await supabase
-              .from('sessions_progress')
-              .update({
-                called_numbers: updatedNumbers,
-                updated_at: new Date().toISOString()
-              })
-              .eq('session_id', sessionId);
-              
-            if (error) {
-              throw new Error(`Database update error: ${error.message}`);
-            }
-          }
-        } catch (dbError) {
-          logWithTimestamp(`Failed direct database update: ${dbError}`, 'error');
-          // Allow UI update anyway since we broadcasted successfully
-        }
-      }
-      
-      // STEP 3: Update local state immediately for UI responsiveness
-      // We do this regardless of database success since we already broadcasted
-      setCalledNumbers(prev => [...prev, number]);
-      setLastCalledNumber(number);
-      setLastUpdateTime(Date.now());
-      
-      return number;
-    } catch (error) {
-      logWithTimestamp(`Error calling number: ${error}`, 'error');
-      return null;
-    } finally {
-      setIsCallInProgress(false);
-    }
-  }, [sessionId, isCallInProgress, remainingNumbers, saveToDatabase]);
-
-  // Reset all called numbers
-  const resetCalledNumbers = useCallback(async () => {
-    if (!sessionId) return false;
+    initializeConnection();
     
-    try {
-      // First broadcast the reset
-      const broadcastSuccess = await webSocketService.broadcastWithRetry(
-        CHANNEL_NAMES.GAME_UPDATES,
-        EVENT_TYPES.GAME_RESET,
-        {
-          sessionId,
-          timestamp: Date.now(),
-        }
-      );
-      
-      if (!broadcastSuccess) {
-        logWithTimestamp('Warning: Failed to broadcast game reset via WebSocket', 'warn');
-      }
-      
-      // Then reset via service
-      const success = await getNumberCallingService(sessionId).resetNumbers();
-      
-      if (success) {
-        // Update local state immediately
-        setCalledNumbers([]);
-        setLastCalledNumber(null);
-        setLastUpdateTime(Date.now());
-      }
-      
-      return success;
-    } catch (error) {
-      logWithTimestamp(`Error resetting numbers: ${error}`, 'error');
+    // Clean up on unmount
+    return () => {
+      setIsInitialized(false);
+    };
+  }, [sessionId, autoConnect]);
+  
+  // Method to call a number
+  const callNumber = useCallback(async (number: number) => {
+    if (!sessionId) {
+      setError('No session ID provided');
       return false;
     }
-  }, [sessionId]);
-
-  // Toggle the save to database setting
-  const toggleSaveToDatabase = useCallback(() => {
-    if (!sessionId) return;
     
-    const service = getNumberCallingService(sessionId);
-    const currentValue = service.getSaveToDatabase();
-    service.setSaveToDatabase(!currentValue);
-    setSaveToDatabase(!currentValue);
+    setIsBroadcasting(true);
+    setError(null);
     
-    logWithTimestamp(`Save to database toggled to: ${!currentValue}`, 'info');
-  }, [sessionId]);
+    try {
+      logWithTimestamp(`Calling number ${number} for session ${sessionId}`, 'info');
+      
+      // Call the number via connection manager
+      const success = await connectionManager.callNumber(number, sessionId);
+      
+      if (success) {
+        // Notify our service of the new number
+        numberCallingService.current.notifyListeners(sessionId, number);
+        
+        toast({
+          title: "Number Called",
+          description: `Successfully called number ${number}`,
+        });
+        
+        return true;
+      } else {
+        setError('Failed to call number');
+        return false;
+      }
+    } catch (e) {
+      logWithTimestamp(`Error calling number: ${e}`, 'error');
+      setError('Failed to call number');
+      return false;
+    } finally {
+      setIsBroadcasting(false);
+    }
+  }, [sessionId, toast]);
   
-  // Manual reconnect function
+  // Method to reset numbers
+  const resetNumbers = useCallback(async () => {
+    if (!sessionId) {
+      setError('No session ID provided');
+      return false;
+    }
+    
+    setIsResetting(true);
+    setError(null);
+    
+    try {
+      logWithTimestamp(`Resetting numbers for session ${sessionId}`, 'info');
+      
+      // Reset numbers in the service
+      numberCallingService.current.resetNumbers(sessionId);
+      
+      // Call the number via connection manager
+      const success = await connectionManager.callNumber(null, sessionId);
+      
+      if (success) {
+        toast({
+          title: "Numbers Reset",
+          description: "Successfully reset the called numbers",
+        });
+        
+        return true;
+      } else {
+        setError('Failed to reset numbers');
+        return false;
+      }
+    } catch (e) {
+      logWithTimestamp(`Error resetting numbers: ${e}`, 'error');
+      setError('Failed to reset numbers');
+      return false;
+    } finally {
+      setIsResetting(false);
+    }
+  }, [sessionId, toast]);
+  
+  // Method to update called numbers
+  const updateCalledNumbers = useCallback(async (numbers: number[]) => {
+    if (!sessionId) {
+      setError('No session ID provided');
+      return false;
+    }
+    
+    setError(null);
+    
+    try {
+      logWithTimestamp(`Updating called numbers for session ${sessionId}`, 'info');
+      
+      // Update numbers in the service
+      numberCallingService.current.updateCalledNumbers(sessionId, numbers);
+      
+      toast({
+        title: "Numbers Updated",
+        description: "Successfully updated the called numbers",
+      });
+      
+      return true;
+    } catch (e) {
+      logWithTimestamp(`Error updating called numbers: ${e}`, 'error');
+      setError('Failed to update called numbers');
+      return false;
+    }
+  }, [sessionId, toast]);
+  
+  // Reconnect method
   const reconnect = useCallback(() => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      setError('No session ID provided');
+      return;
+    }
     
-    logWithTimestamp('Manually reconnecting caller WebSocket', 'info');
-    webSocketService.reconnectChannel(CHANNEL_NAMES.GAME_UPDATES);
+    setIsReconnecting(true);
+    setError(null);
     
-    // Also refresh from service
-    const service = getNumberCallingService(sessionId);
-    const numbers = service.getCalledNumbers();
-    const lastNumber = service.getLastCalledNumber();
-    
-    setCalledNumbers([...numbers]);
-    setLastCalledNumber(lastNumber);
-    setLastUpdateTime(Date.now());
-  }, [sessionId]);
-
+    try {
+      logWithTimestamp(`Reconnecting Caller Number connection for session: ${sessionId}`, 'info');
+      
+      // Force reconnect via connection manager
+      connectionManager.reconnect();
+      
+      toast({
+        title: "Reconnecting",
+        description: "Attempting to reconnect to the session",
+      });
+    } catch (e) {
+      logWithTimestamp(`Error reconnecting: ${e}`, 'error');
+      setError('Failed to reconnect');
+    } finally {
+      setIsReconnecting(false);
+    }
+  }, [sessionId, toast]);
+  
   return {
     calledNumbers,
     lastCalledNumber,
-    isCallInProgress,
-    remainingNumbers: remainingNumbers(),
-    callNextNumber,
-    resetCalledNumbers,
-    lastUpdateTime,
-    saveToDatabase,
-    toggleSaveToDatabase,
-    isConnected,
+    isBroadcasting,
+    isResetting,
+    isInitialized,
+    isReconnecting,
+    error,
+    callNumber,
+    resetNumbers,
+    updateCalledNumbers,
     reconnect
   };
 }
