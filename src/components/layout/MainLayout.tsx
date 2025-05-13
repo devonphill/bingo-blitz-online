@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { Menu, Coins } from 'lucide-react';
+import { Menu, Coins, Home, Users, FileText, Settings, HelpCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import DashboardSidebar from '@/components/dashboard/DashboardSidebar';
 import {
@@ -14,7 +14,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { toast } from 'sonner';
 import { Spinner } from '@/components/ui/spinner';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -61,13 +61,20 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   }, [user?.id]);
 
   return (
-    <SidebarProvider defaultOpen={false}>
-      <div className="flex min-h-screen w-full">
-        <Sidebar className="transition-all duration-300">
+    <SidebarProvider defaultOpen={true}>
+      <div className="flex min-h-screen w-full bg-gray-50">
+        <Sidebar className="transition-all duration-300 border-r shadow-sm">
           <div className="p-4 border-b">
-            <div className="flex flex-col">
-              <h2 className="text-xl font-bold">Bingo Blitz</h2>
-              <p className="text-sm text-muted-foreground">Game Management</p>
+            <div className="flex items-center gap-2">
+              <img 
+                src="/lovable-uploads/a62a2374-863f-466e-8812-847aef0be5fa.png"
+                alt="Multi-Bingo Logo" 
+                className="h-8 w-8 object-contain"
+              />
+              <div className="flex flex-col">
+                <h2 className="text-lg font-bold">Multi-Bingo</h2>
+                <p className="text-xs text-muted-foreground">Game Management</p>
+              </div>
             </div>
           </div>
           <SidebarContent>
@@ -78,18 +85,31 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         <div className="flex flex-col flex-1">
           <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background px-4 shadow-sm">
             <SidebarTrigger>
-              <Menu className="h-5 w-5" />
-              <span className="sr-only">Toggle sidebar</span>
+              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" aria-label="Toggle sidebar">
+                <Menu className="h-5 w-5" />
+                <span className="sr-only">Toggle sidebar</span>
+              </Button>
             </SidebarTrigger>
             
-            <div className="flex-1">
-              <h1 className="text-xl font-semibold">Bingo Blitz Online</h1>
+            <div className="flex-1 flex items-center">
+              <Button 
+                variant="ghost" 
+                className="mr-2 flex items-center gap-2 text-base font-medium" 
+                onClick={() => navigate('/')}
+              >
+                <Home className="h-4 w-4" />
+                <span>Home</span>
+              </Button>
+              
+              <div className="h-4 w-px bg-gray-300 mx-2"></div>
+              
+              <h1 className="text-xl font-semibold">Multi-Bingo Platform</h1>
             </div>
             
             <div className="flex items-center space-x-4">
               {user && (
                 <div 
-                  className="flex items-center space-x-1 bg-amber-50 p-2 rounded-md cursor-pointer"
+                  className="flex items-center space-x-1 bg-gradient-to-r from-amber-50 to-amber-100 p-2 rounded-md cursor-pointer hover:shadow-md transition-shadow"
                   onClick={() => navigate('/add-tokens')}
                   title="Add more credits"
                 >
