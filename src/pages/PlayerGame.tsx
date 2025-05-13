@@ -17,8 +17,10 @@ import BingoClaim from '@/components/game/BingoClaim';
 import { usePlayerClaimManagement } from '@/hooks/usePlayerClaimManagement';
 import GameSheetControls from '@/components/game/GameSheetControls';
 import PlayerGameControls from '@/components/game/PlayerGameControls';
-import { useToast } from '@/hooks/use-toast';
+import { useToast } from '@/components/ui/use-toast';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
+import { useSessionProgress } from '@/hooks/useSessionProgress';
+import PlayerLobby from '@/components/game/PlayerLobby';
 
 // Error boundary component for the player game
 class PlayerGameErrorBoundary extends React.Component<
@@ -143,6 +145,12 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
     playerName: fetchedPlayerName
   } = useGameSession(gameCode);
 
+  // Get the session progress data for lobby/game status
+  const {
+    progress: sessionProgress,
+    loading: loadingSessionProgress
+  } = useSessionProgress(sessionDetails?.id);
+
   const { 
     playerTickets, 
     isLoadingTickets, 
@@ -187,6 +195,13 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
       }
     }
   }, [fetchedPlayerId, fetchedPlayerName, gameCode, player, sessionDetails?.id, setPlayer]);
+
+  // For debugging, log the session progress
+  useEffect(() => {
+    if (sessionProgress) {
+      logWithTimestamp(`PlayerGame: Session progress loaded - game_status: ${sessionProgress.game_status || 'null'}`, 'info');
+    }
+  }, [sessionProgress]);
 
   // Player claim management
   const {
@@ -277,7 +292,7 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
   }
 
   // Handle various loading and error states
-  if (isLoadingSession || isLoadingTickets) {
+  if (isLoadingSession || isLoadingTickets || loadingSessionProgress) {
     return <div className="flex items-center justify-center h-screen">
       <div className="text-center">
         <LoadingSpinner size="lg" />
@@ -345,6 +360,28 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
     );
   }
 
+  // Check if we should show the lobby based on session progress
+  const showLobby = !sessionProgress?.game_status || 
+                    sessionProgress.game_status === 'pending' || 
+                    sessionDetails.lifecycle_state === 'setup' || 
+                    sessionDetails.lifecycle_state === 'lobby';
+
+  logWithTimestamp(`PlayerGame: Lobby check - showLobby: ${showLobby}, game_status: ${sessionProgress?.game_status || 'null'}, lifecycle_state: ${sessionDetails.lifecycle_state || 'unknown'}`, 'info');
+
+  // If the game is in lobby/pending state, show the lobby
+  if (showLobby) {
+    return (
+      <PlayerLobby
+        sessionName={sessionDetails.name}
+        sessionId={sessionDetails.id}
+        playerName={playerName || undefined}
+        onRefreshStatus={refreshTickets}
+        errorMessage={null}
+      />
+    );
+  }
+
+  // Otherwise, show the main game view
   return (
     <div className="pb-20">
       <PlayerGameHeader 
