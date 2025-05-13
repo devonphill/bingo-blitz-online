@@ -1,27 +1,13 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
-
-// Define consistent channel names and events used across the application
-export const CHANNEL_NAMES = {
-  GAME_UPDATES: 'game-updates',
-  CLAIM_CHECKING: 'claim_checking_broadcaster',
-  CLAIM_RESULT: 'claim_result_broadcaster'
-};
-
-export const EVENT_TYPES = {
-  NUMBER_CALLED: 'number-called',
-  GAME_RESET: 'game-reset',
-  CLAIM_SUBMITTED: 'claim-submitted',
-  CLAIM_CHECKING: 'claim-checking',
-  CLAIM_RESULT: 'claim-result',
-  WIN_PATTERN_CHANGED: 'win-pattern-changed'
-};
+import { CHANNEL_NAMES, EVENT_TYPES, WEBSOCKET_STATUS } from '@/constants/websocketConstants';
 
 /**
- * Class for managing WebSocket connections with improved stability
+ * Unified WebSocket Service
+ * Single source of truth for all WebSocket communications in the application
  */
-export class WebSocketService {
+class WebSocketService {
   private channels: Map<string, any> = new Map();
   private reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
   private connectionState: Map<string, string> = new Map();
@@ -124,12 +110,12 @@ export class WebSocketService {
       this.notifyStatusListeners(channelKey, status);
       
       // If disconnected, attempt reconnect with exponential backoff
-      if (status === 'DISCONNECTED' || status === 'CHANNEL_ERROR') {
+      if (status === WEBSOCKET_STATUS.CLOSED || status === WEBSOCKET_STATUS.CHANNEL_ERROR) {
         this.scheduleReconnect(channelName);
       }
       
       // If connected, clear any pending reconnect
-      if (status === 'SUBSCRIBED') {
+      if (status === WEBSOCKET_STATUS.SUBSCRIBED) {
         this.clearReconnect(channelName);
       }
     });
@@ -142,7 +128,7 @@ export class WebSocketService {
       // Notify all listeners
       this.notifyStatusListeners(channelKey, status);
       
-      if (status !== 'SUBSCRIBED') {
+      if (status !== WEBSOCKET_STATUS.SUBSCRIBED) {
         this.scheduleReconnect(channelName);
       }
     });
@@ -223,6 +209,13 @@ export class WebSocketService {
   public getConnectionState(channelName: string): string {
     const channelKey = this.getChannelKey(channelName);
     return this.connectionState.get(channelKey) || 'unknown';
+  }
+  
+  /**
+   * Check if a channel is connected
+   */
+  public isConnected(channelName: string): boolean {
+    return this.getConnectionState(channelName) === WEBSOCKET_STATUS.SUBSCRIBED;
   }
   
   /**
@@ -325,27 +318,46 @@ export class WebSocketService {
       this.reconnectChannel(channelName);
     }, delay);
     
-    // Store timer reference
     this.reconnectTimers.set(channelKey, timer);
   }
   
   /**
-   * Clear reconnect timer
+   * Clear any pending reconnect timer
    */
   private clearReconnect(channelName: string): void {
     const channelKey = this.getChannelKey(channelName);
     
-    // Clear timer if exists
     if (this.reconnectTimers.has(channelKey)) {
-      clearTimeout(this.reconnectTimers.get(channelKey)!);
+      clearTimeout(this.reconnectTimers.get(channelKey));
       this.reconnectTimers.delete(channelKey);
-      logWithTimestamp(`[${this.instanceId}] Cleared reconnect timer for ${channelName}`, 'debug');
+      logWithTimestamp(`[${this.instanceId}] Cleared reconnect timer for ${channelName}`, 'info');
+    }
+  }
+  
+  /**
+   * Add event listener to a channel
+   */
+  public addListener(channelName: string, eventType: string, event: string, callback: (payload: any) => void) {
+    const channelKey = this.getChannelKey(channelName);
+    const channel = this.channels.get(channelKey);
+    
+    if (!channel) {
+      logWithTimestamp(`[${this.instanceId}] Cannot add listener: Channel ${channelName} not found`, 'error');
+      return () => {}; // Return empty cleanup function
     }
     
-    // Reset retry count on successful connection
-    if (this.connectionState.get(channelKey) === 'SUBSCRIBED') {
-      this.reconnectAttempts.set(channelKey, 0);
-    }
+    // Add the listener
+    channel.on(eventType, { event }, callback);
+    
+    // Return cleanup function
+    return () => {
+      try {
+        // No direct way to remove specific listeners, so we don't do anything here
+        // The listener will be removed when the channel is removed
+      } catch (error) {
+        logWithTimestamp(`[${this.instanceId}] Error removing listener: ${error}`, 'error');
+      }
+    };
   }
   
   /**
@@ -354,22 +366,10 @@ export class WebSocketService {
   private getChannelKey(channelName: string): string {
     return `${channelName}`;
   }
-  
-  /**
-   * Add listener for specific channel events
-   */
-  public on(channelName: string, eventConfig: any, callback: (payload: any) => void) {
-    const channelKey = this.getChannelKey(channelName);
-    const channel = this.channels.get(channelKey);
-    
-    if (!channel) {
-      logWithTimestamp(`[${this.instanceId}] Cannot add listener: Channel ${channelName} not found`, 'error');
-      return;
-    }
-    
-    channel.on('broadcast', eventConfig, callback);
-  }
 }
 
-// Export a singleton instance
+// Export singleton instance
 export const webSocketService = new WebSocketService();
+
+// Re-export constants for convenience
+export { CHANNEL_NAMES, EVENT_TYPES, WEBSOCKET_STATUS };

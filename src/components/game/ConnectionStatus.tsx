@@ -1,67 +1,75 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { useNetwork, ConnectionState } from '@/contexts/NetworkStatusContext';
-import { supabase } from '@/integrations/supabase/client';
+import { webSocketService, CHANNEL_NAMES, WEBSOCKET_STATUS } from '@/services/WebSocketService';
+import { toast } from '@/hooks/use-toast';
 
 interface ConnectionStatusProps {
   showFull?: boolean;
   className?: string;
   onReconnect?: () => void;
+  sessionId?: string | null;
 }
 
 export default function ConnectionStatus({ 
   showFull = false,
   className = '',
-  onReconnect
+  onReconnect,
+  sessionId
 }: ConnectionStatusProps) {
   const [expanded, setExpanded] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
-  const [lastConnectionCheck, setLastConnectionCheck] = useState(Date.now());
+  const [connectionState, setConnectionState] = useState<string>('unknown');
+  const [lastPingTime, setLastPingTime] = useState<number>(Date.now());
   const instanceId = useRef(`conn-${Math.random().toString(36).substring(2, 7)}`);
   
-  // Use the network context
-  const network = useNetwork();
-  const { connectionState, isConnected, sessionId } = network;
-  
-  // Check if Supabase is connected
-  const checkSupabaseConnection = useCallback(async () => {
-    try {
-      // Try a simple query instead of using rpc with "ping"
-      const { data, error } = await supabase
-        .from('sessions_progress')
-        .select('id')
-        .limit(1);
-      
-      return !error;
-    } catch (err) {
-      return false;
-    }
-  }, []);
-  
-  // Periodically check connection status
+  // Update connection state from WebSocketService
   useEffect(() => {
-    const timer = setInterval(() => {
-      checkSupabaseConnection().then(connected => {
-        if (!connected && !isReconnecting) {
-          logWithTimestamp(`[${instanceId.current}] Detected potential connection issue`, 'warn');
-        }
-        setLastConnectionCheck(Date.now());
-      });
-    }, 30000); // Check every 30 seconds
+    if (!sessionId) {
+      setConnectionState('disconnected');
+      return;
+    }
     
-    return () => clearInterval(timer);
-  }, [checkSupabaseConnection, isReconnecting]);
+    // Get initial state
+    setConnectionState(webSocketService.getConnectionState(CHANNEL_NAMES.GAME_UPDATES));
+    
+    // Set up subscription to connection status
+    const statusListener = (status: string) => {
+      setConnectionState(status);
+      setLastPingTime(Date.now());
+    };
+    
+    // Add status listener
+    webSocketService.subscribeWithReconnect(CHANNEL_NAMES.GAME_UPDATES, statusListener);
+    
+    // Return cleanup function
+    return () => {
+      // There's no direct way to remove a specific listener in the current implementation
+    };
+  }, [sessionId]);
+  
+  // Periodically update ping time
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLastPingTime(Date.now());
+    }, 30000);
+    
+    return () => clearInterval(interval);
+  }, []);
   
   const getStatusColor = useCallback(() => {
     if (isReconnecting) return 'bg-amber-500 animate-pulse';
     
     switch (connectionState) {
-      case 'connected': return 'bg-green-500';
-      case 'connecting': return 'bg-amber-500';
+      case WEBSOCKET_STATUS.SUBSCRIBED: return 'bg-green-500';
+      case 'connecting': 
+      case 'CONNECTING': 
+      case 'JOINING': return 'bg-amber-500';
+      case WEBSOCKET_STATUS.CLOSED: 
       case 'disconnected': return 'bg-red-500';
+      case WEBSOCKET_STATUS.CHANNEL_ERROR: 
       case 'error': return 'bg-red-700';
       default: return 'bg-gray-500';
     }
@@ -71,12 +79,26 @@ export default function ConnectionStatus({
     if (isReconnecting) return 'Reconnecting...';
     
     switch (connectionState) {
-      case 'connected': return 'Connected';
-      case 'connecting': return 'Connecting...';
+      case WEBSOCKET_STATUS.SUBSCRIBED: return 'Connected';
+      case 'connecting': 
+      case 'CONNECTING': 
+      case 'JOINING': return 'Connecting...';
+      case WEBSOCKET_STATUS.CLOSED: 
       case 'disconnected': return 'Disconnected';
+      case WEBSOCKET_STATUS.CHANNEL_ERROR: 
       case 'error': return 'Connection Error';
       default: return 'Unknown';
     }
+  }, [connectionState, isReconnecting]);
+  
+  const getStatusIcon = useCallback(() => {
+    if (isReconnecting) return <RefreshCw className="h-4 w-4 animate-spin" />;
+    
+    const isConnected = connectionState === WEBSOCKET_STATUS.SUBSCRIBED;
+    
+    return isConnected 
+      ? <Wifi className="h-4 w-4" /> 
+      : <WifiOff className="h-4 w-4" />;
   }, [connectionState, isReconnecting]);
   
   const handleReconnectClick = (e: React.MouseEvent) => {
@@ -84,16 +106,20 @@ export default function ConnectionStatus({
     setIsReconnecting(true);
     logWithTimestamp(`[${instanceId.current}] User requested manual reconnection`, 'info');
     
-    // Call both reconnect methods
-    if (sessionId) {
-      // Use the network context to reconnect
-      network.connect(sessionId);
-    }
+    // Force reconnect via WebSocketService
+    webSocketService.reconnectChannel(CHANNEL_NAMES.GAME_UPDATES);
     
     // Also call the provided reconnect callback if any
     if (onReconnect) {
       onReconnect();
     }
+    
+    // Show toast
+    toast({
+      title: "Reconnecting",
+      description: "Attempting to reconnect to the game server...",
+      duration: 3000
+    });
     
     // Reset reconnecting UI after a delay
     setTimeout(() => setIsReconnecting(false), 3000);
@@ -107,10 +133,16 @@ export default function ConnectionStatus({
       >
         <div className={`w-3 h-3 rounded-full ${getStatusColor()} mr-2`} />
         {showFull && (
-          <span className="text-sm font-medium">{getStatusText()}</span>
+          <span className="text-sm font-medium flex items-center gap-1">
+            {getStatusIcon()}
+            {getStatusText()}
+          </span>
         )}
         
-        {(connectionState === 'disconnected' || connectionState === 'error') && (
+        {(connectionState === WEBSOCKET_STATUS.CLOSED || 
+          connectionState === WEBSOCKET_STATUS.CHANNEL_ERROR || 
+          connectionState === 'disconnected' || 
+          connectionState === 'error') && (
           <button 
             className="ml-2 text-xs bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded flex items-center gap-1"
             onClick={handleReconnectClick}
@@ -133,8 +165,9 @@ export default function ConnectionStatus({
             <h4 className="font-bold mb-2">Connection Details</h4>
             <div className="text-xs space-y-1">
               <div>Status: <span className="font-semibold">{getStatusText()}</span></div>
+              <div>Channel: <span className="font-mono">{CHANNEL_NAMES.GAME_UPDATES}</span></div>
               <div>Session ID: <span className="font-mono">{sessionId || 'Not connected'}</span></div>
-              <div>Last Check: <span className="font-mono">{new Date(lastConnectionCheck).toLocaleTimeString()}</span></div>
+              <div>Last Check: <span className="font-mono">{new Date(lastPingTime).toLocaleTimeString()}</span></div>
               
               <div className="pt-2">
                 <button 

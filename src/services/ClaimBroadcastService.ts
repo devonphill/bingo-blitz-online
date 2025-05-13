@@ -1,45 +1,44 @@
 
-import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { validateChannelType, ensureString } from '@/utils/typeUtils';
 import { ClaimData, ClaimResult } from '@/types/claim';
+import { webSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/WebSocketService';
 
 /**
- * Service for broadcasting claim events to Supabase real-time channels
+ * Service for broadcasting claim events using WebSocketService
  */
 class ClaimBroadcastService {
-  // Channel name constants
-  private readonly CLAIM_CHANNEL = 'game-updates';
-  private readonly CLAIM_CHECKING_CHANNEL = 'claim_checking_broadcaster';
-  private readonly CLAIM_RESULT_EVENT = 'claim-result';
-  private readonly CLAIM_SUBMITTED_EVENT = 'claim-submitted';
-  private readonly CLAIM_CHECKING_EVENT = 'claim-checking';
-
+  private instanceId: string;
+  
+  constructor() {
+    this.instanceId = `claimBS-${Math.random().toString(36).substring(2, 7)}`;
+    logWithTimestamp(`[${this.instanceId}] ClaimBroadcastService initialized`, 'info');
+  }
+  
   /**
    * Broadcast a new claim to the game-updates channel
    */
   public async broadcastClaimEvent(claim: ClaimData): Promise<boolean> {
     try {
       if (!claim || !claim.sessionId) {
-        console.error('Cannot broadcast claim: Missing session ID');
+        logWithTimestamp(`[${this.instanceId}] Cannot broadcast claim: Missing session ID`, 'error');
         return false;
       }
 
-      logWithTimestamp(`Broadcasting claim ${claim.id} for player ${claim.playerName || claim.playerId} in session ${claim.sessionId}`);
+      logWithTimestamp(`[${this.instanceId}] Broadcasting claim ${claim.id} for player ${claim.playerName || claim.playerId} in session ${claim.sessionId}`);
 
       // Clean up the payload to avoid circular references
       const broadcastPayload = {
-        claimId: ensureString(claim.id),
-        sessionId: ensureString(claim.sessionId),
-        playerId: ensureString(claim.playerId),
-        playerName: ensureString(claim.playerName || 'unknown'),
+        claimId: claim.id,
+        sessionId: claim.sessionId,
+        playerId: claim.playerId,
+        playerName: claim.playerName || 'unknown',
         timestamp: claim.timestamp,
         toGoCount: claim.toGoCount || 0,
-        gameType: ensureString(claim.gameType || 'mainstage'),
-        winPattern: ensureString(claim.winPattern || 'oneLine'),
+        gameType: claim.gameType || 'mainstage',
+        winPattern: claim.winPattern || 'oneLine',
         // Sanitize ticket data to avoid circular references
         ticket: claim.ticket ? {
-          serial: ensureString(claim.ticket.serial),
+          serial: claim.ticket.serial,
           perm: claim.ticket.perm,
           position: claim.ticket.position,
           layoutMask: claim.ticket.layoutMask,
@@ -51,23 +50,22 @@ class ClaimBroadcastService {
         hasLastCalledNumber: claim.hasLastCalledNumber || false
       };
 
-      // Log the actual payload we're sending for debugging
-      logWithTimestamp(`Broadcast payload: ${JSON.stringify(broadcastPayload)}`, 'debug');
-
-      // Use consistent channel name for all claim-related broadcasts
-      const broadcastChannel = supabase.channel(this.CLAIM_CHANNEL);
+      // Use WebSocketService for consistent broadcasting
+      const success = await webSocketService.broadcastWithRetry(
+        CHANNEL_NAMES.GAME_UPDATES,
+        EVENT_TYPES.CLAIM_SUBMITTED,
+        broadcastPayload
+      );
       
-      // Broadcast the claim to all listeners - use consistent event name
-      await broadcastChannel.send({
-        type: validateChannelType('broadcast'), 
-        event: this.CLAIM_SUBMITTED_EVENT,
-        payload: broadcastPayload
-      });
+      if (success) {
+        logWithTimestamp(`[${this.instanceId}] Claim broadcast sent for player ${claim.playerName || claim.playerId}`);
+      } else {
+        logWithTimestamp(`[${this.instanceId}] Failed to broadcast claim`, 'error');
+      }
       
-      logWithTimestamp(`Claim broadcast sent for player ${claim.playerName || claim.playerId}`);
-      return true;
+      return success;
     } catch (err) {
-      console.error("Error broadcasting claim:", err);
+      logWithTimestamp(`[${this.instanceId}] Error broadcasting claim: ${err}`, 'error');
       return false;
     }
   }
@@ -79,35 +77,45 @@ class ClaimBroadcastService {
     try {
       const { sessionId, playerId, playerName, result: claimResult, ticket } = result;
       
-      // Use consistent channel name for claim result broadcasts
-      const broadcastChannel = supabase.channel(this.CLAIM_CHANNEL);
+      if (!sessionId) {
+        logWithTimestamp(`[${this.instanceId}] Cannot broadcast claim result: Missing session ID`, 'error');
+        return false;
+      }
       
       // Log before broadcasting
-      logWithTimestamp(`Broadcasting claim result: ${claimResult} for player ${playerName || playerId} in session ${sessionId}`, 'info');
+      logWithTimestamp(`[${this.instanceId}] Broadcasting claim result: ${claimResult} for player ${playerName || playerId} in session ${sessionId}`, 'info');
       
-      // Broadcast to all clients with session information so everyone knows
-      await broadcastChannel.send({
-        type: validateChannelType('broadcast'),
-        event: this.CLAIM_RESULT_EVENT,
-        payload: {
-          sessionId: ensureString(sessionId),
-          playerId: ensureString(playerId),
-          playerName: ensureString(playerName || 'Player'),
-          result: claimResult,
-          timestamp: result.timestamp || new Date().toISOString(),
-          isGlobalBroadcast: true, // Flag to indicate this is for everyone
-          ticket: ticket ? {
-            serial: ensureString(ticket.serial || ''),
-            numbers: ticket.numbers,
-            calledNumbers: ticket.calledNumbers
-          } : undefined
-        }
-      });
+      // Prepare payload
+      const payload = {
+        sessionId,
+        playerId,
+        playerName: playerName || 'Player',
+        result: claimResult,
+        timestamp: result.timestamp || new Date().toISOString(),
+        isGlobalBroadcast: true, // Flag to indicate this is for everyone
+        ticket: ticket ? {
+          serial: ticket.serial || '',
+          numbers: ticket.numbers,
+          calledNumbers: ticket.calledNumbers
+        } : undefined
+      };
       
-      logWithTimestamp(`Broadcast claim result sent: ${claimResult} for player ${playerName || playerId}`, 'info');
-      return true;
+      // Use the WebSocketService
+      const success = await webSocketService.broadcastWithRetry(
+        CHANNEL_NAMES.GAME_UPDATES,
+        EVENT_TYPES.CLAIM_VALIDATION,
+        payload
+      );
+      
+      if (success) {
+        logWithTimestamp(`[${this.instanceId}] Claim result broadcast successful`, 'info');
+      } else {
+        logWithTimestamp(`[${this.instanceId}] Failed to broadcast claim result`, 'error');
+      }
+      
+      return success;
     } catch (err) {
-      console.error("Error broadcasting claim result:", err);
+      logWithTimestamp(`[${this.instanceId}] Error broadcasting claim result: ${err}`, 'error');
       return false;
     }
   }
@@ -118,71 +126,54 @@ class ClaimBroadcastService {
   public async broadcastClaimChecking(claim: ClaimData, sessionId: string): Promise<boolean> {
     try {
       if (!claim || !sessionId) {
-        logWithTimestamp('Cannot broadcast claim check: Missing session ID', 'error');
-        console.error('Cannot broadcast claim check: Missing session ID');
+        logWithTimestamp(`[${this.instanceId}] Cannot broadcast claim check: Missing session ID`, 'error');
         return false;
       }
 
-      logWithTimestamp(`Broadcasting claim check for ${claim.playerName || claim.playerId} in session ${sessionId}`, 'info');
-      console.log('BROADCASTING CLAIM CHECK:', {
-        playerName: claim.playerName || claim.playerId,
-        sessionId: sessionId,
-        channel: this.CLAIM_CHECKING_CHANNEL,
-        event: this.CLAIM_CHECKING_EVENT
-      });
+      logWithTimestamp(`[${this.instanceId}] Broadcasting claim check for ${claim.playerName || claim.playerId} in session ${sessionId}`, 'info');
       
       // Ensure we have properly formatted ticket data for display
       const ticketData = claim.ticket ? {
         serial: claim.ticket.serial || '',
         numbers: claim.ticket.numbers || [],
         calledNumbers: claim.calledNumbers || [],
-        layoutMask: claim.ticket.layoutMask || 0 // Fixed: using only layoutMask not layout_mask
+        layoutMask: claim.ticket.layoutMask || 0
       } : null;
       
       // Create a payload with claim details
       const broadcastPayload = {
-        claimId: ensureString(claim.id || 'unknown'),
-        sessionId: ensureString(sessionId),
-        playerId: ensureString(claim.playerId),
-        playerName: ensureString(claim.playerName || 'unknown'),
+        claimId: claim.id || 'unknown',
+        sessionId,
+        playerId: claim.playerId,
+        playerName: claim.playerName || 'unknown',
         timestamp: new Date().toISOString(),
         message: 'Claim being verified by caller',
-        gameType: ensureString(claim.gameType || 'mainstage'),
-        winPattern: ensureString(claim.winPattern || 'oneLine'),
-        // Sanitize ticket data to avoid circular references
+        gameType: claim.gameType || 'mainstage',
+        winPattern: claim.winPattern || 'oneLine',
         ticket: ticketData,
         calledNumbers: claim.calledNumbers || []
       };
       
-      console.log('CLAIM CHECK PAYLOAD:', broadcastPayload);
+      // Use WebSocketService
+      const success = await webSocketService.broadcastWithRetry(
+        CHANNEL_NAMES.GAME_UPDATES,
+        EVENT_TYPES.CLAIM_VALIDATING_TKT,
+        broadcastPayload
+      );
       
-      // Use the dedicated channel with improved config
-      const broadcastChannel = supabase.channel(this.CLAIM_CHECKING_CHANNEL, {
-        config: {
-          broadcast: { 
-            self: true, // Ensure sender receives their own events
-            ack: true   // Request acknowledgement
-          }
-        }
-      });
+      if (success) {
+        logWithTimestamp(`[${this.instanceId}] Claim check broadcast sent successfully`, 'info');
+      } else {
+        logWithTimestamp(`[${this.instanceId}] Failed to broadcast claim check`, 'error');
+      }
       
-      // Broadcast the claim check to all listeners
-      await broadcastChannel.send({
-        type: validateChannelType('broadcast'),
-        event: this.CLAIM_CHECKING_EVENT,
-        payload: broadcastPayload
-      });
-      
-      logWithTimestamp(`Claim check broadcast sent for ${claim.playerName || claim.playerId}`, 'info');
-      console.log('CLAIM CHECK BROADCAST SENT SUCCESSFULLY');
-      return true;
+      return success;
     } catch (err) {
-      console.error("Error broadcasting claim check:", err);
-      logWithTimestamp(`Error broadcasting claim check: ${(err as Error).message}`, 'error');
+      logWithTimestamp(`[${this.instanceId}] Error broadcasting claim check: ${err}`, 'error');
       return false;
     }
   }
 }
 
-// Export a singleton instance
+// Export singleton instance
 export const claimBroadcastService = new ClaimBroadcastService();
