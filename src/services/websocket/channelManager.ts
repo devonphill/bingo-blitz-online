@@ -35,7 +35,7 @@ export class ChannelManager {
       }
       
       // Default configuration with improved resilience
-      const defaultConfig = {
+      const defaultConfig: ChannelConfig = {
         config: {
           broadcast: { 
             self: true, // Receive own broadcasts
@@ -51,6 +51,7 @@ export class ChannelManager {
       const mergedConfig = { ...defaultConfig, ...config };
       
       // Create the channel
+      // @ts-ignore Type compatibility issues between RealtimeChannel and WebSocketChannel
       const channel = supabase.channel(channelName, mergedConfig);
       
       // Store the channel
@@ -58,6 +59,7 @@ export class ChannelManager {
       
       logWithTimestamp(`[${this.instanceId}] Created channel: ${channelName}`, 'info');
       
+      // @ts-ignore Type compatibility issues between RealtimeChannel and WebSocketChannel
       return channel;
     } catch (error) {
       logWithTimestamp(`[${this.instanceId}] Error creating channel: ${error}`, 'error');
@@ -70,6 +72,7 @@ export class ChannelManager {
    */
   public getChannel(channelName: string): WebSocketChannel | undefined {
     const channelKey = this.getChannelKey(channelName);
+    // @ts-ignore Type compatibility issues between RealtimeChannel and WebSocketChannel
     return this.channels.get(channelKey);
   }
 

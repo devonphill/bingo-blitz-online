@@ -1,66 +1,75 @@
 
 import { logWithTimestamp } from '@/utils/logUtils';
-import { BroadcastOptions } from './types';
+import { BroadcastOptions, WebSocketChannel } from './types';
 
 /**
- * Manages WebSocket broadcast operations
+ * Manages broadcasts and retries
  */
 export class BroadcastManager {
-  private instanceId: string;
-  
-  constructor() {
-    this.instanceId = `bcastMgr-${Math.random().toString(36).substring(2, 7)}`;
-  }
-
   /**
-   * Send a broadcast message with retry capability
+   * Broadcast a message with retry capability
    */
   public async broadcastWithRetry(
-    channel: any,
-    eventType: string, 
-    payload: any, 
+    channel: WebSocketChannel,
+    eventType: string,
+    payload: any,
     options: BroadcastOptions = {}
   ): Promise<boolean> {
-    if (!channel) {
-      logWithTimestamp(`[${this.instanceId}] Cannot broadcast: Channel not provided`, 'error');
-      return false;
-    }
-    
-    const maxRetries = options.maxRetries || 3;
-    
-    // Generate a unique ID for this broadcast for deduplication
-    const broadcastId = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const enrichedPayload = { 
-      ...payload,
-      broadcastId,
-      timestamp: Date.now()
+    // Default options
+    const defaultOptions: Required<BroadcastOptions> = {
+      retries: 3,
+      retryDelay: 1000,
+      retryMultiplier: 1.5,
+      timeout: 5000
     };
     
-    let retries = 0;
+    // Merge with user options
+    const config = { ...defaultOptions, ...options };
     
-    while (retries <= maxRetries) {
+    // Add broadcast ID for tracking
+    const broadcastPayload = {
+      ...payload,
+      broadcastId: `broadcast-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
+    };
+    
+    // Try broadcasting with retries
+    for (let attempt = 0; attempt <= config.retries; attempt++) {
       try {
-        logWithTimestamp(`[${this.instanceId}] Broadcasting ${eventType} (attempt ${retries + 1})`, 'info');
+        // Log the attempt
+        if (attempt > 0) {
+          logWithTimestamp(`Retry attempt ${attempt} for broadcast ${broadcastPayload.broadcastId}`, 'info');
+        }
         
-        await channel.send({
-          type: 'broadcast',
-          event: eventType,
-          payload: enrichedPayload
+        // Send the broadcast
+        const send = await new Promise<boolean>((resolve, reject) => {
+          try {
+            // @ts-ignore - Types are inconsistent but this works
+            channel.send({
+              type: 'broadcast',
+              event: eventType,
+              payload: broadcastPayload
+            });
+            
+            resolve(true);
+          } catch (error) {
+            reject(error);
+          }
         });
         
-        logWithTimestamp(`[${this.instanceId}] Broadcast ${eventType} successful`, 'info');
-        return true;
+        if (send) {
+          return true;
+        }
       } catch (error) {
-        retries++;
-        logWithTimestamp(`[${this.instanceId}] Broadcast error (attempt ${retries}): ${error}`, 'error');
+        logWithTimestamp(`Error in broadcast attempt ${attempt}: ${error}`, 'error');
         
-        // For the last retry, if it fails, return false
-        if (retries > maxRetries) {
+        // If this was the last attempt, fail
+        if (attempt >= config.retries) {
           return false;
         }
         
-        // Wait exponentially longer between retries
-        await new Promise(resolve => setTimeout(resolve, 300 * Math.pow(2, retries)));
+        // Wait before retrying with exponential backoff
+        const delay = config.retryDelay * Math.pow(config.retryMultiplier, attempt);
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
     

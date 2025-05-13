@@ -1,27 +1,35 @@
 
 /**
- * Types for WebSocket service
+ * WebSocket service types
  */
-
-// Connection status listener type
-export type ConnectionListener = (status: string) => void;
-
-// Options for broadcast
-export interface BroadcastOptions {
-  retries?: number;
-  retryDelayMs?: number;
-  timeout?: number;
-  broadcastId?: string;
-}
 
 // Channel configuration
 export interface ChannelConfig {
-  name: string;
-  eventListeners?: Record<string, any>;
+  config?: {
+    broadcast?: {
+      self?: boolean;
+      ack?: boolean;
+    };
+    presence?: {
+      key?: string;
+    };
+  };
 }
 
-// WebSocket channel type
+// WebSocket channel interface
 export interface WebSocketChannel {
-  id: string;
-  listeners: any[];
+  on: (eventType: string, event: { event: string }, callback: (payload: any) => void) => void;
+  subscribe: (callback?: (status: string) => void) => void;
 }
+
+// Broadcast options
+export interface BroadcastOptions {
+  retries?: number;
+  retryDelay?: number;
+  retryMultiplier?: number;
+  timeout?: number;
+}
+
+// Connection listener type
+export type ConnectionListener = (status: string) => void;
+
