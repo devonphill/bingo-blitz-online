@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { 
@@ -34,7 +33,10 @@ export class WebSocketService {
     
     if (!channel) {
       try {
-        channel = supabase.channel(channelName, config);
+        // Create channel with proper configuration object structure
+        channel = supabase.channel(channelName, {
+          ...config
+        });
         this.channels.set(channelName, channel);
         logWithTimestamp(`WebSocketService: Created channel ${channelName}`, 'info');
       } catch (error) {

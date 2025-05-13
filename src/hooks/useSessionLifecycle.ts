@@ -10,13 +10,13 @@ export interface UseSessionLifecycleProps {
   onStateChange?: (state: SessionStateUpdate) => void;
 }
 
-export function useSessionLifecycle(props: string | undefined | UseSessionLifecycleProps) {
+export function useSessionLifecycle(props: string | null | undefined | UseSessionLifecycleProps) {
   // Handle both string and object props
   let sessionId: string | null | undefined;
   let onStateChange: ((state: SessionStateUpdate) => void) | undefined;
   
-  if (typeof props === 'string' || props === undefined) {
-    sessionId = props || null;
+  if (typeof props === 'string' || props === null || props === undefined) {
+    sessionId = props;
     onStateChange = undefined;
   } else {
     sessionId = props.sessionId;

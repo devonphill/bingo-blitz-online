@@ -63,7 +63,8 @@ export default function PlayerGameLoader({
         !isLoading && 
         (currentSession.status === 'pending' || 
         currentSession.lifecycle_state === 'setup' || 
-        currentSession.lifecycle_state === 'lobby')) {
+        currentSession.lifecycle_state === 'pending' || 
+        sessionProgress?.game_status === 'pending')) {
       logLoaderEvent("Showing lobby for pending/setup/lobby state", { 
         status: currentSession.status,
         lifecycle_state: currentSession.lifecycle_state
@@ -72,7 +73,7 @@ export default function PlayerGameLoader({
     } else {
       setShowLobby(false);
     }
-  }, [currentSession, isLoading]);
+  }, [currentSession, isLoading, sessionProgress]);
   
   // Log component rendering
   logLoaderEvent("Component rendering", { isLoading, loadingStep, hasError: !!errorMessage, componentId });

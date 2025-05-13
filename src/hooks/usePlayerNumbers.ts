@@ -30,13 +30,23 @@ export function usePlayerNumbers(sessionId: string | undefined) {
       unsubscribeRef.current = unsubscribe;
       
       // Initialize with current state if available
-      const currentNumbers = numberService.getCalledNumbers(sessionId);
-      if (currentNumbers.length > 0) {
-        setCalledNumbers(currentNumbers);
-        setLastCalledNumber(numberService.getLastCalledNumber(sessionId));
-      }
+      const fetchInitialNumbers = async () => {
+        try {
+          const currentNumbers = await numberService.getCalledNumbers(sessionId);
+          
+          if (currentNumbers && currentNumbers.length > 0) {
+            setCalledNumbers(currentNumbers);
+            const lastNumber = await numberService.getLastCalledNumber(sessionId);
+            setLastCalledNumber(lastNumber);
+          }
+          
+          setIsConnected(true);
+        } catch (error) {
+          logWithTimestamp(`Error fetching initial numbers: ${error}`, 'error');
+        }
+      };
       
-      setIsConnected(true);
+      fetchInitialNumbers();
       
       // Cleanup on unmount
       return () => {
@@ -52,13 +62,18 @@ export function usePlayerNumbers(sessionId: string | undefined) {
   }, [sessionId]);
   
   // Manual refresh function 
-  const refreshNumbers = useCallback(() => {
+  const refreshNumbers = useCallback(async () => {
     if (!sessionId) return;
     
-    const numberService = getNumberCallingService();
-    const currentNumbers = numberService.getCalledNumbers(sessionId);
-    setCalledNumbers(currentNumbers);
-    setLastCalledNumber(numberService.getLastCalledNumber(sessionId));
+    try {
+      const numberService = getNumberCallingService();
+      const currentNumbers = await numberService.getCalledNumbers(sessionId);
+      setCalledNumbers(currentNumbers);
+      const lastNumber = await numberService.getLastCalledNumber(sessionId);
+      setLastCalledNumber(lastNumber);
+    } catch (error) {
+      logWithTimestamp(`Error refreshing numbers: ${error}`, 'error');
+    }
   }, [sessionId]);
   
   return {

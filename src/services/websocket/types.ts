@@ -1,71 +1,60 @@
 
-// WebSocket channel configuration
+/**
+ * WebSocket Types
+ */
+
+// Channel Names
+export const CHANNEL_NAMES = {
+  GAME_UPDATES: 'game-updates'
+};
+
+// Event Types
+export const EVENT_TYPES = {
+  NUMBER_CALLED: 'number-called',
+  CLAIM_SUBMITTED: 'claim-submitted',
+  CLAIM_VALIDATED: 'claim-validated',
+  GAME_STATE_UPDATE: 'game-state-update'
+};
+
+// WebSocket Status
+export const WEBSOCKET_STATUS = {
+  CONNECTED: 'CONNECTED',
+  CONNECTING: 'CONNECTING',
+  DISCONNECTED: 'DISCONNECTED',
+  CHANNEL_ERROR: 'CHANNEL_ERROR'
+};
+
+// Interface for channel config
 export interface ChannelConfig {
   config?: {
     broadcast?: {
       self?: boolean;
       ack?: boolean;
     };
-    presence?: {
-      key?: string;
-    };
   };
 }
 
-// WebSocket channel
+// Interface for WebSocket channel
 export interface WebSocketChannel {
-  subscribe: (callback?: (status: string) => void) => any;
-  on: (event: string, config: any, callback: (payload: any) => void) => any;
-  send: (event: string, payload: any) => Promise<any>;
+  on: (event: string, options: any, callback: (payload: any) => void) => WebSocketChannel;
+  subscribe: (callback?: (status: string) => void) => WebSocketChannel;
+  send: (payload: any) => Promise<any>;
 }
 
-// Broadcast options
+// Interface for broadcast options
 export interface BroadcastOptions {
   retries?: number;
   retryDelay?: number;
-  retryMultiplier?: number;
-  timeout?: number;
 }
 
-// Connection listener
-export interface ConnectionListener {
-  (status: string): void;
-}
+// Interface for connection listener
+export type ConnectionListener = (status: string) => void;
 
-// Session state update
+// Interface for session state update
 export interface SessionStateUpdate {
   id: string;
   status: string;
   lifecycle_state: string;
-  [key: string]: any;
+  current_game?: number;
+  updated_at: string;
 }
-
-// WebSocket status constants
-export const WEBSOCKET_STATUS = {
-  SUBSCRIBED: 'SUBSCRIBED',
-  TIMED_OUT: 'TIMED_OUT',
-  CLOSED: 'CLOSED',
-  CHANNEL_ERROR: 'CHANNEL_ERROR',
-  JOINED: 'JOINED',
-  JOINING: 'JOINING',
-  LEAVING: 'LEAVING'
-};
-
-// Channel names constants
-export const CHANNEL_NAMES = {
-  GAME_UPDATES: 'game-updates',
-  PLAYER_PRESENCE: 'player-presence',
-  SESSION_EVENTS: 'session-events'
-};
-
-// Event types constants
-export const EVENT_TYPES = {
-  NUMBER_CALLED: 'number-called',
-  GAME_RESET: 'game-reset',
-  CLAIM_SUBMITTED: 'claim-submitted',
-  CLAIM_VALIDATION: 'claim-validation',
-  CLAIM_VALIDATING_TKT: 'claim-validating-ticket',
-  PATTERN_CHANGE: 'pattern-change',
-  GAME_CHANGE: 'game-change',
-  SESSION_COMPLETE: 'session-complete'
-};

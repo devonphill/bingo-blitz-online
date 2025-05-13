@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from '@/components/ui/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -93,7 +94,7 @@ export function useCallerNumbers(sessionId: string | undefined, autoConnect: boo
     } finally {
       setIsBroadcasting(false);
     }
-  }, [sessionId, toast]);
+  }, [sessionId]);
   
   // Method to reset numbers
   const resetNumbers = useCallback(async () => {
@@ -109,10 +110,7 @@ export function useCallerNumbers(sessionId: string | undefined, autoConnect: boo
       logWithTimestamp(`Resetting numbers for session ${sessionId}`, 'info');
       
       // Reset numbers in the service
-      numberCallingService.current.resetNumbers(sessionId);
-      
-      // Call the number via connection manager
-      const success = await connectionManager.callNumber(null, sessionId);
+      const success = await numberCallingService.current.resetNumbers(sessionId);
       
       if (success) {
         toast({
@@ -132,7 +130,7 @@ export function useCallerNumbers(sessionId: string | undefined, autoConnect: boo
     } finally {
       setIsResetting(false);
     }
-  }, [sessionId, toast]);
+  }, [sessionId]);
   
   // Method to update called numbers
   const updateCalledNumbers = useCallback(async (numbers: number[]) => {
@@ -147,20 +145,25 @@ export function useCallerNumbers(sessionId: string | undefined, autoConnect: boo
       logWithTimestamp(`Updating called numbers for session ${sessionId}`, 'info');
       
       // Update numbers in the service
-      numberCallingService.current.updateCalledNumbers(sessionId, numbers);
+      const success = await numberCallingService.current.updateCalledNumbers(sessionId, numbers);
       
-      toast({
-        title: "Numbers Updated",
-        description: "Successfully updated the called numbers",
-      });
-      
-      return true;
+      if (success) {
+        toast({
+          title: "Numbers Updated",
+          description: "Successfully updated the called numbers",
+        });
+        
+        return true;
+      } else {
+        setError('Failed to update called numbers');
+        return false;
+      }
     } catch (e) {
       logWithTimestamp(`Error updating called numbers: ${e}`, 'error');
       setError('Failed to update called numbers');
       return false;
     }
-  }, [sessionId, toast]);
+  }, [sessionId]);
   
   // Reconnect method
   const reconnect = useCallback(() => {
@@ -188,7 +191,7 @@ export function useCallerNumbers(sessionId: string | undefined, autoConnect: boo
     } finally {
       setIsReconnecting(false);
     }
-  }, [sessionId, toast]);
+  }, [sessionId]);
   
   return {
     calledNumbers,
