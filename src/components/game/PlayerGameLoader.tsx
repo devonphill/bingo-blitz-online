@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { GameSession } from "@/types";
@@ -57,14 +58,15 @@ export default function PlayerGameLoader({
     };
   }, [loadingStep, componentId]);
   
-  // Determine if we should show the lobby based on session state
+  // Determine if we should show the lobby based on session progress state
+  // Updated to show lobby when game_status is 'pending' OR NULL
   useEffect(() => {
     if (currentSession && 
-        !isLoading && 
-        sessionProgress?.game_status === 'pending') {
+        !isLoading &&
+        (sessionProgress?.game_status === 'pending' || sessionProgress?.game_status === null)) {
       logLoaderEvent("Showing lobby for pending game state", { 
         status: currentSession.status,
-        game_status: sessionProgress?.game_status
+        game_status: sessionProgress?.game_status || 'null'
       });
       setShowLobby(true);
     } else {
@@ -99,7 +101,7 @@ export default function PlayerGameLoader({
       
       if (stableProgress) {
         logLoaderEvent("Session progress updated", {
-          game_status: stableProgress.game_status,
+          game_status: stableProgress.game_status || 'null',
           current_game: stableProgress.current_game_number,
           componentId
         });
@@ -238,20 +240,6 @@ export default function PlayerGameLoader({
     progress: sessionProgress
   });
   
-  // Check if the game is in an active state
-  const isGameLive = currentSession?.lifecycle_state === 'live';
-  const isSessionActive = currentSession?.status === 'active';
-  const gameStatus = sessionProgress?.game_status || 'pending';
-  const isGameActive = gameStatus === 'active';
-  
-  // Log game state info without using useEffect to avoid dependency issues
-  logLoaderEvent(`Game state check`, { 
-    isSessionActive, 
-    isGameLive, 
-    gameStatus, 
-    isGameActive 
-  });
-  
   // FIX: Get session time from appropriate fields - fixing type errors
   // Instead of using currentSession.sessionTime (which doesn't exist on type)
   // Use either a custom session time field from progress or format the session date
@@ -324,7 +312,7 @@ export default function PlayerGameLoader({
               <span className="font-semibold">Status:</span> {currentSession?.status || 'unknown'}
             </p>
             <p className="text-sm text-gray-500 mt-2">
-              <span className="font-semibold">Game status:</span> {sessionProgress?.game_status || 'unknown'}
+              <span className="font-semibold">Game status:</span> {sessionProgress?.game_status || 'null'}
             </p>
           </div>
           <Button onClick={() => window.location.reload()} className="w-full flex items-center justify-center gap-2">
