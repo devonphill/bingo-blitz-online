@@ -2,14 +2,9 @@
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from './logUtils';
 import { webSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/WebSocketService';
-
-// Time constants
-const CONNECTION_TIMEOUT = 10000; // 10 seconds
-const HEARTBEAT_INTERVAL = 30000; // 30 seconds
-const RECONNECT_BASE_DELAY = 1000; // 1 second base delay
-
-// Export the ConnectionState type for use in other components
-export type ConnectionState = 'connected' | 'connecting' | 'disconnected' | 'error' | 'unknown';
+import { ConnectionState } from '@/constants/connectionConstants';
+import { ConnectionListenerManager } from './connectionListeners';
+import { ConnectionHeartbeatManager } from './connectionHeartbeat';
 
 /**
  * Connection manager class for reliable WebSocket connections
@@ -17,14 +12,23 @@ export type ConnectionState = 'connected' | 'connecting' | 'disconnected' | 'err
 class ConnectionManager {
   private sessionId: string | null = null;
   private _isConnected: boolean = false;
-  private heartbeatTimer: NodeJS.Timeout | null = null;
-  private connectionListeners: Set<(connected: boolean) => void> = new Set();
-  private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 10;
-  private lastPingTime: number | null = null;
   private _connectionState: ConnectionState = 'disconnected';
-  private numberCalledListeners: Set<(number: number | null, allNumbers: number[]) => void> = new Set();
-  private sessionProgressListeners: Set<(progress: any) => void> = new Set();
+  private listenerManager = new ConnectionListenerManager();
+  private heartbeatManager: ConnectionHeartbeatManager;
+  
+  constructor() {
+    // Initialize heartbeat manager with callbacks
+    this.heartbeatManager = new ConnectionHeartbeatManager(
+      // On connection change
+      (connected: boolean) => {
+        this._isConnected = connected;
+        this._connectionState = connected ? 'connected' : 'disconnected';
+        this.listenerManager.notifyConnectionListeners(connected);
+      },
+      // On reconnect needed
+      () => this.reconnect()
+    );
+  }
   
   /**
    * Initialize the connection manager with a session ID
@@ -36,10 +40,11 @@ class ConnectionManager {
     
     this.cleanup(); // Clean up any existing connections
     this.sessionId = sessionId;
-    this.reconnectAttempts = 0;
+    this.heartbeatManager.setSessionId(sessionId);
+    this.heartbeatManager.resetReconnectAttempts();
     
     // Setup the heartbeat
-    this.startHeartbeat();
+    this.heartbeatManager.startHeartbeat();
     
     return this;
   }
@@ -62,19 +67,18 @@ class ConnectionManager {
     });
     
     // Set up listener for number-called events
-    // Fix: Using addListener instead of on method
     webSocketService.addListener(
       CHANNEL_NAMES.GAME_UPDATES, 
       'broadcast', 
       EVENT_TYPES.NUMBER_CALLED, 
       (payload) => {
         if (payload && payload.payload && payload.payload.sessionId === this.sessionId) {
-          const { number, sessionId, timestamp } = payload.payload;
+          const { number } = payload.payload;
           
           logWithTimestamp(`Received number update via WebSocket: ${number}`, 'info');
           
           // Pass to listeners
-          this.notifyNumberCalledListeners(number, []);
+          this.listenerManager.notifyNumberCalledListeners(number, []);
         }
       }
     );
@@ -88,7 +92,7 @@ class ConnectionManager {
    * Register a number called listener
    */
   public onNumberCalled(listener: (number: number | null, allNumbers: number[]) => void) {
-    this.numberCalledListeners.add(listener);
+    this.listenerManager.onNumberCalled(listener);
     return this;
   }
   
@@ -96,7 +100,7 @@ class ConnectionManager {
    * Register a session progress update listener
    */
   public onSessionProgressUpdate(listener: (progress: any) => void) {
-    this.sessionProgressListeners.add(listener);
+    this.listenerManager.onSessionProgressUpdate(listener);
     return this;
   }
   
@@ -104,15 +108,12 @@ class ConnectionManager {
    * Register a listener for connection status changes
    */
   public addConnectionListener(listener: (connected: boolean) => void): () => void {
-    this.connectionListeners.add(listener);
+    const unsubscribe = this.listenerManager.addConnectionListener(listener);
     
     // Call immediately with current state
     listener(this._isConnected);
     
-    // Return the unsubscribe function
-    return () => {
-      this.connectionListeners.delete(listener);
-    };
+    return unsubscribe;
   }
   
   /**
@@ -124,9 +125,6 @@ class ConnectionManager {
     
     try {
       logWithTimestamp(`Broadcasting number ${number} for session ${currentSessionId}`, 'info');
-      
-      // Update last ping time
-      this.lastPingTime = Date.now();
       
       // Broadcast the number via WebSocket
       const success = await webSocketService.broadcastWithRetry(
@@ -153,13 +151,13 @@ class ConnectionManager {
     logWithTimestamp('Forcing reconnection of all channels', 'info');
     
     // Reset reconnect attempts
-    this.reconnectAttempts = 0;
+    this.heartbeatManager.resetReconnectAttempts();
     
     // Reconnect game updates channel
     webSocketService.reconnectChannel(CHANNEL_NAMES.GAME_UPDATES);
     
     // Reset heartbeat
-    this.startHeartbeat();
+    this.heartbeatManager.startHeartbeat();
   }
   
   /**
@@ -173,7 +171,7 @@ class ConnectionManager {
    * Get the last ping time
    */
   public getLastPing(): number | null {
-    return this.lastPingTime;
+    return this.heartbeatManager.getLastPing();
   }
   
   /**
@@ -192,21 +190,8 @@ class ConnectionManager {
       this._isConnected = state === 'connected';
       
       // Notify listeners
-      this.notifyConnectionListeners(this._isConnected);
+      this.listenerManager.notifyConnectionListeners(this._isConnected);
     }
-  }
-  
-  /**
-   * Notify number called listeners
-   */
-  private notifyNumberCalledListeners(number: number | null, allNumbers: number[]): void {
-    this.numberCalledListeners.forEach(listener => {
-      try {
-        listener(number, allNumbers);
-      } catch (error) {
-        logWithTimestamp(`Error in number called listener: ${error}`, 'error');
-      }
-    });
   }
   
   /**
@@ -215,85 +200,13 @@ class ConnectionManager {
   private cleanup(): void {
     logWithTimestamp('Cleaning up connection manager', 'info');
     
-    this.stopHeartbeat();
+    this.heartbeatManager.stopHeartbeat();
     this.sessionId = null;
     this._isConnected = false;
     this._connectionState = 'disconnected';
     
     // Notify listeners
-    this.notifyConnectionListeners(false);
-  }
-  
-  /**
-   * Start the heartbeat timer
-   */
-  private startHeartbeat(): void {
-    this.stopHeartbeat();
-    
-    this.heartbeatTimer = setInterval(() => {
-      this.sendHeartbeat();
-    }, HEARTBEAT_INTERVAL);
-  }
-  
-  /**
-   * Stop the heartbeat timer
-   */
-  private stopHeartbeat(): void {
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer);
-      this.heartbeatTimer = null;
-    }
-  }
-  
-  /**
-   * Send a heartbeat to verify connection
-   */
-  private async sendHeartbeat(): Promise<void> {
-    if (!this.sessionId) return;
-    
-    try {
-      // Check WebSocket connection status
-      const connectionState = webSocketService.getConnectionState(CHANNEL_NAMES.GAME_UPDATES);
-      const connected = connectionState === 'SUBSCRIBED';
-      
-      if (connected !== this._isConnected) {
-        this._isConnected = connected;
-        this._connectionState = connected ? 'connected' : 'disconnected';
-        this.notifyConnectionListeners(connected);
-      }
-      
-      // Update last ping time if connected
-      if (connected) {
-        this.lastPingTime = Date.now();
-      }
-      
-      // If not connected, attempt reconnect
-      if (!connected && this.reconnectAttempts < this.maxReconnectAttempts) {
-        this.reconnectAttempts++;
-        const delay = RECONNECT_BASE_DELAY * Math.pow(2, this.reconnectAttempts - 1);
-        
-        logWithTimestamp(`Connection lost. Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`, 'warn');
-        
-        setTimeout(() => {
-          webSocketService.reconnectChannel(CHANNEL_NAMES.GAME_UPDATES);
-        }, delay);
-      }
-    } catch (error) {
-      logWithTimestamp(`Error in heartbeat: ${error}`, 'error');
-    }
-  }
-  
-  /**
-   * Notify all listeners of connection status change
-   */
-  private notifyConnectionListeners(connected: boolean): void {
-    this.connectionListeners.forEach(listener => {
-      try {
-        listener(connected);
-      } catch (error) {
-        logWithTimestamp(`Error in connection listener: ${error}`, 'error');
-      }
-    });
+    this.listenerManager.notifyConnectionListeners(false);
   }
 }
 
