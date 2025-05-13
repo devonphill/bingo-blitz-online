@@ -1,7 +1,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { getNumberCallingService } from '@/services/NumberCallingService';
+import { getNumberCallingService } from '@/services/number-calling';
 
 /**
  * Hook for tracking called numbers
