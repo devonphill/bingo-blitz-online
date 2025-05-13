@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { getWebSocketService } from '@/services/websocket';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -9,7 +10,7 @@ export interface UseSessionLifecycleProps {
   onStateChange?: (state: SessionStateUpdate) => void;
 }
 
-export function useSessionLifecycle(props: string | null | undefined | UseSessionLifecycleProps) {
+export function useSessionLifecycle(props: UseSessionLifecycleProps | string | null | undefined) {
   // Handle both string and object props
   const sessionId: string | null | undefined = typeof props === 'string' || props === null || props === undefined
     ? props

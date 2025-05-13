@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from '@/components/ui/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -74,8 +73,11 @@ export function useCallerNumbers(sessionId: string | undefined, autoConnect: boo
       const success = await connectionManager.callNumber(number, sessionId);
       
       if (success) {
-        // Notify our service of the new number
-        numberCallingService.current.notifyListeners(sessionId, number);
+        // Get the current called numbers to pass to the notifyListeners method
+        const currentCalledNumbers = [...calledNumbers, number];
+        
+        // Notify our service of the new number, passing all required arguments
+        numberCallingService.current.notifyListeners(sessionId, number, currentCalledNumbers);
         
         toast({
           title: "Number Called",
@@ -94,7 +96,7 @@ export function useCallerNumbers(sessionId: string | undefined, autoConnect: boo
     } finally {
       setIsBroadcasting(false);
     }
-  }, [sessionId]);
+  }, [sessionId, calledNumbers]);
   
   // Method to reset numbers
   const resetNumbers = useCallback(async () => {

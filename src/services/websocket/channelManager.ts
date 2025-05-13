@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { ChannelConfig, WebSocketChannel } from './types';
@@ -16,7 +17,7 @@ export class ChannelManager {
   /**
    * Creates a channel with proper configuration
    */
-  public createChannel(channelName: string, config: ChannelConfig = {}): WebSocketChannel {
+  public createChannel(channelName: string, config: ChannelConfig = { config: { broadcast: { self: true } } }): WebSocketChannel {
     try {
       // First check if we already have this channel - if so, remove it to avoid duplicates
       const channelKey = this.getChannelKey(channelName);
