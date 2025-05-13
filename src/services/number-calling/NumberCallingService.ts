@@ -1,119 +1,50 @@
-
-import { logWithTimestamp } from '@/utils/logUtils';
-
 /**
- * Service for calling numbers and managing number state
+ * Service for handling number calling functionality in bingo games
+ * This is a placeholder implementation that will be expanded with actual functionality
  */
+
 export class NumberCallingService {
-  private static instance: NumberCallingService;
-  private listeners: Map<string, Set<(number: number, numbers: number[]) => void>> = new Map();
-  private calledNumbersBySession: Map<string, number[]> = new Map();
+  private calledNumbers: number[] = [];
   
-  private constructor() {
-    logWithTimestamp('NumberCallingService initialized', 'info');
+  /**
+   * Get the list of numbers that have been called so far
+   */
+  public getCalledNumbers(): number[] {
+    return [...this.calledNumbers];
   }
   
   /**
-   * Get the singleton instance
+   * Call a new random number that hasn't been called yet
+   * @param max The maximum number that can be called (e.g., 90 for 90-ball bingo)
+   * @returns The newly called number or null if all numbers have been called
    */
-  public static getInstance(): NumberCallingService {
-    if (!NumberCallingService.instance) {
-      NumberCallingService.instance = new NumberCallingService();
-    }
-    return NumberCallingService.instance;
-  }
-  
-  /**
-   * Subscribe to number updates for a specific session
-   */
-  public subscribe(sessionId: string, callback: (number: number, numbers: number[]) => void): () => void {
-    if (!this.listeners.has(sessionId)) {
-      this.listeners.set(sessionId, new Set());
+  public callNextNumber(max: number): number | null {
+    if (this.calledNumbers.length >= max) {
+      return null; // All numbers have been called
     }
     
-    this.listeners.get(sessionId)?.add(callback);
+    let nextNumber: number;
+    do {
+      nextNumber = Math.floor(Math.random() * max) + 1;
+    } while (this.calledNumbers.includes(nextNumber));
     
-    // Return unsubscribe function
-    return () => {
-      const sessionListeners = this.listeners.get(sessionId);
-      if (sessionListeners) {
-        sessionListeners.delete(callback);
-      }
-    };
+    this.calledNumbers.push(nextNumber);
+    return nextNumber;
   }
   
   /**
-   * Notify listeners of a new number
+   * Reset the called numbers list
    */
-  public notifyListeners(sessionId: string, number: number): void {
-    const sessionListeners = this.listeners.get(sessionId);
-    
-    if (!sessionListeners) return;
-    
-    // Get current numbers
-    const numbers = this.getCalledNumbers(sessionId);
-    
-    // Update our cached numbers if needed
-    if (!numbers.includes(number)) {
-      this.addNumberToSession(sessionId, number);
-    }
-    
-    // Get the updated numbers
-    const updatedNumbers = this.getCalledNumbers(sessionId);
-    
-    // Notify all listeners
-    sessionListeners.forEach(listener => {
-      try {
-        listener(number, updatedNumbers);
-      } catch (e) {
-        logWithTimestamp(`Error notifying number listener: ${e}`, 'error');
-      }
-    });
+  public resetCalledNumbers(): void {
+    this.calledNumbers = [];
   }
   
   /**
-   * Get all called numbers for a session
+   * Check if a specific number has been called
+   * @param number The number to check
+   * @returns True if the number has been called, false otherwise
    */
-  public getCalledNumbers(sessionId: string): number[] {
-    return [...(this.calledNumbersBySession.get(sessionId) || [])];
-  }
-  
-  /**
-   * Get the last called number for a session
-   */
-  public getLastCalledNumber(sessionId: string): number | null {
-    const numbers = this.calledNumbersBySession.get(sessionId) || [];
-    return numbers.length > 0 ? numbers[numbers.length - 1] : null;
-  }
-  
-  /**
-   * Add a number to a session's called numbers
-   */
-  private addNumberToSession(sessionId: string, number: number): void {
-    const numbers = this.calledNumbersBySession.get(sessionId) || [];
-    
-    if (!numbers.includes(number)) {
-      const updatedNumbers = [...numbers, number];
-      this.calledNumbersBySession.set(sessionId, updatedNumbers);
-    }
-  }
-  
-  /**
-   * Reset numbers for a session
-   */
-  public resetNumbers(sessionId: string): void {
-    this.calledNumbersBySession.set(sessionId, []);
-  }
-  
-  /**
-   * Update called numbers for a session
-   */
-  public updateCalledNumbers(sessionId: string, numbers: number[]): void {
-    this.calledNumbersBySession.set(sessionId, [...numbers]);
+  public hasNumberBeenCalled(number: number): boolean {
+    return this.calledNumbers.includes(number);
   }
 }
-
-// Export a getter for the singleton
-export const getNumberCallingService = (): NumberCallingService => {
-  return NumberCallingService.getInstance();
-};

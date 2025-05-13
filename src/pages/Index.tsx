@@ -36,11 +36,13 @@ const Index = () => {
       <div className="w-full bg-white shadow-md p-4">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <img 
-              src="/lovable-uploads/a62a2374-863f-466e-8812-847aef0be5fa.png" 
-              alt="Multi-Bingo" 
-              className="h-16"
-            />
+            <div className="relative w-16 h-16">
+              <img 
+                src="/lovable-uploads/a62a2374-863f-466e-8812-847aef0be5fa.png" 
+                alt="Multi-Bingo" 
+                className="object-contain w-full h-full"
+              />
+            </div>
             <h1 className="text-2xl font-bold text-purple-800 hidden sm:block">
               Multi-Bingo Platform
             </h1>
@@ -176,11 +178,13 @@ const Index = () => {
             <div className="relative">
               <div className="absolute -inset-1 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-lg blur opacity-30 animate-pulse"></div>
               <div className="relative bg-white p-6 rounded-lg shadow-xl">
-                <img 
-                  src="/lovable-uploads/a62a2374-863f-466e-8812-847aef0be5fa.png" 
-                  alt="Multi-Bingo" 
-                  className="h-40 md:h-48 mx-auto"
-                />
+                <div className="w-40 h-40 md:w-48 md:h-48 mx-auto relative">
+                  <img 
+                    src="/lovable-uploads/a62a2374-863f-466e-8812-847aef0be5fa.png" 
+                    alt="Multi-Bingo" 
+                    className="object-contain w-full h-full"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -199,12 +203,14 @@ const Index = () => {
                 <p className="text-gray-600 mb-6 flex-grow">
                   Join exciting bingo games with friends or strangers! Experience 90-Ball, 80-Ball, Quiz, Music, and Logo bingo with real-time gameplay.
                 </p>
-                <Button 
-                  className="w-full bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-700 hover:to-purple-900 text-white text-lg py-6"
-                  onClick={() => navigate('/player/join')}
-                >
-                  Join as Player
-                </Button>
+                <div>
+                  <Button 
+                    className="w-full bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-700 hover:to-purple-900 text-white text-lg py-6"
+                    onClick={() => navigate('/player/join')}
+                  >
+                    Join as Player
+                  </Button>
+                </div>
               </CardContent>
             </Card>
             
@@ -220,13 +226,15 @@ const Index = () => {
                 <p className="text-gray-600 mb-6 flex-grow">
                   Create and manage your own bingo sessions! Customize game types, manage players, and verify winning tickets with our intuitive host tools.
                 </p>
-                <Button 
-                  variant="outline" 
-                  className="w-full border-indigo-500 text-indigo-600 hover:bg-indigo-500 hover:text-white text-lg py-6"
-                  onClick={() => navigate('/login')}
-                >
-                  Login as Host
-                </Button>
+                <div>
+                  <Button 
+                    variant="outline" 
+                    className="w-full border-indigo-500 text-indigo-600 hover:bg-indigo-500 hover:text-white text-lg py-6"
+                    onClick={() => navigate('/login')}
+                  >
+                    Login as Host
+                  </Button>
+                </div>
               </CardContent>
             </Card>
             
@@ -242,12 +250,14 @@ const Index = () => {
                 <p className="text-gray-600 mb-6 flex-grow">
                   Browse and purchase tickets for upcoming bingo games and special events. Get access to premium games, exclusive prizes, and themed nights.
                 </p>
-                <Button 
-                  className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white text-lg py-6"
-                  disabled
-                >
-                  Buy Tickets (Coming Soon)
-                </Button>
+                <div>
+                  <Button 
+                    className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white text-lg py-6"
+                    disabled
+                  >
+                    Buy Tickets (Coming Soon)
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </div>
