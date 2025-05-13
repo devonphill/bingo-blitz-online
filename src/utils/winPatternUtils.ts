@@ -11,17 +11,17 @@ export function normalizeWinPattern(pattern: string | null | undefined, gameType
   // First standardize the pattern name itself
   let standardizedPattern = pattern.toLowerCase();
   
-  // Handle common variations
-  if (standardizedPattern === 'one line' || standardizedPattern === '1line' || standardizedPattern === '1 line') {
-    standardizedPattern = 'oneline';
-  } else if (standardizedPattern === 'two lines' || standardizedPattern === '2lines' || standardizedPattern === '2 lines') {
-    standardizedPattern = 'twolines';
+  // Handle common variations - ensure consistent camelCase
+  if (standardizedPattern === 'one line' || standardizedPattern === '1line' || standardizedPattern === '1 line' || standardizedPattern === 'oneline') {
+    standardizedPattern = 'oneLine';
+  } else if (standardizedPattern === 'two lines' || standardizedPattern === '2lines' || standardizedPattern === '2 lines' || standardizedPattern === 'twolines') {
+    standardizedPattern = 'twoLines';
   } else if (standardizedPattern === 'full house' || standardizedPattern === 'fullhouse') {
-    standardizedPattern = 'fullhouse';
-  } else if (standardizedPattern === 'four corners' || standardizedPattern === '4corners') {
-    standardizedPattern = 'fourcorners';
+    standardizedPattern = 'fullHouse';
+  } else if (standardizedPattern === 'four corners' || standardizedPattern === '4corners' || standardizedPattern === 'fourcorners') {
+    standardizedPattern = 'fourCorners';
   } else if (standardizedPattern === 'center square' || standardizedPattern === 'centersquare') {
-    standardizedPattern = 'centersquare';
+    standardizedPattern = 'centerSquare';
   }
   
   // If pattern already has the prefix (case-insensitive), extract just the pattern part
@@ -36,7 +36,7 @@ export function normalizeWinPattern(pattern: string | null | undefined, gameType
     standardizedPattern = standardizedPattern.replace(anyPrefixRegex, '');
   }
   
-  // Now add the correct prefix
+  // Now add the correct prefix with consistent casing
   return `${gameType.toUpperCase()}_${standardizedPattern}`;
 }
 

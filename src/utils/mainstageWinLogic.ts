@@ -1,18 +1,25 @@
 
-
 interface WinCheckResult {
   isWinner: boolean;
   tg: number;
 }
 
 /**
- * Normalizes a pattern ID to remove the MAINSTAGE_ prefix
+ * Normalizes a pattern ID to remove the MAINSTAGE_ prefix and ensure consistent casing
  * @param pattern The pattern to normalize
  * @returns The normalized pattern without prefix
  */
 function normalizePattern(pattern: string): 'oneLine' | 'twoLines' | 'fullHouse' {
-  const normalizedPattern = pattern.replace(/^MAINSTAGE_/, '') as 'oneLine' | 'twoLines' | 'fullHouse';
-  return normalizedPattern;
+  // First remove any prefix (like MAINSTAGE_)
+  let normalizedPattern = pattern.replace(/^[A-Z]+_/i, '').toLowerCase();
+  
+  // Then ensure consistent camelCase format
+  if (normalizedPattern === 'oneline') return 'oneLine';
+  if (normalizedPattern === 'twolines') return 'twoLines';
+  if (normalizedPattern === 'fullhouse') return 'fullHouse';
+  
+  // If we got here, assume it's already in correct format
+  return pattern.replace(/^[A-Z]+_/i, '') as 'oneLine' | 'twoLines' | 'fullHouse';
 }
 
 export function checkMainstageWinPattern(
@@ -20,7 +27,7 @@ export function checkMainstageWinPattern(
   calledNumbers: number[],
   pattern: 'oneLine' | 'twoLines' | 'fullHouse' | 'MAINSTAGE_oneLine' | 'MAINSTAGE_twoLines' | 'MAINSTAGE_fullHouse'
 ): WinCheckResult {
-  // Normalize pattern by removing MAINSTAGE_ prefix if present
+  // Normalize pattern by removing MAINSTAGE_ prefix if present and ensuring consistent casing
   const normalizedPattern = normalizePattern(pattern);
   
   // Debug log to verify pattern being checked
@@ -74,7 +81,7 @@ export function checkMainstageWinPattern(
       };
     default:
       // Added debug log for unrecognized patterns
-      console.error(`Unrecognized win pattern: ${pattern}`);
+      console.error(`Unrecognized win pattern: ${pattern} (normalized to: ${normalizedPattern})`);
       return { isWinner: false, tg: 0 };
   }
 }

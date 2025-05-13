@@ -25,9 +25,12 @@ export class WebSocketService {
   private channels: Map<string, any> = new Map();
   private reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
   private connectionState: Map<string, string> = new Map();
+  private connectionListeners: Map<string, Set<(state: string) => void>> = new Map();
   private maxReconnectDelay = 10000; // 10 seconds maximum delay
   private baseReconnectDelay = 1000; // 1 second base delay
   private instanceId: string;
+  private reconnectAttempts: Map<string, number> = new Map();
+  private maxReconnectAttempts = 10;
   
   constructor() {
     this.instanceId = `ws-${Math.random().toString(36).substring(2, 7)}`;
@@ -39,6 +42,21 @@ export class WebSocketService {
    */
   public createChannel(channelName: string, config = {}) {
     try {
+      // First check if we already have this channel - if so, remove it to avoid duplicates
+      const channelKey = this.getChannelKey(channelName);
+      if (this.channels.has(channelKey)) {
+        logWithTimestamp(`[${this.instanceId}] Channel ${channelName} already exists, removing before recreating`, 'info');
+        try {
+          const existingChannel = this.channels.get(channelKey);
+          if (existingChannel) {
+            supabase.removeChannel(existingChannel);
+          }
+          this.channels.delete(channelKey);
+        } catch (err) {
+          logWithTimestamp(`[${this.instanceId}] Error removing existing channel: ${err}`, 'error');
+        }
+      }
+      
       // Default configuration with improved resilience
       const defaultConfig = {
         config: {
@@ -59,9 +77,11 @@ export class WebSocketService {
       const channel = supabase.channel(channelName, mergedConfig);
       
       // Store the channel
-      const channelKey = this.getChannelKey(channelName);
       this.channels.set(channelKey, channel);
       this.connectionState.set(channelKey, 'connecting');
+      
+      // Reset reconnect attempts for this channel
+      this.reconnectAttempts.set(channelKey, 0);
       
       logWithTimestamp(`[${this.instanceId}] Created channel: ${channelName}`, 'info');
       
@@ -84,15 +104,24 @@ export class WebSocketService {
       return;
     }
     
+    // Initialize connection listeners Set if not exists
+    if (!this.connectionListeners.has(channelKey)) {
+      this.connectionListeners.set(channelKey, new Set());
+    }
+    
+    // Add the status change listener
+    if (onStatusChange) {
+      this.connectionListeners.get(channelKey)?.add(onStatusChange);
+    }
+    
     // Add generic connection status handler
     channel.on('system', { event: 'connection_state_change' }, (payload: any) => {
       const status = payload.event;
       this.connectionState.set(channelKey, status);
       logWithTimestamp(`[${this.instanceId}] Channel ${channelName} connection state: ${status}`, 'info');
       
-      if (onStatusChange) {
-        onStatusChange(status);
-      }
+      // Notify all listeners
+      this.notifyStatusListeners(channelKey, status);
       
       // If disconnected, attempt reconnect with exponential backoff
       if (status === 'DISCONNECTED' || status === 'CHANNEL_ERROR') {
@@ -110,9 +139,8 @@ export class WebSocketService {
       logWithTimestamp(`[${this.instanceId}] Channel ${channelName} subscription status: ${status}`, 'info');
       this.connectionState.set(channelKey, status);
       
-      if (onStatusChange) {
-        onStatusChange(status);
-      }
+      // Notify all listeners
+      this.notifyStatusListeners(channelKey, status);
       
       if (status !== 'SUBSCRIBED') {
         this.scheduleReconnect(channelName);
@@ -120,6 +148,22 @@ export class WebSocketService {
     });
     
     return channel;
+  }
+  
+  /**
+   * Notify all listeners about a status change
+   */
+  private notifyStatusListeners(channelKey: string, status: string) {
+    const listeners = this.connectionListeners.get(channelKey);
+    if (listeners) {
+      listeners.forEach(listener => {
+        try {
+          listener(status);
+        } catch (error) {
+          logWithTimestamp(`[${this.instanceId}] Error in status listener: ${error}`, 'error');
+        }
+      });
+    }
   }
   
   /**
@@ -211,6 +255,9 @@ export class WebSocketService {
     this.connectionState.set(channelKey, 'connecting');
     
     logWithTimestamp(`[${this.instanceId}] Forced reconnection for channel ${channelName}`, 'info');
+    
+    // Resubscribe
+    this.subscribeWithReconnect(channelName);
   }
   
   /**
@@ -238,6 +285,11 @@ export class WebSocketService {
     }
     this.reconnectTimers.clear();
     
+    // Clear connection state and listeners
+    this.connectionState.clear();
+    this.connectionListeners.clear();
+    this.reconnectAttempts.clear();
+    
     logWithTimestamp(`[${this.instanceId}] WebSocketService cleanup complete`, 'info');
   }
   
@@ -250,12 +302,19 @@ export class WebSocketService {
     // Clear any existing reconnect timer
     this.clearReconnect(channelName);
     
-    // Get current retry count
-    const retryCount = parseInt(localStorage.getItem(`ws-retry-${channelKey}`) || '0');
+    // Get current retry count and increment it
+    const retryCount = (this.reconnectAttempts.get(channelKey) || 0) + 1;
+    this.reconnectAttempts.set(channelKey, retryCount);
+    
+    // If we've exceeded max attempts, don't try again
+    if (retryCount > this.maxReconnectAttempts) {
+      logWithTimestamp(`[${this.instanceId}] Maximum reconnect attempts (${this.maxReconnectAttempts}) exceeded for channel ${channelName}`, 'warn');
+      return;
+    }
     
     // Calculate delay with exponential backoff
     const delay = Math.min(
-      this.baseReconnectDelay * Math.pow(2, retryCount),
+      this.baseReconnectDelay * Math.pow(2, retryCount - 1),
       this.maxReconnectDelay
     );
     
@@ -264,9 +323,6 @@ export class WebSocketService {
     // Schedule reconnect
     const timer = setTimeout(() => {
       this.reconnectChannel(channelName);
-      
-      // Increment retry count
-      localStorage.setItem(`ws-retry-${channelKey}`, (retryCount + 1).toString());
     }, delay);
     
     // Store timer reference
@@ -288,7 +344,7 @@ export class WebSocketService {
     
     // Reset retry count on successful connection
     if (this.connectionState.get(channelKey) === 'SUBSCRIBED') {
-      localStorage.removeItem(`ws-retry-${channelKey}`);
+      this.reconnectAttempts.set(channelKey, 0);
     }
   }
   
@@ -297,6 +353,21 @@ export class WebSocketService {
    */
   private getChannelKey(channelName: string): string {
     return `${channelName}`;
+  }
+  
+  /**
+   * Add listener for specific channel events
+   */
+  public on(channelName: string, eventConfig: any, callback: (payload: any) => void) {
+    const channelKey = this.getChannelKey(channelName);
+    const channel = this.channels.get(channelKey);
+    
+    if (!channel) {
+      logWithTimestamp(`[${this.instanceId}] Cannot add listener: Channel ${channelName} not found`, 'error');
+      return;
+    }
+    
+    channel.on('broadcast', eventConfig, callback);
   }
 }
 

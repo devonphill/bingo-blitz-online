@@ -61,6 +61,18 @@ class ConnectionManager {
       this.updateConnectionState(status === 'SUBSCRIBED' ? 'connected' : 'connecting');
     });
     
+    // Set up listener for number-called events
+    webSocketService.on(CHANNEL_NAMES.GAME_UPDATES, { event: EVENT_TYPES.NUMBER_CALLED }, (payload) => {
+      if (payload && payload.payload && payload.payload.sessionId === this.sessionId) {
+        const { number, sessionId, timestamp } = payload.payload;
+        
+        logWithTimestamp(`Received number update via WebSocket: ${number}`, 'info');
+        
+        // Pass to listeners
+        this.notifyNumberCalledListeners(number, []);
+      }
+    });
+    
     logWithTimestamp(`Connection to session ${sessionId} initiated`, 'info');
     
     return this;
@@ -174,8 +186,21 @@ class ConnectionManager {
       this._isConnected = state === 'connected';
       
       // Notify listeners
-      this.notifyListeners(this._isConnected);
+      this.notifyConnectionListeners(this._isConnected);
     }
+  }
+  
+  /**
+   * Notify number called listeners
+   */
+  private notifyNumberCalledListeners(number: number | null, allNumbers: number[]): void {
+    this.numberCalledListeners.forEach(listener => {
+      try {
+        listener(number, allNumbers);
+      } catch (error) {
+        logWithTimestamp(`Error in number called listener: ${error}`, 'error');
+      }
+    });
   }
   
   /**
@@ -190,7 +215,7 @@ class ConnectionManager {
     this._connectionState = 'disconnected';
     
     // Notify listeners
-    this.notifyListeners(false);
+    this.notifyConnectionListeners(false);
   }
   
   /**
@@ -228,7 +253,7 @@ class ConnectionManager {
       if (connected !== this._isConnected) {
         this._isConnected = connected;
         this._connectionState = connected ? 'connected' : 'disconnected';
-        this.notifyListeners(connected);
+        this.notifyConnectionListeners(connected);
       }
       
       // Update last ping time if connected
@@ -255,7 +280,7 @@ class ConnectionManager {
   /**
    * Notify all listeners of connection status change
    */
-  private notifyListeners(connected: boolean): void {
+  private notifyConnectionListeners(connected: boolean): void {
     this.connectionListeners.forEach(listener => {
       try {
         listener(connected);

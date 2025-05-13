@@ -31,52 +31,60 @@ export function usePlayerTickets(sessionId?: string | null) {
   const processTickets = useCallback((tickets: any[], calledNumbers: number[], currentWinPattern: string | null) => {
     if (!tickets || tickets.length === 0) return [];
     
-    // ALWAYS normalize the win pattern for consistent checking
-    // Convert the string to the expected format for the checkMainstageWinPattern function
-    const normalizedPattern = normalizeWinPattern(currentWinPattern || 'oneLine', 'MAINSTAGE') as AllowedWinPattern;
-    
-    return tickets.map(ticket => {
-      // Convert ticket data into the format needed for win checking
-      const layoutMask = ticket.layout_mask || ticket.layoutMask || 0;
-      const numbers = ticket.numbers || [];
+    try {
+      // ALWAYS normalize the win pattern for consistent checking
+      // Make sure we have a valid pattern for checkMainstageWinPattern function
+      const normalizedWinPattern = normalizeWinPattern(currentWinPattern || 'oneLine', 'MAINSTAGE');
       
-      if (!layoutMask || numbers.length === 0) {
-        return { ...ticket, is_winning: false };
-      }
+      // Log the normalized pattern for debugging
+      console.log(`Processing tickets with normalized pattern: ${normalizedWinPattern}`);
       
-      // Create a grid representation for win checking
-      const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
-      const grid: (number | null)[][] = [[], [], []];
-      let numIndex = 0;
-      
-      for (let i = 0; i < 27; i++) {
-        const row = Math.floor(i / 9);
-        if (maskBits[i] === '1') {
-          if (numIndex < numbers.length) {
-            grid[row].push(numbers[numIndex]);
-            numIndex++;
-          } else {
-            grid[row].push(null); // Safety check in case of data mismatch
-          }
-        } else {
-          grid[row].push(null);
+      return tickets.map(ticket => {
+        // Convert ticket data into the format needed for win checking
+        const layoutMask = ticket.layout_mask || ticket.layoutMask || 0;
+        const numbers = ticket.numbers || [];
+        
+        if (!layoutMask || numbers.length === 0) {
+          return { ...ticket, is_winning: false };
         }
-      }
-      
-      // Check if it's a winning ticket
-      const result = checkMainstageWinPattern(
-        grid, 
-        calledNumbers,
-        normalizedPattern
-      );
-      
-      return { 
-        ...ticket, 
-        is_winning: result.isWinner,
-        winning_pattern: result.isWinner ? currentWinPattern : null,
-        to_go: result.tg
-      };
-    });
+        
+        // Create a grid representation for win checking
+        const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse();
+        const grid: (number | null)[][] = [[], [], []];
+        let numIndex = 0;
+        
+        for (let i = 0; i < 27; i++) {
+          const row = Math.floor(i / 9);
+          if (maskBits[i] === '1') {
+            if (numIndex < numbers.length) {
+              grid[row].push(numbers[numIndex]);
+              numIndex++;
+            } else {
+              grid[row].push(null); // Safety check in case of data mismatch
+            }
+          } else {
+            grid[row].push(null);
+          }
+        }
+        
+        // Check if it's a winning ticket - cast the normalized pattern to the expected type
+        const result = checkMainstageWinPattern(
+          grid, 
+          calledNumbers,
+          normalizedWinPattern as AllowedWinPattern
+        );
+        
+        return { 
+          ...ticket, 
+          is_winning: result.isWinner,
+          winning_pattern: result.isWinner ? currentWinPattern : null,
+          to_go: result.tg
+        };
+      });
+    } catch (error) {
+      console.error("Error processing tickets:", error);
+      return tickets.map(ticket => ({ ...ticket, is_winning: false }));
+    }
   }, []);
 
   // Function to fetch tickets from the database
@@ -164,18 +172,25 @@ export function usePlayerTickets(sessionId?: string | null) {
   // Function to update the winning status of tickets
   const updateWinningStatus = useCallback((calledNumbers: number[], currentWinPattern: string | null) => {
     setPlayerTickets(tickets => {
-      // Always normalize the win pattern for consistent checking
-      const normalizedPattern = normalizeWinPattern(currentWinPattern || 'oneLine', 'MAINSTAGE');
-      const updatedTickets = processTickets(tickets, calledNumbers, normalizedPattern);
-      const winningTickets = updatedTickets.filter(t => t.is_winning);
-      
-      setCurrentWinningTickets(winningTickets);
-      
-      if (winningTickets.length > 0) {
-        logWithTimestamp(`Found ${winningTickets.length} winning tickets after update!`, 'info');
+      try {
+        // Always normalize the win pattern for consistent checking
+        const normalizedPattern = normalizeWinPattern(currentWinPattern || 'oneLine', 'MAINSTAGE');
+        console.log(`Updating winning status with pattern: ${normalizedPattern}`);
+        
+        const updatedTickets = processTickets(tickets, calledNumbers, normalizedPattern);
+        const winningTickets = updatedTickets.filter(t => t.is_winning);
+        
+        setCurrentWinningTickets(winningTickets);
+        
+        if (winningTickets.length > 0) {
+          logWithTimestamp(`Found ${winningTickets.length} winning tickets after update!`, 'info');
+        }
+        
+        return updatedTickets;
+      } catch (error) {
+        console.error("Error updating winning status:", error);
+        return tickets;
       }
-      
-      return updatedTickets;
     });
   }, [processTickets]);
 
@@ -183,7 +198,7 @@ export function usePlayerTickets(sessionId?: string | null) {
     playerTickets,
     isLoadingTickets,
     ticketError,
-    refreshTickets,
+    refreshTickets: useCallback(() => fetchTickets(true), [fetchTickets]),
     isRefreshingTickets,
     currentWinningTickets,
     updateWinningStatus
