@@ -1,8 +1,6 @@
-
 import { useState, useEffect, useCallback } from 'react';
-import { getNumberCallingService } from '@/services/NumberCallingService';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { webSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/WebSocketService';
+import { webSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 import { supabase } from '@/integrations/supabase/client';
 
 /**

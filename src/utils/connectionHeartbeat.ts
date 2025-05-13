@@ -1,7 +1,6 @@
-
 import { logWithTimestamp } from './logUtils';
 import { HEARTBEAT_INTERVAL } from '@/constants/connectionConstants';
-import { webSocketService, CHANNEL_NAMES } from '@/services/WebSocketService';
+import { webSocketService, CHANNEL_NAMES } from '@/services/websocket';
 
 /**
  * A utility class to manage connection heartbeats
