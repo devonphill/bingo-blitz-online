@@ -1,8 +1,9 @@
 
 import React, { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -21,70 +22,143 @@ const Index = () => {
   }, [navigate]);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-100 to-purple-100 p-4 text-center">
-      <h1 className="text-5xl font-bold text-blue-600 mb-4">
-        Bingo Blitz Online
-      </h1>
-      <p className="text-xl text-gray-600 max-w-md mb-8">
-        A real-time online bingo platform for hosting and playing various bingo games
-      </p>
-      
-      <div className="flex flex-col sm:flex-row gap-4 mb-12">
-        <Button 
-          className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-lg px-6 py-6"
-          onClick={() => navigate('/player/join')}
-        >
-          Join as Player
-        </Button>
-        
-        <Button 
-          variant="outline" 
-          className="text-lg px-6 py-6 border-blue-500 text-blue-500 hover:bg-blue-500 hover:text-white"
-          onClick={() => navigate('/login')}
-        >
-          Login as Host
-        </Button>
-        
-        <Button
-          className="bg-gradient-to-r from-green-500 to-teal-500 hover:from-green-600 hover:to-teal-600 text-lg px-6 py-6"
-          onClick={() => navigate('/signup')}
-        >
-          Join Now
-        </Button>
-      </div>
-      
-      <div className="mb-12 grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl w-full">
-        <div className="bg-white p-6 rounded-lg shadow-md flex flex-col items-center">
-          <div className="text-xl font-bold text-purple-600 mb-2">Multi-Game Support</div>
-          <p className="text-gray-600">Play various bingo formats including 90-Ball, 80-Ball, Quiz, Music, and Logo bingo.</p>
+    <div className="min-h-screen flex flex-col items-center justify-start bg-gradient-to-br from-purple-50 to-indigo-100 p-4 text-center">
+      <div className="w-full max-w-6xl mx-auto">
+        {/* Header with logo */}
+        <div className="flex flex-col md:flex-row justify-center items-center gap-4 my-8">
+          <img 
+            src="/lovable-uploads/a62a2374-863f-466e-8812-847aef0be5fa.png" 
+            alt="Kiki-D" 
+            className="h-28 md:h-36"
+          />
+          <div className="text-center md:text-left">
+            <h1 className="text-4xl md:text-5xl font-bold text-purple-800 mb-2">
+              Bingo Blitz Online
+            </h1>
+            <p className="text-lg text-gray-600 max-w-md">
+              A real-time online bingo platform for hosting and playing various bingo games
+            </p>
+          </div>
         </div>
         
-        <div className="bg-white p-6 rounded-lg shadow-md flex flex-col items-center">
-          <div className="text-xl font-bold text-purple-600 mb-2">Real-time Experience</div>
-          <p className="text-gray-600">Enjoy a seamless, real-time gaming experience with instant updates and notifications.</p>
+        {/* Three main feature boxes */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+          {/* Play Bingo */}
+          <Card className="bg-white shadow-md border-t-4 border-t-purple-600 hover:shadow-lg transition-shadow">
+            <CardHeader>
+              <CardTitle className="text-xl font-semibold text-purple-700 flex items-center gap-2">
+                <span className="bg-purple-600 text-white p-2 rounded-full w-8 h-8 flex items-center justify-center text-sm">1</span>
+                Play Bingo
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col h-full">
+              <p className="text-gray-600 mb-6 flex-grow">
+                Join exciting bingo games with friends or strangers! Experience 90-Ball, 80-Ball, Quiz, Music, and Logo bingo with real-time gameplay.
+              </p>
+              <Button 
+                className="w-full bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-700 hover:to-purple-900 text-white text-lg py-6"
+                onClick={() => navigate('/player/join')}
+              >
+                Join as Player
+              </Button>
+            </CardContent>
+          </Card>
+          
+          {/* Host Bingo */}
+          <Card className="bg-white shadow-md border-t-4 border-t-indigo-500 hover:shadow-lg transition-shadow">
+            <CardHeader>
+              <CardTitle className="text-xl font-semibold text-indigo-600 flex items-center gap-2">
+                <span className="bg-indigo-500 text-white p-2 rounded-full w-8 h-8 flex items-center justify-center text-sm">2</span>
+                Host Bingo
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col h-full">
+              <p className="text-gray-600 mb-6 flex-grow">
+                Create and manage your own bingo sessions! Customize game types, manage players, and verify winning tickets with our intuitive host tools.
+              </p>
+              <Button 
+                variant="outline" 
+                className="w-full border-indigo-500 text-indigo-600 hover:bg-indigo-500 hover:text-white text-lg py-6"
+                onClick={() => navigate('/login')}
+              >
+                Login as Host
+              </Button>
+            </CardContent>
+          </Card>
+          
+          {/* Find Tickets */}
+          <Card className="bg-white shadow-md border-t-4 border-t-blue-500 hover:shadow-lg transition-shadow">
+            <CardHeader>
+              <CardTitle className="text-xl font-semibold text-blue-600 flex items-center gap-2">
+                <span className="bg-blue-500 text-white p-2 rounded-full w-8 h-8 flex items-center justify-center text-sm">3</span>
+                Find Tickets
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col h-full">
+              <p className="text-gray-600 mb-6 flex-grow">
+                Browse and purchase tickets for upcoming bingo games and special events. Get access to premium games, exclusive prizes, and themed nights.
+              </p>
+              <Button 
+                className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white text-lg py-6"
+                disabled
+              >
+                Buy Tickets (Coming Soon)
+              </Button>
+            </CardContent>
+          </Card>
         </div>
         
-        <div className="bg-white p-6 rounded-lg shadow-md flex flex-col items-center">
-          <div className="text-xl font-bold text-purple-600 mb-2">Easy Access</div>
-          <p className="text-gray-600">Players can join games with simple 6-digit codes. No accounts needed for players.</p>
+        {/* Host promotion section */}
+        <div className="bg-white rounded-lg shadow-lg p-6 md:p-10 mb-16 border-l-4 border-l-purple-600">
+          <div className="flex flex-col md:flex-row gap-8">
+            <div className="md:w-3/5">
+              <h2 className="text-3xl font-bold text-purple-700 mb-4">Want to Host Bingo Games?</h2>
+              <p className="text-lg text-gray-600 mb-4">
+                Are you a streamer, online entertainer, pub, venue, or planning an event? Start hosting bingo games today for free!
+              </p>
+              <p className="text-gray-600 mb-4">
+                Our platform provides all the tools you need to run professional bingo sessions:
+              </p>
+              <ul className="list-disc list-inside text-gray-600 space-y-2 mb-6 ml-4">
+                <li>Multiple game formats including 90-Ball, 80-Ball, Quiz Bingo, and more</li>
+                <li>Easy player management and real-time communication</li>
+                <li>Automated ticket verification and winner validation</li>
+                <li>Customizable branding and game settings</li>
+              </ul>
+              <Button 
+                className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-lg md:text-xl px-8 py-6"
+                onClick={() => navigate('/signup')}
+              >
+                Join Now
+              </Button>
+            </div>
+            <div className="md:w-2/5 flex items-center justify-center">
+              <div className="bg-gradient-to-br from-purple-100 to-indigo-100 rounded-lg p-6 w-full max-w-xs aspect-square flex flex-col items-center justify-center">
+                <div className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-600 mb-4">FREE</div>
+                <p className="text-center text-gray-700 mb-4">Start hosting games with no upfront costs</p>
+                <div className="text-sm text-center text-gray-500">Premium features available for enhanced experiences</div>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-
-      <div className="w-full max-w-4xl">
-        <h2 className="text-2xl font-semibold mb-4 text-blue-700">Learn More</h2>
-        <div className="flex flex-wrap justify-center gap-4">
-          <Button variant="ghost" onClick={() => navigate('/attract-hosts')} className="border border-blue-200">
-            For Hosts
-          </Button>
-          <Button variant="ghost" onClick={() => navigate('/about')} className="border border-blue-200">
-            About Us
-          </Button>
-          <Button variant="ghost" onClick={() => navigate('/faq-players')} className="border border-blue-200">
-            Player FAQ
-          </Button>
-          <Button variant="ghost" onClick={() => navigate('/faq-hosts')} className="border border-blue-200">
-            Host FAQ
-          </Button>
+        
+        {/* Learn more section */}
+        <div className="w-full max-w-4xl mx-auto mb-12">
+          <h2 className="text-2xl font-semibold mb-4 text-purple-700">Learn More</h2>
+          <div className="flex flex-wrap justify-center gap-4">
+            <Button variant="ghost" onClick={() => navigate('/attract-hosts')} className="border border-purple-200 hover:bg-purple-50">
+              For Hosts
+            </Button>
+            <Button variant="ghost" onClick={() => navigate('/about')} className="border border-purple-200 hover:bg-purple-50">
+              About Us
+            </Button>
+            <Button variant="ghost" onClick={() => navigate('/faq-players')} className="border border-purple-200 hover:bg-purple-50">
+              Player FAQ
+            </Button>
+            <Button variant="ghost" onClick={() => navigate('/faq-hosts')} className="border border-purple-200 hover:bg-purple-50">
+              Host FAQ
+            </Button>
+          </div>
         </div>
       </div>
     </div>
