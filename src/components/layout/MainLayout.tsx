@@ -15,6 +15,7 @@ import { logWithTimestamp } from '@/utils/logUtils';
 import { toast } from 'sonner';
 import { Spinner } from '@/components/ui/spinner';
 import { useNavigate, Link } from 'react-router-dom';
+import { AspectRatio } from '@/components/ui/aspect-ratio';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -66,11 +67,15 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         <Sidebar className="transition-all duration-300 border-r shadow-sm">
           <div className="p-4 border-b">
             <div className="flex items-center gap-2">
-              <img 
-                src="/lovable-uploads/a62a2374-863f-466e-8812-847aef0be5fa.png"
-                alt="Multi-Bingo Logo" 
-                className="h-8 w-8 object-contain"
-              />
+              <div className="h-8 w-8 relative">
+                <AspectRatio ratio={1/1} className="w-full h-full">
+                  <img 
+                    src="/lovable-uploads/a62a2374-863f-466e-8812-847aef0be5fa.png"
+                    alt="Multi-Bingo Logo" 
+                    className="h-full w-full object-contain"
+                  />
+                </AspectRatio>
+              </div>
               <div className="flex flex-col">
                 <h2 className="text-lg font-bold">Multi-Bingo</h2>
                 <p className="text-xs text-muted-foreground">Game Management</p>

@@ -3,7 +3,7 @@ import React, { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { ArrowRightCircle, BookOpen, HelpCircle, Info, Users } from 'lucide-react';
 import {
   NavigationMenu,
@@ -14,6 +14,7 @@ import {
   NavigationMenuTrigger,
   navigationMenuTriggerStyle,
 } from "@/components/ui/navigation-menu";
+import { AspectRatio } from "@/components/ui/aspect-ratio";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -37,11 +38,13 @@ const Index = () => {
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
             <div className="relative w-16 h-16">
-              <img 
-                src="/lovable-uploads/a62a2374-863f-466e-8812-847aef0be5fa.png" 
-                alt="Multi-Bingo" 
-                className="object-contain w-full h-full"
-              />
+              <AspectRatio ratio={1/1} className="w-full h-full">
+                <img 
+                  src="/lovable-uploads/a62a2374-863f-466e-8812-847aef0be5fa.png" 
+                  alt="Multi-Bingo" 
+                  className="object-contain w-full h-full"
+                />
+              </AspectRatio>
             </div>
             <h1 className="text-2xl font-bold text-purple-800 hidden sm:block">
               Multi-Bingo Platform
@@ -179,11 +182,13 @@ const Index = () => {
               <div className="absolute -inset-1 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-lg blur opacity-30 animate-pulse"></div>
               <div className="relative bg-white p-6 rounded-lg shadow-xl">
                 <div className="w-40 h-40 md:w-48 md:h-48 mx-auto relative">
-                  <img 
-                    src="/lovable-uploads/a62a2374-863f-466e-8812-847aef0be5fa.png" 
-                    alt="Multi-Bingo" 
-                    className="object-contain w-full h-full"
-                  />
+                  <AspectRatio ratio={1/1} className="w-full h-full">
+                    <img 
+                      src="/lovable-uploads/a62a2374-863f-466e-8812-847aef0be5fa.png" 
+                      alt="Multi-Bingo" 
+                      className="object-contain w-full h-full"
+                    />
+                  </AspectRatio>
                 </div>
               </div>
             </div>
@@ -192,73 +197,73 @@ const Index = () => {
           {/* Three main feature boxes */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
             {/* Play Bingo */}
-            <Card className="bg-white shadow-md border-t-4 border-t-purple-600 hover:shadow-xl transition-all transform hover:-translate-y-1 duration-300">
+            <Card className="bg-white shadow-md border-t-4 border-t-purple-600 hover:shadow-xl transition-all transform hover:-translate-y-1 duration-300 flex flex-col h-full">
               <CardHeader>
                 <CardTitle className="text-xl font-semibold text-purple-700 flex items-center gap-2">
                   <span className="bg-purple-600 text-white p-2 rounded-full w-8 h-8 flex items-center justify-center text-sm">1</span>
                   Play Bingo
                 </CardTitle>
               </CardHeader>
-              <CardContent className="flex flex-col h-full">
-                <p className="text-gray-600 mb-6 flex-grow">
+              <CardContent className="flex-grow">
+                <p className="text-gray-600 mb-6">
                   Join exciting bingo games with friends or strangers! Experience 90-Ball, 80-Ball, Quiz, Music, and Logo bingo with real-time gameplay.
                 </p>
-                <div>
-                  <Button 
-                    className="w-full bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-700 hover:to-purple-900 text-white text-lg py-6"
-                    onClick={() => navigate('/player/join')}
-                  >
-                    Join as Player
-                  </Button>
-                </div>
               </CardContent>
+              <CardFooter className="pt-0">
+                <Button 
+                  className="w-full bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-700 hover:to-purple-900 text-white text-lg py-6"
+                  onClick={() => navigate('/player/join')}
+                >
+                  Join as Player
+                </Button>
+              </CardFooter>
             </Card>
             
             {/* Host Bingo */}
-            <Card className="bg-white shadow-md border-t-4 border-t-indigo-500 hover:shadow-xl transition-all transform hover:-translate-y-1 duration-300">
+            <Card className="bg-white shadow-md border-t-4 border-t-indigo-500 hover:shadow-xl transition-all transform hover:-translate-y-1 duration-300 flex flex-col h-full">
               <CardHeader>
                 <CardTitle className="text-xl font-semibold text-indigo-600 flex items-center gap-2">
                   <span className="bg-indigo-500 text-white p-2 rounded-full w-8 h-8 flex items-center justify-center text-sm">2</span>
                   Host Bingo
                 </CardTitle>
               </CardHeader>
-              <CardContent className="flex flex-col h-full">
-                <p className="text-gray-600 mb-6 flex-grow">
+              <CardContent className="flex-grow">
+                <p className="text-gray-600 mb-6">
                   Create and manage your own bingo sessions! Customize game types, manage players, and verify winning tickets with our intuitive host tools.
                 </p>
-                <div>
-                  <Button 
-                    variant="outline" 
-                    className="w-full border-indigo-500 text-indigo-600 hover:bg-indigo-500 hover:text-white text-lg py-6"
-                    onClick={() => navigate('/login')}
-                  >
-                    Login as Host
-                  </Button>
-                </div>
               </CardContent>
+              <CardFooter className="pt-0">
+                <Button 
+                  variant="outline" 
+                  className="w-full border-indigo-500 text-indigo-600 hover:bg-indigo-500 hover:text-white text-lg py-6"
+                  onClick={() => navigate('/login')}
+                >
+                  Login as Host
+                </Button>
+              </CardFooter>
             </Card>
             
             {/* Find Tickets */}
-            <Card className="bg-white shadow-md border-t-4 border-t-blue-500 hover:shadow-xl transition-all transform hover:-translate-y-1 duration-300">
+            <Card className="bg-white shadow-md border-t-4 border-t-blue-500 hover:shadow-xl transition-all transform hover:-translate-y-1 duration-300 flex flex-col h-full">
               <CardHeader>
                 <CardTitle className="text-xl font-semibold text-blue-600 flex items-center gap-2">
                   <span className="bg-blue-500 text-white p-2 rounded-full w-8 h-8 flex items-center justify-center text-sm">3</span>
                   Find Tickets
                 </CardTitle>
               </CardHeader>
-              <CardContent className="flex flex-col h-full">
-                <p className="text-gray-600 mb-6 flex-grow">
+              <CardContent className="flex-grow">
+                <p className="text-gray-600 mb-6">
                   Browse and purchase tickets for upcoming bingo games and special events. Get access to premium games, exclusive prizes, and themed nights.
                 </p>
-                <div>
-                  <Button 
-                    className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white text-lg py-6"
-                    disabled
-                  >
-                    Buy Tickets (Coming Soon)
-                  </Button>
-                </div>
               </CardContent>
+              <CardFooter className="pt-0">
+                <Button 
+                  className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white text-lg py-6"
+                  disabled
+                >
+                  Buy Tickets (Coming Soon)
+                </Button>
+              </CardFooter>
             </Card>
           </div>
           
