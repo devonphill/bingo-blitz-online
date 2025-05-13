@@ -13,3 +13,15 @@ export interface BroadcastOptions {
   timeout?: number;
   broadcastId?: string;
 }
+
+// Channel configuration
+export interface ChannelConfig {
+  name: string;
+  eventListeners?: Record<string, any>;
+}
+
+// WebSocket channel type
+export interface WebSocketChannel {
+  id: string;
+  listeners: any[];
+}

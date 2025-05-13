@@ -1,56 +1,119 @@
 
-import { getPlayerNumbersService } from './player-numbers/PlayerNumbersService';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 /**
- * Unified number calling service
- * Manages number calls, broadcasts, and synchronization
+ * Service for calling numbers and managing number state
  */
 export class NumberCallingService {
   private static instance: NumberCallingService;
+  private listeners: Map<string, Set<(number: number, numbers: number[]) => void>> = new Map();
+  private calledNumbersBySession: Map<string, number[]> = new Map();
   
   private constructor() {
-    // Initialize service
+    logWithTimestamp('NumberCallingService initialized', 'info');
   }
   
   /**
-   * Get singleton instance
+   * Get the singleton instance
    */
   public static getInstance(): NumberCallingService {
-    if (!this.instance) {
-      this.instance = new NumberCallingService();
+    if (!NumberCallingService.instance) {
+      NumberCallingService.instance = new NumberCallingService();
     }
-    return this.instance;
+    return NumberCallingService.instance;
   }
   
   /**
-   * Subscribe to number updates for a session
+   * Subscribe to number updates for a specific session
    */
-  public subscribeToSession(sessionId: string, callback: (number: number, numbers: number[]) => void): () => void {
-    // Use player numbers service internally
-    return getPlayerNumbersService().subscribe(sessionId, callback);
+  public subscribe(sessionId: string, callback: (number: number, numbers: number[]) => void): () => void {
+    if (!this.listeners.has(sessionId)) {
+      this.listeners.set(sessionId, new Set());
+    }
+    
+    this.listeners.get(sessionId)?.add(callback);
+    
+    // Return unsubscribe function
+    return () => {
+      const sessionListeners = this.listeners.get(sessionId);
+      if (sessionListeners) {
+        sessionListeners.delete(callback);
+      }
+    };
   }
   
   /**
-   * Get current called numbers for a session
+   * Notify listeners of a new number
+   */
+  public notifyListeners(sessionId: string, number: number): void {
+    const sessionListeners = this.listeners.get(sessionId);
+    
+    if (!sessionListeners) return;
+    
+    // Get current numbers
+    const numbers = this.getCalledNumbers(sessionId);
+    
+    // Update our cached numbers if needed
+    if (!numbers.includes(number)) {
+      this.addNumberToSession(sessionId, number);
+    }
+    
+    // Get the updated numbers
+    const updatedNumbers = this.getCalledNumbers(sessionId);
+    
+    // Notify all listeners
+    sessionListeners.forEach(listener => {
+      try {
+        listener(number, updatedNumbers);
+      } catch (e) {
+        logWithTimestamp(`Error notifying number listener: ${e}`, 'error');
+      }
+    });
+  }
+  
+  /**
+   * Get all called numbers for a session
    */
   public getCalledNumbers(sessionId: string): number[] {
-    return getPlayerNumbersService().getCalledNumbers(sessionId);
+    return [...(this.calledNumbersBySession.get(sessionId) || [])];
   }
   
   /**
-   * Get last called number for a session
+   * Get the last called number for a session
    */
   public getLastCalledNumber(sessionId: string): number | null {
-    return getPlayerNumbersService().getLastCalledNumber(sessionId);
+    const numbers = this.calledNumbersBySession.get(sessionId) || [];
+    return numbers.length > 0 ? numbers[numbers.length - 1] : null;
   }
   
   /**
-   * Force reconnection for a session
+   * Add a number to a session's called numbers
    */
-  public reconnect(sessionId: string): void {
-    getPlayerNumbersService().reconnect(sessionId);
+  private addNumberToSession(sessionId: string, number: number): void {
+    const numbers = this.calledNumbersBySession.get(sessionId) || [];
+    
+    if (!numbers.includes(number)) {
+      const updatedNumbers = [...numbers, number];
+      this.calledNumbersBySession.set(sessionId, updatedNumbers);
+    }
+  }
+  
+  /**
+   * Reset numbers for a session
+   */
+  public resetNumbers(sessionId: string): void {
+    this.calledNumbersBySession.set(sessionId, []);
+  }
+  
+  /**
+   * Update called numbers for a session
+   */
+  public updateCalledNumbers(sessionId: string, numbers: number[]): void {
+    this.calledNumbersBySession.set(sessionId, [...numbers]);
   }
 }
 
-// Export singleton getter
-export const getNumberCallingService = () => NumberCallingService.getInstance();
+// Export a getter for the singleton
+export const getNumberCallingService = (): NumberCallingService => {
+  return NumberCallingService.getInstance();
+};
