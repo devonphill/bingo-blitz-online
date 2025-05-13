@@ -62,16 +62,22 @@ class ConnectionManager {
     });
     
     // Set up listener for number-called events
-    webSocketService.on(CHANNEL_NAMES.GAME_UPDATES, { event: EVENT_TYPES.NUMBER_CALLED }, (payload) => {
-      if (payload && payload.payload && payload.payload.sessionId === this.sessionId) {
-        const { number, sessionId, timestamp } = payload.payload;
-        
-        logWithTimestamp(`Received number update via WebSocket: ${number}`, 'info');
-        
-        // Pass to listeners
-        this.notifyNumberCalledListeners(number, []);
+    // Fix: Using addListener instead of on method
+    webSocketService.addListener(
+      CHANNEL_NAMES.GAME_UPDATES, 
+      'broadcast', 
+      EVENT_TYPES.NUMBER_CALLED, 
+      (payload) => {
+        if (payload && payload.payload && payload.payload.sessionId === this.sessionId) {
+          const { number, sessionId, timestamp } = payload.payload;
+          
+          logWithTimestamp(`Received number update via WebSocket: ${number}`, 'info');
+          
+          // Pass to listeners
+          this.notifyNumberCalledListeners(number, []);
+        }
       }
-    });
+    );
     
     logWithTimestamp(`Connection to session ${sessionId} initiated`, 'info');
     
