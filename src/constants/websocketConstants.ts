@@ -21,6 +21,7 @@ export const EVENT_TYPES = {
   // Player -> Caller events
   CLAIM_SUBMITTED: 'claim-submitted',
   PLAYER_NAME: 'player-name',
+  CLAIM_VALIDATED: 'claim-validated'
 };
 
 // Connection states
@@ -39,5 +40,8 @@ export const WEBSOCKET_STATUS = {
   CHANNEL_ERROR: 'CHANNEL_ERROR',
   TIMED_OUT: 'TIMED_OUT',
   JOINED: 'JOINED',
-  JOINING: 'JOINING'
+  JOINING: 'JOINING',
+  CONNECTED: 'CONNECTED',
+  CONNECTING: 'CONNECTING',
+  DISCONNECTED: 'DISCONNECTED'
 };

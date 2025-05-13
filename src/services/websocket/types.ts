@@ -13,7 +13,10 @@ export const EVENT_TYPES = {
   NUMBER_CALLED: 'number-called',
   CLAIM_SUBMITTED: 'claim-submitted',
   CLAIM_VALIDATED: 'claim-validated',
-  GAME_STATE_UPDATE: 'game-state-update'
+  CLAIM_VALIDATION: 'claim-validation',
+  CLAIM_VALIDATING_TKT: 'claim-validating-ticket',
+  GAME_STATE_UPDATE: 'game-state-update',
+  GAME_RESET: 'game-reset'
 };
 
 // WebSocket Status
@@ -21,12 +24,17 @@ export const WEBSOCKET_STATUS = {
   CONNECTED: 'CONNECTED',
   CONNECTING: 'CONNECTING',
   DISCONNECTED: 'DISCONNECTED',
-  CHANNEL_ERROR: 'CHANNEL_ERROR'
+  CHANNEL_ERROR: 'CHANNEL_ERROR',
+  SUBSCRIBED: 'SUBSCRIBED',
+  CLOSED: 'CLOSED',
+  TIMED_OUT: 'TIMED_OUT',
+  JOINED: 'JOINED',
+  JOINING: 'JOINING'
 };
 
 // Interface for channel config
 export interface ChannelConfig {
-  config?: {
+  config: {
     broadcast?: {
       self?: boolean;
       ack?: boolean;

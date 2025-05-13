@@ -34,8 +34,10 @@ export function usePlayerNumbers(sessionId: string | undefined) {
         try {
           const currentNumbers = await numberService.getCalledNumbers(sessionId);
           
+          // Update state with fetched numbers
+          setCalledNumbers(currentNumbers);
+          
           if (currentNumbers && currentNumbers.length > 0) {
-            setCalledNumbers(currentNumbers);
             const lastNumber = await numberService.getLastCalledNumber(sessionId);
             setLastCalledNumber(lastNumber);
           }

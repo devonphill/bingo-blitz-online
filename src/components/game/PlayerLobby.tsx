@@ -7,6 +7,7 @@ import { logWithTimestamp } from "@/utils/logUtils";
 interface PlayerLobbyProps {
   sessionName?: string;
   sessionId?: string | null;
+  playerName?: string;
   onRefreshStatus?: () => void;
   errorMessage?: string | null;
 }
@@ -14,6 +15,7 @@ interface PlayerLobbyProps {
 export default function PlayerLobby({
   sessionName = "Game Session",
   sessionId,
+  playerName,
   onRefreshStatus,
   errorMessage
 }: PlayerLobbyProps) {
@@ -34,6 +36,13 @@ export default function PlayerLobby({
           <p className="text-amber-600 mb-2">
             The caller is currently setting up the game. Please wait until they start the session.
           </p>
+          
+          {playerName && (
+            <p className="text-amber-700 font-medium mt-2">
+              Player: {playerName}
+            </p>
+          )}
+          
           <p className="text-sm text-amber-500">
             Your screen will automatically update when the game begins.
           </p>
