@@ -1,18 +1,32 @@
 
 import { useState, useEffect, useCallback } from 'react';
-import { getWebSocketService } from '@/services/websocket/WebSocketService';
+import { getWebSocketService } from '@/services/websocket';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { SessionStateUpdate } from '@/services/websocket/types';
+import { supabase } from '@/integrations/supabase/client';
 
-interface UseSessionLifecycleProps {
+export interface UseSessionLifecycleProps {
   sessionId: string | null | undefined;
   onStateChange?: (state: SessionStateUpdate) => void;
 }
 
-export function useSessionLifecycle({ sessionId, onStateChange }: UseSessionLifecycleProps) {
+export function useSessionLifecycle(sessionIdOrProps: string | undefined | UseSessionLifecycleProps) {
+  // Handle both string and object props
+  let sessionId: string | null | undefined;
+  let onStateChange: ((state: SessionStateUpdate) => void) | undefined;
+  
+  if (typeof sessionIdOrProps === 'string' || sessionIdOrProps === undefined) {
+    sessionId = sessionIdOrProps || null;
+    onStateChange = undefined;
+  } else {
+    sessionId = sessionIdOrProps.sessionId;
+    onStateChange = sessionIdOrProps.onStateChange;
+  }
+  
   const [lifecycleState, setLifecycleState] = useState<string | null>(null);
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);
   const [isActive, setIsActive] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   
   // Track the session state
   useEffect(() => {
@@ -54,10 +68,53 @@ export function useSessionLifecycle({ sessionId, onStateChange }: UseSessionLife
     setIsActive(newStatus === 'active' && newLifecycleState === 'live');
   }, []);
   
+  // Method to set session to live state
+  const goLive = useCallback(async () => {
+    if (!sessionId) {
+      logWithTimestamp(`useSessionLifecycle: Cannot go live - No session ID`, 'error');
+      return false;
+    }
+    
+    setIsUpdating(true);
+    
+    try {
+      logWithTimestamp(`useSessionLifecycle: Setting session ${sessionId} to live`, 'info');
+      
+      // Update the session in the database
+      const { error } = await supabase
+        .from('game_sessions')
+        .update({
+          status: 'active',
+          lifecycle_state: 'live',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', sessionId);
+      
+      if (error) {
+        throw new Error(`Failed to set session to live: ${error.message}`);
+      }
+      
+      // Update local state
+      setSessionStatus('active');
+      setLifecycleState('live');
+      setIsActive(true);
+      
+      logWithTimestamp(`useSessionLifecycle: Session ${sessionId} set to live successfully`, 'info');
+      return true;
+    } catch (error) {
+      logWithTimestamp(`useSessionLifecycle: Error setting session to live: ${error}`, 'error');
+      return false;
+    } finally {
+      setIsUpdating(false);
+    }
+  }, [sessionId]);
+  
   return {
     lifecycleState,
     sessionStatus,
     isActive,
-    transitionState
+    isUpdating,
+    transitionState,
+    goLive
   };
 }

@@ -1,33 +1,64 @@
 
-export interface WebSocketChannelStatus {
-  status: 'SUBSCRIBED' | 'CLOSED' | 'CHANNEL_ERROR' | 'SUBSCRIPTION_ERROR' | 'TIMED_OUT';
-  error?: any;
+// WebSocket channel configuration
+export interface ChannelConfig {
+  broadcast?: {
+    self?: boolean;
+    ack?: boolean;
+  };
 }
 
+// WebSocket channel
+export interface WebSocketChannel {
+  subscribe: (callback?: (status: string) => void) => any;
+  on: (event: string, config: any, callback: (payload: any) => void) => any;
+  send: (event: string, payload: any) => Promise<any>;
+}
+
+// Broadcast options
+export interface BroadcastOptions {
+  retries?: number;
+  retryDelay?: number;
+}
+
+// Connection listener
+export interface ConnectionListener {
+  (status: string): void;
+}
+
+// Session state update
 export interface SessionStateUpdate {
   id: string;
-  status: 'pending' | 'active' | 'completed' | 'cancelled';
-  lifecycle_state: 'setup' | 'lobby' | 'live' | 'completed';
-  name: string;
-  game_type: string;
-  current_game: number;
-  number_of_games: number;
+  status: string;
+  lifecycle_state: string;
+  [key: string]: any;
 }
 
-export interface NumberCalledEvent {
-  sessionId: string;
-  number: number;
-  timestamp: number;
-  callSequence: number[];
-}
+// WebSocket status constants
+export const WEBSOCKET_STATUS = {
+  SUBSCRIBED: 'SUBSCRIBED',
+  TIMED_OUT: 'TIMED_OUT',
+  CLOSED: 'CLOSED',
+  CHANNEL_ERROR: 'CHANNEL_ERROR',
+  JOINED: 'JOINED',
+  JOINING: 'JOINING',
+  LEAVING: 'LEAVING'
+};
 
-export interface NumberClearEvent {
-  sessionId: string;
-  timestamp: number;
-}
+// Channel names constants
+export const CHANNEL_NAMES = {
+  GAME_UPDATES: 'game-updates',
+  PLAYER_PRESENCE: 'player-presence',
+  SESSION_EVENTS: 'session-events'
+};
 
-export interface GameStateChangeEvent {
-  sessionId: string;
-  newState: string;
-  timestamp: number;
-}
+// Event types constants
+export const EVENT_TYPES = {
+  NUMBER_CALLED: 'number-called',
+  GAME_RESET: 'game-reset',
+  CLAIM_SUBMITTED: 'claim-submitted',
+  CLAIM_VALIDATION: 'claim-validation',
+  CLAIM_VALIDATING_TKT: 'claim-validating-ticket',
+  PATTERN_CHANGE: 'pattern-change',
+  GAME_CHANGE: 'game-change',
+  SESSION_COMPLETE: 'session-complete'
+};
