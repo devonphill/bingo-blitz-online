@@ -1,35 +1,33 @@
 
-/**
- * WebSocket service types
- */
-
-// Channel configuration
-export interface ChannelConfig {
-  config?: {
-    broadcast?: {
-      self?: boolean;
-      ack?: boolean;
-    };
-    presence?: {
-      key?: string;
-    };
-  };
+export interface WebSocketChannelStatus {
+  status: 'SUBSCRIBED' | 'CLOSED' | 'CHANNEL_ERROR' | 'SUBSCRIPTION_ERROR' | 'TIMED_OUT';
+  error?: any;
 }
 
-// WebSocket channel interface
-export interface WebSocketChannel {
-  on: (eventType: string, event: { event: string }, callback: (payload: any) => void) => void;
-  subscribe: (callback?: (status: string) => void) => void;
+export interface SessionStateUpdate {
+  id: string;
+  status: 'pending' | 'active' | 'completed' | 'cancelled';
+  lifecycle_state: 'setup' | 'lobby' | 'live' | 'completed';
+  name: string;
+  game_type: string;
+  current_game: number;
+  number_of_games: number;
 }
 
-// Broadcast options
-export interface BroadcastOptions {
-  retries?: number;
-  retryDelay?: number;
-  retryMultiplier?: number;
-  timeout?: number;
+export interface NumberCalledEvent {
+  sessionId: string;
+  number: number;
+  timestamp: number;
+  callSequence: number[];
 }
 
-// Connection listener type
-export type ConnectionListener = (status: string) => void;
+export interface NumberClearEvent {
+  sessionId: string;
+  timestamp: number;
+}
 
+export interface GameStateChangeEvent {
+  sessionId: string;
+  newState: string;
+  timestamp: number;
+}

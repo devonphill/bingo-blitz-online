@@ -1,10 +1,11 @@
+
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { GameSession } from "@/types";
 import { AlertCircle, RefreshCw, Info, Calendar, Clock, Wifi, WifiOff } from "lucide-react";
 import { logWithTimestamp, logError } from "@/utils/logUtils";
 import { logReactEnvironment } from "@/utils/reactUtils";
-import GameLobby from "./GameLobby";
+import PlayerLobby from "./PlayerLobby";
 
 // Helper function for consistent timestamped logging with additional component info
 const logLoaderEvent = (message: string, data?: any) => {
@@ -36,8 +37,8 @@ export default function PlayerGameLoader({
   // Generate a component instance ID for debugging
   const componentId = React.useMemo(() => `pgloader-${Math.random().toString(36).substring(2, 7)}`, []);
   
-  // Track if we should show the branded lobby instead of loading state
-  const [showBrandedLobby, setShowBrandedLobby] = useState(false);
+  // Track if we should show the lobby instead of loading state
+  const [showLobby, setShowLobby] = useState(false);
   
   // Log React environment information on mount
   useEffect(() => {
@@ -57,20 +58,20 @@ export default function PlayerGameLoader({
     };
   }, [loadingStep, componentId]);
   
-  // Determine if we should show the branded lobby
+  // Determine if we should show the lobby based on session state
   useEffect(() => {
     if (currentSession && 
         !isLoading && 
-        (currentSession.lifecycle_state === 'setup' || 
-         // Fix the type error by handling different possible values of lifecycle_state
-         String(currentSession.lifecycle_state).toLowerCase() === 'lobby')) {
-      logLoaderEvent("Showing branded lobby for waiting state", { 
-        lifecycle_state: currentSession.lifecycle_state,
-        status: currentSession.status
+        (currentSession.status === 'pending' || 
+         currentSession.lifecycle_state === 'setup' || 
+         currentSession.lifecycle_state === 'lobby')) {
+      logLoaderEvent("Showing lobby for pending/setup state", { 
+        status: currentSession.status,
+        lifecycle_state: currentSession.lifecycle_state
       });
-      setShowBrandedLobby(true);
+      setShowLobby(true);
     } else {
-      setShowBrandedLobby(false);
+      setShowLobby(false);
     }
   }, [currentSession, isLoading]);
   
@@ -152,12 +153,13 @@ export default function PlayerGameLoader({
     };
   }, [componentId]);
 
-  // Show the branded lobby if we have a valid session in waiting state
-  if (showBrandedLobby) {
+  // Show the lobby if we have a valid session in pending/waiting state
+  if (showLobby) {
     return (
-      <GameLobby 
-        currentSession={currentSession}
-        onRefreshTickets={onRefreshTickets}
+      <PlayerLobby 
+        sessionName={currentSession?.name}
+        sessionId={currentSession?.id}
+        onRefreshStatus={onRefreshTickets}
         errorMessage={errorMessage}
       />
     );

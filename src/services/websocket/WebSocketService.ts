@@ -1,180 +1,111 @@
 
+import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { CHANNEL_NAMES, EVENT_TYPES, WEBSOCKET_STATUS } from '@/constants/websocketConstants';
-import { ChannelManager } from './channelManager';
-import { ReconnectionManager } from './reconnectionManager';
-import { BroadcastManager } from './broadcastManager';
-import { ConnectionStateManager } from './connectionStateManager';
-import { BroadcastOptions, ConnectionListener } from './types';
 
-/**
- * Unified WebSocket Service
- * Single source of truth for all WebSocket communications in the application
- */
-class WebSocketService {
-  private channelManager: ChannelManager;
-  private reconnectionManager: ReconnectionManager;
-  private broadcastManager: BroadcastManager;
-  private connectionStateManager: ConnectionStateManager;
-  private instanceId: string;
+export class WebSocketService {
+  private static instance: WebSocketService;
+  private channels: Map<string, any> = new Map();
+  private sessionStateListeners: Map<string, Function[]> = new Map();
   
-  constructor() {
-    this.instanceId = `ws-${Math.random().toString(36).substring(2, 7)}`;
-    this.channelManager = new ChannelManager();
-    this.connectionStateManager = new ConnectionStateManager();
-    this.broadcastManager = new BroadcastManager();
-    
-    // Initialize reconnection manager with a callback to handle reconnects
-    this.reconnectionManager = new ReconnectionManager((channelName) => {
-      this.reconnectChannel(channelName);
-    });
-    
-    logWithTimestamp(`[${this.instanceId}] WebSocketService initialized`, 'info');
+  // Private constructor for singleton pattern
+  private constructor() {}
+  
+  // Get singleton instance
+  public static getInstance(): WebSocketService {
+    if (!WebSocketService.instance) {
+      WebSocketService.instance = new WebSocketService();
+    }
+    return WebSocketService.instance;
   }
   
-  /**
-   * Creates a channel with proper configuration
-   */
-  public createChannel(channelName: string, config = {}) {
-    const channel = this.channelManager.createChannel(channelName, config);
-    this.connectionStateManager.setState(channelName, 'connecting');
-    return channel;
-  }
-  
-  /**
-   * Subscribe to a channel with automatic reconnection
-   */
-  public subscribeWithReconnect(channelName: string, onStatusChange?: ConnectionListener) {
-    const channel = this.channelManager.getChannel(channelName);
-    
-    if (!channel) {
-      logWithTimestamp(`[${this.instanceId}] Cannot subscribe: Channel ${channelName} not found`, 'error');
-      return;
+  // Subscribe to session state changes
+  public subscribeToSessionState(sessionId: string, listener: (state: any) => void): () => void {
+    if (!this.sessionStateListeners.has(sessionId)) {
+      this.sessionStateListeners.set(sessionId, []);
+      this.setupSessionStateChannel(sessionId);
     }
     
-    // Add status change listener if provided
-    if (onStatusChange) {
-      this.connectionStateManager.addListener(channelName, onStatusChange);
-    }
+    const listeners = this.sessionStateListeners.get(sessionId)!;
+    listeners.push(listener);
     
-    // Add generic connection status handler
-    channel.on('system', { event: 'connection_state_change' }, (payload: any) => {
-      const status = payload.event;
-      this.connectionStateManager.setState(channelName, status);
-      
-      // If disconnected, attempt reconnect with exponential backoff
-      if (status === WEBSOCKET_STATUS.CLOSED || status === WEBSOCKET_STATUS.CHANNEL_ERROR) {
-        this.reconnectionManager.scheduleReconnect(channelName);
-      }
-      
-      // If connected, clear any pending reconnect
-      if (status === WEBSOCKET_STATUS.SUBSCRIBED) {
-        this.reconnectionManager.clearReconnect(channelName);
-      }
-    });
-    
-    // Subscribe to the channel
-    channel.subscribe((status: string) => {
-      logWithTimestamp(`[${this.instanceId}] Channel ${channelName} subscription status: ${status}`, 'info');
-      this.connectionStateManager.setState(channelName, status);
-      
-      if (status !== WEBSOCKET_STATUS.SUBSCRIBED) {
-        this.reconnectionManager.scheduleReconnect(channelName);
-      }
-    });
-    
-    return channel;
-  }
-  
-  /**
-   * Send a broadcast message with retry capability
-   */
-  public async broadcastWithRetry(
-    channelName: string, 
-    eventType: string, 
-    payload: any, 
-    options: BroadcastOptions = {}
-  ): Promise<boolean> {
-    const channel = this.channelManager.getChannel(channelName);
-    
-    if (!channel) {
-      logWithTimestamp(`[${this.instanceId}] Cannot broadcast: Channel ${channelName} not found`, 'error');
-      return false;
-    }
-    
-    return this.broadcastManager.broadcastWithRetry(channel, eventType, payload, options);
-  }
-  
-  /**
-   * Get connection state for a channel
-   */
-  public getConnectionState(channelName: string): string {
-    return this.connectionStateManager.getState(channelName);
-  }
-  
-  /**
-   * Check if a channel is connected
-   */
-  public isConnected(channelName: string): boolean {
-    return this.connectionStateManager.isConnected(channelName);
-  }
-  
-  /**
-   * Force reconnect a channel
-   */
-  public reconnectChannel(channelName: string): void {
-    // Remove existing channel
-    this.channelManager.removeChannel(channelName);
-    
-    // Clear any pending reconnect
-    this.reconnectionManager.clearReconnect(channelName);
-    this.reconnectionManager.resetAttempts(channelName);
-    
-    // Create a fresh channel
-    const channel = this.channelManager.createChannel(channelName);
-    this.connectionStateManager.setState(channelName, 'connecting');
-    
-    logWithTimestamp(`[${this.instanceId}] Forced reconnection for channel ${channelName}`, 'info');
-    
-    // Resubscribe
-    this.subscribeWithReconnect(channelName);
-  }
-  
-  /**
-   * Clean up all channels
-   */
-  public cleanup(): void {
-    this.channelManager.cleanupAllChannels();
-    this.reconnectionManager.cleanup();
-    this.connectionStateManager.cleanup();
-    
-    logWithTimestamp(`[${this.instanceId}] WebSocketService cleanup complete`, 'info');
-  }
-  
-  /**
-   * Add event listener to a channel
-   */
-  public addListener(channelName: string, eventType: string, event: string, callback: (payload: any) => void) {
-    const channel = this.channelManager.getChannel(channelName);
-    
-    if (!channel) {
-      logWithTimestamp(`[${this.instanceId}] Cannot add listener: Channel ${channelName} not found`, 'error');
-      return () => {}; // Return empty cleanup function
-    }
-    
-    // Add the listener
-    channel.on(eventType, { event }, callback);
-    
-    // Return cleanup function
+    // Return unsubscribe function
     return () => {
-      // No direct way to remove specific listeners, so we don't do anything here
-      // The listener will be removed when the channel is removed
+      const index = listeners.indexOf(listener);
+      if (index > -1) {
+        listeners.splice(index, 1);
+      }
+      
+      // If no more listeners, remove the channel
+      if (listeners.length === 0) {
+        this.removeChannel(`session-state-${sessionId}`);
+        this.sessionStateListeners.delete(sessionId);
+      }
     };
+  }
+  
+  // Setup a channel to listen for session state changes
+  private setupSessionStateChannel(sessionId: string): void {
+    const channelId = `session-state-${sessionId}`;
+    
+    try {
+      // Create a channel for listening to session state changes
+      const channel = supabase
+        .channel(channelId)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'game_sessions',
+            filter: `id=eq.${sessionId}`
+          },
+          (payload) => {
+            logWithTimestamp(`WebSocketService: Received session state update for ${sessionId}`, 'info');
+            console.log('Session state update:', payload);
+            
+            // Notify all listeners
+            const listeners = this.sessionStateListeners.get(sessionId) || [];
+            listeners.forEach(listener => {
+              try {
+                listener(payload.new);
+              } catch (error) {
+                console.error('Error in session state listener:', error);
+              }
+            });
+          }
+        )
+        .subscribe(status => {
+          logWithTimestamp(`WebSocketService: Session state channel status - ${status}`, 'info');
+        });
+      
+      this.channels.set(channelId, channel);
+    } catch (error) {
+      console.error('Error setting up session state channel:', error);
+    }
+  }
+  
+  // Remove a channel by ID
+  private removeChannel(channelId: string): void {
+    const channel = this.channels.get(channelId);
+    if (channel) {
+      supabase.removeChannel(channel);
+      this.channels.delete(channelId);
+      logWithTimestamp(`WebSocketService: Removed channel ${channelId}`, 'info');
+    }
+  }
+  
+  // Clean up all channels
+  public cleanup(): void {
+    this.channels.forEach((channel, id) => {
+      supabase.removeChannel(channel);
+      logWithTimestamp(`WebSocketService: Cleaned up channel ${id}`, 'info');
+    });
+    this.channels.clear();
+    this.sessionStateListeners.clear();
   }
 }
 
-// Export singleton instance
-export const webSocketService = new WebSocketService();
-
-// Re-export constants for convenience
-export { CHANNEL_NAMES, EVENT_TYPES, WEBSOCKET_STATUS };
+// Export a function to get the service instance for compatibility
+export const getWebSocketService = (): WebSocketService => {
+  return WebSocketService.getInstance();
+};

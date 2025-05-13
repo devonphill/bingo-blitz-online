@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import GameHeader from "./GameHeader";
 import BingoCardGrid from "./BingoCardGrid";
@@ -14,6 +13,7 @@ import { usePlayerClaimManagement } from "@/hooks/usePlayerClaimManagement";
 import { usePlayerWebSocketNumbers } from "@/hooks/usePlayerWebSocketNumbers";
 import BingoClaim, { claimEvents } from "./BingoClaim";
 import { setupClaimDebugging } from "@/utils/claimDebugUtils";
+import PlayerLobby from "./PlayerLobby";
 
 interface PlayerGameContentProps {
   tickets: any[];
@@ -69,6 +69,14 @@ export default function PlayerGameContent({
   // Keep a reference to track component instance
   const componentId = useRef(`playerGame-${Math.random().toString(36).substring(2, 7)}`);
   
+  // Check if we should show the lobby (game is pending/setup)
+  const showLobby = useMemo(() => {
+    return currentSession && 
+           (currentSession.status === 'pending' || 
+            currentSession.lifecycle_state === 'setup' || 
+            currentSession.lifecycle_state === 'lobby');
+  }, [currentSession]);
+  
   // Log critical values to help with debugging
   useEffect(() => {
     console.log('PlayerGameContent critical values:', {
@@ -76,9 +84,12 @@ export default function PlayerGameContent({
       playerCode,
       playerId,
       playerName,
+      showLobby,
+      sessionStatus: currentSession?.status,
+      lifecycleState: currentSession?.lifecycle_state,
       claimStatus
     });
-  }, [currentSession?.id, playerCode, playerId, playerName, claimStatus]);
+  }, [currentSession, playerCode, playerId, playerName, claimStatus, showLobby]);
   
   const { getGameTypeById } = useGameManager();
   
@@ -289,6 +300,19 @@ export default function PlayerGameContent({
     
     return false;
   };
+  
+  // If the game is in pending/setup state, show the lobby
+  if (showLobby) {
+    return (
+      <PlayerLobby
+        sessionName={currentSession?.name}
+        playerName={playerName}
+        sessionId={currentSession?.id}
+        onRefreshStatus={onRefreshTickets}
+        errorMessage={null}
+      />
+    );
+  }
   
   return (
     <div className="min-h-full flex flex-col" style={{ backgroundColor }}>
