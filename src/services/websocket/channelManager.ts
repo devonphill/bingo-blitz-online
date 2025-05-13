@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { ChannelConfig, WebSocketChannel } from './types';
@@ -34,25 +33,9 @@ export class ChannelManager {
         }
       }
       
-      // Default configuration with improved resilience
-      const defaultConfig: ChannelConfig = {
-        config: {
-          broadcast: { 
-            self: true, // Receive own broadcasts
-            ack: true   // Request acknowledgment
-          },
-          presence: {
-            key: this.instanceId
-          }
-        }
-      };
-      
-      // Merge with custom config
-      const mergedConfig = { ...defaultConfig, ...config };
-      
-      // Create the channel
+      // Create the channel with proper config format
       // @ts-ignore Type compatibility issues between RealtimeChannel and WebSocketChannel
-      const channel = supabase.channel(channelName, mergedConfig);
+      const channel = supabase.channel(channelName, config);
       
       // Store the channel
       this.channels.set(channelKey, channel);

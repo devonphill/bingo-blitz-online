@@ -16,7 +16,7 @@ export class BroadcastManager {
     options: BroadcastOptions = {}
   ): Promise<boolean> {
     // Default options
-    const defaultOptions: Required<BroadcastOptions> = {
+    const defaultOptions = {
       retries: 3,
       retryDelay: 1000,
       retryMultiplier: 1.5,
@@ -68,7 +68,7 @@ export class BroadcastManager {
         }
         
         // Wait before retrying with exponential backoff
-        const delay = config.retryDelay * Math.pow(config.retryMultiplier, attempt);
+        const delay = config.retryDelay * Math.pow(config.retryMultiplier || 1.5, attempt);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }

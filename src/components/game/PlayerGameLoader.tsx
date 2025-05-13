@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { GameSession } from "@/types";
@@ -63,9 +62,9 @@ export default function PlayerGameLoader({
     if (currentSession && 
         !isLoading && 
         (currentSession.status === 'pending' || 
-         currentSession.lifecycle_state === 'setup' || 
-         currentSession.lifecycle_state === 'lobby')) {
-      logLoaderEvent("Showing lobby for pending/setup state", { 
+        currentSession.lifecycle_state === 'setup' || 
+        currentSession.lifecycle_state === 'lobby')) {
+      logLoaderEvent("Showing lobby for pending/setup/lobby state", { 
         status: currentSession.status,
         lifecycle_state: currentSession.lifecycle_state
       });

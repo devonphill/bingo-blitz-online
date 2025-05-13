@@ -1,9 +1,14 @@
 
 // WebSocket channel configuration
 export interface ChannelConfig {
-  broadcast?: {
-    self?: boolean;
-    ack?: boolean;
+  config?: {
+    broadcast?: {
+      self?: boolean;
+      ack?: boolean;
+    };
+    presence?: {
+      key?: string;
+    };
   };
 }
 
@@ -18,6 +23,8 @@ export interface WebSocketChannel {
 export interface BroadcastOptions {
   retries?: number;
   retryDelay?: number;
+  retryMultiplier?: number;
+  timeout?: number;
 }
 
 // Connection listener

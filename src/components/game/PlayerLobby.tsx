@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
 import { RefreshCw } from 'lucide-react';
+import { GameSession } from '@/types';
 
 interface PlayerLobbyProps {
   onRefreshStatus?: () => void;
@@ -13,6 +14,14 @@ interface PlayerLobbyProps {
   playerName?: string;
   sessionId?: string;
   errorMessage?: string | null;
+}
+
+interface SessionData {
+  name?: string;
+  id?: string;
+  gameType?: string;
+  status?: string;
+  lifecycle_state?: string;
 }
 
 const PlayerLobby: React.FC<PlayerLobbyProps> = ({
@@ -29,7 +38,11 @@ const PlayerLobby: React.FC<PlayerLobbyProps> = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Get active session from context or use the provided sessionId
-  const activeSession = session || { name: sessionName, id: sessionId };
+  const activeSession: SessionData = session || { 
+    name: sessionName, 
+    id: sessionId,
+    gameType: session?.gameType || undefined
+  };
   
   useEffect(() => {
     if (activeSession?.gameType) {
@@ -88,7 +101,9 @@ const PlayerLobby: React.FC<PlayerLobbyProps> = ({
           <div className="border-t border-b py-4 space-y-2">
             <div className="flex justify-between items-center">
               <span className="text-gray-600">Game Type:</span>
-              <span className="font-semibold">{gameTypeDetails?.name || activeSession.gameType || "Standard"}</span>
+              <span className="font-semibold">
+                {gameTypeDetails?.name || activeSession.gameType || "Standard"}
+              </span>
             </div>
             
             <div className="flex justify-between items-center">
