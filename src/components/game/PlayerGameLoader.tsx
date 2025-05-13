@@ -61,13 +61,10 @@ export default function PlayerGameLoader({
   useEffect(() => {
     if (currentSession && 
         !isLoading && 
-        (currentSession.status === 'pending' || 
-        currentSession.lifecycle_state === 'setup' || 
-        currentSession.lifecycle_state === 'pending' || 
-        sessionProgress?.game_status === 'pending')) {
-      logLoaderEvent("Showing lobby for pending/setup/lobby state", { 
+        sessionProgress?.game_status === 'pending') {
+      logLoaderEvent("Showing lobby for pending game state", { 
         status: currentSession.status,
-        lifecycle_state: currentSession.lifecycle_state
+        game_status: sessionProgress?.game_status
       });
       setShowLobby(true);
     } else {
@@ -268,31 +265,27 @@ export default function PlayerGameLoader({
           <Info size={40} />
         </div>
         
-        <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">{currentSession.name}</h2>
+        <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">{currentSession?.name}</h2>
         
         {/* Session details */}
         <div className="flex flex-wrap justify-center gap-4 mb-6">
           <div className="flex items-center text-gray-600">
             <Calendar className="h-4 w-4 mr-1" />
-            <span>{formatSessionDate(currentSession.sessionDate)}</span>
+            <span>{formatSessionDate(currentSession?.sessionDate)}</span>
             {sessionTime && <span className="ml-1">{sessionTime}</span>}
           </div>
           <div className="flex items-center text-gray-600">
             <Clock className="h-4 w-4 mr-1" />
-            <span>Game {currentSession.current_game} of {currentSession.numberOfGames}</span>
+            <span>Game {currentSession?.current_game} of {currentSession?.numberOfGames}</span>
           </div>
         </div>
         
         <h3 className="text-lg font-semibold text-amber-600 mb-4 text-center">Waiting for game to start</h3>
         
         <p className="text-gray-600 mb-6 text-center">
-          {!isGameLive 
+          {sessionProgress?.game_status !== 'active' 
             ? "The caller has not started the game yet." 
-            : !isSessionActive
-              ? "The session is live but not yet active."
-              : !isGameActive 
-                ? "The game is waiting to be activated." 
-                : "The game is being set up..."}
+            : "The game is being set up..."}
         </p>
         
         {/* Show connection error as a warning, not a blocking error */}
@@ -325,16 +318,13 @@ export default function PlayerGameLoader({
         <div className="space-y-4">
           <div className="bg-gray-50 p-4 rounded-md">
             <p className="text-sm text-gray-500 mb-2">
-              <span className="font-semibold">Session:</span> {currentSession.name || 'Unknown'}
+              <span className="font-semibold">Session:</span> {currentSession?.name || 'Unknown'}
             </p>
             <p className="text-sm text-gray-500 mb-2">
-              <span className="font-semibold">Lifecycle state:</span> {currentSession.lifecycle_state || 'unknown'}
-            </p> 
-            <p className="text-sm text-gray-500">
-              <span className="font-semibold">Status:</span> {currentSession.status || 'unknown'}
+              <span className="font-semibold">Status:</span> {currentSession?.status || 'unknown'}
             </p>
             <p className="text-sm text-gray-500 mt-2">
-              <span className="font-semibold">Game status:</span> {gameStatus || 'unknown'}
+              <span className="font-semibold">Game status:</span> {sessionProgress?.game_status || 'unknown'}
             </p>
           </div>
           <Button onClick={() => window.location.reload()} className="w-full flex items-center justify-center gap-2">
