@@ -1,68 +1,32 @@
 
-/**
- * WebSocket Types
- */
+import { RealtimeChannel } from '@supabase/supabase-js';
 
-// Channel Names
 export const CHANNEL_NAMES = {
-  GAME_UPDATES: 'game-updates'
+  GAME_UPDATES: 'game-updates',
+  SESSION_UPDATES: 'session-updates',
+  CLAIM_UPDATES: 'claim-updates'
 };
 
-// Event Types
 export const EVENT_TYPES = {
   NUMBER_CALLED: 'number-called',
+  GAME_RESET: 'game-reset',
   CLAIM_SUBMITTED: 'claim-submitted',
-  CLAIM_VALIDATED: 'claim-validated',
   CLAIM_VALIDATION: 'claim-validation',
-  CLAIM_VALIDATING_TKT: 'claim-validating-ticket',
-  GAME_STATE_UPDATE: 'game-state-update',
-  GAME_RESET: 'game-reset'
+  CLAIM_VALIDATING_TKT: 'claim-validating-tkt',
+  SESSION_STATE_CHANGE: 'session-state-change',
+  GO_LIVE: 'go-live'
 };
 
-// WebSocket Status
-export const WEBSOCKET_STATUS = {
-  CONNECTED: 'CONNECTED',
-  CONNECTING: 'CONNECTING',
-  DISCONNECTED: 'DISCONNECTED',
-  CHANNEL_ERROR: 'CHANNEL_ERROR',
-  SUBSCRIBED: 'SUBSCRIBED',
-  CLOSED: 'CLOSED',
-  TIMED_OUT: 'TIMED_OUT',
-  JOINED: 'JOINED',
-  JOINING: 'JOINING'
-};
+export type WebSocketStatus = 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR';
 
-// Interface for channel config
-export interface ChannelConfig {
-  config: {
-    broadcast?: {
-      self?: boolean;
-      ack?: boolean;
-    };
-  };
-}
-
-// Interface for WebSocket channel
-export interface WebSocketChannel {
-  on: (event: string, options: any, callback: (payload: any) => void) => WebSocketChannel;
-  subscribe: (callback?: (status: string) => void) => WebSocketChannel;
-  send: (payload: any) => Promise<any>;
-}
-
-// Interface for broadcast options
-export interface BroadcastOptions {
-  retries?: number;
-  retryDelay?: number;
-}
-
-// Interface for connection listener
-export type ConnectionListener = (status: string) => void;
-
-// Interface for session state update
 export interface SessionStateUpdate {
-  id: string;
   status: string;
   lifecycle_state: string;
-  current_game?: number;
   updated_at: string;
+}
+
+export interface WebSocketChannelEvent<T = any> {
+  type: string;
+  event: string;
+  payload: T;
 }

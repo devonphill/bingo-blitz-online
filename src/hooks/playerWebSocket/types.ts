@@ -1,8 +1,7 @@
 
 /**
- * Types for WebSocket-based player number hooks
+ * State returned by the usePlayerWebSocketNumbers hook
  */
-
 export interface WebSocketNumbersState {
   calledNumbers: number[];
   lastCalledNumber: number | null;
@@ -11,9 +10,11 @@ export interface WebSocketNumbersState {
   reconnect: () => void;
 }
 
+/**
+ * Stored number data format for localStorage
+ */
 export interface StoredNumberData {
-  sessionId: string;
   calledNumbers: number[];
   lastCalledNumber: number | null;
-  timestamp: string;
+  timestamp: number;
 }

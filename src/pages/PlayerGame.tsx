@@ -5,7 +5,7 @@ import PlayerTicketView from '@/components/player/PlayerTicketView';
 import PlayerGridView from '@/components/player/PlayerGridView';
 import { useGameSession } from '@/hooks/useGameSession';
 import { usePlayerTickets } from '@/hooks/usePlayerTickets';
-import { useNumberUpdates } from '@/hooks/useNumberUpdates';
+import { usePlayerWebSocketNumbers } from '@/hooks/playerWebSocket/usePlayerWebSocketNumbers';
 import { Button } from '@/components/ui/button';
 import { usePlayerContext } from '@/contexts/PlayerContext';
 import { useAuth } from '@/hooks/useAuth';
@@ -20,8 +20,7 @@ import PlayerGameControls from '@/components/game/PlayerGameControls';
 import { useToast } from '@/components/ui/use-toast';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
-import { getWebSocketService } from '@/services/websocket';
-// Import the new PlayerGameLobby component instead of the old PlayerLobby
+import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 import PlayerGameLobby from '@/components/player/PlayerGameLobby';
 
 // Error boundary component for the player game
@@ -169,7 +168,7 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
     numberCallTimestamp,
     isConnected: numbersConnected,
     reconnect: reconnectNumberUpdates
-  } = useNumberUpdates(sessionDetails?.id);
+  } = usePlayerWebSocketNumbers(sessionDetails?.id);
 
   const [isTicketView, setIsTicketView] = useState(true);
   const { player, setPlayer } = usePlayerContext();
@@ -179,6 +178,7 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [showLobbyOverride, setShowLobbyOverride] = useState<boolean | null>(null);
+  const webSocketService = getWebSocketService();
 
   // Get player ID from multiple possible sources in priority order
   const playerId = fetchedPlayerId || player?.id || session?.user?.id || localStorage.getItem('playerId');
@@ -239,7 +239,7 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
     setIsTicketView(prev => !prev);
   }, []);
 
-  // Handle bingo claim
+  // Handle bingo claim - Now without client-side validation
   const handleClaimBingo = useCallback(async () => {
     if (!playerTickets || playerTickets.length === 0) {
       logWithTimestamp('Cannot claim: No tickets', 'warn');
@@ -251,23 +251,33 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
       return false;
     }
 
-    // Find the first winning ticket
-    const winningTicket = playerTickets.find(ticket => 
-      ticket.is_winning || ticket.winning_pattern === currentWinPattern
+    // Find potentially winning tickets
+    const winningTickets = playerTickets.filter(ticket => 
+      ticket.is_winning || ticket.winning_pattern === currentWinPattern || playerTickets.length > 0
     );
 
-    if (!winningTicket) {
-      logWithTimestamp('No winning tickets found', 'warn');
-      toast({
-        title: "No Winning Ticket",
-        description: "None of your tickets match the winning pattern yet.",
-        variant: "destructive"
-      });
-      return false;
+    if (winningTickets.length > 0) {
+      // If we have 0TG (winning) tickets, submit each one separately
+      const zeroTGTickets = winningTickets.filter(ticket => ticket.is_winning);
+      
+      if (zeroTGTickets.length > 0) {
+        // Submit each 0TG ticket as separate claim
+        for (const ticket of zeroTGTickets) {
+          logWithTimestamp(`Submitting claim for 0TG winning ticket ${ticket.serial}`, 'info');
+          await submitClaim(ticket);
+        }
+        return true;
+      } else {
+        // No 0TG tickets, submit the first ticket from potentially winning
+        const firstTicket = winningTickets[0];
+        logWithTimestamp(`Submitting claim for potentially winning ticket ${firstTicket.serial}`, 'info');
+        return await submitClaim(firstTicket);
+      }
+    } else {
+      // If we don't have any potential winners, just submit the first ticket
+      logWithTimestamp(`No potential winners found, submitting first ticket ${playerTickets[0].serial}`, 'info');
+      return await submitClaim(playerTickets[0]);
     }
-
-    logWithTimestamp(`Submitting claim for ticket ${winningTicket.serial}`, 'info');
-    return await submitClaim(winningTicket);
   }, [playerTickets, currentWinPattern, submitClaim, toast]);
 
   // Handle connection refresh
@@ -287,34 +297,31 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
 
     logWithTimestamp(`Setting up session state change listener for session ${sessionDetails.id}`, 'info');
     
-    const webSocketService = getWebSocketService();
-    const channel = webSocketService.subscribe('session-updates', (message) => {
-      if (!message) return;
+    const channel = webSocketService.subscribe(CHANNEL_NAMES.SESSION_UPDATES, (message) => {
+      if (!message || message.sessionId !== sessionDetails.id) return;
       
-      if (message.sessionId === sessionDetails.id) {
-        logWithTimestamp(`Received session state update: ${JSON.stringify(message)}`, 'info');
+      logWithTimestamp(`Received session state update: ${JSON.stringify(message)}`, 'info');
+      
+      if (
+        (message.type === EVENT_TYPES.GO_LIVE || message.type === EVENT_TYPES.SESSION_STATE_CHANGE) && 
+        message.status === 'active' && 
+        message.lifecycleState === 'live'
+      ) {
+        logWithTimestamp('Game is now live! Transitioning from lobby to game view...', 'info');
+        setShowLobbyOverride(false);
         
-        if (
-          (message.type === 'go-live' || message.type === 'lifecycle-change') && 
-          message.status === 'active' && 
-          message.lifecycleState === 'live'
-        ) {
-          logWithTimestamp('Game is now live! Transitioning from lobby to game view...', 'info');
-          setShowLobbyOverride(false);
-          
-          // Refresh tickets and session progress to ensure we have the latest data
-          refreshTickets();
-          refreshSessionProgress();
-          
-          // Show toast notification
-          toast({
-            title: "Game is now live!",
-            description: "The host has started the game.",
-          });
-          
-          // Also reconnect number updates to ensure we're getting real-time updates
-          reconnectNumberUpdates();
-        }
+        // Refresh tickets and session progress to ensure we have the latest data
+        refreshTickets();
+        refreshSessionProgress();
+        
+        // Show toast notification
+        toast({
+          title: "Game is now live!",
+          description: "The host has started the game.",
+        });
+        
+        // Also reconnect number updates to ensure we're getting real-time updates
+        reconnectNumberUpdates();
       }
     });
 
@@ -323,6 +330,24 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
       logWithTimestamp(`Cleaned up session state change listener for session ${sessionDetails.id}`, 'info');
     };
   }, [sessionDetails?.id, toast, refreshTickets, refreshSessionProgress, reconnectNumberUpdates]);
+
+  // Ensure WebSocket connections are established immediately on component mount
+  useEffect(() => {
+    if (!sessionDetails?.id) return;
+    
+    // Force reconnection to ensure we're connected
+    reconnectNumberUpdates();
+    
+    // Set a timer to check connection and re-connect if needed
+    const timer = setTimeout(() => {
+      if (!numbersConnected) {
+        logWithTimestamp('Initial connection not established, forcing reconnection...', 'warn');
+        reconnectNumberUpdates();
+      }
+    }, 2000);
+    
+    return () => clearTimeout(timer);
+  }, [sessionDetails?.id, numbersConnected, reconnectNumberUpdates]);
 
   // If there's no playerId, we can't continue
   if (!playerId) {

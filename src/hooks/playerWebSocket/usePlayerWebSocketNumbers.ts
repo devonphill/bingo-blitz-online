@@ -1,6 +1,7 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { webSocketService, CHANNEL_NAMES } from '@/services/websocket';
+import { getWebSocketService, CHANNEL_NAMES } from '@/services/websocket';
 import { fetchExistingNumbers } from './databaseUtils';
 import { saveNumbersToLocalStorage, getNumbersFromLocalStorage } from './storageUtils';
 import { setupNumberUpdateListeners } from './webSocketManager';
@@ -16,8 +17,8 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined):
   const [lastUpdateTime, setLastUpdateTime] = useState<number>(Date.now());
   const instanceId = useRef(`numUpdate-${Math.random().toString(36).substring(2, 7)}`);
   
-  const channelRef = useRef<any>(null);
-  const listenerCleanupRef = useRef<() => void>(() => {});
+  const webSocketService = useRef(getWebSocketService());
+  const listenerCleanupRef = useRef<(() => void)>(() => {});
   
   // Log session ID updates
   useEffect(() => {
@@ -94,15 +95,13 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined):
     });
     
     // Create and configure the game updates channel
-    if (!channelRef.current) {
-      channelRef.current = webSocketService.createChannel(CHANNEL_NAMES.GAME_UPDATES);
-      
-      // Set up connection status tracking
-      webSocketService.subscribeWithReconnect(CHANNEL_NAMES.GAME_UPDATES, (status) => {
-        setIsConnected(status === 'SUBSCRIBED');
-        logWithTimestamp(`[${instanceId.current}] Number updates channel status: ${status}`, 'info');
-      });
-    }
+    webSocketService.current.createChannel(CHANNEL_NAMES.GAME_UPDATES);
+    
+    // Set up connection status tracking
+    webSocketService.current.subscribeWithReconnect(CHANNEL_NAMES.GAME_UPDATES, (status) => {
+      setIsConnected(status === 'SUBSCRIBED');
+      logWithTimestamp(`[${instanceId.current}] Number updates channel status: ${status}`, 'info');
+    });
     
     // Clean up any existing listeners
     if (listenerCleanupRef.current) {
@@ -113,21 +112,32 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined):
     const cleanup = setupNumberUpdateListeners(
       sessionId,
       // Number update handler
-      (number, _) => {
+      (number, calledNumbers) => {
         logWithTimestamp(`[${instanceId.current}] Received number update: ${number}`, 'info');
       
-        // Update state
-        setLastCalledNumber(number);
-        setLastUpdateTime(Date.now());
-        
-        setCalledNumbers(prev => {
-          const updatedNumbers = prev.includes(number) ? [...prev] : [...prev, number];
+        // Update state based on the received calledNumbers array
+        if (calledNumbers && calledNumbers.length > 0) {
+          // Use the complete array from the server to ensure we have everything
+          setCalledNumbers(calledNumbers);
+          setLastCalledNumber(number);
+          setLastUpdateTime(Date.now());
           
           // Save to localStorage as backup
-          saveNumbersToLocalStorageCallback(updatedNumbers, number);
+          saveNumbersToLocalStorageCallback(calledNumbers, number);
+        } else {
+          // Fallback to the old approach of adding the number to our existing array
+          setLastCalledNumber(number);
+          setLastUpdateTime(Date.now());
           
-          return updatedNumbers;
-        });
+          setCalledNumbers(prev => {
+            const updatedNumbers = prev.includes(number) ? [...prev] : [...prev, number];
+            
+            // Save to localStorage as backup
+            saveNumbersToLocalStorageCallback(updatedNumbers, number);
+            
+            return updatedNumbers;
+          });
+        }
       },
       // Reset handler
       () => {
@@ -151,7 +161,7 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined):
     return () => {
       clearInterval(storagePoller);
       
-      // We keep the channel alive for potential reuse, but clean up our listeners
+      // Clean up our listeners
       if (listenerCleanupRef.current) {
         listenerCleanupRef.current();
         listenerCleanupRef.current = () => {};
@@ -168,7 +178,7 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined):
     logWithTimestamp(`[${instanceId.current}] Manual reconnection requested for session ${sessionId}`, 'info');
     
     // Force channel reconnection through service
-    webSocketService.reconnectChannel(CHANNEL_NAMES.GAME_UPDATES);
+    webSocketService.current.reconnectChannel(CHANNEL_NAMES.GAME_UPDATES);
     
     // Fetch latest data
     fetchExistingNumbers(sessionId).then(numbers => {

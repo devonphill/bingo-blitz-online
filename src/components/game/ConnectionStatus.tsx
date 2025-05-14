@@ -3,8 +3,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { webSocketService, CHANNEL_NAMES, WEBSOCKET_STATUS } from '@/services/websocket';
-import { toast } from '@/hooks/use-toast';
+import { getWebSocketService, CHANNEL_NAMES, WEBSOCKET_STATUS } from '@/services/websocket';
+import { useToast } from '@/hooks/use-toast';
 
 interface ConnectionStatusProps {
   showFull?: boolean;
@@ -24,162 +24,148 @@ export default function ConnectionStatus({
   const [connectionState, setConnectionState] = useState<string>('unknown');
   const [lastPingTime, setLastPingTime] = useState<number>(Date.now());
   const instanceId = useRef(`conn-${Math.random().toString(36).substring(2, 7)}`);
+  const webSocketService = useRef(getWebSocketService());
+  const { toast } = useToast();
   
-  // Update connection state from WebSocketService
+  // Update connection state periodically
   useEffect(() => {
-    if (!sessionId) {
-      setConnectionState('disconnected');
-      return;
-    }
+    if (!sessionId) return;
     
-    // Get initial state
-    setConnectionState(webSocketService.getConnectionState(CHANNEL_NAMES.GAME_UPDATES));
+    // Check connection state immediately
+    const state = webSocketService.current.getConnectionState(CHANNEL_NAMES.GAME_UPDATES);
+    setConnectionState(state);
     
-    // Set up subscription to connection status
-    const statusListener = (status: string) => {
-      setConnectionState(status);
-      setLastPingTime(Date.now());
-    };
+    // Setup channel if not already done
+    webSocketService.current.createChannel(CHANNEL_NAMES.GAME_UPDATES);
     
-    // Add status listener
-    webSocketService.subscribeWithReconnect(CHANNEL_NAMES.GAME_UPDATES, statusListener);
+    // Setup subscription with reconnect capability
+    const cleanup = webSocketService.current.subscribeWithReconnect(
+      CHANNEL_NAMES.GAME_UPDATES,
+      (status) => {
+        setConnectionState(status);
+        if (status === WEBSOCKET_STATUS.SUBSCRIBED) {
+          setLastPingTime(Date.now());
+        }
+      }
+    );
     
-    // Return cleanup function
+    // Check connection state on interval
+    const interval = setInterval(() => {
+      const currentState = webSocketService.current.getConnectionState(CHANNEL_NAMES.GAME_UPDATES);
+      setConnectionState(currentState);
+    }, 5000);
+    
     return () => {
-      // There's no direct way to remove a specific listener in the current implementation
+      clearInterval(interval);
+      cleanup();
     };
   }, [sessionId]);
   
-  // Periodically update ping time
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setLastPingTime(Date.now());
-    }, 30000);
-    
-    return () => clearInterval(interval);
-  }, []);
+  // Calculate time since last ping
+  const timeSinceLastPing = Date.now() - lastPingTime;
+  const isStale = timeSinceLastPing > 60000; // 60 seconds
   
-  const getStatusColor = useCallback(() => {
-    if (isReconnecting) return 'bg-amber-500 animate-pulse';
+  // Handle manual reconnect
+  const handleReconnect = useCallback(() => {
+    if (!sessionId) return;
     
-    switch (connectionState) {
-      case WEBSOCKET_STATUS.SUBSCRIBED: return 'bg-green-500';
-      case 'connecting': 
-      case 'CONNECTING': 
-      case 'JOINING': return 'bg-amber-500';
-      case WEBSOCKET_STATUS.CLOSED: 
-      case 'disconnected': return 'bg-red-500';
-      case WEBSOCKET_STATUS.CHANNEL_ERROR: 
-      case 'error': return 'bg-red-700';
-      default: return 'bg-gray-500';
-    }
-  }, [connectionState, isReconnecting]);
-  
-  const getStatusText = useCallback(() => {
-    if (isReconnecting) return 'Reconnecting...';
-    
-    switch (connectionState) {
-      case WEBSOCKET_STATUS.SUBSCRIBED: return 'Connected';
-      case 'connecting': 
-      case 'CONNECTING': 
-      case 'JOINING': return 'Connecting...';
-      case WEBSOCKET_STATUS.CLOSED: 
-      case 'disconnected': return 'Disconnected';
-      case WEBSOCKET_STATUS.CHANNEL_ERROR: 
-      case 'error': return 'Connection Error';
-      default: return 'Unknown';
-    }
-  }, [connectionState, isReconnecting]);
-  
-  const getStatusIcon = useCallback(() => {
-    if (isReconnecting) return <RefreshCw className="h-4 w-4 animate-spin" />;
-    
-    const isConnected = connectionState === WEBSOCKET_STATUS.SUBSCRIBED;
-    
-    return isConnected 
-      ? <Wifi className="h-4 w-4" /> 
-      : <WifiOff className="h-4 w-4" />;
-  }, [connectionState, isReconnecting]);
-  
-  const handleReconnectClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
     setIsReconnecting(true);
-    logWithTimestamp(`[${instanceId.current}] User requested manual reconnection`, 'info');
     
-    // Force reconnect via WebSocketService
-    webSocketService.reconnectChannel(CHANNEL_NAMES.GAME_UPDATES);
-    
-    // Also call the provided reconnect callback if any
-    if (onReconnect) {
-      onReconnect();
+    try {
+      // Tell WebSocketService to reconnect the channel
+      webSocketService.current.reconnectChannel(CHANNEL_NAMES.GAME_UPDATES);
+      
+      // Call parent reconnect if provided
+      if (onReconnect) {
+        onReconnect();
+      }
+      
+      toast({
+        title: 'Reconnecting...',
+        description: 'Attempting to restore connection',
+      });
+      
+      setTimeout(() => {
+        setIsReconnecting(false);
+      }, 2000);
+    } catch (error) {
+      console.error('Error during reconnect:', error);
+      setIsReconnecting(false);
     }
-    
-    // Show toast
-    toast({
-      title: "Reconnecting",
-      description: "Attempting to reconnect to the game server...",
-      duration: 3000
-    });
-    
-    // Reset reconnecting UI after a delay
-    setTimeout(() => setIsReconnecting(false), 3000);
-  };
+  }, [sessionId, onReconnect, toast]);
   
+  // Only show connection issues after we know we're not connected
+  const isConnected = connectionState === WEBSOCKET_STATUS.SUBSCRIBED;
+  
+  // Derived status text
+  const statusText = isConnected 
+    ? 'Connected' 
+    : connectionState === 'CHANNEL_ERROR'
+      ? 'Connection Error'
+      : connectionState === 'TIMED_OUT'
+        ? 'Connection Timed Out'
+        : 'Disconnected';
+  
+  // Visual presentation based on connection state and component settings  
   return (
     <div className={`relative ${className}`}>
-      <div 
-        className={`flex items-center cursor-pointer ${showFull ? 'p-2 rounded border' : ''}`}
+      <motion.button
         onClick={() => setExpanded(!expanded)}
+        className={`flex items-center px-2 py-1 rounded ${
+          isConnected ? 'text-green-500' : 'text-red-500'
+        }`}
+        whileHover={{ scale: 1.05 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
       >
-        <div className={`w-3 h-3 rounded-full ${getStatusColor()} mr-2`} />
-        {showFull && (
-          <span className="text-sm font-medium flex items-center gap-1">
-            {getStatusIcon()}
-            {getStatusText()}
-          </span>
+        {isConnected ? (
+          <Wifi className="w-5 h-5" />
+        ) : (
+          <WifiOff className="w-5 h-5" />
         )}
         
-        {(connectionState === WEBSOCKET_STATUS.CLOSED || 
-          connectionState === WEBSOCKET_STATUS.CHANNEL_ERROR || 
-          connectionState === 'disconnected' || 
-          connectionState === 'error') && (
-          <button 
-            className="ml-2 text-xs bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded flex items-center gap-1"
-            onClick={handleReconnectClick}
-            disabled={isReconnecting}
-          >
-            <RefreshCw className={`h-3 w-3 ${isReconnecting ? 'animate-spin' : ''}`} />
-            {isReconnecting ? 'Reconnecting...' : 'Reconnect'}
-          </button>
+        {(showFull || expanded) && (
+          <span className="ml-2 text-sm">{statusText}</span>
         )}
-      </div>
+      </motion.button>
       
       <AnimatePresence>
         {expanded && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="absolute top-full right-0 mt-2 bg-white shadow-lg rounded-md p-3 z-50 w-80"
+            className="absolute top-full mt-2 right-0 bg-white shadow-md rounded-md p-3 w-52 z-50"
           >
-            <h4 className="font-bold mb-2">Connection Details</h4>
-            <div className="text-xs space-y-1">
-              <div>Status: <span className="font-semibold">{getStatusText()}</span></div>
-              <div>Channel: <span className="font-mono">{CHANNEL_NAMES.GAME_UPDATES}</span></div>
-              <div>Session ID: <span className="font-mono">{sessionId || 'Not connected'}</span></div>
-              <div>Last Check: <span className="font-mono">{new Date(lastPingTime).toLocaleTimeString()}</span></div>
-              
-              <div className="pt-2">
-                <button 
-                  className="w-full bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs flex items-center justify-center gap-1"
-                  onClick={handleReconnectClick}
-                  disabled={isReconnecting || !sessionId}
-                >
-                  <RefreshCw className={`h-3 w-3 ${isReconnecting ? 'animate-spin' : ''}`} />
-                  {isReconnecting ? 'Reconnecting...' : 'Force Reconnect'}
-                </button>
+            <div className="text-sm font-medium mb-2">Connection Status</div>
+            <div className="text-xs text-gray-600 mb-3">
+              <div className="mb-1">Status: 
+                <span className={isConnected ? 'text-green-500 ml-1' : 'text-red-500 ml-1'}>
+                  {statusText}
+                </span>
+              </div>
+              <div className="mb-1">
+                Last Update: {new Date(lastPingTime).toLocaleTimeString()}
+                {isStale && !isConnected && (
+                  <span className="text-amber-500 ml-1">(stale)</span>
+                )}
               </div>
             </div>
+            
+            <button
+              onClick={handleReconnect}
+              disabled={isReconnecting}
+              className="w-full bg-blue-500 hover:bg-blue-600 text-white text-xs py-1 px-2 rounded flex items-center justify-center"
+            >
+              {isReconnecting ? (
+                <span>Reconnecting...</span>
+              ) : (
+                <>
+                  <RefreshCw className="w-3 h-3 mr-1" />
+                  Reconnect
+                </>
+              )}
+            </button>
           </motion.div>
         )}
       </AnimatePresence>

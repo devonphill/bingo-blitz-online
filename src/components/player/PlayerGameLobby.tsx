@@ -1,182 +1,165 @@
 
-import React, { useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { RefreshCw } from "lucide-react";
-import { logWithTimestamp } from "@/utils/logUtils";
-import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import { useToast } from "@/hooks/use-toast";
+import React, { useEffect, useRef, useState } from 'react';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { Button } from '@/components/ui/button';
+import { AlertCircle, RefreshCw } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 interface PlayerGameLobbyProps {
-  sessionName?: string;
-  sessionId?: string | null;
+  sessionName: string;
+  sessionId: string;
   playerName?: string;
-  onRefreshStatus?: () => void;
-  errorMessage?: string | null;
+  onRefreshStatus: () => void;
+  errorMessage: string | null;
   gameStatus?: string | null;
-  brandingInfo?: {
-    headerImage?: string;
-    footerImage?: string;
-    leftImage?: string;
-    rightImage?: string;
-    centerImage?: string;
-  };
 }
 
-export default function PlayerGameLobby({
-  sessionName = "Game Session",
+/**
+ * Player game lobby component - shows waiting state before game goes live
+ */
+const PlayerGameLobby: React.FC<PlayerGameLobbyProps> = ({
+  sessionName,
   sessionId,
-  playerName,
+  playerName = 'Player',
   onRefreshStatus,
   errorMessage,
-  gameStatus,
-  brandingInfo = {}
-}: PlayerGameLobbyProps) {
+  gameStatus
+}) => {
+  const [refreshing, setRefreshing] = useState(false);
   const { toast } = useToast();
+  const webSocketService = useRef(getWebSocketService());
+  const [manualRefreshCount, setManualRefreshCount] = useState(0);
+  const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const channelRef = useRef<string | null>(null);
+  const instanceId = useRef(`lobby-${Math.random().toString(36).substring(2, 7)}`);
   
-  // Use default placeholder images if no branding is provided
-  const {
-    headerImage = "https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=1600&q=80",
-    footerImage = "https://images.unsplash.com/photo-1500673922987-e212871fec22?auto=format&fit=crop&w=1600&q=80",
-    leftImage = "https://images.unsplash.com/photo-1473091534298-04dcbce3278c?auto=format&fit=crop&w=600&q=80",
-    rightImage = "https://images.unsplash.com/photo-1465146344425-f00d5f5c8f07?auto=format&fit=crop&w=600&q=80",
-    centerImage = "https://images.unsplash.com/photo-1488590528505-98d2b5aba04b?auto=format&fit=crop&w=800&q=80"
-  } = brandingInfo;
-  
-  // Log when the lobby component mounts for debugging
+  // Setup refresh timer (every 15 seconds)
   useEffect(() => {
-    logWithTimestamp(`PlayerGameLobby mounted: sessionId=${sessionId}, gameStatus=${gameStatus || 'null'}`, "info");
+    // Initial refresh
+    onRefreshStatus();
     
-    // Setup a periodic status check to auto-refresh MORE FREQUENTLY
-    const intervalId = setInterval(() => {
-      if (onRefreshStatus) {
-        logWithTimestamp("Auto-refreshing lobby status", "debug");
-        onRefreshStatus();
-      }
-    }, 5000); // Change from 15 seconds to 5 seconds for more responsive updates
+    // Set up timer for auto-refresh
+    refreshTimerRef.current = setInterval(() => {
+      logWithTimestamp(`[${instanceId.current}] Auto-refreshing lobby status`, 'info');
+      onRefreshStatus();
+    }, 15000);  // 15 seconds
     
     return () => {
-      clearInterval(intervalId);
-      logWithTimestamp("PlayerGameLobby unmounted", "debug");
+      if (refreshTimerRef.current) {
+        clearInterval(refreshTimerRef.current);
+      }
     };
-  }, [sessionId, gameStatus, onRefreshStatus]);
+  }, [onRefreshStatus]);
 
-  const handleRefresh = () => {
-    if (onRefreshStatus) {
-      logWithTimestamp("Player requested lobby refresh", "info");
-      onRefreshStatus();
+  // Setup WebSocket listener for session state changes
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    logWithTimestamp(`[${instanceId.current}] Setting up session state change listener for session ${sessionId}`, 'info');
+    
+    // Subscribe to session state changes
+    channelRef.current = webSocketService.current.subscribe(CHANNEL_NAMES.SESSION_UPDATES, (data) => {
+      if (!data || data.sessionId !== sessionId) return;
       
-      toast({
-        title: "Refreshing",
-        description: "Checking for game status updates...",
-        duration: 2000,
-      });
-    }
-  };
-  
-  // Format session information for display
-  const formatSessionDate = (dateStr?: string) => {
-    if (!dateStr) return 'Not specified';
-    try {
-      const date = new Date(dateStr);
-      return date.toLocaleDateString();
-    } catch (e) {
-      return dateStr;
-    }
+      logWithTimestamp(`[${instanceId.current}] Received session update: ${JSON.stringify(data)}`, 'info');
+      
+      // If the game is going live, trigger a refresh
+      if ((data.type === EVENT_TYPES.GO_LIVE || data.type === EVENT_TYPES.SESSION_STATE_CHANGE) && 
+          data.status === 'active' && 
+          data.lifecycleState === 'live') {
+        logWithTimestamp(`[${instanceId.current}] Game is now live! Refreshing...`, 'info');
+        
+        // Show a toast notification
+        toast({
+          title: "Game is starting!",
+          description: "The game is now live. Loading your tickets...",
+        });
+        
+        // Refresh the game status
+        onRefreshStatus();
+        
+        // Increase manual refresh counter to force a refresh
+        setManualRefreshCount(prev => prev + 1);
+      }
+    });
+    
+    return () => {
+      if (channelRef.current) {
+        webSocketService.current.unsubscribe(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [sessionId, onRefreshStatus, toast]);
+
+  // Handle manual refresh
+  const handleRefresh = () => {
+    setRefreshing(true);
+    onRefreshStatus();
+    setManualRefreshCount(prev => prev + 1);
+    
+    // Show a toast notification
+    toast({
+      title: "Refreshing",
+      description: "Checking if the game has started...",
+    });
+    
+    // Reset refreshing state after a short delay
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 1000);
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Header Image */}
-      <div className="w-full relative overflow-hidden" style={{
-        height: "200px"
-      }}>
-        <img src={headerImage} alt="Game header" className="w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-          <h1 className="text-4xl font-bold text-white">
-            {sessionName || "Welcome to Bingo Blitz"}
-          </h1>
-        </div>
-      </div>
-      
-      {/* Main Content */}
-      <div className="flex-grow flex flex-col md:flex-row">
-        {/* Left Image - 25% */}
-        <div className="w-full md:w-1/4 p-4">
-          <div className="h-full">
-            <img src={leftImage} alt="Left section" className="w-full h-full object-cover rounded-lg" />
-          </div>
-        </div>
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gray-50">
+      <div className="w-full max-w-md p-6 bg-white rounded-lg shadow-lg text-center">
+        <h1 className="text-2xl font-bold mb-2">{sessionName}</h1>
+        <p className="text-gray-600 mb-4">
+          Welcome, {playerName}!
+        </p>
         
-        {/* Center Content - 50% */}
-        <div className="w-full md:w-1/2 p-4 flex flex-col items-center justify-center">
-          <div className="relative">
-            <img src={centerImage} alt="Center content" className="w-full rounded-lg mb-4" />
-            
-            {/* Semi-transparent waiting message */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="bg-white/60 backdrop-blur-sm p-8 rounded-xl shadow-lg text-center max-w-md px-[24px]">
-                <h2 className="text-xl font-bold text-gray-900 mb-4">
-                  Waiting for the host to start the game
-                </h2>
-                
-                <div className="flex justify-center mb-4">
-                  <LoadingSpinner size="lg" />
-                </div>
-                
-                <p className="text-gray-700">
-                  You will be automatically taken to the game when the host starts.
-                </p>
-                
-                {playerName && (
-                  <p className="text-amber-700 font-medium mt-4">
-                    Player: {playerName}
-                  </p>
-                )}
-                
-                {errorMessage && (
-                  <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm">
-                    {errorMessage}
-                  </div>
-                )}
-                
-                <div className="mt-6 text-sm text-gray-500">
-                  <p>Session: {sessionName || "Unknown"}</p>
-                  <p>Status: {gameStatus || "pending"}</p>
-                  {sessionId && <p className="text-xs opacity-50">ID: {sessionId}</p>}
-                </div>
-                
-                <Button 
-                  onClick={handleRefresh} 
-                  variant="outline" 
-                  className="mt-4 flex items-center gap-2 text-center px-[104px]"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Refresh Status
-                </Button>
-              </div>
+        {errorMessage ? (
+          <div className="p-3 mb-4 bg-red-100 text-red-800 rounded-lg flex items-center">
+            <AlertCircle className="h-5 w-5 mr-2" />
+            <span>{errorMessage}</span>
+          </div>
+        ) : (
+          <>
+            <div className="py-8 flex flex-col items-center">
+              <LoadingSpinner size="lg" />
+              <p className="mt-4 text-gray-700">Waiting for the game to begin...</p>
+              <p className="mt-2 text-sm text-gray-500">
+                Status: {gameStatus === 'active' ? 'Ready to Start' : gameStatus || 'Pending'}
+              </p>
             </div>
-          </div>
-        </div>
+            
+            <p className="text-sm text-gray-600 mb-4">
+              The game will start automatically when the caller begins the session.
+            </p>
+          </>
+        )}
         
-        {/* Right Image - 25% */}
-        <div className="w-full md:w-1/4 p-4">
-          <div className="h-full">
-            <img src={rightImage} alt="Right section" className="w-full h-full object-cover rounded-lg" />
-          </div>
-        </div>
-      </div>
-      
-      {/* Footer Image */}
-      <div className="w-full relative overflow-hidden" style={{
-        height: "150px"
-      }}>
-        <img src={footerImage} alt="Game footer" className="w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-          <p className="text-lg font-medium text-white">
-            Get ready for an amazing bingo experience!
-          </p>
-        </div>
+        <Button 
+          onClick={handleRefresh} 
+          disabled={refreshing} 
+          className="w-full"
+          variant="outline"
+        >
+          {refreshing ? (
+            <LoadingSpinner size="sm" className="mr-2" />
+          ) : (
+            <RefreshCw className="h-4 w-4 mr-2" />
+          )}
+          Refresh Status
+        </Button>
+        
+        <p className="mt-4 text-xs text-gray-400">
+          Game will start automatically - no need to refresh.
+        </p>
       </div>
     </div>
   );
-}
+};
+
+export default PlayerGameLobby;

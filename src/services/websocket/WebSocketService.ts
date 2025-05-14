@@ -1,20 +1,34 @@
+
 import { SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
-import { Database } from '@/types/supabase';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { CHANNEL_NAMES, EVENT_TYPES, WebSocketStatus } from './types';
 
-type GameSessions = Database['public']['Tables']['game_sessions']['Row'];
+// Constants for WebSocket statuses
+export const WEBSOCKET_STATUS = {
+  SUBSCRIBED: 'SUBSCRIBED',
+  TIMED_OUT: 'TIMED_OUT',
+  CLOSED: 'CLOSED',
+  CHANNEL_ERROR: 'CHANNEL_ERROR'
+};
 
+/**
+ * Service for managing WebSocket connections with Supabase Realtime
+ */
 class WebSocketService {
   private static instance: WebSocketService;
   private client: SupabaseClient;
   private channels: Map<string, RealtimeChannel> = new Map();
-  private listeners: Map<string, Array<(data: any) => void>> = new Map();
-  private connectionState: string = 'disconnected';
+  private listeners: Map<string, Array<{id: string, callback: (data: any) => void}>> = new Map();
+  private connectionState: Map<string, string> = new Map();
 
   private constructor(supabaseClient: SupabaseClient) {
     this.client = supabaseClient;
+    logWithTimestamp('WebSocketService instance created', 'info');
   }
 
+  /**
+   * Get the singleton instance of WebSocketService
+   */
   public static getInstance(supabaseClient?: SupabaseClient): WebSocketService {
     if (!WebSocketService.instance && supabaseClient) {
       WebSocketService.instance = new WebSocketService(supabaseClient);
@@ -25,52 +39,112 @@ class WebSocketService {
     return WebSocketService.instance;
   }
 
+  /**
+   * Set the Supabase client
+   */
   public setClient(supabaseClient: SupabaseClient): void {
     this.client = supabaseClient;
+    logWithTimestamp('WebSocketService client updated', 'info');
   }
 
-  public getConnectionState(): string {
-    return this.connectionState;
+  /**
+   * Get the connection state for a specific channel
+   */
+  public getConnectionState(channelName: string): string {
+    return this.connectionState.get(channelName) || 'CLOSED';
   }
 
-  // Initialize a channel
-  public initializeChannel(channelName: string): RealtimeChannel {
+  /**
+   * Create a channel with Supabase Realtime
+   */
+  public createChannel(channelName: string): RealtimeChannel {
     if (this.channels.has(channelName)) {
       return this.channels.get(channelName)!;
     }
 
-    const channel = this.client.channel(channelName);
+    const channel = this.client.channel(channelName, {
+      config: {
+        broadcast: { 
+          self: true,
+          ack: true
+        }
+      }
+    });
+    
     this.channels.set(channelName, channel);
-    logWithTimestamp(`WebSocketService: Initialized channel ${channelName}`, 'info');
+    logWithTimestamp(`WebSocketService: Created channel ${channelName}`, 'info');
     return channel;
   }
 
-  // Join a channel and set up listeners
-  public joinChannel(channelName: string, onMessage: (payload: any) => void): void {
-    const channel = this.initializeChannel(channelName);
-
-    channel.on('broadcast', { event: '*' }, (payload) => {
-      logWithTimestamp(`WebSocketService: Received broadcast on channel ${channelName}: ${JSON.stringify(payload)}`, 'debug');
-      onMessage(payload);
+  /**
+   * Subscribe to a channel with reconnect capability
+   */
+  public subscribeWithReconnect(
+    channelName: string, 
+    statusCallback: (status: string) => void
+  ): () => void {
+    const channel = this.createChannel(channelName);
+    
+    const subscription = channel.subscribe((status) => {
+      this.connectionState.set(channelName, status);
+      statusCallback(status);
+      logWithTimestamp(`WebSocketService: Channel ${channelName} status: ${status}`, 'info');
     });
-
-    channel.subscribe(async (status) => {
-      this.connectionState = status;
-      logWithTimestamp(`WebSocketService: Subscription status for channel ${channelName}: ${status}`, 'info');
-      if (status === 'SUBSCRIBED') {
-        logWithTimestamp(`WebSocketService: Successfully subscribed to channel ${channelName}`, 'info');
-      } else {
-        logWithTimestamp(`WebSocketService: Issue subscribing to channel ${channelName}: ${status}`, 'warn');
-      }
-    });
+    
+    return () => {
+      this.leaveChannel(channelName);
+    };
   }
 
-  // Leave a channel
+  /**
+   * Add a listener for a specific event on a channel
+   */
+  public addListener(
+    channelName: string,
+    type: 'broadcast',
+    event: string,
+    callback: (payload: any) => void
+  ): () => void {
+    const channel = this.createChannel(channelName);
+    
+    channel.on(type, { event }, (payload) => {
+      callback(payload);
+    });
+    
+    // Generate a unique ID for this listener
+    const listenerId = `${channelName}-${event}-${Math.random().toString(36).substring(2, 9)}`;
+    
+    // Store the listener for management
+    if (!this.listeners.has(channelName)) {
+      this.listeners.set(channelName, []);
+    }
+    
+    this.listeners.get(channelName)!.push({
+      id: listenerId,
+      callback
+    });
+    
+    // Return a cleanup function
+    return () => {
+      if (this.listeners.has(channelName)) {
+        const listenerArray = this.listeners.get(channelName)!;
+        const index = listenerArray.findIndex(listener => listener.id === listenerId);
+        if (index !== -1) {
+          listenerArray.splice(index, 1);
+        }
+      }
+    };
+  }
+
+  /**
+   * Leave a channel
+   */
   public leaveChannel(channelName: string): void {
     const channel = this.channels.get(channelName);
     if (channel) {
       channel.unsubscribe().then(() => {
         this.channels.delete(channelName);
+        this.connectionState.set(channelName, 'CLOSED');
         logWithTimestamp(`WebSocketService: Unsubscribed from channel ${channelName}`, 'info');
       }).catch(error => {
         logWithTimestamp(`WebSocketService: Error unsubscribing from channel ${channelName}: ${error}`, 'error');
@@ -78,8 +152,34 @@ class WebSocketService {
     }
   }
 
-  // Broadcast a message to a channel with retry logic
-  public async broadcastWithRetry(channelName: string, event: string, message: any, retries: number = 3): Promise<boolean> {
+  /**
+   * Reconnect a specific channel
+   */
+  public reconnectChannel(channelName: string): void {
+    // First, leave the channel if it exists
+    this.leaveChannel(channelName);
+    
+    // Then create a new channel
+    const channel = this.createChannel(channelName);
+    
+    // Re-subscribe
+    channel.subscribe((status) => {
+      this.connectionState.set(channelName, status);
+      logWithTimestamp(`WebSocketService: Reconnected channel ${channelName}, status: ${status}`, 'info');
+    });
+    
+    logWithTimestamp(`WebSocketService: Reconnected channel ${channelName}`, 'info');
+  }
+
+  /**
+   * Broadcast a message to a channel with retry logic
+   */
+  public async broadcastWithRetry(
+    channelName: string, 
+    event: string, 
+    message: any,
+    retries: number = 3
+  ): Promise<boolean> {
     let lastError: any = null;
 
     for (let i = 0; i < retries; i++) {
@@ -89,18 +189,13 @@ class WebSocketService {
           throw new Error(`Channel ${channelName} not initialized`);
         }
 
-        const status = channel.state;
-        if (status !== 'joined') {
-          throw new Error(`Channel ${channelName} not joined. Current status: ${status}`);
-        }
-
         const result = await channel.send({
           type: 'broadcast',
           event: event,
           payload: message
         });
 
-        logWithTimestamp(`WebSocketService: Broadcast message on channel ${channelName} with event ${event}: ${JSON.stringify(message)}`, 'debug');
+        logWithTimestamp(`WebSocketService: Broadcast message on channel ${channelName} with event ${event}`, 'debug');
         return true; // Success
       } catch (error: any) {
         lastError = error;
@@ -113,11 +208,15 @@ class WebSocketService {
     return false; // Failure
   }
 
-  public subscribeToSessionState(sessionId: string, callback: (update: GameSessions | null) => void): () => void {
+  /**
+   * Subscribe to session state changes
+   */
+  public subscribeToSessionState(
+    sessionId: string, 
+    callback: (update: any | null) => void
+  ): () => void {
     const channelName = `session-state:${sessionId}`;
-    this.initializeChannel(channelName);
-
-    const channel = this.client.channel(channelName);
+    const channel = this.createChannel(channelName);
 
     channel.on('postgres_changes', {
       event: '*',
@@ -125,8 +224,8 @@ class WebSocketService {
       table: 'game_sessions',
       filter: `id=eq.${sessionId}`
     }, (payload) => {
-      logWithTimestamp(`WebSocketService: Received session state update for session ${sessionId}: ${JSON.stringify(payload)}`, 'debug');
-      callback(payload.new as GameSessions);
+      logWithTimestamp(`WebSocketService: Received session state update for session ${sessionId}`, 'debug');
+      callback(payload.new);
     });
 
     channel.subscribe(async (status) => {
@@ -136,7 +235,7 @@ class WebSocketService {
         // Fetch the current session state upon subscription
         try {
           const { data, error } = await this.client
-            .from<GameSessions>('game_sessions')
+            .from('game_sessions')
             .select('*')
             .eq('id', sessionId)
             .single();
@@ -161,7 +260,28 @@ class WebSocketService {
     };
   }
 
-  // Subscribe to a specific channel
+  /**
+   * Broadcast a message without using a channel
+   */
+  public broadcast(channel: string, data: any): boolean {
+    if (this.listeners.has(channel)) {
+      const listeners = this.listeners.get(channel)!;
+      listeners.forEach(({callback}) => {
+        try {
+          callback(data);
+        } catch (error) {
+          logWithTimestamp(`WebSocketService: Error in listener callback for channel ${channel}: ${error}`, 'error');
+        }
+      });
+      logWithTimestamp(`WebSocketService: Broadcast message to ${listeners.length} listeners on channel ${channel}`, 'debug');
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Subscribe to a specific channel
+   */
   public subscribe(channelName: string, callback: (data: any) => void): string {
     const listenerId = `${channelName}-${Math.random().toString(36).substring(2, 9)}`;
     
@@ -169,18 +289,21 @@ class WebSocketService {
       this.listeners.set(channelName, []);
     }
     
-    this.listeners.get(channelName)?.push((data: any) => {
-      callback(data);
+    this.listeners.get(channelName)!.push({
+      id: listenerId,
+      callback
     });
     
     logWithTimestamp(`WebSocketService: Added listener ${listenerId} to channel ${channelName}`, 'debug');
     return listenerId;
   }
   
-  // Unsubscribe from a specific listener
+  /**
+   * Unsubscribe from a specific listener
+   */
   public unsubscribe(listenerId: string): boolean {
     for (const [channelName, listeners] of this.listeners.entries()) {
-      const index = listeners.findIndex(listener => listener === listenerId);
+      const index = listeners.findIndex(item => item.id === listenerId);
       if (index !== -1) {
         listeners.splice(index, 1);
         logWithTimestamp(`WebSocketService: Removed listener ${listenerId} from channel ${channelName}`, 'debug');
@@ -189,25 +312,9 @@ class WebSocketService {
     }
     return false;
   }
-  
-  // Broadcast a message to a specific channel
-  public broadcast(channelName: string, data: any): boolean {
-    const listeners = this.listeners.get(channelName);
-    if (listeners && listeners.length > 0) {
-      listeners.forEach(callback => {
-        try {
-          callback(data);
-        } catch (error) {
-          logWithTimestamp(`WebSocketService: Error in listener callback for channel ${channelName}: ${error}`, 'error');
-        }
-      });
-      logWithTimestamp(`WebSocketService: Broadcast message to ${listeners.length} listeners on channel ${channelName}`, 'debug');
-      return true;
-    }
-    return false;
-  }
 }
 
+// Create a singleton instance of WebSocketService
 let webSocketService: WebSocketService;
 
 // Initialize the WebSocketService with the Supabase client
@@ -227,4 +334,12 @@ const initializeWebSocketService = (supabaseClient: SupabaseClient): WebSocketSe
   return webSocketService;
 };
 
-export { WebSocketService, webSocketService, getWebSocketService, initializeWebSocketService };
+export { 
+  WebSocketService, 
+  webSocketService, 
+  getWebSocketService, 
+  initializeWebSocketService, 
+  CHANNEL_NAMES, 
+  EVENT_TYPES, 
+  WEBSOCKET_STATUS 
+};

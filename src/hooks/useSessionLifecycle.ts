@@ -1,6 +1,6 @@
 
-import { useState, useEffect, useCallback } from 'react';
-import { getWebSocketService } from '@/services/websocket';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { SessionStateUpdate } from '@/services/websocket/types';
 import { supabase } from '@/integrations/supabase/client';
@@ -10,34 +10,34 @@ export interface UseSessionLifecycleProps {
   onStateChange?: (state: SessionStateUpdate) => void;
 }
 
-export function useSessionLifecycle(props: UseSessionLifecycleProps | string | null | undefined) {
+export function useSessionLifecycle(props: UseSessionLifecycleProps): {
+  lifecycleState: string | null;
+  sessionStatus: string | null;
+  isActive: boolean;
+  isUpdating: boolean;
+  transitionState: (newStatus: string, newLifecycleState: string) => void;
+  goLive: () => Promise<boolean>;
+} {
   // 1. Derive sessionId and onStateChange with clear types.
-  const derivedSessionId: string | null | undefined =
-    typeof props === 'string' || props === null || props === undefined
-      ? props
-      : props?.sessionId;
-
-  const derivedOnStateChange =
-    typeof props === 'object' && props !== null && props.onStateChange
-      ? props.onStateChange
-      : undefined;
+  const sessionId = typeof props === 'object' && props !== null ? props.sessionId : null;
+  const onStateChange = typeof props === 'object' && props !== null ? props.onStateChange : undefined;
 
   const [lifecycleState, setLifecycleState] = useState<string | null>(null);
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);
   const [isActive, setIsActive] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const webSocketService = useRef(getWebSocketService());
 
   // Track the session state
   useEffect(() => {
-    if (!derivedSessionId) return;
+    if (!sessionId) return;
 
-    const currentId = derivedSessionId;
+    const currentId = sessionId;
 
     logWithTimestamp(`useSessionLifecycle: Setting up listener for session ${currentId}`, 'info');
 
-    const webSocketService = getWebSocketService();
     // Enhanced subscription to broadcast state changes more reliably
-    const unsubscribe = webSocketService.subscribeToSessionState(currentId, (update) => {
+    const unsubscribe = webSocketService.current.subscribeToSessionState(currentId, (update) => {
       if (!update) return;
 
       logWithTimestamp(`useSessionLifecycle: Session update - Status: ${update.status}, Lifecycle: ${update.lifecycle_state}`, 'info');
@@ -47,14 +47,14 @@ export function useSessionLifecycle(props: UseSessionLifecycleProps | string | n
       const gameIsActive = update.status === 'active' && update.lifecycle_state === 'live';
       setIsActive(gameIsActive);
 
-      if (derivedOnStateChange) {
-        derivedOnStateChange(update as SessionStateUpdate);
+      if (onStateChange) {
+        onStateChange(update as SessionStateUpdate);
       }
       
       // Broadcast the state change to all listeners for this session
       // This ensures all components get notified of state changes
-      webSocketService.broadcast('session-updates', {
-        type: 'lifecycle-change',
+      webSocketService.current.broadcast(CHANNEL_NAMES.SESSION_UPDATES, {
+        type: EVENT_TYPES.SESSION_STATE_CHANGE,
         sessionId: currentId,
         status: update.status,
         lifecycleState: update.lifecycle_state,
@@ -67,7 +67,7 @@ export function useSessionLifecycle(props: UseSessionLifecycleProps | string | n
       logWithTimestamp(`useSessionLifecycle: Cleaning up listener for session ${currentId}`, 'info');
       unsubscribe();
     };
-  }, [derivedSessionId, derivedOnStateChange]);
+  }, [sessionId, onStateChange]);
 
   // Method to manually transition state (for testing or forced updates)
   const transitionState = useCallback((newStatus: string, newLifecycleState: string) => {
@@ -79,12 +79,12 @@ export function useSessionLifecycle(props: UseSessionLifecycleProps | string | n
 
   // Method to set session to live state
   const goLive = useCallback(async () => {
-    if (!derivedSessionId) {
+    if (!sessionId) {
       logWithTimestamp(`useSessionLifecycle: Cannot go live - No session ID`, 'error');
       return false;
     }
 
-    const currentIdForUpdate = derivedSessionId;
+    const currentIdForUpdate = sessionId;
     setIsUpdating(true);
 
     try {
@@ -109,15 +109,17 @@ export function useSessionLifecycle(props: UseSessionLifecycleProps | string | n
       setIsActive(true);
 
       // Enhanced notification - directly broadcast after successful DB update
-      const webSocketService = getWebSocketService();
-      webSocketService.broadcast('session-updates', {
-        type: 'go-live',
-        sessionId: currentIdForUpdate,
-        status: 'active',
-        lifecycleState: 'live',
-        isActive: true,
-        timestamp: new Date().toISOString()
-      });
+      webSocketService.current.broadcastWithRetry(
+        CHANNEL_NAMES.SESSION_UPDATES,
+        EVENT_TYPES.GO_LIVE,
+        {
+          sessionId: currentIdForUpdate,
+          status: 'active',
+          lifecycleState: 'live',
+          isActive: true,
+          timestamp: new Date().toISOString()
+        }
+      );
 
       logWithTimestamp(`useSessionLifecycle: Session ${currentIdForUpdate} set to live successfully and broadcast sent`, 'info');
       return true;
@@ -128,7 +130,7 @@ export function useSessionLifecycle(props: UseSessionLifecycleProps | string | n
     } finally {
       setIsUpdating(false);
     }
-  }, [derivedSessionId]);
+  }, [sessionId]);
 
   return {
     lifecycleState,

@@ -1,6 +1,6 @@
 
 import { logWithTimestamp } from "@/utils/logUtils";
-import { webSocketService, CHANNEL_NAMES, EVENT_TYPES } from "@/services/websocket";
+import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 
 /**
  * Registers listeners for WebSocket number updates
@@ -18,6 +18,9 @@ export function setupNumberUpdateListeners(
 
   logWithTimestamp(`[${instanceId}] Setting up number update listeners for session ${sessionId}`, 'info');
   
+  // Get the WebSocket service instance
+  const webSocketService = getWebSocketService();
+  
   // Create and configure the channel
   const channel = webSocketService.createChannel(CHANNEL_NAMES.GAME_UPDATES);
   
@@ -34,14 +37,15 @@ export function setupNumberUpdateListeners(
     (payload: any) => {
       if (!payload || !payload.payload) return;
       
-      const { number, sessionId: payloadSessionId } = payload.payload;
+      const { number, sessionId: payloadSessionId, calledNumbers } = payload.payload;
       
       // Ensure this event is for our session
       if (payloadSessionId !== sessionId) return;
       
       logWithTimestamp(`[${instanceId}] Received number update: ${number} for session ${payloadSessionId}`, 'info');
       
-      onNumberUpdate(number, []);
+      // Pass both the new number and the complete array to ensure we have all numbers
+      onNumberUpdate(number, calledNumbers || []);
     }
   );
   
