@@ -1,87 +1,54 @@
-
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { getNumberCallingService } from '@/services/number-calling';
+import { numberCallingService } from '@/services/number-calling';
 
 /**
- * Hook for tracking called numbers
+ * Hook for players to subscribe to number calls
  */
-export function usePlayerNumbers(sessionId: string | undefined) {
+export function usePlayerNumbers(sessionId: string | null | undefined) {
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const [isSubscribed, setIsSubscribed] = useState(false);
   
-  // Initialize and subscribe to number updates
+  // Subscribe to number updates when session ID changes
   useEffect(() => {
     if (!sessionId) return;
     
-    try {
-      // Get number service instance
-      const numberService = getNumberCallingService();
-      
-      // Register update handler
-      const unsubscribe = numberService.subscribe(sessionId, (number, allNumbers) => {
+    logWithTimestamp(`Subscribing to number updates for session: ${sessionId}`, 'info');
+    
+    // Subscribe to the number calling service
+    const unsubscribe = numberCallingService.subscribe(sessionId, (number, numbers) => {
+      if (number === null) {
+        // Handle reset
+        setCalledNumbers([]);
+        setLastCalledNumber(null);
+      } else {
+        setCalledNumbers(numbers);
         setLastCalledNumber(number);
-        setCalledNumbers(allNumbers);
-      });
-      
-      // Store unsubscribe function
-      unsubscribeRef.current = unsubscribe;
-      
-      // Initialize with current state if available
-      const fetchInitialNumbers = async () => {
-        try {
-          const currentNumbers = await numberService.getCalledNumbers(sessionId);
-          
-          // Update state with fetched numbers
-          setCalledNumbers(currentNumbers);
-          
-          if (currentNumbers && currentNumbers.length > 0) {
-            const lastNumber = await numberService.getLastCalledNumber(sessionId);
-            setLastCalledNumber(lastNumber);
-          }
-          
-          setIsConnected(true);
-        } catch (error) {
-          logWithTimestamp(`Error fetching initial numbers: ${error}`, 'error');
-        }
-      };
-      
-      fetchInitialNumbers();
-      
-      // Cleanup on unmount
-      return () => {
-        if (unsubscribeRef.current) {
-          unsubscribeRef.current();
-          unsubscribeRef.current = null;
-        }
-      };
-    } catch (error) {
-      logWithTimestamp(`Error in usePlayerNumbers: ${error}`, 'error');
-      setIsConnected(false);
-    }
+      }
+    });
+    
+    setIsSubscribed(true);
+    
+    // Clean up on unmount or session change
+    return () => {
+      logWithTimestamp(`Unsubscribing from number updates for session: ${sessionId}`, 'info');
+      unsubscribe();
+      setIsSubscribed(false);
+    };
   }, [sessionId]);
   
-  // Manual refresh function 
+  // Function to manually refresh numbers
   const refreshNumbers = useCallback(async () => {
-    if (!sessionId) return;
-    
-    try {
-      const numberService = getNumberCallingService();
-      const currentNumbers = await numberService.getCalledNumbers(sessionId);
-      setCalledNumbers(currentNumbers);
-      const lastNumber = await numberService.getLastCalledNumber(sessionId);
-      setLastCalledNumber(lastNumber);
-    } catch (error) {
-      logWithTimestamp(`Error refreshing numbers: ${error}`, 'error');
-    }
-  }, [sessionId]);
+    // Implementation would depend on your API for fetching current numbers
+    logWithTimestamp('Manual refresh of numbers requested', 'info');
+    // For now this is a placeholder - would need database access
+  }, []);
   
   return {
     calledNumbers,
     lastCalledNumber,
-    isConnected,
+    isSubscribed,
     refreshNumbers
   };
 }

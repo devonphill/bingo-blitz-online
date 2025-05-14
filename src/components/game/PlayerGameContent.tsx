@@ -111,7 +111,7 @@ export default function PlayerGameContent({
     isConnected: wsConnected
   } = usePlayerWebSocketNumbers(currentSession?.id);
   
-  // Use our claim management hook
+  // Use our claim management hook with the correct number of arguments
   const {
     claimStatus: claimStatusFromHook,
     isSubmittingClaim,
@@ -123,17 +123,19 @@ export default function PlayerGameContent({
     currentSession?.id || null,
     playerName || null,
     gameType,
-    currentWinPattern || null,
-    currentGameNumber
+    currentWinPattern || null
   );
   
   // Map claim status types if needed
-  const mapClaimStatus = (status: ClaimStatus): ClaimStatus => {
+  const mapClaimStatus = (status: ClaimStatus): 'none' | 'pending' | 'valid' | 'invalid' => {
     switch (status) {
       case 'validated': return 'valid';
       case 'rejected': return 'invalid';
       case 'validating': return 'pending';
-      default: return status;
+      case 'valid': return 'valid';
+      case 'invalid': return 'invalid';
+      case 'pending': return 'pending';
+      default: return 'none';
     }
   };
   

@@ -120,7 +120,7 @@ export default function ClaimItem({
       <div className="font-bold">Claim Details</div>
       <div>Player: {claim.playerName || claim.playerId}</div>
       <div>Session: {claim.sessionId?.substring(0, 8)}...</div>
-      <div>Game: {claim.gameNumber}</div>
+      <div>Game: {claim.gameNumber || "Unknown"}</div>
       <div>Pattern: {claim.winPattern || currentWinPattern}</div>
       <div>Claimed at: {new Date(claim.timestamp).toLocaleTimeString()}</div>
       

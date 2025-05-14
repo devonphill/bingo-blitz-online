@@ -32,60 +32,82 @@ class ConnectionManager implements ConnectionService {
   }
   
   /**
-   * Initialize the connection manager with a session ID
+   * Initialize the connection with a session ID
    */
-  public init(sessionId: string): ConnectionManager {
-    if (this.sessionId === sessionId && this._isConnected) return this;
-    
-    logWithTimestamp(`ConnectionManager initialized with session ID: ${sessionId}`, 'info');
-    
-    this.cleanup(); // Clean up any existing connections
+  public init(sessionId: string): ConnectionService {
     this.sessionId = sessionId;
     this.heartbeat.setSessionId(sessionId);
-    this.heartbeat.resetReconnectAttempts();
-    
-    // Setup the heartbeat
     this.heartbeat.startHeartbeat();
-    
     return this;
   }
-
+  
   /**
    * Connect to a session
    */
-  public connect(sessionId: string): ConnectionManager {
-    if (this.sessionId === sessionId && this._isConnected) {
-      logWithTimestamp(`Already connected to session: ${sessionId}`, 'info');
-      return this;
-    }
+  public connect(sessionId: string): ConnectionService {
+    // Update our session ID
+    this.sessionId = sessionId;
+    this.heartbeat.setSessionId(sessionId);
     
-    this.init(sessionId);
+    // Start heartbeat
+    this.heartbeat.startHeartbeat();
     
-    // Create and subscribe to game updates channel
+    // Get WebSocketService instead of using webSocketService directly
     const webSocketService = getWebSocketService();
-    const channel = webSocketService.createChannel(CHANNEL_NAMES.GAME_UPDATES);
-    webSocketService.subscribeWithReconnect(CHANNEL_NAMES.GAME_UPDATES, (status) => {
-      this.updateConnectionState(status === 'SUBSCRIBED' ? 'connected' : 'connecting');
-    });
     
-    // Set up listener for number-called events
-    webSocketService.addListener(
-      CHANNEL_NAMES.GAME_UPDATES, 
-      'broadcast', 
-      EVENT_TYPES.NUMBER_CALLED, 
-      (payload) => {
-        if (payload && payload.payload && payload.payload.sessionId === this.sessionId) {
-          const { number } = payload.payload;
-          
-          logWithTimestamp(`Received number update via WebSocket: ${number}`, 'info');
-          
-          // Pass to listeners
-          this.listenerManager.notifyNumberCalledListeners(number, []);
+    try {
+      // Create and subscribe to channels
+      const gameChannel = webSocketService.createChannel(CHANNEL_NAMES.GAME_UPDATES);
+      
+      // Subscribe with reconnect capability
+      webSocketService.subscribeWithReconnect(CHANNEL_NAMES.GAME_UPDATES, (status) => {
+        logWithTimestamp(`Game updates channel status: ${status}`, 'info');
+        
+        // Update connection state
+        const connected = status === 'SUBSCRIBED';
+        this._isConnected = connected;
+        this._connectionState = connected ? 'connected' : 'disconnected';
+        this.listenerManager.notifyConnectionListeners(connected);
+      });
+      
+      // Subscribe to number called events
+      webSocketService.addListener(
+        CHANNEL_NAMES.GAME_UPDATES,
+        'broadcast',
+        EVENT_TYPES.NUMBER_CALLED,
+        (payload) => {
+          if (payload && payload.payload) {
+            const { number, sessionId, calledNumbers } = payload.payload;
+            
+            // Ensure this is for our session
+            if (sessionId !== this.sessionId) return;
+            
+            // Notify listeners
+            this.listenerManager.notifyNumberCalledListeners(number, calledNumbers || []);
+          }
         }
-      }
-    );
-    
-    logWithTimestamp(`Connection to session ${sessionId} initiated`, 'info');
+      );
+      
+      // Subscribe to game reset events
+      webSocketService.addListener(
+        CHANNEL_NAMES.GAME_UPDATES,
+        'broadcast',
+        EVENT_TYPES.GAME_RESET,
+        (payload) => {
+          if (payload && payload.payload) {
+            const { sessionId } = payload.payload;
+            
+            // Ensure this is for our session
+            if (sessionId !== this.sessionId) return;
+            
+            // Notify listeners of reset with null number
+            this.listenerManager.notifyNumberCalledListeners(null, []);
+          }
+        }
+      );
+    } catch (error) {
+      logWithTimestamp(`Error connecting: ${error}`, 'error');
+    }
     
     return this;
   }
@@ -93,7 +115,7 @@ class ConnectionManager implements ConnectionService {
   /**
    * Register a number called listener
    */
-  public onNumberCalled(listener: NumberCalledListener): ConnectionManager {
+  public onNumberCalled(listener: NumberCalledListener): ConnectionService {
     this.listenerManager.onNumberCalled(listener);
     return this;
   }
@@ -101,66 +123,67 @@ class ConnectionManager implements ConnectionService {
   /**
    * Register a session progress update listener
    */
-  public onSessionProgressUpdate(listener: SessionProgressListener): ConnectionManager {
+  public onSessionProgressUpdate(listener: SessionProgressListener): ConnectionService {
     this.listenerManager.onSessionProgressUpdate(listener);
     return this;
   }
   
   /**
-   * Register a listener for connection status changes
+   * Register a connection status listener
    */
   public addConnectionListener(listener: (connected: boolean) => void): () => void {
-    const unsubscribe = this.listenerManager.addConnectionListener(listener);
-    
-    // Call immediately with current state
-    listener(this._isConnected);
-    
-    return unsubscribe;
+    return this.listenerManager.addConnectionListener(listener);
   }
   
   /**
-   * Call a number and broadcast it to all clients
+   * Call a number
    */
   public async callNumber(number: number, sessionId?: string): Promise<boolean> {
-    const currentSessionId = sessionId || this.sessionId;
-    if (!currentSessionId) return false;
-    
     try {
-      logWithTimestamp(`Broadcasting number ${number} for session ${currentSessionId}`, 'info');
+      const effectiveSessionId = sessionId || this.sessionId;
       
-      // Broadcast the number via WebSocket
+      if (!effectiveSessionId) {
+        logWithTimestamp('Cannot call number: No session ID', 'error');
+        return false;
+      }
+      
+      // Get WebSocketService instead of using webSocketService directly
       const webSocketService = getWebSocketService();
+      
+      // Broadcast the number
       const success = await webSocketService.broadcastWithRetry(
         CHANNEL_NAMES.GAME_UPDATES,
         EVENT_TYPES.NUMBER_CALLED,
         {
           number,
-          sessionId: currentSessionId,
+          sessionId: effectiveSessionId,
           timestamp: Date.now()
         }
       );
       
       return success;
     } catch (error) {
-      logWithTimestamp(`Error broadcasting number: ${error}`, 'error');
+      logWithTimestamp(`Error calling number: ${error}`, 'error');
       return false;
     }
   }
   
   /**
-   * Force reconnect all connections
+   * Reconnect to the current session
    */
   public reconnect(): void {
-    logWithTimestamp('Forcing reconnection of all channels', 'info');
+    if (!this.sessionId) return;
     
-    // Reset reconnect attempts
-    this.heartbeat.resetReconnectAttempts();
+    logWithTimestamp(`Reconnecting to session ${this.sessionId}`, 'info');
     
-    // Reconnect game updates channel
+    // Get WebSocketService instead of using webSocketService directly
+    const webSocketService = getWebSocketService();
+    
+    // Reconnect the channel
     webSocketService.reconnectChannel(CHANNEL_NAMES.GAME_UPDATES);
     
-    // Reset heartbeat
-    this.heartbeat.startHeartbeat();
+    // Reset heartbeat reconnect attempts
+    this.heartbeat.resetReconnectAttempts();
   }
   
   /**
@@ -178,38 +201,10 @@ class ConnectionManager implements ConnectionService {
   }
   
   /**
-   * Check if currently connected
+   * Check if connected
    */
   public isConnected(): boolean {
     return this._isConnected;
-  }
-  
-  /**
-   * Update the connection state
-   */
-  private updateConnectionState(state: ConnectionState): void {
-    if (this._connectionState !== state) {
-      this._connectionState = state;
-      this._isConnected = state === 'connected';
-      
-      // Notify listeners
-      this.listenerManager.notifyConnectionListeners(this._isConnected);
-    }
-  }
-  
-  /**
-   * Clean up all connections and timers
-   */
-  private cleanup(): void {
-    logWithTimestamp('Cleaning up connection manager', 'info');
-    
-    this.heartbeat.stopHeartbeat();
-    this.sessionId = null;
-    this._isConnected = false;
-    this._connectionState = 'disconnected';
-    
-    // Notify listeners
-    this.listenerManager.notifyConnectionListeners(false);
   }
 }
 

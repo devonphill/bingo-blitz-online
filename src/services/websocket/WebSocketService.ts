@@ -2,7 +2,8 @@ import { SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { CHANNEL_NAMES, EVENT_TYPES, WebSocketStatus } from './types';
 
-// Constants for WebSocket statuses
+// Constants for WebSocket statuses - Use only one declaration
+// Remove duplicate declaration of WEBSOCKET_STATUS
 export const WEBSOCKET_STATUS = {
   SUBSCRIBED: 'SUBSCRIBED',
   TIMED_OUT: 'TIMED_OUT',
@@ -338,6 +339,5 @@ export {
   getWebSocketService, 
   initializeWebSocketService, 
   CHANNEL_NAMES, 
-  EVENT_TYPES,
-  WEBSOCKET_STATUS
+  EVENT_TYPES 
 };

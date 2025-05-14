@@ -3,65 +3,56 @@ import { logWithTimestamp } from '@/utils/logUtils';
 import { StoredNumberData } from './types';
 
 /**
- * Save called numbers to localStorage as a backup
+ * Load stored called numbers from localStorage
  */
-export function saveNumbersToLocalStorage(
-  sessionId: string | null | undefined, 
-  calledNumbers: number[], 
-  lastCalledNumber: number | null
-): void {
-  if (!sessionId) return;
-  
+export function loadStoredNumbers(sessionId: string): StoredNumberData | null {
   try {
-    const data: StoredNumberData = {
-      calledNumbers,
-      lastCalledNumber,
-      timestamp: Date.now()
-    };
+    const key = `bingo_numbers_${sessionId}`;
+    const stored = localStorage.getItem(key);
+    if (!stored) return null;
     
-    localStorage.setItem(`bingo_numbers_${sessionId}`, JSON.stringify(data));
-    logWithTimestamp(`Saved ${calledNumbers.length} numbers to localStorage for session ${sessionId}`, 'debug');
-  } catch (error) {
-    logWithTimestamp(`Error saving numbers to localStorage: ${error}`, 'error');
-  }
-}
-
-/**
- * Get called numbers from localStorage
- */
-export function getNumbersFromLocalStorage(
-  sessionId: string | null | undefined
-): StoredNumberData | null {
-  if (!sessionId) return null;
-  
-  try {
-    const dataString = localStorage.getItem(`bingo_numbers_${sessionId}`);
-    
-    if (!dataString) return null;
-    
-    const data = JSON.parse(dataString) as StoredNumberData;
-    
-    logWithTimestamp(`Retrieved ${data.calledNumbers?.length || 0} numbers from localStorage for session ${sessionId}`, 'debug');
-    
+    const data = JSON.parse(stored) as StoredNumberData;
+    logWithTimestamp(`Loaded ${data.calledNumbers.length} numbers from storage for session ${sessionId}`, 'info');
     return data;
   } catch (error) {
-    logWithTimestamp(`Error retrieving numbers from localStorage: ${error}`, 'error');
+    logWithTimestamp(`Error loading numbers from storage: ${error}`, 'error');
     return null;
   }
 }
 
 /**
- * Clear called numbers from localStorage
+ * Save called numbers to localStorage
  */
-export function clearNumbersFromLocalStorage(
-  sessionId: string | null | undefined
+export function saveNumbersToStorage(
+  sessionId: string, 
+  calledNumbers: number[], 
+  lastCalledNumber: number | null,
+  timestamp: number
 ): void {
-  if (!sessionId) return;
-  
   try {
-    localStorage.removeItem(`bingo_numbers_${sessionId}`);
-    logWithTimestamp(`Cleared numbers from localStorage for session ${sessionId}`, 'debug');
+    const key = `bingo_numbers_${sessionId}`;
+    const data: StoredNumberData = {
+      calledNumbers,
+      lastCalledNumber,
+      timestamp
+    };
+    
+    localStorage.setItem(key, JSON.stringify(data));
+    logWithTimestamp(`Saved ${calledNumbers.length} numbers to storage for session ${sessionId}`, 'debug');
   } catch (error) {
-    logWithTimestamp(`Error clearing numbers from localStorage: ${error}`, 'error');
+    logWithTimestamp(`Error saving numbers to storage: ${error}`, 'error');
+  }
+}
+
+/**
+ * Clear stored numbers
+ */
+export function clearStoredNumbers(sessionId: string): void {
+  try {
+    const key = `bingo_numbers_${sessionId}`;
+    localStorage.removeItem(key);
+    logWithTimestamp(`Cleared stored numbers for session ${sessionId}`, 'info');
+  } catch (error) {
+    logWithTimestamp(`Error clearing stored numbers: ${error}`, 'error');
   }
 }

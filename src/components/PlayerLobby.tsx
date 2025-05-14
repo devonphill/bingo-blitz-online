@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from "react";
 import { AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ export interface PlayerGameLobbyProps {
   onRefreshStatus?: () => void;
   errorMessage: string | null;
   gameStatus?: any;
-  brandingInfo?: any; // Add this prop to match the usage in PlayerGameLoader
+  brandingInfo?: any; // Add this prop to match usage
 }
 
 export default function PlayerLobby({
@@ -24,32 +25,15 @@ export default function PlayerLobby({
 }: PlayerGameLobbyProps) {
   const { toast } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const { session, players } = useSessionContext();
-  const { getGameTypeById } = useGameManager();
   const [ticketCount, setTicketCount] = useState(0);
   const [gameTypeDetails, setGameTypeDetails] = useState<any>(null);
 
-  useEffect(() => {
-    if (session?.gameType) {
-      const gameType = getGameTypeById(session.gameType);
-      setGameTypeDetails(gameType);
-    }
-  }, [session, getGameTypeById]);
+  // Remove references to useSessionContext and useGameManager which don't exist here
 
   const handleBuyTickets = () => {
     console.log(`Player purchased ${ticketCount} tickets (Stripe integration placeholder)`);
     // Update session state or player data with purchased tickets
   };
-
-  if (!session) {
-    return (
-      <div className="p-6 bg-white rounded-lg shadow">
-        <h2 className="text-xl font-semibold mb-4">Player Lobby</h2>
-        <p>No active session found</p>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -58,9 +42,9 @@ export default function PlayerLobby({
         
         <div className="grid gap-4">
           <div className="bg-blue-50 p-4 rounded-lg">
-            <p className="font-medium">Session: {session.name}</p>
-            <p>Game Type: {gameTypeDetails?.name || session.gameType}</p>
-            <p>Players: {players?.length || 0}</p>
+            <p className="font-medium">Session: {sessionName}</p>
+            <p>Game Type: {gameTypeDetails?.name || "Standard"}</p>
+            <p>Players: Loading...</p>
             {gameTypeDetails?.rules && (
               <div className="mt-2 text-sm">
                 <p>Max Players: {gameTypeDetails.rules.maxPlayers}</p>

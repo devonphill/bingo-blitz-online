@@ -12,11 +12,13 @@ export interface ClaimData {
   timestamp: number | string;
   toGoCount?: number;
   gameType?: string;
+  gameNumber?: number;
   winPattern?: string;
   ticket?: any;
   calledNumbers?: number[];
   lastCalledNumber?: number;
   hasLastCalledNumber?: boolean;
+  status?: ClaimStatus;
 }
 
 export interface ClaimResult {

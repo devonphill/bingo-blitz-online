@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from '@/components/ui/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { getNumberCallingService } from '@/services/number-calling';
+import { numberCallingService } from '@/services/number-calling';
 import { connectionManager } from '@/utils/connectionManager';
 
 /**
@@ -16,9 +16,6 @@ export function useCallerNumbers(sessionId: string | undefined, autoConnect: boo
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Get a reference to the number calling service
-  const numberCallingService = useRef(getNumberCallingService());
-  
   // Initialize the connection
   useEffect(() => {
     if (!sessionId || !autoConnect) return;
@@ -29,7 +26,7 @@ export function useCallerNumbers(sessionId: string | undefined, autoConnect: boo
         logWithTimestamp(`Initializing Caller Number connection for session: ${sessionId}`, 'info');
         
         // Subscribe to number updates
-        const unsubscribe = numberCallingService.current.subscribe(sessionId, (number, numbers) => {
+        const unsubscribe = numberCallingService.subscribe(sessionId, (number, numbers) => {
           setLastCalledNumber(number);
           setCalledNumbers(numbers);
         });
@@ -77,7 +74,7 @@ export function useCallerNumbers(sessionId: string | undefined, autoConnect: boo
         const currentCalledNumbers = [...calledNumbers, number];
         
         // Notify our service of the new number, passing all required arguments
-        numberCallingService.current.notifyListeners(sessionId, number, currentCalledNumbers);
+        numberCallingService.notifyListeners(sessionId, number, currentCalledNumbers);
         
         toast({
           title: "Number Called",
@@ -112,7 +109,7 @@ export function useCallerNumbers(sessionId: string | undefined, autoConnect: boo
       logWithTimestamp(`Resetting numbers for session ${sessionId}`, 'info');
       
       // Reset numbers in the service
-      const success = await numberCallingService.current.resetNumbers(sessionId);
+      const success = await numberCallingService.resetNumbers(sessionId);
       
       if (success) {
         toast({
@@ -147,7 +144,7 @@ export function useCallerNumbers(sessionId: string | undefined, autoConnect: boo
       logWithTimestamp(`Updating called numbers for session ${sessionId}`, 'info');
       
       // Update numbers in the service
-      const success = await numberCallingService.current.updateCalledNumbers(sessionId, numbers);
+      const success = await numberCallingService.updateCalledNumbers(sessionId, numbers);
       
       if (success) {
         toast({

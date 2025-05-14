@@ -3,62 +3,64 @@ import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
 /**
- * Fetch existing called numbers for a session from the database
+ * Fetch called numbers for a session from the database
  */
-export async function fetchExistingNumbers(sessionId: string): Promise<number[]> {
+export async function fetchCalledNumbers(sessionId: string): Promise<number[]> {
+  if (!sessionId) return [];
+  
   try {
-    // Query sessions_progress for called numbers
+    logWithTimestamp(`Fetching called numbers for session ${sessionId}`, 'info');
+    
     const { data, error } = await supabase
       .from('sessions_progress')
       .select('called_numbers')
       .eq('session_id', sessionId)
       .single();
-
+    
     if (error) {
-      throw new Error(`Failed to fetch called numbers: ${error.message}`);
-    }
-
-    if (!data || !data.called_numbers) {
+      logWithTimestamp(`Error fetching called numbers: ${error.message}`, 'error');
       return [];
     }
-
-    const calledNumbers = data.called_numbers as number[];
-    logWithTimestamp(`Loaded ${calledNumbers.length} existing called numbers`, 'info');
     
-    return calledNumbers;
+    if (!data || !data.called_numbers) {
+      logWithTimestamp(`No called numbers found for session ${sessionId}`, 'info');
+      return [];
+    }
+    
+    logWithTimestamp(`Fetched ${data.called_numbers.length} called numbers for session ${sessionId}`, 'info');
+    return data.called_numbers;
   } catch (error) {
-    logWithTimestamp(`Error fetching existing numbers: ${error}`, 'error');
+    logWithTimestamp(`Exception fetching called numbers: ${error}`, 'error');
     return [];
   }
 }
 
 /**
- * Check if a session has a specific winning pattern active
+ * Save called numbers to the database
  */
-export async function isWinPatternActive(sessionId: string, pattern: string): Promise<boolean> {
+export async function saveCalledNumbersToDatabase(
+  sessionId: string,
+  calledNumbers: number[]
+): Promise<boolean> {
+  if (!sessionId) return false;
+  
   try {
-    // Query sessions_progress for current win pattern
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('sessions_progress')
-      .select('current_win_pattern')
-      .eq('session_id', sessionId)
-      .single();
-
+      .update({
+        called_numbers: calledNumbers,
+        updated_at: new Date().toISOString()
+      })
+      .eq('session_id', sessionId);
+    
     if (error) {
-      throw new Error(`Failed to fetch win pattern: ${error.message}`);
-    }
-
-    if (!data || !data.current_win_pattern) {
+      logWithTimestamp(`Error saving called numbers: ${error.message}`, 'error');
       return false;
     }
-
-    // Normalize pattern for comparison
-    const normalizedCurrentPattern = data.current_win_pattern.toLowerCase();
-    const normalizedCheckPattern = pattern.toLowerCase();
     
-    return normalizedCurrentPattern === normalizedCheckPattern;
+    return true;
   } catch (error) {
-    logWithTimestamp(`Error checking win pattern: ${error}`, 'error');
+    logWithTimestamp(`Exception saving called numbers: ${error}`, 'error');
     return false;
   }
 }
