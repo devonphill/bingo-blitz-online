@@ -1,132 +1,132 @@
-
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { getWebSocketService } from '@/services/websocket';
 import { logWithTimestamp } from '@/utils/logUtils';
-
-export interface SessionStateUpdate {
-  sessionId: string;
-  state: string;
-}
+import { SessionStateUpdate } from '@/services/websocket/types';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface UseSessionLifecycleProps {
   sessionId: string | null | undefined;
   onStateChange?: (state: SessionStateUpdate) => void;
 }
 
-// Update the type definition to accept either a props object or a string/null/undefined
 export function useSessionLifecycle(props: UseSessionLifecycleProps | string | null | undefined) {
-  // Handle both string and object props with proper type guards
-  const sessionId = typeof props === 'string' || props === null || props === undefined
-    ? props 
-    : props.sessionId;
-     
-  const onStateChange = typeof props === 'object' && props !== null
-    ? props.onStateChange
-    : undefined;
-   
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // 1. Derive sessionId and onStateChange with clear types.
+  // These will be stable for the hook's instance unless props changes.
+  const derivedSessionId: string | null | undefined =
+    typeof props === 'string' || props === null || props === undefined
+      ? props
+      : props?.sessionId;
+
+  const derivedOnStateChange =
+    typeof props === 'object' && props !== null && props.onStateChange
+      ? props.onStateChange
+      : undefined;
+
   const [lifecycleState, setLifecycleState] = useState<string | null>(null);
+  const [sessionStatus, setSessionStatus] = useState<string | null>(null);
+  const [isActive, setIsActive] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
 
-  // Fetch the current lifecycle state when sessionId changes
+  // Track the session state
   useEffect(() => {
-    if (!sessionId) return;
+    // 2. Use the derivedSessionId in the effect.
+    // The guard ensures it's a string when passed to functions.
+    if (!derivedSessionId) return;
 
-    async function fetchLifecycleState() {
-      try {
-        const { data, error } = await supabase
-          .from('sessions')
-          .select('lifecycle_state')
-          .eq('id', sessionId)
-          .single();
+    // At this point, TypeScript knows derivedSessionId is a 'string'
+    // due to the check above. We can assign it to a new const
+    // to make it even clearer for TypeScript within this scope if needed,
+    // but often the direct use after the guard is sufficient.
+    const currentId = derivedSessionId;
 
-        if (error) throw error;
-        if (data) {
-          setLifecycleState(data.lifecycle_state);
-          logWithTimestamp(`Fetched lifecycle state: ${data.lifecycle_state}`, 'info');
-        }
-      } catch (err) {
-        console.error('Error fetching lifecycle state:', err);
-        setError('Failed to fetch session state');
+    logWithTimestamp(`useSessionLifecycle: Setting up listener for session ${currentId}`, 'info');
+
+    const webSocketService = getWebSocketService();
+    // 3. Pass the narrowed 'currentId' (which is a string here)
+    const unsubscribe = webSocketService.subscribeToSessionState(currentId, (update) => {
+      if (!update) return;
+
+      logWithTimestamp(`useSessionLifecycle: Session update - Status: ${update.status}, Lifecycle: ${update.lifecycle_state}`, 'info');
+      setLifecycleState(update.lifecycle_state);
+      setSessionStatus(update.status);
+
+      const gameIsActive = update.status === 'active' && update.lifecycle_state === 'live';
+      setIsActive(gameIsActive);
+
+      if (derivedOnStateChange) {
+        derivedOnStateChange(update as SessionStateUpdate);
       }
+    });
+
+    return () => {
+      logWithTimestamp(`useSessionLifecycle: Cleaning up listener for session ${currentId}`, 'info');
+      unsubscribe();
+    };
+    // 4. Use the derived values in the dependency array.
+  }, [derivedSessionId, derivedOnStateChange]);
+
+  // Method to manually transition state (for testing or forced updates)
+  const transitionState = useCallback((newStatus: string, newLifecycleState: string) => {
+    logWithTimestamp(`useSessionLifecycle: Manual transition - Status: ${newStatus}, Lifecycle: ${newLifecycleState}`, 'info');
+    setSessionStatus(newStatus);
+    setLifecycleState(newLifecycleState);
+    setIsActive(newStatus === 'active' && newLifecycleState === 'live');
+  }, []); // No problematic dependencies here
+
+  // Method to set session to live state
+  const goLive = useCallback(async () => {
+    // 5. Use derivedSessionId in the callback.
+    if (!derivedSessionId) {
+      logWithTimestamp(`useSessionLifecycle: Cannot go live - No session ID`, 'error');
+      return false;
     }
 
-    fetchLifecycleState();
-    
-    // Safe check for string type before setup subscription
-    if (typeof sessionId === 'string') {
-      // Set up a real-time subscription for lifecycle state changes
-      const channel = supabase
-        .channel(`session-lifecycle-${sessionId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'sessions',
-            filter: `id=eq.${sessionId}`,
-          },
-          (payload) => {
-            const newState = payload.new.lifecycle_state;
-            setLifecycleState(newState);
-            logWithTimestamp(`Real-time lifecycle state update: ${newState}`, 'info');
-            
-            // Call the callback if provided
-            if (onStateChange) {
-              onStateChange({
-                sessionId,
-                state: newState,
-              });
-            }
-          }
-        )
-        .subscribe();
+    // At this point, TypeScript knows derivedSessionId is a 'string'.
+    const currentIdForUpdate = derivedSessionId;
 
-      return () => {
-        supabase.removeChannel(channel);
-      };
+    setIsUpdating(true);
+
+    try {
+      logWithTimestamp(`useSessionLifecycle: Setting session ${currentIdForUpdate} to live`, 'info');
+
+      // 6. Pass the narrowed 'currentIdForUpdate' (string) to Supabase.
+      const { error } = await supabase
+        .from('game_sessions')
+        .update({
+          status: 'active',
+          lifecycle_state: 'live',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', currentIdForUpdate); // Ensure this 'id' is definitely a string
+
+      if (error) {
+        throw new Error(`Failed to set session to live: ${error.message}`);
+      }
+
+      setSessionStatus('active');
+      setLifecycleState('live');
+      setIsActive(true);
+
+      logWithTimestamp(`useSessionLifecycle: Session ${currentIdForUpdate} set to live successfully`, 'info');
+      return true;
+    } catch (error) {
+      // It's good practice to type 'error' if you're accessing its properties.
+      // For simple logging, 'any' or 'unknown' then checking 'instanceof Error' is common.
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logWithTimestamp(`useSessionLifecycle: Error setting session to live: ${errorMessage}`, 'error');
+      return false;
+    } finally {
+      setIsUpdating(false);
     }
-  }, [sessionId, onStateChange]);
-
-  // Function to transition a session to a new lifecycle state
-  const transitionToState = useCallback(
-    async (newState: string) => {
-      if (!sessionId || typeof sessionId !== 'string') {
-        setError('No session ID provided');
-        return false;
-      }
-
-      setIsUpdating(true);
-      setError(null);
-      
-      try {
-        logWithTimestamp(`Transitioning session ${sessionId} to state: ${newState}`, 'info');
-        
-        const { error } = await supabase
-          .from('sessions')
-          .update({ lifecycle_state: newState })
-          .eq('id', sessionId);
-
-        if (error) throw error;
-        
-        setLifecycleState(newState);
-        logWithTimestamp(`Session transitioned to ${newState}`, 'success');
-        return true;
-      } catch (err) {
-        console.error('Error transitioning session state:', err);
-        setError('Failed to update session state');
-        return false;
-      } finally {
-        setIsUpdating(false);
-      }
-    },
-    [sessionId]
-  );
+    // 7. Use derivedSessionId in the dependency array.
+  }, [derivedSessionId]);
 
   return {
     lifecycleState,
+    sessionStatus,
+    isActive,
     isUpdating,
-    error,
-    transitionToState,
+    transitionState,
+    goLive
   };
 }
