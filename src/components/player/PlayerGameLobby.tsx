@@ -46,13 +46,13 @@ export default function PlayerGameLobby({
   useEffect(() => {
     logWithTimestamp(`PlayerGameLobby mounted: sessionId=${sessionId}, gameStatus=${gameStatus || 'null'}`, "info");
     
-    // Setup a periodic status check to auto-refresh
+    // Setup a periodic status check to auto-refresh MORE FREQUENTLY
     const intervalId = setInterval(() => {
       if (onRefreshStatus) {
         logWithTimestamp("Auto-refreshing lobby status", "debug");
         onRefreshStatus();
       }
-    }, 15000); // Every 15 seconds
+    }, 5000); // Change from 15 seconds to 5 seconds for more responsive updates
     
     return () => {
       clearInterval(intervalId);

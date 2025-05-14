@@ -36,6 +36,7 @@ export function useSessionLifecycle(props: UseSessionLifecycleProps | string | n
     logWithTimestamp(`useSessionLifecycle: Setting up listener for session ${currentId}`, 'info');
 
     const webSocketService = getWebSocketService();
+    // Enhanced subscription to broadcast state changes more reliably
     const unsubscribe = webSocketService.subscribeToSessionState(currentId, (update) => {
       if (!update) return;
 
@@ -49,6 +50,17 @@ export function useSessionLifecycle(props: UseSessionLifecycleProps | string | n
       if (derivedOnStateChange) {
         derivedOnStateChange(update as SessionStateUpdate);
       }
+      
+      // Broadcast the state change to all listeners for this session
+      // This ensures all components get notified of state changes
+      webSocketService.broadcast('session-updates', {
+        type: 'lifecycle-change',
+        sessionId: currentId,
+        status: update.status,
+        lifecycleState: update.lifecycle_state,
+        isActive: gameIsActive,
+        timestamp: new Date().toISOString()
+      });
     });
 
     return () => {
@@ -63,7 +75,7 @@ export function useSessionLifecycle(props: UseSessionLifecycleProps | string | n
     setSessionStatus(newStatus);
     setLifecycleState(newLifecycleState);
     setIsActive(newStatus === 'active' && newLifecycleState === 'live');
-  }, []); // No problematic dependencies here
+  }, []);
 
   // Method to set session to live state
   const goLive = useCallback(async () => {
@@ -78,7 +90,7 @@ export function useSessionLifecycle(props: UseSessionLifecycleProps | string | n
     try {
       logWithTimestamp(`useSessionLifecycle: Setting session ${currentIdForUpdate} to live`, 'info');
 
-      // Fixed reference to 'game_sessions' instead of 'sessions'
+      // Update database state
       const { error } = await supabase
         .from('game_sessions')
         .update({
@@ -96,7 +108,18 @@ export function useSessionLifecycle(props: UseSessionLifecycleProps | string | n
       setLifecycleState('live');
       setIsActive(true);
 
-      logWithTimestamp(`useSessionLifecycle: Session ${currentIdForUpdate} set to live successfully`, 'info');
+      // Enhanced notification - directly broadcast after successful DB update
+      const webSocketService = getWebSocketService();
+      webSocketService.broadcast('session-updates', {
+        type: 'go-live',
+        sessionId: currentIdForUpdate,
+        status: 'active',
+        lifecycleState: 'live',
+        isActive: true,
+        timestamp: new Date().toISOString()
+      });
+
+      logWithTimestamp(`useSessionLifecycle: Session ${currentIdForUpdate} set to live successfully and broadcast sent`, 'info');
       return true;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

@@ -20,6 +20,7 @@ import PlayerGameControls from '@/components/game/PlayerGameControls';
 import { useToast } from '@/components/ui/use-toast';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
+import { getWebSocketService } from '@/services/websocket';
 // Import the new PlayerGameLobby component instead of the old PlayerLobby
 import PlayerGameLobby from '@/components/player/PlayerGameLobby';
 
@@ -149,7 +150,8 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
   // Get the session progress data for lobby/game status
   const {
     progress: sessionProgress,
-    loading: loadingSessionProgress
+    loading: loadingSessionProgress,
+    refreshSessionProgress
   } = useSessionProgress(sessionDetails?.id);
 
   const { 
@@ -176,6 +178,7 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
   const { isConnected } = useNetwork();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [showLobbyOverride, setShowLobbyOverride] = useState<boolean | null>(null);
 
   // Get player ID from multiple possible sources in priority order
   const playerId = fetchedPlayerId || player?.id || session?.user?.id || localStorage.getItem('playerId');
@@ -278,6 +281,49 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
     });
   }, [reconnectNumberUpdates, refreshTickets, toast]);
 
+  // NEW: Set up automatic transition from lobby when game goes live
+  useEffect(() => {
+    if (!sessionDetails?.id) return;
+
+    logWithTimestamp(`Setting up session state change listener for session ${sessionDetails.id}`, 'info');
+    
+    const webSocketService = getWebSocketService();
+    const channel = webSocketService.subscribe('session-updates', (message) => {
+      if (!message) return;
+      
+      if (message.sessionId === sessionDetails.id) {
+        logWithTimestamp(`Received session state update: ${JSON.stringify(message)}`, 'info');
+        
+        if (
+          (message.type === 'go-live' || message.type === 'lifecycle-change') && 
+          message.status === 'active' && 
+          message.lifecycleState === 'live'
+        ) {
+          logWithTimestamp('Game is now live! Transitioning from lobby to game view...', 'info');
+          setShowLobbyOverride(false);
+          
+          // Refresh tickets and session progress to ensure we have the latest data
+          refreshTickets();
+          refreshSessionProgress();
+          
+          // Show toast notification
+          toast({
+            title: "Game is now live!",
+            description: "The host has started the game.",
+          });
+          
+          // Also reconnect number updates to ensure we're getting real-time updates
+          reconnectNumberUpdates();
+        }
+      }
+    });
+
+    return () => {
+      webSocketService.unsubscribe(channel);
+      logWithTimestamp(`Cleaned up session state change listener for session ${sessionDetails.id}`, 'info');
+    };
+  }, [sessionDetails?.id, toast, refreshTickets, refreshSessionProgress, reconnectNumberUpdates]);
+
   // If there's no playerId, we can't continue
   if (!playerId) {
     return (
@@ -362,10 +408,12 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
   }
 
   // Check if we should show the lobby based on session progress
-  const showLobby = !sessionProgress?.game_status || 
-                    sessionProgress.game_status === 'pending' || 
-                    sessionDetails.lifecycle_state === 'setup' || 
-                    sessionDetails.lifecycle_state === 'lobby';
+  const showLobby = showLobbyOverride !== null 
+    ? showLobbyOverride 
+    : (!sessionProgress?.game_status || 
+       sessionProgress.game_status === 'pending' || 
+       sessionDetails.lifecycle_state === 'setup' || 
+       sessionDetails.lifecycle_state === 'lobby');
 
   logWithTimestamp(`PlayerGame: Lobby check - showLobby: ${showLobby}, game_status: ${sessionProgress?.game_status || 'null'}, lifecycle_state: ${sessionDetails.lifecycle_state || 'unknown'}`, 'info');
 
@@ -376,7 +424,10 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
         sessionName={sessionDetails.name}
         sessionId={sessionDetails.id}
         playerName={playerName || undefined}
-        onRefreshStatus={refreshTickets}
+        onRefreshStatus={() => {
+          refreshTickets();
+          refreshSessionProgress();
+        }}
         errorMessage={null}
         gameStatus={sessionProgress?.game_status}
       />
