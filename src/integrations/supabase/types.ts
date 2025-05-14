@@ -129,6 +129,7 @@ export type Database = {
           created_at: string
           created_by: string
           current_game: number
+          game_price: number | null
           game_type: string
           games_config: Json | null
           id: string
@@ -145,6 +146,7 @@ export type Database = {
           created_at?: string
           created_by: string
           current_game?: number
+          game_price?: number | null
           game_type: string
           games_config?: Json | null
           id?: string
@@ -161,6 +163,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           current_game?: number
+          game_price?: number | null
           game_type?: string
           games_config?: Json | null
           id?: string

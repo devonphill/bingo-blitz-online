@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { getWebSocketService } from '@/services/websocket';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -22,7 +23,7 @@ export function useSessionLifecycle(props: UseSessionLifecycleProps | string | n
   const [lifecycleState, setLifecycleState] = useState<string | null>(null);
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);
   const [isActive, setIsActive] = useState(false);
-  const [isUpdating, setIsUpdating(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   
   // Track the session state
   useEffect(() => {
