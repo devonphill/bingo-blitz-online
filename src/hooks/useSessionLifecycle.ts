@@ -10,13 +10,14 @@ export interface UseSessionLifecycleProps {
   onStateChange?: (state: SessionStateUpdate) => void;
 }
 
+// Update the type definition to accept either a props object or a string/null/undefined
 export function useSessionLifecycle(props: UseSessionLifecycleProps | string | null | undefined) {
-  // Handle both string and object props
-  const sessionId: string | null | undefined = typeof props === 'string' || props === null || props === undefined
-    ? props
+  // Handle both string and object props with proper type guards
+  const sessionId = typeof props === 'string' || props === null || props === undefined
+    ? props 
     : props.sessionId;
     
-  const onStateChange: ((state: SessionStateUpdate) => void) | undefined = typeof props === 'object' && props !== null
+  const onStateChange = typeof props === 'object' && props !== null
     ? props.onStateChange
     : undefined;
   
