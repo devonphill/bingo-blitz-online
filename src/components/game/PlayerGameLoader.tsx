@@ -6,6 +6,8 @@ import { AlertCircle, RefreshCw, Info, Calendar, Clock, Wifi, WifiOff } from "lu
 import { logWithTimestamp, logError } from "@/utils/logUtils";
 import { logReactEnvironment } from "@/utils/reactUtils";
 import PlayerLobby from "./PlayerLobby";
+import PlayerGameLobby from "@/components/player/PlayerGameLobby";
+import { useToast } from "@/hooks/use-toast";
 
 // Helper function for consistent timestamped logging with additional component info
 const logLoaderEvent = (message: string, data?: any) => {
@@ -24,6 +26,7 @@ interface Props {
   loadingStep?: string;
   sessionProgress?: any;
   onRefreshTickets?: () => void;
+  playerName?: string;
 }
 
 export default function PlayerGameLoader({ 
@@ -32,13 +35,15 @@ export default function PlayerGameLoader({
   currentSession, 
   loadingStep = "initializing",
   sessionProgress,
-  onRefreshTickets
+  onRefreshTickets,
+  playerName
 }: Props) {
   // Generate a component instance ID for debugging
   const componentId = React.useMemo(() => `pgloader-${Math.random().toString(36).substring(2, 7)}`, []);
   
   // Track if we should show the lobby instead of loading state
   const [showLobby, setShowLobby] = useState(false);
+  const { toast } = useToast();
   
   // Log React environment information on mount
   useEffect(() => {
@@ -154,12 +159,18 @@ export default function PlayerGameLoader({
 
   // Show the lobby if we have a valid session in pending/waiting state
   if (showLobby) {
+    // Use the enhanced PlayerGameLobby component with all the visual improvements
     return (
-      <PlayerLobby 
+      <PlayerGameLobby 
         sessionName={currentSession?.name}
         sessionId={currentSession?.id}
+        playerName={playerName}
         onRefreshStatus={onRefreshTickets}
         errorMessage={errorMessage}
+        gameStatus={sessionProgress?.game_status}
+        brandingInfo={{
+          // Use default images or customize as needed
+        }}
       />
     );
   }
