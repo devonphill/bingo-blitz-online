@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { getWebSocketService } from '@/services/websocket';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -11,7 +12,6 @@ export interface UseSessionLifecycleProps {
 
 export function useSessionLifecycle(props: UseSessionLifecycleProps | string | null | undefined) {
   // 1. Derive sessionId and onStateChange with clear types.
-  // These will be stable for the hook's instance unless props changes.
   const derivedSessionId: string | null | undefined =
     typeof props === 'string' || props === null || props === undefined
       ? props
@@ -29,20 +29,13 @@ export function useSessionLifecycle(props: UseSessionLifecycleProps | string | n
 
   // Track the session state
   useEffect(() => {
-    // 2. Use the derivedSessionId in the effect.
-    // The guard ensures it's a string when passed to functions.
     if (!derivedSessionId) return;
 
-    // At this point, TypeScript knows derivedSessionId is a 'string'
-    // due to the check above. We can assign it to a new const
-    // to make it even clearer for TypeScript within this scope if needed,
-    // but often the direct use after the guard is sufficient.
     const currentId = derivedSessionId;
 
     logWithTimestamp(`useSessionLifecycle: Setting up listener for session ${currentId}`, 'info');
 
     const webSocketService = getWebSocketService();
-    // 3. Pass the narrowed 'currentId' (which is a string here)
     const unsubscribe = webSocketService.subscribeToSessionState(currentId, (update) => {
       if (!update) return;
 
@@ -62,7 +55,6 @@ export function useSessionLifecycle(props: UseSessionLifecycleProps | string | n
       logWithTimestamp(`useSessionLifecycle: Cleaning up listener for session ${currentId}`, 'info');
       unsubscribe();
     };
-    // 4. Use the derived values in the dependency array.
   }, [derivedSessionId, derivedOnStateChange]);
 
   // Method to manually transition state (for testing or forced updates)
@@ -75,21 +67,18 @@ export function useSessionLifecycle(props: UseSessionLifecycleProps | string | n
 
   // Method to set session to live state
   const goLive = useCallback(async () => {
-    // 5. Use derivedSessionId in the callback.
     if (!derivedSessionId) {
       logWithTimestamp(`useSessionLifecycle: Cannot go live - No session ID`, 'error');
       return false;
     }
 
-    // At this point, TypeScript knows derivedSessionId is a 'string'.
     const currentIdForUpdate = derivedSessionId;
-
     setIsUpdating(true);
 
     try {
       logWithTimestamp(`useSessionLifecycle: Setting session ${currentIdForUpdate} to live`, 'info');
 
-      // 6. Pass the narrowed 'currentIdForUpdate' (string) to Supabase.
+      // Fixed reference to 'game_sessions' instead of 'sessions'
       const { error } = await supabase
         .from('game_sessions')
         .update({
@@ -97,7 +86,7 @@ export function useSessionLifecycle(props: UseSessionLifecycleProps | string | n
           lifecycle_state: 'live',
           updated_at: new Date().toISOString()
         })
-        .eq('id', currentIdForUpdate); // Ensure this 'id' is definitely a string
+        .eq('id', currentIdForUpdate);
 
       if (error) {
         throw new Error(`Failed to set session to live: ${error.message}`);
@@ -110,15 +99,12 @@ export function useSessionLifecycle(props: UseSessionLifecycleProps | string | n
       logWithTimestamp(`useSessionLifecycle: Session ${currentIdForUpdate} set to live successfully`, 'info');
       return true;
     } catch (error) {
-      // It's good practice to type 'error' if you're accessing its properties.
-      // For simple logging, 'any' or 'unknown' then checking 'instanceof Error' is common.
       const errorMessage = error instanceof Error ? error.message : String(error);
       logWithTimestamp(`useSessionLifecycle: Error setting session to live: ${errorMessage}`, 'error');
       return false;
     } finally {
       setIsUpdating(false);
     }
-    // 7. Use derivedSessionId in the dependency array.
   }, [derivedSessionId]);
 
   return {

@@ -20,7 +20,8 @@ import PlayerGameControls from '@/components/game/PlayerGameControls';
 import { useToast } from '@/components/ui/use-toast';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
-import PlayerLobby from '@/components/game/PlayerLobby';
+// Import the new PlayerGameLobby component instead of the old PlayerLobby
+import PlayerGameLobby from '@/components/player/PlayerGameLobby';
 
 // Error boundary component for the player game
 class PlayerGameErrorBoundary extends React.Component<
@@ -371,12 +372,13 @@ const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
   // If the game is in lobby/pending state, show the lobby
   if (showLobby) {
     return (
-      <PlayerLobby
+      <PlayerGameLobby
         sessionName={sessionDetails.name}
         sessionId={sessionDetails.id}
         playerName={playerName || undefined}
         onRefreshStatus={refreshTickets}
         errorMessage={null}
+        gameStatus={sessionProgress?.game_status}
       />
     );
   }
