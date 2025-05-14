@@ -10,7 +10,7 @@ export interface UseSessionLifecycleProps {
   onStateChange?: (state: SessionStateUpdate) => void;
 }
 
-export function useSessionLifecycle(props: UseSessionLifecycleProps): {
+export function useSessionLifecycle(props: UseSessionLifecycleProps | string): {
   lifecycleState: string | null;
   sessionStatus: string | null;
   isActive: boolean;
@@ -18,9 +18,11 @@ export function useSessionLifecycle(props: UseSessionLifecycleProps): {
   transitionState: (newStatus: string, newLifecycleState: string) => void;
   goLive: () => Promise<boolean>;
 } {
-  // 1. Derive sessionId and onStateChange with clear types.
-  const sessionId = typeof props === 'object' && props !== null ? props.sessionId : null;
-  const onStateChange = typeof props === 'object' && props !== null ? props.onStateChange : undefined;
+  // Handle both string and object params for backward compatibility
+  const sessionId = typeof props === 'string' ? props : (props as UseSessionLifecycleProps).sessionId;
+  const onStateChange = typeof props === 'object' && props !== null 
+    ? (props as UseSessionLifecycleProps).onStateChange
+    : undefined;
 
   const [lifecycleState, setLifecycleState] = useState<string | null>(null);
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);

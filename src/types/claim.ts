@@ -1,40 +1,29 @@
 
 /**
- * Types related to bingo claims
+ * Standard claim status types used throughout the application
  */
+export type ClaimStatus = 'none' | 'pending' | 'valid' | 'invalid' | 'validating' | 'validated' | 'rejected';
 
 export interface ClaimData {
   id: string;
-  timestamp: string;
   sessionId: string;
   playerId: string;
   playerName?: string;
+  timestamp: number | string;
+  toGoCount?: number;
   gameType?: string;
   winPattern?: string;
-  gameNumber?: number;
-  toGoCount?: number;
-  ticket?: TicketData;
-  status: 'pending' | 'valid' | 'invalid' | 'rejected';
-  lastCalledNumber?: number | null;
-  // Add the missing properties
+  ticket?: any;
   calledNumbers?: number[];
+  lastCalledNumber?: number;
   hasLastCalledNumber?: boolean;
-}
-
-export interface TicketData {
-  serial: string;
-  perm: number;
-  position: number;
-  layoutMask: number;
-  numbers: number[];
-  calledNumbers?: number[];
 }
 
 export interface ClaimResult {
   sessionId: string;
   playerId: string;
-  playerName: string;
-  result: 'valid' | 'invalid' | 'rejected';
-  timestamp: string;
-  ticket?: Partial<TicketData>;
+  playerName?: string;
+  result: 'valid' | 'rejected';
+  ticket?: any;
+  timestamp?: string;
 }

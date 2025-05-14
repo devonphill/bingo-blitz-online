@@ -1,7 +1,7 @@
 
 import { logWithTimestamp } from '@/utils/logUtils';
 import { connectionManager } from '@/utils/connectionManager';
-import { webSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
+import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 
 /**
  * Connect to a session
@@ -32,6 +32,8 @@ export function connectToSession(sessionId: string, currentSessionId: string | n
 export async function callNumber(number: number, sessionId?: string): Promise<boolean> {
   try {
     logWithTimestamp(`Broadcasting number ${number} for session ${sessionId}`, 'info');
+    
+    const webSocketService = getWebSocketService();
     
     // Broadcast the number via WebSocket
     const success = await webSocketService.broadcastWithRetry(

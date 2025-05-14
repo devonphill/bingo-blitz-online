@@ -10,10 +10,11 @@ import { useNetwork } from "@/contexts/NetworkStatusContext";
 import { useGameManager } from "@/contexts/GameManager";
 import GameTypePlayspace from "./GameTypePlayspace";
 import { usePlayerClaimManagement } from "@/hooks/usePlayerClaimManagement";
-import { usePlayerWebSocketNumbers } from "@/hooks/usePlayerWebSocketNumbers";
+import { usePlayerWebSocketNumbers } from "@/hooks/playerWebSocket";
 import BingoClaim, { claimEvents } from "./BingoClaim";
 import { setupClaimDebugging } from "@/utils/claimDebugUtils";
 import PlayerLobby from "./PlayerLobby";
+import { ClaimStatus } from "@/types/claim";
 
 interface PlayerGameContentProps {
   tickets: any[];
@@ -28,7 +29,7 @@ interface PlayerGameContentProps {
   winPrizes?: Record<string, string>;
   activeWinPatterns?: string[];
   onClaimBingo?: () => Promise<boolean>;
-  claimStatus?: 'none' | 'pending' | 'valid' | 'invalid';
+  claimStatus?: ClaimStatus;
   isClaiming?: boolean;
   gameType?: string;
   currentWinPattern?: string | null;
@@ -125,6 +126,16 @@ export default function PlayerGameContent({
     currentWinPattern || null,
     currentGameNumber
   );
+  
+  // Map claim status types if needed
+  const mapClaimStatus = (status: ClaimStatus): ClaimStatus => {
+    switch (status) {
+      case 'validated': return 'valid';
+      case 'rejected': return 'invalid';
+      case 'validating': return 'pending';
+      default: return status;
+    }
+  };
   
   // Setup claim debugging - Enhanced with immediate testing
   useEffect(() => {
@@ -314,6 +325,9 @@ export default function PlayerGameContent({
     );
   }
   
+  // Map claim status for display where needed
+  const displayClaimStatus = mapClaimStatus(effectiveClaimStatus as ClaimStatus);
+  
   return (
     <div className="min-h-full flex flex-col" style={{ backgroundColor }}>
       <GameHeader 
@@ -321,7 +335,7 @@ export default function PlayerGameContent({
         totalGames={numberOfGames}
         pattern={effectivePatternDisplay || 'Not set'}
         prize={effectivePrize || 'Prize to be announced'}
-        claimStatus={effectiveClaimStatus}
+        claimStatus={displayClaimStatus}
         isClaiming={effectiveIsClaiming}
         onClaimBingo={handleLocalClaimBingo}
       />
@@ -362,7 +376,7 @@ export default function PlayerGameContent({
       
       <GameSheetControls
         onClaimBingo={handleLocalClaimBingo}
-        claimStatus={effectiveClaimStatus}
+        claimStatus={displayClaimStatus}
         isClaiming={effectiveIsClaiming}
         onRefreshTickets={onRefreshTickets}
         sessionId={currentSession?.id}
@@ -372,7 +386,7 @@ export default function PlayerGameContent({
       {/* Use our portal-based claim notification system */}
       <BingoClaim
         onClaimBingo={handleLocalClaimBingo}
-        claimStatus={effectiveClaimStatus}
+        claimStatus={displayClaimStatus}
         isClaiming={effectiveIsClaiming}
         resetClaimStatus={resetClaimStatus}
         playerName={playerName}

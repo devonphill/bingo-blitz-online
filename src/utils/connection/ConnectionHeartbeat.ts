@@ -1,4 +1,3 @@
-
 import { logWithTimestamp } from '../logUtils';
 import { HEARTBEAT_INTERVAL } from '@/constants/connectionConstants';
 import { getWebSocketService, CHANNEL_NAMES, WEBSOCKET_STATUS } from '@/services/websocket';

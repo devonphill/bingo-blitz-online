@@ -1,6 +1,6 @@
 import { logWithTimestamp } from '@/utils/logUtils';
 import { ClaimData, ClaimResult } from '@/types/claim';
-import { webSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
+import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 
 /**
  * Service for broadcasting claim events using WebSocketService
@@ -50,6 +50,7 @@ class ClaimBroadcastService {
       };
 
       // Use WebSocketService for consistent broadcasting
+      const webSocketService = getWebSocketService();
       const success = await webSocketService.broadcastWithRetry(
         CHANNEL_NAMES.GAME_UPDATES,
         EVENT_TYPES.CLAIM_SUBMITTED,
@@ -100,6 +101,7 @@ class ClaimBroadcastService {
       };
       
       // Use the WebSocketService
+      const webSocketService = getWebSocketService();
       const success = await webSocketService.broadcastWithRetry(
         CHANNEL_NAMES.GAME_UPDATES,
         EVENT_TYPES.CLAIM_VALIDATION,
@@ -154,6 +156,7 @@ class ClaimBroadcastService {
       };
       
       // Use WebSocketService
+      const webSocketService = getWebSocketService();
       const success = await webSocketService.broadcastWithRetry(
         CHANNEL_NAMES.GAME_UPDATES,
         EVENT_TYPES.CLAIM_VALIDATING_TKT,

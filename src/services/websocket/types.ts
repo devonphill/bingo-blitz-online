@@ -30,3 +30,23 @@ export interface WebSocketChannelEvent<T = any> {
   event: string;
   payload: T;
 }
+
+// Additional types needed for the WebSocket services
+export type WebSocketChannel = RealtimeChannel;
+export type ConnectionListener = (status: string) => void;
+
+export interface BroadcastOptions {
+  retries?: number;
+  retryDelay?: number;
+  retryMultiplier?: number;
+  timeout?: number;
+}
+
+export interface ChannelConfig {
+  config?: {
+    broadcast?: {
+      self?: boolean;
+      ack?: boolean;
+    };
+  };
+}

@@ -1,7 +1,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '../logUtils';
-import { webSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
+import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 import { ConnectionState } from '@/constants/connectionConstants';
 import { ConnectionListenerManager } from './ConnectionListenerManager';
 import { ConnectionHeartbeat } from './ConnectionHeartbeat';
@@ -62,6 +62,7 @@ class ConnectionManager implements ConnectionService {
     this.init(sessionId);
     
     // Create and subscribe to game updates channel
+    const webSocketService = getWebSocketService();
     const channel = webSocketService.createChannel(CHANNEL_NAMES.GAME_UPDATES);
     webSocketService.subscribeWithReconnect(CHANNEL_NAMES.GAME_UPDATES, (status) => {
       this.updateConnectionState(status === 'SUBSCRIBED' ? 'connected' : 'connecting');
@@ -128,6 +129,7 @@ class ConnectionManager implements ConnectionService {
       logWithTimestamp(`Broadcasting number ${number} for session ${currentSessionId}`, 'info');
       
       // Broadcast the number via WebSocket
+      const webSocketService = getWebSocketService();
       const success = await webSocketService.broadcastWithRetry(
         CHANNEL_NAMES.GAME_UPDATES,
         EVENT_TYPES.NUMBER_CALLED,

@@ -1,4 +1,3 @@
-
 import { SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { CHANNEL_NAMES, EVENT_TYPES, WebSocketStatus } from './types';
@@ -336,10 +335,9 @@ const initializeWebSocketService = (supabaseClient: SupabaseClient): WebSocketSe
 
 export { 
   WebSocketService, 
-  webSocketService, 
   getWebSocketService, 
   initializeWebSocketService, 
   CHANNEL_NAMES, 
-  EVENT_TYPES, 
-  WEBSOCKET_STATUS 
+  EVENT_TYPES,
+  WEBSOCKET_STATUS
 };

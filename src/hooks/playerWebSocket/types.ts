@@ -5,6 +5,8 @@
 export interface WebSocketNumbersState {
   calledNumbers: number[];
   lastCalledNumber: number | null;
+  currentNumber?: number | null; // Add property used in PlayerGame.tsx
+  numberCallTimestamp?: number | null; // Add property used in PlayerGame.tsx
   isConnected: boolean;
   lastUpdateTime: number;
   reconnect: () => void;
