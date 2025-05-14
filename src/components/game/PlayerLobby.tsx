@@ -12,6 +12,7 @@ interface PlayerLobbyProps {
   onRefreshStatus?: () => void;
   errorMessage?: string | null;
   gameStatus?: string | null;
+  brandingInfo?: any; // Added brandingInfo prop
 }
 
 export default function PlayerLobby({
@@ -20,7 +21,8 @@ export default function PlayerLobby({
   playerName,
   onRefreshStatus,
   errorMessage,
-  gameStatus
+  gameStatus,
+  brandingInfo // Added to props destructuring
 }: PlayerLobbyProps) {
   // Log when the lobby component mounts for debugging
   useEffect(() => {

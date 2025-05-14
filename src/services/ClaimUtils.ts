@@ -65,3 +65,19 @@ export function createClaimObject(data: Partial<ClaimData>): ClaimData {
     ...data
   };
 }
+
+/**
+ * Check if a pattern is the final one in a game
+ * @param currentPattern The current win pattern ID
+ * @param allPatterns Array of all pattern IDs for the game
+ * @returns true if the current pattern is the final one
+ */
+export function isFinalPattern(currentPattern: string, allPatterns: string[]): boolean {
+  if (!currentPattern || allPatterns.length === 0) return false;
+  
+  // Find the index of the current pattern
+  const currentIndex = allPatterns.findIndex(p => p === currentPattern);
+  
+  // If it's the last one in the array or not found, consider it final
+  return currentIndex === allPatterns.length - 1 || currentIndex === -1;
+}

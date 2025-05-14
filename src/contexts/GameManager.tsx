@@ -18,6 +18,7 @@ type GameManagerContextType = {
   switchGameType: (gameTypeId: string) => void;
   getGameTypeById: (gameTypeId: string) => GameType | undefined;
   allGameTypes: GameType[];
+  getSessionById?: (sessionId: string) => Promise<any>; // Added this method
 };
 
 const GameManagerContext = createContext<GameManagerContextType | null>(null);
@@ -50,10 +51,25 @@ export const GameManagerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return gameTypes.find((type) => type.id === gameTypeId);
   };
 
+  // New method to get session by ID
+  const getSessionById = async (sessionId: string) => {
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch session: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error("Error fetching session:", error);
+      return null;
+    }
+  };
+
   const contextValue = {
     currentGameType,
     switchGameType,
     getGameTypeById,
+    getSessionById, // Add the new method to context
     allGameTypes: gameTypes,
   };
 

@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/router';
-import { useSession } from 'next-auth/react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
 import { useGameManager } from '@/contexts/GameManager';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -30,8 +31,9 @@ export default function PlayerGameLoader({
   const [autoMarking, setAutoMarking] = useState(true);
   const [gameStatus, setGameStatus] = useState<string | null>(null);
   const [currentSession, setCurrentSession] = useState<any>(null);
-  const router = useRouter();
-  const { data: session } = useSession();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { session: authSession, user } = useAuth();
   const network = useNetwork();
   const { getSessionById } = useGameManager();
 
@@ -108,12 +110,12 @@ export default function PlayerGameLoader({
 
   // Check authentication and session
   useEffect(() => {
-    if (!session) {
-      router.push('/auth/signin');
+    if (!authSession) {
+      navigate('/auth/signin');
     }
-  }, [session, router]);
+  }, [authSession, navigate]);
 
-  if (!session) {
+  if (!authSession) {
     return <div>Please sign in to play.</div>;
   }
 
@@ -132,7 +134,7 @@ export default function PlayerGameLoader({
 
       <main>
         <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-          {isLoading && !session && (
+          {isLoading && !authSession && (
             <PlayerLobby
               sessionName={sessionName}
               sessionId={sessionId}
@@ -152,10 +154,10 @@ export default function PlayerGameLoader({
               setAutoMarking={setAutoMarking}
               playerCode={playerCode}
               playerName={playerName}
-              playerId={session?.user?.id}
-              sessionId={sessionId}
+              playerId={user?.id}
               onRefreshTickets={handleRefreshStatus}
               onReconnect={handleReconnect}
+              sessionId={sessionId}
             />
           )}
 
@@ -166,7 +168,7 @@ export default function PlayerGameLoader({
             </div>
           )}
 
-          {isLoading && session && (
+          {isLoading && authSession && (
             <div className="flex justify-center items-center h-64">
               <LoadingSpinner size="lg" />
             </div>

@@ -66,8 +66,8 @@ class NumberCallingServiceImpl implements NumberCallingService {
         // Also broadcast via WebSocket
         const connection = getSingleSourceConnection();
         connection.getWebSocketService().broadcastWithRetry(
-          connection.CHANNEL_NAMES.GAME_UPDATES,
-          connection.EVENT_TYPES.GAME_RESET,
+          connection.constructor.CHANNEL_NAMES.GAME_UPDATES,
+          connection.constructor.EVENT_TYPES.GAME_RESET,
           { sessionId }
         );
         

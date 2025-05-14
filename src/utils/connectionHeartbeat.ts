@@ -1,6 +1,7 @@
+
 import { logWithTimestamp } from './logUtils';
 import { HEARTBEAT_INTERVAL } from '@/constants/connectionConstants';
-import { webSocketService, CHANNEL_NAMES } from '@/services/websocket';
+import { getWebSocketService, CHANNEL_NAMES, WEBSOCKET_STATUS } from '@/services/websocket';
 
 /**
  * A utility class to manage connection heartbeats
@@ -78,8 +79,9 @@ export class ConnectionHeartbeatManager {
     
     try {
       // Check WebSocket connection status
+      const webSocketService = getWebSocketService();
       const connectionState = webSocketService.getConnectionState(CHANNEL_NAMES.GAME_UPDATES);
-      const connected = connectionState === 'SUBSCRIBED';
+      const connected = connectionState === WEBSOCKET_STATUS.SUBSCRIBED;
       
       if (connected !== this.isConnected) {
         this.isConnected = connected;
