@@ -1,13 +1,15 @@
 
 import React from 'react';
 import { Spinner } from '@/components/ui/spinner';
+import { cn } from "@/lib/utils";
 
 interface LoadingSpinnerProps {
   size?: "sm" | "md" | "lg";
   text?: string;
+  className?: string;
 }
 
-export function LoadingSpinner({ size = "md", text }: LoadingSpinnerProps) {
+export function LoadingSpinner({ size = "md", text, className }: LoadingSpinnerProps) {
   const sizeClass = {
     sm: "h-4 w-4",
     md: "h-8 w-8",
@@ -16,7 +18,7 @@ export function LoadingSpinner({ size = "md", text }: LoadingSpinnerProps) {
 
   return (
     <div className="flex flex-col items-center justify-center gap-2">
-      <Spinner className={sizeClass} />
+      <Spinner className={cn(sizeClass, className)} />
       {text && <p className="text-sm text-muted-foreground">{text}</p>}
     </div>
   );
