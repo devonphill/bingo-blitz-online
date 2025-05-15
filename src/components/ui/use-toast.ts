@@ -1,5 +1,8 @@
 
-import { useToast } from "@/hooks/use-toast";
+import { useToast as useToastFromRadix } from "@/components/ui/toast";
 
-export { useToast };
-export { toast } from "@/hooks/use-toast";
+// Re-export the useToast hook from Radix UI
+export const useToast = useToastFromRadix;
+
+// Export the toast function
+export const toast = useToastFromRadix().toast;

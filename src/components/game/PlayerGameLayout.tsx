@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import {
     Card,
@@ -5,37 +6,32 @@ import {
     CardDescription,
     CardHeader,
     CardTitle,
-} from "@/components/ui/card"
+} from "@/components/ui/card";
 import { MainLayout } from "@/components/layout";
-import { GameHeader } from "@/components/game/GameHeader";
-import { GameBoard } from "@/components/game/GameBoard";
-import { GameController } from "@/components/game/GameController";
-import { useGameContext } from "@/context/game.context";
-import { PlayerGameContent, PlayerGameContentProps } from "@/components/game/PlayerGameContent";
-import { useConnection } from "@/context/connection.context";
-import { useToast } from "@/components/ui/use-toast";
-import { ConnectionStatus } from "@/components/connection/ConnectionStatus";
+import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PlayerGameContent } from "@/components/game";
 
 interface PlayerGameLayoutProps {
     playerCode: string;
 }
 
 export const PlayerGameLayout: React.FC<PlayerGameLayoutProps> = ({ playerCode }) => {
-    const {
-        tickets,
-        calledNumbers,
-        gameId,
-        setGameId,
-        setTickets,
-        setCalledNumbers,
-        resetGame,
-        isLoading
-    } = useGameContext();
-    const { isConnected } = useConnection();
-    const { toast } = useToast();
     const [showConfetti, setShowConfetti] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+    const [tickets, setTickets] = useState<any[]>([]);
+    const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
+    const { toast } = useToast();
+
+    // Simulate loading state - in a real implementation you'd fetch tickets
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setIsLoading(false);
+        }, 1500);
+        
+        return () => clearTimeout(timer);
+    }, []);
 
     const handleWin = useCallback(() => {
         setShowConfetti(true);
@@ -48,25 +44,14 @@ export const PlayerGameLayout: React.FC<PlayerGameLayoutProps> = ({ playerCode }
         }, 5000);
     }, [toast]);
 
-    useEffect(() => {
-        if (gameId) {
-            // Check for win condition here, for example:
-            if (tickets && tickets.length > 0 && calledNumbers && calledNumbers.length > 0) {
-                const hasWinningTicket = tickets.some(ticket =>
-                    ticket.numbers.every(number => calledNumbers.includes(number))
-                );
-                if (hasWinningTicket) {
-                    handleWin();
-                }
-            }
-        }
-    }, [calledNumbers, tickets, gameId, handleWin]);
-
     return (
         <MainLayout>
             <div className="flex flex-col h-screen">
-                <GameHeader playerCode={playerCode} />
-                <div className="flex-grow overflow-auto">
+                <div className="p-4 bg-primary/10 border-b">
+                    <h1 className="text-2xl font-bold">Game Session</h1>
+                    <p className="text-sm text-muted-foreground">Player Code: {playerCode}</p>
+                </div>
+                <div className="flex-grow overflow-auto p-4">
                     {isLoading ? (
                         <Card className="w-full h-full flex items-center justify-center">
                             <CardContent>
@@ -77,10 +62,26 @@ export const PlayerGameLayout: React.FC<PlayerGameLayoutProps> = ({ playerCode }
                             </CardContent>
                         </Card>
                     ) : (
-                        <PlayerGameContent tickets={tickets} playerCode={playerCode} />
+                        <PlayerGameContent 
+                            tickets={tickets}
+                            playerCode={playerCode}
+                            currentSession={{ id: "", name: "Game Session" }}
+                            autoMarking={true}
+                            setAutoMarking={() => {}}
+                            playerName=""
+                            playerId=""
+                            onReconnect={() => {}}
+                            sessionId=""
+                            onClaimBingo={() => {}}
+                        />
                     )}
                 </div>
-                <ConnectionStatus />
+                <div className="p-4 border-t">
+                    <div className="flex items-center justify-between">
+                        <Badge variant="outline">Connected</Badge>
+                        <span className="text-xs text-muted-foreground">Connection Status</span>
+                    </div>
+                </div>
             </div>
         </MainLayout>
     );
