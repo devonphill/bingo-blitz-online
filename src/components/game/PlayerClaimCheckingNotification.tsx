@@ -3,10 +3,10 @@ import React, { useState, useEffect } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
-import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 import { logWithTimestamp } from '@/utils/logUtils';
 import CallerTicketDisplay from './CallerTicketDisplay';
 import { ClaimData } from '@/types/claim';
+import { getSingleSourceConnection, EVENT_TYPES } from '@/utils/SingleSourceTrueConnections';
 
 interface PlayerClaimCheckingNotificationProps {
   sessionId: string;
@@ -20,19 +20,29 @@ export default function PlayerClaimCheckingNotification({
   const [isOpen, setIsOpen] = useState(false);
   const [claimBeingChecked, setClaimBeingChecked] = useState<ClaimData | null>(null);
   const [isMyClaimBeingChecked, setIsMyClaimBeingChecked] = useState(false);
+  const instanceId = React.useRef(`claimNotify-${Math.random().toString(36).substring(2, 7)}`).current;
 
   // Listen for claim checking broadcasts
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      logWithTimestamp(`[${instanceId}] Cannot setup claim notification listener: No session ID`, 'warn');
+      return;
+    }
 
+    logWithTimestamp(`[${instanceId}] Setting up claim validation listener for session ${sessionId}`, 'info');
+
+    // Get singleton connection
+    const connection = getSingleSourceConnection();
+
+    // Function to handle claim validating event
     const handleClaimValidatingEvent = (payload: any) => {
       try {
-        logWithTimestamp('Received claim validating event:', 'info');
+        logWithTimestamp(`[${instanceId}] Received claim validating event:`, 'info');
         console.log('Claim validating payload:', payload);
 
         // Check if this is for our session
         if (payload?.sessionId !== sessionId) {
-          logWithTimestamp(`Ignoring claim validation for different session (${payload?.sessionId} != ${sessionId})`, 'info');
+          logWithTimestamp(`[${instanceId}] Ignoring claim validation for different session (${payload?.sessionId} != ${sessionId})`, 'info');
           return;
         }
 
@@ -65,39 +75,21 @@ export default function PlayerClaimCheckingNotification({
         playNotificationSound();
         
         // Log the notification
-        logWithTimestamp(`Claim check notification opened for ${payload.playerName || payload.player_name}`, 'info');
+        logWithTimestamp(`[${instanceId}] Claim check notification opened for ${payload.playerName || payload.player_name}`, 'info');
       } catch (error) {
-        console.error('Error processing claim validating event:', error);
+        console.error(`[${instanceId}] Error processing claim validating event:`, error);
       }
     };
 
-    // Subscribe to claim validating events (CLAIM_VALIDATING_TKT)
-    const webSocketService = getWebSocketService();
-    
-    // Create a channel and add listener
-    const channel = webSocketService.createChannel(CHANNEL_NAMES.GAME_UPDATES);
-    
-    // Add listener for claim validating events
-    const cleanupListener = webSocketService.addListener(
-      CHANNEL_NAMES.GAME_UPDATES, 
-      'broadcast', 
-      EVENT_TYPES.CLAIM_VALIDATING_TKT, 
-      (payloadWrapper) => {
-        logWithTimestamp('Received claim validating broadcast event', 'info');
-        console.log('Full payload wrapper:', payloadWrapper);
-        
-        const payload = payloadWrapper?.payload;
-        if (payload) {
-          handleClaimValidatingEvent(payload);
-        } else {
-          logWithTimestamp('Invalid payload in claim validating event', 'warn');
-        }
-      }
+    // Add listener for claim validating events (CLAIM_VALIDATING_TKT)
+    const cleanup = connection.listenForEvent(
+      EVENT_TYPES.CLAIM_VALIDATING_TKT,
+      handleClaimValidatingEvent
     );
     
     // Also listen to custom browser events that might be dispatched by other components
     const handleCustomEvent = (event: CustomEvent) => {
-      logWithTimestamp('Received custom claimBroadcast event', 'info');
+      logWithTimestamp(`[${instanceId}] Received custom claimBroadcast event`, 'info');
       console.log('Custom event details:', event.detail);
       
       if (event.detail?.claim && event.detail?.type === 'checking') {
@@ -109,7 +101,7 @@ export default function PlayerClaimCheckingNotification({
     
     // Listen for forceOpenClaimDrawer events
     const handleForceOpenEvent = (event: CustomEvent) => {
-      logWithTimestamp('Received forceOpenClaimDrawer event', 'info');
+      logWithTimestamp(`[${instanceId}] Received forceOpenClaimDrawer event`, 'info');
       console.log('Force open event details:', event.detail);
       
       if (event.detail?.data) {
@@ -120,18 +112,16 @@ export default function PlayerClaimCheckingNotification({
     window.addEventListener('forceOpenClaimDrawer', handleForceOpenEvent as EventListener);
 
     // Log that we've set up the listener
-    logWithTimestamp(`Subscribed to claim validating events for session ${sessionId}`, 'info');
+    logWithTimestamp(`[${instanceId}] Subscribed to claim validating events for session ${sessionId}`, 'info');
     
     // Clean up
     return () => {
-      if (cleanupListener) {
-        cleanupListener();
-        logWithTimestamp(`Unsubscribed from claim validating events listener`, 'info');
-      }
+      cleanup();
       window.removeEventListener('claimBroadcast', handleCustomEvent as EventListener);
       window.removeEventListener('forceOpenClaimDrawer', handleForceOpenEvent as EventListener);
+      logWithTimestamp(`[${instanceId}] Cleaned up claim validating events listener`, 'info');
     };
-  }, [sessionId, playerCode]);
+  }, [sessionId, playerCode, instanceId]);
 
   // Function to play notification sound
   const playNotificationSound = () => {

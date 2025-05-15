@@ -20,6 +20,11 @@ export class SingleSourceTrueConnections {
   private listenerManager = new ConnectionListenerManager();
   private heartbeat: ConnectionHeartbeat;
   
+  // Track active channels by name
+  private activeChannels: Map<string, any> = new Map();
+  // Track channel statuses
+  private channelStatuses: Map<string, string> = new Map();
+  
   private constructor() {
     // Initialize WebSocket service with Supabase client
     initializeWebSocketService(supabase);
@@ -88,7 +93,7 @@ export class SingleSourceTrueConnections {
     this.heartbeat.startHeartbeat();
     
     try {
-      this.setupChannelSubscription(CHANNEL_NAMES.GAME_UPDATES);
+      this.getOrCreateChannel(CHANNEL_NAMES.GAME_UPDATES);
       
       logWithTimestamp(`Connected to session: ${sessionId}`, 'info');
     } catch (error) {
@@ -99,35 +104,104 @@ export class SingleSourceTrueConnections {
   }
   
   /**
-   * Setup a channel subscription with proper cleanup of existing subscriptions
-   * @param channelName The channel name to subscribe to
+   * Get an existing channel or create a new one if it doesn't exist
+   * @param channelName The channel name to get or create
+   * @returns The channel instance
    */
-  private setupChannelSubscription(channelName: string): void {
-    // Get WebSocketService
-    const webSocketService = getWebSocketService();
-    
-    // First, properly clean up any existing channel to prevent multiple subscriptions
-    try {
-      webSocketService.leaveChannel(channelName);
-      logWithTimestamp(`Cleaned up existing channel: ${channelName}`, 'info');
-    } catch (cleanupError) {
-      logWithTimestamp(`Error during channel cleanup: ${cleanupError}`, 'warn');
-      // Continue with new subscription even if cleanup fails
+  private getOrCreateChannel(channelName: string): any {
+    // Check if we already have an active channel with this name
+    if (this.activeChannels.has(channelName)) {
+      const channel = this.activeChannels.get(channelName);
+      const status = this.channelStatuses.get(channelName);
+      
+      // If channel exists and is in good state (SUBSCRIBED, JOINED, CONNECTING), reuse it
+      if (status === WEBSOCKET_STATUS.SUBSCRIBED || 
+          status === WEBSOCKET_STATUS.JOINED || 
+          status === WEBSOCKET_STATUS.JOINING || 
+          status === WEBSOCKET_STATUS.CONNECTING) {
+        logWithTimestamp(`Reusing existing ${channelName} channel with status: ${status}`, 'info');
+        return channel;
+      }
+      
+      // If channel exists but is in a bad state, clean it up before creating a new one
+      logWithTimestamp(`Found existing ${channelName} channel but with bad status: ${status}, recreating`, 'warn');
+      this.cleanupChannel(channelName);
     }
+    
+    // Create a new channel
+    logWithTimestamp(`Creating new ${channelName} channel`, 'info');
+    return this.createAndSetupNewChannel(channelName);
+  }
+  
+  /**
+   * Clean up an existing channel
+   * @param channelName The channel name to clean up
+   */
+  private cleanupChannel(channelName: string): void {
+    try {
+      if (this.activeChannels.has(channelName)) {
+        const channel = this.activeChannels.get(channelName);
+        if (channel) {
+          const webSocketService = getWebSocketService();
+          webSocketService.leaveChannel(channelName);
+          logWithTimestamp(`Cleaned up channel: ${channelName}`, 'info');
+        }
+        
+        this.activeChannels.delete(channelName);
+        this.channelStatuses.delete(channelName);
+      }
+    } catch (error) {
+      logWithTimestamp(`Error cleaning up channel ${channelName}: ${error}`, 'warn');
+    }
+  }
+  
+  /**
+   * Create a new channel and set it up with proper subscriptions
+   * @param channelName The channel name to create
+   * @returns The newly created channel
+   */
+  private createAndSetupNewChannel(channelName: string): any {
+    const webSocketService = getWebSocketService();
     
     // Create a new channel
     const channel = webSocketService.createChannel(channelName);
     
+    // Store the channel
+    this.activeChannels.set(channelName, channel);
+    this.channelStatuses.set(channelName, WEBSOCKET_STATUS.CONNECTING);
+    
     // Subscribe with reconnect capability
     webSocketService.subscribeWithReconnect(channelName, (status) => {
-      logWithTimestamp(`Game updates channel status: ${status}`, 'info');
+      logWithTimestamp(`Channel ${channelName} status: ${status}`, 'info');
       
-      // Update connection state
-      const connected = status === WEBSOCKET_STATUS.SUBSCRIBED;
-      this._isConnected = connected;
-      this._connectionState = connected ? 'connected' : 'disconnected';
-      this.listenerManager.notifyConnectionListeners(connected);
+      // Update channel status
+      this.channelStatuses.set(channelName, status);
+      
+      // Update connection state if this is the main game updates channel
+      if (channelName === CHANNEL_NAMES.GAME_UPDATES) {
+        const connected = status === WEBSOCKET_STATUS.SUBSCRIBED;
+        this._isConnected = connected;
+        this._connectionState = connected ? 'connected' : 'disconnected';
+        this.listenerManager.notifyConnectionListeners(connected);
+      }
+      
+      // If channel was successfully subscribed, set up default event listeners
+      if (status === WEBSOCKET_STATUS.SUBSCRIBED && channelName === CHANNEL_NAMES.GAME_UPDATES) {
+        this.setupDefaultEventListeners(channelName);
+      }
     });
+    
+    return channel;
+  }
+  
+  /**
+   * Setup default event listeners for a channel
+   * @param channelName The channel name to set up listeners for
+   */
+  private setupDefaultEventListeners(channelName: string): void {
+    if (channelName !== CHANNEL_NAMES.GAME_UPDATES) return;
+    
+    const webSocketService = getWebSocketService();
     
     // Subscribe to number called events
     webSocketService.addListener(
@@ -164,6 +238,54 @@ export class SingleSourceTrueConnections {
         }
       }
     );
+    
+    logWithTimestamp(`Setup default event listeners for channel ${channelName}`, 'info');
+  }
+  
+  /**
+   * Add a listener to a channel for a specific event
+   * @param channelName The channel name to add the listener to
+   * @param eventType The event type to listen for
+   * @param callback The callback to call when the event is triggered
+   * @returns Function to remove the listener
+   */
+  public addChannelListener<T>(
+    channelName: string,
+    eventType: string,
+    callback: (data: T) => void
+  ): () => void {
+    if (!this.sessionId) {
+      logWithTimestamp(`Cannot add channel listener: No session ID`, 'warn');
+      return () => {};
+    }
+    
+    try {
+      // Get or create channel
+      this.getOrCreateChannel(channelName);
+      
+      // Add listener using WebSocketService
+      const webSocketService = getWebSocketService();
+      
+      logWithTimestamp(`Adding listener for event ${eventType} on channel ${channelName}`, 'info');
+      
+      // Add listener for the event
+      const cleanup = webSocketService.addListener(
+        channelName,
+        'broadcast',
+        eventType,
+        (payloadWrapper: any) => {
+          if (payloadWrapper && payloadWrapper.payload) {
+            logWithTimestamp(`Received event ${eventType} on channel ${channelName}`, 'info');
+            callback(payloadWrapper.payload as T);
+          }
+        }
+      );
+      
+      return cleanup;
+    } catch (error) {
+      logWithTimestamp(`Error adding listener for event ${eventType} on channel ${channelName}: ${error}`, 'error');
+      return () => {};
+    }
   }
   
   /**
@@ -175,9 +297,8 @@ export class SingleSourceTrueConnections {
     if (!this.initialized) return false;
     
     try {
-      const webSocketService = getWebSocketService();
-      const channelName = `session-${sessionId}`;
-      const status = webSocketService.getConnectionState(channelName);
+      // Check if the GAME_UPDATES channel is in SUBSCRIBED state
+      const status = this.channelStatuses.get(CHANNEL_NAMES.GAME_UPDATES);
       return status === WEBSOCKET_STATUS.SUBSCRIBED;
     } catch (error) {
       logWithTimestamp(`Error checking connection status: ${error}`, 'error');
@@ -294,26 +415,40 @@ export class SingleSourceTrueConnections {
     
     logWithTimestamp(`Reconnecting to session ${this.sessionId}`, 'info');
     
-    // Clean up existing connections first
-    try {
-      const webSocketService = getWebSocketService();
-      webSocketService.leaveChannel(CHANNEL_NAMES.GAME_UPDATES);
-      
-      // Delay slightly before reconnecting to ensure proper cleanup
-      setTimeout(() => {
-        logWithTimestamp(`Setting up new connection after cleanup`, 'info');
-        this.setupChannelSubscription(CHANNEL_NAMES.GAME_UPDATES);
-      }, 500);
-      
-    } catch (error) {
-      logWithTimestamp(`Error during reconnection cleanup: ${error}`, 'error');
-      
-      // Even if cleanup fails, try to establish a new connection
-      this.setupChannelSubscription(CHANNEL_NAMES.GAME_UPDATES);
-    }
+    // Clean up existing channels
+    this.cleanupAllChannels();
+    
+    // Delay slightly before reconnecting to ensure proper cleanup
+    setTimeout(() => {
+      if (this.sessionId) {
+        logWithTimestamp(`Setting up new connection after cleanup for session ${this.sessionId}`, 'info');
+        this.getOrCreateChannel(CHANNEL_NAMES.GAME_UPDATES);
+      }
+    }, 500);
     
     // Reset heartbeat reconnect attempts
     this.heartbeat.resetReconnectAttempts();
+  }
+  
+  /**
+   * Clean up all channels
+   */
+  private cleanupAllChannels(): void {
+    const webSocketService = getWebSocketService();
+    
+    // Clean up all channels
+    for (const [channelName, channel] of this.activeChannels.entries()) {
+      try {
+        webSocketService.leaveChannel(channelName);
+        logWithTimestamp(`Removed channel ${channelName}`, 'info');
+      } catch (error) {
+        logWithTimestamp(`Error removing channel ${channelName}: ${error}`, 'warn');
+      }
+    }
+    
+    // Clear all channel maps
+    this.activeChannels.clear();
+    this.channelStatuses.clear();
   }
   
   /**
@@ -384,6 +519,39 @@ export class SingleSourceTrueConnections {
     });
     
     return numberListener;
+  }
+  
+  /**
+   * Listen for a specific event on the GAME_UPDATES channel
+   * @param eventType Event type to listen for
+   * @param handler Handler function to call when the event is triggered
+   * @returns Function to remove the listener
+   */
+  public listenForEvent<T>(
+    eventType: string, 
+    handler: (data: T) => void
+  ): () => void {
+    if (!this.sessionId) {
+      logWithTimestamp(`Cannot listen for event: No session ID`, 'warn');
+      return () => {};
+    }
+    
+    return this.addChannelListener<T>(CHANNEL_NAMES.GAME_UPDATES, eventType, (data) => {
+      // Special handling for claim validation events
+      if (eventType === EVENT_TYPES.CLAIM_VALIDATING_TKT) {
+        // For claim validation events, process them regardless of sessionId
+        logWithTimestamp(`Processing claim validation event regardless of session match`, 'info');
+        handler(data);
+        return;
+      }
+      
+      // For other events, check session matching
+      if (!data.sessionId || data.sessionId === this.sessionId) {
+        handler(data);
+      } else {
+        logWithTimestamp(`Event ${eventType} sessionId mismatch: ${data.sessionId} vs ${this.sessionId}`, 'debug');
+      }
+    });
   }
   
   /**

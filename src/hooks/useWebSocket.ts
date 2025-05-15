@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
-import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
+import { getSingleSourceConnection, EVENT_TYPES } from '@/utils/SingleSourceTrueConnections';
 import { logWithTimestamp } from '@/utils/logUtils';
 
 // Extend the EVENT_TYPES with additional events we need
@@ -27,18 +27,20 @@ export function useWebSocket(sessionId: string | null) {
     }
     
     try {
-      const webSocketService = getWebSocketService();
-      const channel = webSocketService.createChannel(CHANNEL_NAMES.GAME_UPDATES);
+      const connection = getSingleSourceConnection();
       
-      // Create a simple listener to verify connection
-      const cleanup = webSocketService.addListener(
-        CHANNEL_NAMES.GAME_UPDATES,
-        'broadcast',
-        'connection-test',
-        () => {} // Empty handler, just for testing connection
-      );
+      // Connect to session
+      connection.connect(sessionId);
       
-      setIsConnected(true);
+      // Setup connection status listener
+      const cleanup = connection.addConnectionListener((connected) => {
+        setIsConnected(connected);
+        if (connected) {
+          setLastError(null);
+        }
+      });
+      
+      setIsConnected(connection.isConnected());
       setLastError(null);
       logWithTimestamp(`[${instanceId}] Connected to WebSocket for session ${sessionId}`, 'info');
       
@@ -69,40 +71,16 @@ export function useWebSocket(sessionId: string | null) {
     }
     
     try {
-      const webSocketService = getWebSocketService();
+      const connection = getSingleSourceConnection();
       
       logWithTimestamp(`[${instanceId}] Setting up listener for event: ${eventType}`, 'info');
       
-      // Add listener for the event
-      const cleanup = webSocketService.addListener(
-        CHANNEL_NAMES.GAME_UPDATES,
-        'broadcast',
-        eventType,
-        (payloadWrapper: any) => {
-          logWithTimestamp(`[${instanceId}] Received event: ${eventType}`, 'info');
-          console.log(`Full payload for ${eventType}:`, payloadWrapper);
-          
-          const payload = payloadWrapper?.payload;
-          if (payload) {
-            // For claim validation events, always process them regardless of sessionId
-            // This ensures players see claim validations even if there's a mismatch
-            if (eventType === EXTENDED_EVENT_TYPES.CLAIM_VALIDATING_TKT) {
-              logWithTimestamp(`[${instanceId}] Processing claim validation event regardless of session match`, 'info');
-              handler(payload as T);
-              return;
-            }
-            
-            // For other events, check session matching
-            if (!payload.sessionId || payload.sessionId === sessionId) {
-              handler(payload as T);
-            } else {
-              logWithTimestamp(`[${instanceId}] Event ${eventType} sessionId mismatch: ${payload.sessionId} vs ${sessionId}`, 'debug');
-            }
-          } else {
-            logWithTimestamp(`[${instanceId}] Event ${eventType} has no payload`, 'warn');
-          }
-        }
-      );
+      // Add listener for the event using SingleSourceTrueConnections
+      const cleanup = connection.listenForEvent<T>(eventType, (payload) => {
+        logWithTimestamp(`[${instanceId}] Received event: ${eventType}`, 'info');
+        console.log(`Full payload for ${eventType}:`, payload);
+        handler(payload);
+      });
       
       logWithTimestamp(`[${instanceId}] Listening for event ${eventType} on session ${sessionId}`, 'info');
       return cleanup;
