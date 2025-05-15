@@ -1,11 +1,9 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, AlertTriangle } from 'lucide-react';
-import { GameDataContext } from '@/context/GameDataContext';
-import { useGameData } from '@/hooks/useGameData';
+import { GameDataContext, useGameData } from '@/context/GameDataContext';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { GameStatus } from '@/types/game';
