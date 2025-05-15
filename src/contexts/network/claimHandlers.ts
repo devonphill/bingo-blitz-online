@@ -203,7 +203,14 @@ export function submitBingoClaim(ticket: any, playerCode: string, sessionId: str
  * @param isValid Whether the claim is valid
  * @returns Whether the claim was processed successfully
  */
-export async function validateClaim(claim: any, isValid: boolean, sessionId: string | null): Promise<boolean> {
+export async function validateClaim(
+  claim: any, 
+  isValid: boolean, 
+  sessionId: string | null,
+  calledNumbers: number[] = [],
+  lastCalledNumber: number | null = null,
+  sessionName: string = 'Unknown Session'
+): Promise<boolean> {
   if (!claim || !claim.id) {
     logWithTimestamp(`NetworkContext: Cannot validate claim: invalid claim data`, 'error');
     return false;
@@ -212,19 +219,65 @@ export async function validateClaim(claim: any, isValid: boolean, sessionId: str
   logWithTimestamp(`NetworkContext: Processing claim ${claim.id}, isValid=${isValid}`, 'info');
   
   try {
-    // Update the claim status in the database
-    const { error } = await supabase
-      .from('claims')
-      .update({
-        status: isValid ? 'valid' : 'rejected',
-        verified_at: new Date().toISOString()
-      })
-      .eq('id', claim.id);
+    // Prepare log entry for universal_game_logs
+    const ticketDetails = claim.ticket || claim.ticket_details || {};
+    const playerId = claim.playerId || claim.player_id;
+    const playerName = claim.playerName || claim.player_name || 'Unknown Player';
+    const playerCode = claim.playerCode || claim.player_code;
     
-    if (error) {
-      logWithTimestamp(`Error updating claim in database: ${error.message}`, 'error');
+    const logEntry = {
+      validation_status: isValid ? 'VALID' : 'INVALID',
+      win_pattern: claim.winPattern || claim.pattern_claimed || '',
+      session_uuid: sessionId,
+      session_name: sessionName,
+      player_id: playerCode, // Using player_code for the text field
+      player_name: playerName,
+      game_type: claim.gameType || 'mainstage',
+      game_number: claim.gameNumber || 1,
+      called_numbers: calledNumbers,
+      last_called_number: lastCalledNumber,
+      total_calls: calledNumbers?.length || 0,
+      claimed_at: claim.claimed_at || claim.timestamp || new Date().toISOString(),
+      
+      // Ticket details wrapped in arrays for new schema
+      ticket_serial: [ticketDetails.serial || claim.ticketSerial || ''], 
+      ticket_perm: [ticketDetails.perm || 0],
+      ticket_layout_mask: [ticketDetails.layoutMask || ticketDetails.layout_mask || 0],
+      ticket_position: [ticketDetails.position || 0]
+    };
+    
+    if (ticketDetails.numbers) {
+      logEntry.ticket_numbers = JSON.stringify(ticketDetails.numbers);
+    }
+    
+    // Log the attempt
+    console.log('[CallerAction] Attempting to insert into universal_game_logs:', logEntry);
+    
+    // Insert into universal_game_logs
+    const { data: logData, error: logError } = await supabase
+      .from('universal_game_logs')
+      .insert(logEntry);
+      
+    if (logError) {
+      console.error('[DB Log Error] Failed to insert into universal_game_logs:', logError, 'Payload:', logEntry);
+      return false;
+    }
+    
+    console.log('[DB Log Success] Logged to universal_game_logs:', logData);
+    
+    // Delete from claims queue
+    console.log('[CallerAction] Attempting to delete from claims queue, ID:', claim.id);
+    
+    const { error: deleteError } = await supabase
+      .from('claims')
+      .delete()
+      .match({ id: claim.id });
+      
+    if (deleteError) {
+      console.error('[DB Delete Error] Failed to delete from claims table:', deleteError, 'ID:', claim.id);
+      // Continue even if delete fails
     } else {
-      logWithTimestamp(`Updated claim ${claim.id} in database to ${isValid ? 'valid' : 'rejected'}`, 'info');
+      console.log('[DB Delete Success] Claim deleted from claims queue:', claim.id);
     }
     
     // Use claim service to process claim (broadcasts result, etc.)

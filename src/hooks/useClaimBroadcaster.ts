@@ -1,84 +1,51 @@
 
-import { useState, useCallback, useRef } from 'react';
+import { useCallback } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 
-/**
- * Hook for broadcasting claim-related messages via WebSocket
- */
 export function useClaimBroadcaster() {
-  const webSocketService = useRef(getWebSocketService());
-  const [isBroadcasting, setIsBroadcasting] = useState(false);
-  const instanceId = useRef(`claimBC-${Math.random().toString(36).substring(2, 9)}`);
-
-  // Broadcast a claim result to a specific player
+  /**
+   * Broadcast a claim validation result to the player
+   */
   const broadcastClaimResult = useCallback(async (
-    playerCode: string,
     playerId: string,
-    result: 'valid' | 'rejected'
+    playerUuid: string | undefined,
+    result: 'valid' | 'rejected',
+    additionalData?: any
   ) => {
-    setIsBroadcasting(true);
-    
     try {
-      logWithTimestamp(`[${instanceId.current}] Broadcasting claim result: ${result} to player ${playerId}`, 'info');
+      logWithTimestamp(`Broadcasting claim ${result} to player ${playerId}`, 'info');
       
-      // Send the claim result via WebSocket
-      const success = await webSocketService.current.broadcastWithRetry(
-        CHANNEL_NAMES.GAME_UPDATES,
-        EVENT_TYPES.CLAIM_VALIDATION,
-        {
-          playerCode,
-          playerId,
-          result,
-          timestamp: new Date().toISOString()
-        }
-      );
-      
-      if (!success) {
-        logWithTimestamp(`[${instanceId.current}] Failed to broadcast claim result`, 'error');
-      }
-      
-      return success;
-    } catch (error) {
-      logWithTimestamp(`[${instanceId.current}] Error broadcasting claim result: ${error}`, 'error');
-      return false;
-    } finally {
-      setIsBroadcasting(false);
-    }
-  }, []);
+      // Prepare broadcast payload
+      const payload = {
+        playerId: playerId,
+        playerUuid: playerUuid,
+        result: result,
+        isGlobalBroadcast: false, // Target specific player
+        timestamp: new Date().toISOString(),
+        ...additionalData // Include any additional data passed
+      };
 
-  // Broadcast a claim to all callers
-  const broadcastClaimToCallers = useCallback(async (
-    claimData: any
-  ) => {
-    setIsBroadcasting(true);
-    
-    try {
-      logWithTimestamp(`[${instanceId.current}] Broadcasting claim to callers for session ${claimData.sessionId}`, 'info');
+      // Use the game-updates channel for consistency
+      const channel = supabase.channel('game-updates');
       
-      // Send the claim via WebSocket
-      const success = await webSocketService.current.broadcastWithRetry(
-        CHANNEL_NAMES.GAME_UPDATES,
-        EVENT_TYPES.CLAIM_SUBMITTED,
-        claimData
-      );
+      // Broadcast the claim result
+      await channel.send({
+        type: 'broadcast',
+        event: 'claim-result',
+        payload
+      });
       
-      if (!success) {
-        logWithTimestamp(`[${instanceId.current}] Failed to broadcast claim to callers`, 'error');
-      }
-      
-      return success;
+      logWithTimestamp(`Claim ${result} broadcast sent successfully`, 'info');
+      return true;
     } catch (error) {
-      logWithTimestamp(`[${instanceId.current}] Error broadcasting claim to callers: ${error}`, 'error');
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      logWithTimestamp(`Error broadcasting claim ${result}: ${errorMsg}`, 'error');
       return false;
-    } finally {
-      setIsBroadcasting(false);
     }
   }, []);
 
   return {
-    broadcastClaimResult,
-    broadcastClaimToCallers,
-    isBroadcasting
+    broadcastClaimResult
   };
 }

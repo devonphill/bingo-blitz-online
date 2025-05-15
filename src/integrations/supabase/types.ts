@@ -132,7 +132,6 @@ export type Database = {
           player_id: string
           player_name: string | null
           session_id: string
-          status: string
           ticket_details: Json | null
           ticket_serial: string
           verification_notes: string | null
@@ -148,7 +147,6 @@ export type Database = {
           player_id: string
           player_name?: string | null
           session_id: string
-          status?: string
           ticket_details?: Json | null
           ticket_serial: string
           verification_notes?: string | null
@@ -164,7 +162,6 @@ export type Database = {
           player_id?: string
           player_name?: string | null
           session_id?: string
-          status?: string
           ticket_details?: Json | null
           ticket_serial?: string
           verification_notes?: string | null
@@ -425,103 +422,126 @@ export type Database = {
           called_items: string | null
           called_numbers: number[]
           caller_id: string | null
+          caller_uuid: string | null
           claimed_at: string
           created_at: string
+          event_type: string | null
           game_number: number
           game_type: string
           id: string
           last_called_number: number | null
+          logged_at: string | null
+          original_session_created_at: string | null
+          paid: boolean | null
+          payout_date: string | null
           player_email: string | null
-          player_id: string
+          player_id: string | null
           player_name: string
+          player_uuid: string | null
           prize: string | null
           prize_amount: string | null
           prize_shared: boolean
           session_date: string | null
-          session_id: string
           session_name: string | null
+          session_played_date: string | null
+          session_played_time: string | null
           session_time: string | null
+          session_uuid: string
           shared_with: number | null
-          ticket_layout_mask: number
-          ticket_numbers: number[]
-          ticket_perm: number
-          ticket_position: number | null
-          ticket_serial: string
+          ticket_layout_mask: number[]
+          ticket_numbers: Json | null
+          ticket_perm: number[]
+          ticket_position: number[] | null
+          ticket_serial: string[]
           total_calls: number
           validated_at: string | null
+          validation_status: string
           win_pattern: string
         }
         Insert: {
           called_items?: string | null
           called_numbers: number[]
           caller_id?: string | null
+          caller_uuid?: string | null
           claimed_at?: string
           created_at?: string
+          event_type?: string | null
           game_number: number
           game_type: string
           id?: string
           last_called_number?: number | null
+          logged_at?: string | null
+          original_session_created_at?: string | null
+          paid?: boolean | null
+          payout_date?: string | null
           player_email?: string | null
-          player_id: string
+          player_id?: string | null
           player_name: string
+          player_uuid?: string | null
           prize?: string | null
           prize_amount?: string | null
           prize_shared?: boolean
           session_date?: string | null
-          session_id: string
           session_name?: string | null
+          session_played_date?: string | null
+          session_played_time?: string | null
           session_time?: string | null
+          session_uuid: string
           shared_with?: number | null
-          ticket_layout_mask: number
-          ticket_numbers: number[]
-          ticket_perm: number
-          ticket_position?: number | null
-          ticket_serial: string
+          ticket_layout_mask: number[]
+          ticket_numbers?: Json | null
+          ticket_perm: number[]
+          ticket_position?: number[] | null
+          ticket_serial: string[]
           total_calls: number
           validated_at?: string | null
+          validation_status?: string
           win_pattern: string
         }
         Update: {
           called_items?: string | null
           called_numbers?: number[]
           caller_id?: string | null
+          caller_uuid?: string | null
           claimed_at?: string
           created_at?: string
+          event_type?: string | null
           game_number?: number
           game_type?: string
           id?: string
           last_called_number?: number | null
+          logged_at?: string | null
+          original_session_created_at?: string | null
+          paid?: boolean | null
+          payout_date?: string | null
           player_email?: string | null
-          player_id?: string
+          player_id?: string | null
           player_name?: string
+          player_uuid?: string | null
           prize?: string | null
           prize_amount?: string | null
           prize_shared?: boolean
           session_date?: string | null
-          session_id?: string
           session_name?: string | null
+          session_played_date?: string | null
+          session_played_time?: string | null
           session_time?: string | null
+          session_uuid?: string
           shared_with?: number | null
-          ticket_layout_mask?: number
-          ticket_numbers?: number[]
-          ticket_perm?: number
-          ticket_position?: number | null
-          ticket_serial?: string
+          ticket_layout_mask?: number[]
+          ticket_numbers?: Json | null
+          ticket_perm?: number[]
+          ticket_position?: number[] | null
+          ticket_serial?: string[]
           total_calls?: number
           validated_at?: string | null
+          validation_status?: string
           win_pattern?: string
         }
         Relationships: [
           {
-            foreignKeyName: "universal_game_logs_player_id_fkey"
-            columns: ["player_id"]
-            isOneToOne: false
-            referencedRelation: "players"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "universal_game_logs_session_id_fkey"
-            columns: ["session_id"]
+            columns: ["session_uuid"]
             isOneToOne: false
             referencedRelation: "game_sessions"
             referencedColumns: ["id"]

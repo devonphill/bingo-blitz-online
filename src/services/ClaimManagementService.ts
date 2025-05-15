@@ -1,4 +1,3 @@
-
 import { logWithTimestamp } from '@/utils/logUtils';
 import { claimStorageService } from './ClaimStorageService';
 import { claimBroadcastService } from './ClaimBroadcastService';
@@ -127,21 +126,8 @@ class ClaimManagementService {
         
         logWithTimestamp(`Found claim ${claimId} in database`, 'info');
         
-        // Update the claim status in the database - id is a string UUID
-        const { error: updateError } = await supabase
-          .from('claims')
-          .update({
-            status: isValid ? 'verified' : 'rejected',
-            verified_at: new Date().toISOString()
-          })
-          .eq('id', dbClaim.id);
-        
-        if (updateError) {
-          logWithTimestamp(`Error updating claim in database: ${updateError.message}`, 'error');
-          return false;
-        }
-        
-        // Broadcast result to the player
+        // Broadcast result to the player but don't update the claim status in database
+        // as that's now handled by the universal_game_logs insertion
         await claimBroadcastService.broadcastClaimResult({
           sessionId,
           playerId: dbClaim.player_id,
@@ -162,7 +148,7 @@ class ClaimManagementService {
       
       logWithTimestamp(`Found and removed claim ${claimId} from storage`, 'info');
       
-      // Broadcast result to the player
+      // Broadcast result to the player without updating claim status
       await claimBroadcastService.broadcastClaimResult({
         sessionId,
         playerId: claim.playerId,
