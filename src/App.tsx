@@ -1,3 +1,4 @@
+
 import React, { Suspense, lazy } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { Toaster } from "@/components/ui/toaster";
@@ -6,6 +7,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import LoginForm from '@/components/auth/LoginForm';
 import { PlayerContextProvider } from '@/contexts/PlayerContext';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { AuthContextProvider } from '@/contexts/AuthContext'; // Import the AuthContextProvider
 
 // Simplified loading spinner component
 const LoadingSpinner = ({ size = "md" }: { size?: "sm" | "md" | "lg" }) => {
@@ -72,7 +74,7 @@ const PlayerRoutes = () => {
 
 function App() {
   return (
-    <>
+    <AuthContextProvider>
       <Suspense fallback={<LoadingSpinner size="lg" />}>
         <Routes>
           {/* Public routes */}
@@ -112,7 +114,7 @@ function App() {
         </Routes>
       </Suspense>
       <Toaster />
-    </>
+    </AuthContextProvider>
   );
 }
 
