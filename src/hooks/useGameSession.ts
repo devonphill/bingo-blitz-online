@@ -25,7 +25,7 @@ export function useGameSession(gameCode: string) {
         // Step 1: Get the player by player_code
         const { data: playerData, error: playerError } = await supabase
           .from('players')
-          .select('*')  // Select all columns including session_id and player_code
+          .select('id, nickname, player_code, session_id')
           .eq('player_code', gameCode)
           .single();
         
@@ -44,6 +44,12 @@ export function useGameSession(gameCode: string) {
         if (!playerData.session_id) {
           throw new Error('Player has no associated game session');
         }
+        
+        // Save player data to localStorage for persistence
+        localStorage.setItem('playerCode', gameCode);
+        localStorage.setItem('playerName', playerData.nickname || playerData.player_code);
+        localStorage.setItem('playerId', playerData.id);
+        localStorage.setItem('playerSessionId', playerData.session_id);
         
         // Step 2: Get the session using the player's session_id
         const { data: sessionData, error: sessionError } = await supabase
@@ -72,7 +78,7 @@ export function useGameSession(gameCode: string) {
         // Get session progress for current pattern
         const { data: progressData } = await supabase
           .from('sessions_progress')
-          .select('current_win_pattern, current_game_type')
+          .select('current_win_pattern, current_game_type, game_status')
           .eq('session_id', sessionData.id)
           .single();
         
@@ -81,13 +87,14 @@ export function useGameSession(gameCode: string) {
           name: sessionData.name,
           callerName: callerName,
           status: sessionData.status,
-          gameType: sessionData.game_type
+          gameType: sessionData.game_type,
+          gameStatus: progressData?.game_status || 'pending'
         });
         
         setCurrentWinPattern(progressData?.current_win_pattern || null);
         setGameType(sessionData.game_type);
         
-        logWithTimestamp(`Session found: ${sessionData.name}, type: ${sessionData.game_type}`, 'info');
+        logWithTimestamp(`Session found: ${sessionData.name}, type: ${sessionData.game_type}, status: ${progressData?.game_status || 'pending'}`, 'info');
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to load game session';
         setSessionError(errorMessage);
