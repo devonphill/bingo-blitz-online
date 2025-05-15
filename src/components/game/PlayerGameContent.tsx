@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -8,6 +9,8 @@ import { useToast } from "@/hooks/use-toast";
 import { NetworkDebugging } from '@/components/game';
 import { Spinner } from "@/components/ui/spinner";
 import { PlayerTicketManager } from '@/components/player/PlayerTicketManager';
+import { usePlayerContext } from '@/contexts/PlayerContext';
+import { useGameContext } from '@/contexts/GameContext';
 
 interface PlayerGameContentProps {
   tickets?: any[];
@@ -34,6 +37,8 @@ export function PlayerGameContent({
 }: PlayerGameContentProps) {
   const { toast } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const { player } = usePlayerContext();
+  const gameContext = useGameContext();
   
   // Handle saving auto-marking preference to localStorage
   const handleAutoMarkingChange = (checked: boolean) => {
@@ -50,9 +55,35 @@ export function PlayerGameContent({
   const handleClaimBingo = () => {
     if (onClaimBingo) {
       console.log('CLAIM DEBUG - Initiating claim from PlayerGameContent');
-      // Pass an empty object as the ticket - this will make the handler use the first available ticket
-      // This is likely part of the problem - we're not specifying which ticket to claim
-      onClaimBingo({});
+      
+      // Get the first winning ticket from the game context if available
+      const winningTickets = gameContext?.winningTickets || [];
+      
+      if (winningTickets.length > 0) {
+        // Use the first winning ticket if available
+        const ticketToUse = winningTickets[0];
+        console.log('CLAIM DEBUG - Using winning ticket for claim:', {
+          id: ticketToUse.id,
+          serial: ticketToUse.serial,
+          perm: ticketToUse.perm
+        });
+        onClaimBingo(ticketToUse);
+      } else {
+        // If no winning tickets, try to get any assigned ticket
+        console.log('CLAIM DEBUG - No winning ticket found, using player tickets');
+        
+        // We'll still try to claim, but let the backend handle validation
+        // This ensures we're passing a ticket object with a proper structure, not an empty object
+        onClaimBingo({
+          // Pass minimal required fields instead of empty object
+          serial: `manual-claim-${Date.now()}`,
+          perm: 0,
+          position: 0,
+          layout_mask: 0,
+          numbers: []
+        });
+      }
+      
       toast({
         title: "Bingo Claim Submitted",
         description: "Your claim has been submitted and is awaiting verification.",

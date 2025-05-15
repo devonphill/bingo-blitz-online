@@ -86,11 +86,37 @@ const PlayerGame = () => {
       });
       return;
     }
+    
+    // Enhanced debug logging to verify ticket data
+    log('Preparing to submit claim with ticket:', 'info');
+    console.log('CLAIM DEBUG - Ticket data for submission:', ticket);
+    
+    // Validate minimum required ticket fields
+    if (!ticket || (!ticket.serial && !ticket.id)) {
+      log('Cannot submit claim: Invalid ticket data - missing ID/serial', 'error');
+      toast({
+        title: "Invalid Ticket Data",
+        description: "Cannot identify the ticket you're claiming for.",
+        variant: "destructive"
+      });
+      return;
+    }
 
     log(`Submitting bingo claim for ticket in session ${player.sessionId}`, 'info');
     setClaimStatus("pending");
     
-    const success = submitBingoClaim(ticket, playerCode, player.sessionId);
+    // Prepare the ticket with required fields
+    const claimTicket = {
+      serial: ticket.serial || ticket.id, // Use ID as fallback for serial
+      perm: ticket.perm || 0,
+      position: ticket.position || 0,
+      layout_mask: ticket.layout_mask || ticket.layoutMask || 0,
+      numbers: ticket.numbers || []
+    };
+    
+    console.log('CLAIM DEBUG - Claim ticket prepared:', claimTicket);
+    
+    const success = submitBingoClaim(claimTicket, playerCode, player.sessionId);
     if (success) {
       log('Claim submitted successfully', 'info');
       toast({

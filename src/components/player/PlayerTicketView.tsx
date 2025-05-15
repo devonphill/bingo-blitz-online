@@ -24,7 +24,7 @@ export default function PlayerTicketView({
 }: PlayerTicketViewProps) {
   // Debug log to see ticket data
   console.log('CLAIM DEBUG - Available tickets in PlayerTicketView:', 
-    tickets.map(t => ({ id: t.id, serial: t.serial, perm: t.perm, position: t.position }))
+    tickets.map(t => ({ id: t.id, serial: t.serial, perm: t.perm, position: t.position, is_winning: t.is_winning }))
   );
   
   if (!tickets || tickets.length === 0) {
@@ -53,20 +53,21 @@ export default function PlayerTicketView({
               {onClaimBingo && (
                 <Button 
                   size="sm" 
-                  variant="outline"
-                  className="flex items-center gap-1"
+                  variant={ticket.is_winning ? "default" : "outline"}
+                  className={`flex items-center gap-1 ${ticket.is_winning ? 'bg-green-500 hover:bg-green-600' : ''}`}
                   onClick={() => {
                     // Log the ticket being claimed
                     console.log('CLAIM DEBUG - Claiming specific ticket:', {
                       id: ticket.id,
                       serial: ticket.serial,
-                      perm: ticket.perm
+                      perm: ticket.perm,
+                      is_winning: ticket.is_winning
                     });
                     onClaimBingo(ticket);
                   }}
                 >
                   <Bell className="h-3 w-3" />
-                  <span>Claim This Ticket</span>
+                  <span>{ticket.is_winning ? "Claim Winner!" : "Claim This Ticket"}</span>
                 </Button>
               )}
             </CardTitle>

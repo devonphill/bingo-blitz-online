@@ -32,9 +32,10 @@ export async function fetchClaimsForSession(sessionId: string | null): Promise<a
  */
 export function submitBingoClaim(ticket: any, playerCode: string, sessionId: string): boolean {
   try {
-    // DEBUG: Log the incoming ticket data to identify what's missing
-    console.log('CLAIM DEBUG - Ticket data received:', ticket);
-    console.log('CLAIM DEBUG - Required fields check:', {
+    // Enhanced DEBUG: Log the incoming ticket data with deeply nested properties
+    console.log('CLAIM DEBUG - Full ticket data received:', JSON.stringify(ticket, null, 2));
+    console.log('CLAIM DEBUG - Required fields validation:', {
+      hasId: !!ticket?.id,
       hasSerial: !!ticket?.serial,
       hasPerm: !!ticket?.perm,
       hasPosition: !!ticket?.position,
@@ -44,7 +45,13 @@ export function submitBingoClaim(ticket: any, playerCode: string, sessionId: str
     
     logWithTimestamp(`NetworkContext: Submitting bingo claim for player ${playerCode} in session ${sessionId}`, 'info');
     
-    if (!ticket || !ticket.serial) {
+    if (!ticket) {
+      logWithTimestamp(`Cannot submit claim: No ticket data provided`, 'error');
+      return false;
+    }
+    
+    // Ensure serial exists - this is the required field mentioned in the error
+    if (!ticket.serial) {
       logWithTimestamp(`Missing required ticket field in claim: serial`, 'error');
       return false;
     }
@@ -67,18 +74,23 @@ export function submitBingoClaim(ticket: any, playerCode: string, sessionId: str
           return false;
         }
         
+        // Standardize ticket field names to ensure consistency
+        const ticketData = {
+          serial: ticket.serial,
+          perm: ticket.perm || 0,
+          position: ticket.position || 0,
+          layoutMask: ticket.layout_mask || ticket.layoutMask || 0,
+          numbers: ticket.numbers || []
+        };
+        
+        console.log('CLAIM DEBUG - Normalized ticket data for submission:', ticketData);
+        
         // Submit the claim using the claim service
         const result = claimService.submitClaim({
           playerId: data.id,
           playerName: data.nickname || playerCode,
           sessionId: sessionId,
-          ticket: {
-            serial: ticket.serial,
-            perm: ticket.perm,
-            position: ticket.position,
-            layoutMask: ticket.layout_mask || ticket.layoutMask,
-            numbers: ticket.numbers
-          },
+          ticket: ticketData,
           gameType: 'mainstage', // Default, can be changed later
           calledNumbers: ticket.calledNumbers || [],
           lastCalledNumber: ticket.lastCalledNumber || null
