@@ -1,34 +1,33 @@
 
 import { useState, useEffect, useCallback } from 'react';
-import { getSingleSourceConnection, EVENT_TYPES } from '@/utils/SingleSourceTrueConnections';
+import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { logWithTimestamp } from '@/utils/logUtils';
 
-// Extend the EVENT_TYPES with additional events we need
-const EXTENDED_EVENT_TYPES = {
-  ...EVENT_TYPES,
-  WIN_PATTERN_UPDATED: 'win-pattern-updated',
-  GAME_STATUS_UPDATED: 'game-status-updated',
-  CLAIM_VALIDATING_TKT: 'claim-validating-ticket'
-};
-
+/**
+ * A React hook to interact with the WebSocket service
+ * @param sessionId Session ID to connect to
+ * @returns WebSocket utilities 
+ */
 export function useWebSocket(sessionId: string | null) {
   const [isConnected, setIsConnected] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
   
   // Instance ID for logging
   const instanceId = `wsHook-${Math.random().toString(36).substring(2, 9)}`;
+  
+  // Get singleton connection
+  const connection = getSingleSourceConnection();
+  const EVENTS = connection.constructor['EVENT_TYPES'];
 
   // Connect to WebSocket
   const connect = useCallback(() => {
     if (!sessionId) {
       logWithTimestamp(`[${instanceId}] Cannot connect: No session ID`, 'warn');
       setLastError('No session ID provided');
-      return;
+      return () => {};
     }
     
     try {
-      const connection = getSingleSourceConnection();
-      
       // Connect to session
       connection.connect(sessionId);
       
@@ -52,7 +51,7 @@ export function useWebSocket(sessionId: string | null) {
       setIsConnected(false);
       return () => {};
     }
-  }, [sessionId, instanceId]);
+  }, [sessionId, instanceId, connection]);
   
   // Disconnect from WebSocket
   const disconnect = useCallback(() => {
@@ -71,11 +70,9 @@ export function useWebSocket(sessionId: string | null) {
     }
     
     try {
-      const connection = getSingleSourceConnection();
-      
       logWithTimestamp(`[${instanceId}] Setting up listener for event: ${eventType}`, 'info');
       
-      // Add listener for the event using SingleSourceTrueConnections
+      // Use the singleton connection to listen for events
       const cleanup = connection.listenForEvent<T>(eventType, (payload) => {
         logWithTimestamp(`[${instanceId}] Received event: ${eventType}`, 'info');
         console.log(`Full payload for ${eventType}:`, payload);
@@ -89,7 +86,7 @@ export function useWebSocket(sessionId: string | null) {
       logWithTimestamp(`[${instanceId}] Error setting up event listener: ${errorMsg}`, 'error');
       return () => {};
     }
-  }, [sessionId, instanceId]);
+  }, [sessionId, instanceId, connection]);
   
   // Auto-connect when sessionId changes
   useEffect(() => {
@@ -106,6 +103,6 @@ export function useWebSocket(sessionId: string | null) {
     connect,
     disconnect,
     listenForEvent,
-    EVENTS: EXTENDED_EVENT_TYPES  // Expose the extended event types
+    EVENTS  // Expose the event types
   };
 }

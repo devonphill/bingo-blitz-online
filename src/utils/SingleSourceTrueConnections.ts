@@ -1,6 +1,6 @@
 
 import { supabase } from '@/integrations/supabase/client';
-import { getWebSocketService, initializeWebSocketService, CHANNEL_NAMES, EVENT_TYPES, WEBSOCKET_STATUS } from '@/services/websocket';
+import { getWebSocketService, initializeWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 import { logWithTimestamp } from './logUtils';
 import { ConnectionState } from '@/constants/connectionConstants';
 import { ConnectionListenerManager } from './connection/ConnectionListenerManager';
@@ -24,6 +24,17 @@ export class SingleSourceTrueConnections {
   private activeChannels: Map<string, any> = new Map();
   // Track channel statuses
   private channelStatuses: Map<string, string> = new Map();
+  
+  // Import constants from websocket service to ensure consistency
+  private WEBSOCKET_STATUS = {
+    SUBSCRIBED: 'SUBSCRIBED',
+    TIMED_OUT: 'TIMED_OUT',
+    CLOSED: 'CLOSED',
+    CHANNEL_ERROR: 'CHANNEL_ERROR',
+    CONNECTING: 'CONNECTING',
+    JOINED: 'JOINED',
+    JOINING: 'JOINING'
+  };
   
   private constructor() {
     // Initialize WebSocket service with Supabase client
@@ -115,10 +126,10 @@ export class SingleSourceTrueConnections {
       const status = this.channelStatuses.get(channelName);
       
       // If channel exists and is in good state (SUBSCRIBED, JOINED, CONNECTING), reuse it
-      if (status === WEBSOCKET_STATUS.SUBSCRIBED || 
-          status === WEBSOCKET_STATUS.JOINED || 
-          status === WEBSOCKET_STATUS.JOINING || 
-          status === WEBSOCKET_STATUS.CONNECTING) {
+      if (status === this.WEBSOCKET_STATUS.SUBSCRIBED || 
+          status === this.WEBSOCKET_STATUS.JOINED || 
+          status === this.WEBSOCKET_STATUS.JOINING || 
+          status === this.WEBSOCKET_STATUS.CONNECTING) {
         logWithTimestamp(`Reusing existing ${channelName} channel with status: ${status}`, 'info');
         return channel;
       }
@@ -168,7 +179,7 @@ export class SingleSourceTrueConnections {
     
     // Store the channel
     this.activeChannels.set(channelName, channel);
-    this.channelStatuses.set(channelName, WEBSOCKET_STATUS.CONNECTING);
+    this.channelStatuses.set(channelName, this.WEBSOCKET_STATUS.CONNECTING);
     
     // Subscribe with reconnect capability
     webSocketService.subscribeWithReconnect(channelName, (status) => {
@@ -179,14 +190,14 @@ export class SingleSourceTrueConnections {
       
       // Update connection state if this is the main game updates channel
       if (channelName === CHANNEL_NAMES.GAME_UPDATES) {
-        const connected = status === WEBSOCKET_STATUS.SUBSCRIBED;
+        const connected = status === this.WEBSOCKET_STATUS.SUBSCRIBED;
         this._isConnected = connected;
         this._connectionState = connected ? 'connected' : 'disconnected';
         this.listenerManager.notifyConnectionListeners(connected);
       }
       
       // If channel was successfully subscribed, set up default event listeners
-      if (status === WEBSOCKET_STATUS.SUBSCRIBED && channelName === CHANNEL_NAMES.GAME_UPDATES) {
+      if (status === this.WEBSOCKET_STATUS.SUBSCRIBED && channelName === CHANNEL_NAMES.GAME_UPDATES) {
         this.setupDefaultEventListeners(channelName);
       }
     });
@@ -299,7 +310,7 @@ export class SingleSourceTrueConnections {
     try {
       // Check if the GAME_UPDATES channel is in SUBSCRIBED state
       const status = this.channelStatuses.get(CHANNEL_NAMES.GAME_UPDATES);
-      return status === WEBSOCKET_STATUS.SUBSCRIBED;
+      return status === this.WEBSOCKET_STATUS.SUBSCRIBED;
     } catch (error) {
       logWithTimestamp(`Error checking connection status: ${error}`, 'error');
       return false;
@@ -527,7 +538,7 @@ export class SingleSourceTrueConnections {
    * @param handler Handler function to call when the event is triggered
    * @returns Function to remove the listener
    */
-  public listenForEvent<T>(
+  public listenForEvent<T extends { sessionId?: string }>(
     eventType: string, 
     handler: (data: T) => void
   ): () => void {
@@ -559,13 +570,24 @@ export class SingleSourceTrueConnections {
    */
   public static CHANNEL_NAMES = CHANNEL_NAMES;
   public static EVENT_TYPES = EVENT_TYPES;
-  public static WEBSOCKET_STATUS = WEBSOCKET_STATUS;
+  public static get WEBSOCKET_STATUS() {
+    return {
+      SUBSCRIBED: 'SUBSCRIBED',
+      TIMED_OUT: 'TIMED_OUT',
+      CLOSED: 'CLOSED',
+      CHANNEL_ERROR: 'CHANNEL_ERROR',
+      CONNECTING: 'CONNECTING', 
+      JOINED: 'JOINED',
+      JOINING: 'JOINING'
+    };
+  }
 }
 
 // Export a singleton instance getter
 export const getSingleSourceConnection = () => SingleSourceTrueConnections.getInstance();
 
 // Re-export needed types for convenience
-export { CHANNEL_NAMES, EVENT_TYPES, WEBSOCKET_STATUS } from '@/services/websocket';
+export { CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 export type { ConnectionState } from '@/constants/connectionConstants';
 export type { NumberCalledListener, SessionProgressListener, ConnectionStatusListener } from './connection/connectionTypes';
+

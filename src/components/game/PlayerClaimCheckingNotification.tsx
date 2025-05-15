@@ -6,7 +6,7 @@ import { AlertTriangle } from 'lucide-react';
 import { logWithTimestamp } from '@/utils/logUtils';
 import CallerTicketDisplay from './CallerTicketDisplay';
 import { ClaimData } from '@/types/claim';
-import { getSingleSourceConnection, EVENT_TYPES } from '@/utils/SingleSourceTrueConnections';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface PlayerClaimCheckingNotificationProps {
   sessionId: string;
@@ -21,6 +21,9 @@ export default function PlayerClaimCheckingNotification({
   const [claimBeingChecked, setClaimBeingChecked] = useState<ClaimData | null>(null);
   const [isMyClaimBeingChecked, setIsMyClaimBeingChecked] = useState(false);
   const instanceId = React.useRef(`claimNotify-${Math.random().toString(36).substring(2, 7)}`).current;
+  
+  // Use the WebSocket hook
+  const { listenForEvent, EVENTS } = useWebSocket(sessionId);
 
   // Listen for claim checking broadcasts
   useEffect(() => {
@@ -30,9 +33,6 @@ export default function PlayerClaimCheckingNotification({
     }
 
     logWithTimestamp(`[${instanceId}] Setting up claim validation listener for session ${sessionId}`, 'info');
-
-    // Get singleton connection
-    const connection = getSingleSourceConnection();
 
     // Function to handle claim validating event
     const handleClaimValidatingEvent = (payload: any) => {
@@ -81,9 +81,9 @@ export default function PlayerClaimCheckingNotification({
       }
     };
 
-    // Add listener for claim validating events (CLAIM_VALIDATING_TKT)
-    const cleanup = connection.listenForEvent(
-      EVENT_TYPES.CLAIM_VALIDATING_TKT,
+    // Use listenForEvent from the WebSocket hook to listen for claim validating events
+    const cleanup = listenForEvent(
+      EVENTS.CLAIM_VALIDATING_TKT,
       handleClaimValidatingEvent
     );
     
@@ -121,7 +121,7 @@ export default function PlayerClaimCheckingNotification({
       window.removeEventListener('forceOpenClaimDrawer', handleForceOpenEvent as EventListener);
       logWithTimestamp(`[${instanceId}] Cleaned up claim validating events listener`, 'info');
     };
-  }, [sessionId, playerCode, instanceId]);
+  }, [sessionId, playerCode, instanceId, listenForEvent, EVENTS]);
 
   // Function to play notification sound
   const playNotificationSound = () => {
