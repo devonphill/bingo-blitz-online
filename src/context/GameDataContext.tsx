@@ -13,6 +13,8 @@ interface GameDataContextType {
   currentWinPattern: any | null;
   isGameActive: boolean;
   isGameComplete: boolean;
+  gameTitle?: string | null;
+  gameType?: string | null;
 }
 
 export const GameDataContext = createContext<GameDataContextType>({
@@ -25,6 +27,8 @@ export const GameDataContext = createContext<GameDataContextType>({
   currentWinPattern: null,
   isGameActive: false,
   isGameComplete: false,
+  gameTitle: null,
+  gameType: null
 });
 
 export const useGameData = () => useContext(GameDataContext);

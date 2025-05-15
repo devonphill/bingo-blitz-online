@@ -3,6 +3,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 import { logWithTimestamp } from '@/utils/logUtils';
 
+// Extend the EVENT_TYPES with additional events we need
+const EXTENDED_EVENT_TYPES = {
+  ...EVENT_TYPES,
+  WIN_PATTERN_UPDATED: 'win-pattern-updated',
+  GAME_STATUS_UPDATED: 'game-status-updated'
+};
+
 export function useWebSocket(sessionId: string | null) {
   const [isConnected, setIsConnected] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
@@ -99,6 +106,7 @@ export function useWebSocket(sessionId: string | null) {
     lastError,
     connect,
     disconnect,
-    listenForEvent
+    listenForEvent,
+    EVENTS: EXTENDED_EVENT_TYPES  // Expose the extended event types
   };
 }

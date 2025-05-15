@@ -9,7 +9,6 @@ import { useGameData } from '@/hooks/useGameData';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { GameStatus } from '@/types/game';
-import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 import PlayerClaimCheckingNotification from './PlayerClaimCheckingNotification';
 
 interface PlayerGameLayoutProps {
@@ -33,8 +32,8 @@ export default function PlayerGameLayout({ children, sessionId, gameId, gameStat
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const instanceId = React.useRef(`PlayerGameLayout-${Math.random().toString(36).substring(2, 7)}`);
 
-  // Use our WebSocket hook for connection status
-  const { isConnected, lastError, listenForEvent } = useWebSocket(sessionId);
+  // Use our WebSocket hook for connection status and event listening
+  const { isConnected, lastError, listenForEvent, EVENTS } = useWebSocket(sessionId);
 
   // Custom logging function
   const log = useCallback((message: string, level: 'info' | 'warn' | 'error' | 'debug' = 'info') => {
@@ -89,7 +88,7 @@ export default function PlayerGameLayout({ children, sessionId, gameId, gameStat
 
     // Listen for number called events
     const numberListener = listenForEvent<{number: number, calledNumbers: number[]}>(
-      EVENT_TYPES.NUMBER_CALLED,
+      EVENTS.NUMBER_CALLED,
       (data) => {
         log(`Number called: ${data.number}`, 'info');
         setLastCalledNumber(data.number);
@@ -101,13 +100,34 @@ export default function PlayerGameLayout({ children, sessionId, gameId, gameStat
         }
       }
     );
+    
+    // Listen for win pattern updates
+    const patternListener = listenForEvent<{pattern: any}>(
+      EVENTS.WIN_PATTERN_UPDATED,
+      (data) => {
+        log(`Win pattern updated: ${JSON.stringify(data.pattern)}`, 'info');
+        setCurrentWinPattern(data.pattern);
+      }
+    );
+    
+    // Listen for game status updates
+    const statusListener = listenForEvent<{status: GameStatus}>(
+      EVENTS.GAME_STATUS_UPDATED,
+      (data) => {
+        log(`Game status updated: ${data.status}`, 'info');
+        setIsGameActive(data.status === 'active');
+        setIsGameComplete(data.status === 'complete');
+      }
+    );
 
     // We need to clean up when component unmounts
     return () => {
       log('Cleaning up WebSocket event listeners', 'info');
       numberListener();
+      patternListener();
+      statusListener();
     };
-  }, [sessionId, listenForEvent, log]);
+  }, [sessionId, listenForEvent, log, EVENTS]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -136,7 +156,7 @@ export default function PlayerGameLayout({ children, sessionId, gameId, gameStat
                 ) : (
                   <Badge variant="outline" className="bg-red-100 text-red-800 border-red-500">
                     <AlertTriangle className="h-4 w-4 mr-1 inline-block" />
-                    {connectionError || lastError || 'Connecting...'}
+                    {lastError || connectionError || 'Connecting...'}
                   </Badge>
                 )}
               </>
@@ -154,7 +174,9 @@ export default function PlayerGameLayout({ children, sessionId, gameId, gameStat
         winPatterns,
         currentWinPattern,
         isGameActive,
-        isGameComplete
+        isGameComplete,
+        gameTitle,
+        gameType
       }}>
         {children}
       </GameDataContext.Provider>
