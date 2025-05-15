@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { getWebSocketService, initializeWebSocketService, CHANNEL_NAMES, EVENT_TYPES, WEBSOCKET_STATUS } from '@/services/websocket';
 import { logWithTimestamp } from './logUtils';
@@ -190,7 +191,7 @@ export class SingleSourceTrueConnections {
    * @param listener Function to call when connection status changes
    * @returns Function to remove the listener
    */
-  public onConnectionStateChange(listener: ConnectionStatusListener): () => void {
+  public addConnectionListener(listener: ConnectionStatusListener): () => void {
     return this.listenerManager.addConnectionListener(listener);
   }
   

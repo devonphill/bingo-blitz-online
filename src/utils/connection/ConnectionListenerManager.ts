@@ -1,6 +1,6 @@
 
-import { logWithTimestamp } from '../logUtils';
-import { NumberCalledListener, SessionProgressListener, ConnectionStatusListener } from './connectionTypes';
+import { logWithTimestamp } from '@/utils/logUtils';
+import { ConnectionStatusListener, NumberCalledListener, SessionProgressListener } from './connectionTypes';
 
 /**
  * A utility class to manage connection listeners
@@ -11,23 +11,33 @@ export class ConnectionListenerManager {
   private sessionProgressListeners: Set<SessionProgressListener> = new Set();
   
   /**
-   * Register a number called listener
+   * Add a number called listener
+   * @param listener Function to call when a number is called
+   * @returns Function to remove the listener
    */
-  public onNumberCalled(listener: NumberCalledListener) {
+  public onNumberCalled(listener: NumberCalledListener): () => void {
     this.numberCalledListeners.add(listener);
-    return this;
+    return () => {
+      this.numberCalledListeners.delete(listener);
+    };
   }
   
   /**
-   * Register a session progress update listener
+   * Add a session progress update listener
+   * @param listener Function to call when session progress is updated
+   * @returns Function to remove the listener
    */
-  public onSessionProgressUpdate(listener: SessionProgressListener) {
+  public onSessionProgressUpdate(listener: SessionProgressListener): () => void {
     this.sessionProgressListeners.add(listener);
-    return this;
+    return () => {
+      this.sessionProgressListeners.delete(listener);
+    };
   }
   
   /**
-   * Register a listener for connection status changes
+   * Add a connection status listener
+   * @param listener Function to call when connection status changes
+   * @returns Function to remove the listener
    */
   public addConnectionListener(listener: ConnectionStatusListener): () => void {
     this.connectionListeners.add(listener);
@@ -39,7 +49,9 @@ export class ConnectionListenerManager {
   }
   
   /**
-   * Notify number called listeners
+   * Notify all number called listeners
+   * @param number Number that was called or null if game reset
+   * @param allNumbers All called numbers
    */
   public notifyNumberCalledListeners(number: number | null, allNumbers: number[]): void {
     this.numberCalledListeners.forEach(listener => {
@@ -52,7 +64,8 @@ export class ConnectionListenerManager {
   }
   
   /**
-   * Notify session progress listeners
+   * Notify all session progress listeners
+   * @param progress Session progress data
    */
   public notifySessionProgressListeners(progress: any): void {
     this.sessionProgressListeners.forEach(listener => {
@@ -65,7 +78,8 @@ export class ConnectionListenerManager {
   }
   
   /**
-   * Notify all listeners of connection status change
+   * Notify all connection status listeners
+   * @param connected Whether connection is established
    */
   public notifyConnectionListeners(connected: boolean): void {
     this.connectionListeners.forEach(listener => {
@@ -79,6 +93,7 @@ export class ConnectionListenerManager {
 
   /**
    * Get the connection listener count
+   * @returns Number of connection listeners
    */
   public getConnectionListenerCount(): number {
     return this.connectionListeners.size;
@@ -86,6 +101,7 @@ export class ConnectionListenerManager {
 
   /**
    * Get the number called listener count
+   * @returns Number of number called listeners
    */
   public getNumberCalledListenerCount(): number {
     return this.numberCalledListeners.size;
@@ -93,6 +109,7 @@ export class ConnectionListenerManager {
 
   /**
    * Get the session progress listener count
+   * @returns Number of session progress listeners
    */
   public getSessionProgressListenerCount(): number {
     return this.sessionProgressListeners.size;
