@@ -44,13 +44,16 @@ export default function ClaimItem({
         ...claim,
         calledNumbers: currentCalledNumbers,
         lastCalledNumber: currentNumber,
-        winPattern: claim.winPattern || currentWinPattern,
+        winPattern: claim.winPattern || claim.pattern_claimed || currentWinPattern,
         gameType: claim.gameType || gameType,
-        ticket: claim.ticket ? {
-          ...claim.ticket,
+        sessionId: claim.sessionId || claim.session_id, // Important: Ensure sessionId is included
+        ticket: claim.ticket || claim.ticket_details ? {
+          ...((claim.ticket || claim.ticket_details) as any),
           calledNumbers: currentCalledNumbers
         } : null
       };
+      
+      console.log('Broadcasting claim check with data:', enhancedClaim);
       
       // More reliable broadcasting with multiple attempts if needed
       let success = false;
@@ -63,7 +66,7 @@ export default function ClaimItem({
         
         success = await claimBroadcastService.broadcastClaimChecking(
           enhancedClaim,
-          claim.sessionId
+          claim.sessionId || claim.session_id
         );
         
         if (!success && attempts < maxAttempts) {
@@ -91,12 +94,12 @@ export default function ClaimItem({
         // Show confirmation using both toast systems for maximum visibility
         toast({
           title: "Sent to All Players",
-          description: `Claim by ${claim.playerName || claim.playerId} shared with all players`,
+          description: `Claim by ${claim.playerName || claim.player_name || claim.playerId} shared with all players`,
           duration: 3000,
         });
         
         sonnerToast.success("Claim sent to players", {
-          description: `${claim.playerName || claim.playerId}'s ticket is now visible to everyone`
+          description: `${claim.playerName || claim.player_name || claim.playerId}'s ticket is now visible to everyone`
         });
       } else {
         throw new Error(`Failed to broadcast claim after ${maxAttempts} attempts`);
@@ -115,14 +118,35 @@ export default function ClaimItem({
     }
   };
 
+  // Format the timestamp for display
+  const formattedTime = React.useMemo(() => {
+    try {
+      const timestamp = claim.claimed_at || claim.timestamp;
+      if (!timestamp) return "Unknown time";
+      return new Date(timestamp).toLocaleTimeString();
+    } catch (err) {
+      console.error("Error formatting claim timestamp:", err);
+      return "Invalid date";
+    }
+  }, [claim.claimed_at, claim.timestamp]);
+
+  // Get the win pattern from the claim data
+  const winPattern = claim.winPattern || claim.pattern_claimed || currentWinPattern || "Unknown";
+
+  // Get the game number 
+  const gameNumber = claim.gameNumber || "Unknown";
+
+  // Get player name
+  const playerName = claim.playerName || claim.player_name || claim.playerId || "Unknown Player";
+
   return (
     <div className="border rounded-md p-4">
       <div className="font-bold">Claim Details</div>
-      <div>Player: {claim.playerName || claim.playerId}</div>
-      <div>Session: {claim.sessionId?.substring(0, 8)}...</div>
-      <div>Game: {claim.gameNumber || "Unknown"}</div>
-      <div>Pattern: {claim.winPattern || currentWinPattern}</div>
-      <div>Claimed at: {new Date(claim.timestamp).toLocaleTimeString()}</div>
+      <div>Player: {playerName}</div>
+      <div>Session: {(claim.sessionId || claim.session_id)?.substring(0, 8)}...</div>
+      <div>Game: {gameNumber}</div>
+      <div>Pattern: {winPattern}</div>
+      <div>Claimed at: {formattedTime}</div>
       
       {claim.toGoCount !== undefined && (
         <div className="mt-2 bg-yellow-50 p-2 rounded">
@@ -143,21 +167,21 @@ export default function ClaimItem({
       )}
       
       {/* Display the ticket information */}
-      {claim.ticket && (
+      {(claim.ticket || claim.ticket_details) && (
         <div className="mt-4 border-t pt-3">
           <h3 className="font-medium text-sm mb-2">Claimed Ticket:</h3>
           <CallerTicketDisplay
             ticket={{
-              numbers: claim.ticket.numbers,
-              layoutMask: claim.ticket.layoutMask,
-              serial: claim.ticket.serial || "Unknown",
-              perm: claim.ticket.perm,
-              position: claim.ticket.position
+              numbers: (claim.ticket || claim.ticket_details)?.numbers,
+              layoutMask: (claim.ticket || claim.ticket_details)?.layoutMask || (claim.ticket || claim.ticket_details)?.layout_mask,
+              serial: (claim.ticket || claim.ticket_details)?.serial || claim.ticketSerial || claim.ticket_serial || "Unknown",
+              perm: (claim.ticket || claim.ticket_details)?.perm,
+              position: (claim.ticket || claim.ticket_details)?.position
             }}
-            calledNumbers={currentCalledNumbers || (claim.calledNumbers || [])}
+            calledNumbers={currentCalledNumbers || (claim.calledNumbers || claim.called_numbers_snapshot || [])}
             lastCalledNumber={currentNumber || claim.lastCalledNumber}
             gameType={gameType}
-            winPattern={currentWinPattern || claim.winPattern}
+            winPattern={currentWinPattern || winPattern}
           />
         </div>
       )}

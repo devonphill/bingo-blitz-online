@@ -33,7 +33,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
     try {
       log(`Initial fetch of claims for session ${sessionId}`, 'info');
       
-      // Query claims table for pending claims
+      // Query claims table for pending claims with all necessary fields
       const { data, error } = await supabase
         .from('claims')
         .select('*')
@@ -44,6 +44,9 @@ export function useCallerClaimManagement(sessionId: string | null) {
       if (error) {
         throw new Error(`Database error: ${error.message}`);
       }
+      
+      // Log raw claims data for debugging
+      console.log('[useCallerClaimManagement] Claims fetched from DB:', data);
       
       // Combine with any optimistic claims we have
       const optimisticClaims = Array.from(optimisticClaimsRef.current.values());
@@ -61,7 +64,18 @@ export function useCallerClaimManagement(sessionId: string | null) {
           allClaimsMap.set(claimId, {
             ...claim,
             id: claimId, // Ensure ID is stored as string
-            isOptimistic: false
+            isOptimistic: false,
+            // Ensure these fields are properly mapped for consistent access in UI
+            playerName: claim.player_name,
+            playerId: claim.player_id,
+            playerCode: claim.player_code,
+            winPattern: claim.pattern_claimed,
+            patternClaimed: claim.pattern_claimed,
+            ticket: claim.ticket_details,
+            ticketSerial: claim.ticket_serial,
+            gameNumber: claim.game_number || 1,
+            timestamp: claim.claimed_at,
+            calledNumbers: claim.called_numbers_snapshot
           });
         });
       }
@@ -132,12 +146,22 @@ export function useCallerClaimManagement(sessionId: string | null) {
       session_id: claimData.sessionId,
       player_id: claimData.playerId,
       player_name: claimData.playerName || 'Player',
+      playerName: claimData.playerName || 'Player', // Add for UI consistency
+      playerId: claimData.playerId,
+      playerCode: claimData.playerCode,
       ticket_serial: claimData.ticket?.serial || '',
+      ticketSerial: claimData.ticket?.serial || '',
       ticket_details: claimData.ticket || {},
+      ticket: claimData.ticket || {},
       pattern_claimed: claimData.winPattern || 'unknown',
+      winPattern: claimData.winPattern || 'unknown',
+      patternClaimed: claimData.winPattern || 'unknown',
       called_numbers_snapshot: claimData.calledNumbers || [],
+      calledNumbers: claimData.calledNumbers || [],
       status: claimData.status || 'pending' as ClaimStatus,
       claimed_at: claimData.timestamp || new Date().toISOString(),
+      timestamp: claimData.timestamp || new Date().toISOString(),
+      gameNumber: claimData.gameNumber || 1,
       isOptimistic: true
     };
     

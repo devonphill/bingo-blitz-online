@@ -28,6 +28,11 @@ const ClaimsList: React.FC<ClaimsListProps> = ({
   isProcessingClaim,
   onRefresh
 }) => {
+  // Log claims data to verify we're getting all needed information
+  React.useEffect(() => {
+    console.log('[ClaimsList] Claims to render:', claims);
+  }, [claims]);
+
   if (!claims || claims.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center p-6 bg-gray-50 border border-dashed rounded-lg">

@@ -164,34 +164,56 @@ class ClaimBroadcastService {
    */
   public async broadcastClaimChecking(claim: ClaimData, sessionId: string): Promise<boolean> {
     try {
-      if (!claim || !sessionId) {
+      // Use either the passed sessionId or the one from the claim object
+      const effectiveSessionId = sessionId || claim.sessionId || claim.session_id;
+      
+      if (!claim || !effectiveSessionId) {
         logWithTimestamp(`[${this.instanceId}] Cannot broadcast claim check: Missing session ID`, 'error');
         return false;
       }
 
-      logWithTimestamp(`[${this.instanceId}] Broadcasting claim check for ${claim.playerName || claim.playerId} in session ${sessionId}`, 'info');
+      logWithTimestamp(`[${this.instanceId}] Broadcasting claim check for ${claim.playerName || claim.player_name || claim.playerId} in session ${effectiveSessionId}`, 'info');
+      
+      // Log the raw claim object to verify we have the needed data
+      console.log('[ClaimBroadcastService] Raw claim object for checking broadcast:', claim);
       
       // Ensure we have properly formatted ticket data for display
-      const ticketData = claim.ticket ? {
-        serial: claim.ticket.serial || '',
-        numbers: claim.ticket.numbers || [],
-        calledNumbers: claim.calledNumbers || [],
-        layoutMask: claim.ticket.layoutMask || 0
-      } : null;
+      const ticketData = claim.ticket || claim.ticket_details || null;
       
       // Create a payload with claim details
       const broadcastPayload = {
         claimId: claim.id || 'unknown',
-        sessionId,
-        playerId: claim.playerId,
-        playerName: claim.playerName || 'unknown',
+        sessionId: effectiveSessionId,
+        playerId: claim.playerId || claim.player_id,
+        playerName: claim.playerName || claim.player_name || 'unknown',
         timestamp: new Date().toISOString(),
         message: 'Claim being verified by caller',
         gameType: claim.gameType || 'mainstage',
-        winPattern: claim.winPattern || 'oneLine',
-        ticket: ticketData,
-        calledNumbers: claim.calledNumbers || []
+        winPattern: claim.winPattern || claim.pattern_claimed || 'oneLine',
+        ticket: ticketData ? {
+          serial: typeof ticketData === 'object' && ticketData !== null && 'serial' in ticketData 
+                  ? ticketData.serial 
+                  : claim.ticketSerial || claim.ticket_serial || '',
+          numbers: typeof ticketData === 'object' && ticketData !== null && 'numbers' in ticketData 
+                   && Array.isArray(ticketData.numbers) 
+                   ? ticketData.numbers 
+                   : [],
+          layoutMask: typeof ticketData === 'object' && ticketData !== null 
+                      ? ('layoutMask' in ticketData 
+                        ? Number(ticketData.layoutMask) 
+                        : ('layout_mask' in ticketData 
+                          ? Number(ticketData.layout_mask) 
+                          : 0))
+                      : 0,
+          position: typeof ticketData === 'object' && ticketData !== null && 'position' in ticketData 
+                    ? Number(ticketData.position) 
+                    : 0
+        } : null,
+        calledNumbers: claim.calledNumbers || claim.called_numbers_snapshot || []
       };
+      
+      // Log the final broadcast payload
+      console.log('[ClaimBroadcastService] Broadcasting claim check with payload:', broadcastPayload);
       
       // Use WebSocketService
       const webSocketService = getWebSocketService();
