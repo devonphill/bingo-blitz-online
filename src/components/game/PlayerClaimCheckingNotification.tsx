@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { LogIn, AlertTriangle } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 import { logWithTimestamp } from '@/utils/logUtils';
 import CallerTicketDisplay from './CallerTicketDisplay';
@@ -72,16 +72,22 @@ export default function PlayerClaimCheckingNotification({
 
     // Subscribe to claim validating events (CLAIM_VALIDATING_TKT)
     const webSocketService = getWebSocketService();
-    const channel = webSocketService.subscribeToChannel(
-      CHANNEL_NAMES.GAME_UPDATES,
-      sessionId
-    );
     
-    if (channel) {
-      channel.on(EVENT_TYPES.CLAIM_VALIDATING_TKT, handleClaimValidatingEvent);
-      
-      logWithTimestamp(`Subscribed to claim validating events for session ${sessionId}`, 'info');
-    }
+    // Create a channel and add listener
+    const channel = webSocketService.createChannel(CHANNEL_NAMES.GAME_UPDATES);
+    
+    // Add listener for claim validating events
+    const cleanupListener = webSocketService.addListener(
+      CHANNEL_NAMES.GAME_UPDATES, 
+      'broadcast', 
+      EVENT_TYPES.CLAIM_VALIDATING_TKT, 
+      (payloadWrapper) => {
+        const payload = payloadWrapper?.payload;
+        if (payload) {
+          handleClaimValidatingEvent(payload);
+        }
+      }
+    );
     
     // Also listen to custom browser events that might be dispatched by other components
     const handleCustomEvent = (event: CustomEvent) => {
@@ -92,11 +98,14 @@ export default function PlayerClaimCheckingNotification({
     
     window.addEventListener('claimBroadcast', handleCustomEvent as EventListener);
 
+    // Log that we've set up the listener
+    logWithTimestamp(`Subscribed to claim validating events for session ${sessionId}`, 'info');
+    
     // Clean up
     return () => {
-      if (channel) {
-        channel.off(EVENT_TYPES.CLAIM_VALIDATING_TKT, handleClaimValidatingEvent);
-        logWithTimestamp(`Unsubscribed from claim validating events`, 'info');
+      if (cleanupListener) {
+        cleanupListener();
+        logWithTimestamp(`Unsubscribed from claim validating events listener`, 'info');
       }
       window.removeEventListener('claimBroadcast', handleCustomEvent as EventListener);
     };

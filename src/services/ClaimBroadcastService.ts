@@ -168,25 +168,22 @@ class ClaimBroadcastService {
       console.log('[ClaimBroadcastService] broadcastClaimChecking called with:');
       console.log('- sessionId parameter:', sessionId);
       console.log('- claim.sessionId:', claim.sessionId || claim.session_id);
-      console.log('- claim object:', claim);
+      console.log('- claim object:', JSON.stringify(claim, null, 2));
       
       // Use either the passed sessionId or the one from the claim object
       const effectiveSessionId = sessionId || claim.sessionId || claim.session_id;
       
       // Log session ID for debugging
       console.log('[ClaimBroadcastService] Attempting to broadcast claim check. Session ID:', 
-                 effectiveSessionId, 'Claim Data:', claim);
+                 effectiveSessionId, 'Claim Data:', JSON.stringify(claim, null, 2));
       
-      if (!claim || !effectiveSessionId) {
+      if (!effectiveSessionId) {
         logWithTimestamp(`[${this.instanceId}] Cannot broadcast claim check: Missing session ID`, 'error');
         console.error('Missing session ID for broadcast. Session ID:', effectiveSessionId);
         return false;
       }
 
       logWithTimestamp(`[${this.instanceId}] Broadcasting claim check for ${claim.playerName || claim.player_name || claim.playerId} in session ${effectiveSessionId}`, 'info');
-      
-      // Log the raw claim object to verify we have the needed data
-      console.log('[ClaimBroadcastService] Raw claim object for checking broadcast:', claim);
       
       // Ensure we have properly formatted ticket data for display
       const ticketData = claim.ticket || claim.ticket_details || null;
@@ -197,10 +194,11 @@ class ClaimBroadcastService {
         sessionId: effectiveSessionId,
         playerId: claim.playerId || claim.player_id,
         playerName: claim.playerName || claim.player_name || 'unknown',
-        timestamp: new Date().toISOString(),
+        playerCode: claim.playerCode || claim.player_code,
+        timestamp: claim.timestamp || new Date().toISOString(),
         message: 'Claim being verified by caller',
         gameType: claim.gameType || 'mainstage',
-        winPattern: claim.winPattern || claim.pattern_claimed || 'oneLine',
+        winPattern: claim.winPattern || claim.pattern_claimed || claim.patternClaimed || 'oneLine',
         ticket: ticketData ? {
           serial: typeof ticketData === 'object' && ticketData !== null && 'serial' in ticketData 
                   ? ticketData.serial 
@@ -224,7 +222,7 @@ class ClaimBroadcastService {
       };
       
       // Log the final broadcast payload
-      console.log('[ClaimBroadcastService] Broadcasting claim check with payload:', broadcastPayload);
+      console.log('[ClaimBroadcastService] Broadcasting claim check with payload:', JSON.stringify(broadcastPayload, null, 2));
       
       // Use WebSocketService
       const webSocketService = getWebSocketService();
@@ -236,6 +234,17 @@ class ClaimBroadcastService {
       
       if (success) {
         logWithTimestamp(`[${this.instanceId}] Claim check broadcast sent successfully`, 'info');
+        // Dispatch a browser event as a backup mechanism
+        try {
+          const event = new CustomEvent('claimBroadcast', { 
+            detail: { type: 'checking', claim: broadcastPayload } 
+          });
+          window.dispatchEvent(event);
+          logWithTimestamp(`[${this.instanceId}] Also dispatched browser event for claim check`, 'info');
+        } catch (eventError) {
+          // Just log the error but don't fail the whole operation
+          logWithTimestamp(`[${this.instanceId}] Error dispatching browser event: ${eventError}`, 'warn');
+        }
       } else {
         logWithTimestamp(`[${this.instanceId}] Failed to broadcast claim check`, 'error');
       }

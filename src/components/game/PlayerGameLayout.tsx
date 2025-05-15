@@ -21,7 +21,7 @@ interface PlayerGameLayoutProps {
   playerData: any;
 }
 
-export default function PlayerGameLayout({ children, sessionId, gameId, gameStatus, playerData }) {
+export default function PlayerGameLayout({ children, sessionId, gameId, gameStatus, playerData }: PlayerGameLayoutProps) {
   const router = useRouter();
   const { data: session } = useSession();
   const [isConnected, setIsConnected] = useState(false);
