@@ -2,6 +2,10 @@
 import { supabase } from '@/integrations/supabase/client';
 import { getWebSocketService, initializeWebSocketService, CHANNEL_NAMES, EVENT_TYPES, WEBSOCKET_STATUS } from '@/services/websocket';
 import { logWithTimestamp } from './logUtils';
+import { ConnectionState } from '@/constants/connectionConstants';
+import { ConnectionListenerManager } from './connection/ConnectionListenerManager';
+import { ConnectionHeartbeat } from './connection/ConnectionHeartbeat';
+import { NumberCalledListener, SessionProgressListener, ConnectionStatusListener } from './connection/connectionTypes';
 
 /**
  * Singleton manager for all WebSocket connections in the application
@@ -10,10 +14,28 @@ import { logWithTimestamp } from './logUtils';
 export class SingleSourceTrueConnections {
   private static instance: SingleSourceTrueConnections;
   private initialized = false;
+  private sessionId: string | null = null;
+  private _isConnected: boolean = false;
+  private _connectionState: ConnectionState = 'disconnected';
+  private listenerManager = new ConnectionListenerManager();
+  private heartbeat: ConnectionHeartbeat;
   
   private constructor() {
     // Initialize WebSocket service with Supabase client
     initializeWebSocketService(supabase);
+    
+    // Initialize heartbeat with callbacks
+    this.heartbeat = new ConnectionHeartbeat(
+      // On connection change
+      (connected: boolean) => {
+        this._isConnected = connected;
+        this._connectionState = connected ? 'connected' : 'disconnected';
+        this.listenerManager.notifyConnectionListeners(connected);
+      },
+      // On reconnect needed
+      () => this.reconnect()
+    );
+    
     this.initialized = true;
     logWithTimestamp('SingleSourceTrueConnections initialized', 'info');
   }
@@ -36,7 +58,101 @@ export class SingleSourceTrueConnections {
   }
   
   /**
+   * Initialize the connection with a session ID
+   * @param sessionId Session ID to initialize with
+   * @returns This instance for chaining
+   */
+  public init(sessionId: string): SingleSourceTrueConnections {
+    this.sessionId = sessionId;
+    this.heartbeat.setSessionId(sessionId);
+    this.heartbeat.startHeartbeat();
+    return this;
+  }
+  
+  /**
+   * Connect to a session
+   * @param sessionId Session ID to connect to
+   * @returns This instance for chaining
+   */
+  public connect(sessionId: string): SingleSourceTrueConnections {
+    if (!this.initialized) {
+      logWithTimestamp('Cannot connect: SingleSourceTrueConnections not initialized', 'error');
+      return this;
+    }
+    
+    // Update our session ID
+    this.sessionId = sessionId;
+    this.heartbeat.setSessionId(sessionId);
+    
+    // Start heartbeat
+    this.heartbeat.startHeartbeat();
+    
+    // Get WebSocketService
+    const webSocketService = getWebSocketService();
+    
+    try {
+      // Create and subscribe to channels
+      webSocketService.createChannel(CHANNEL_NAMES.GAME_UPDATES);
+      
+      // Subscribe with reconnect capability
+      webSocketService.subscribeWithReconnect(CHANNEL_NAMES.GAME_UPDATES, (status) => {
+        logWithTimestamp(`Game updates channel status: ${status}`, 'info');
+        
+        // Update connection state
+        const connected = status === WEBSOCKET_STATUS.SUBSCRIBED;
+        this._isConnected = connected;
+        this._connectionState = connected ? 'connected' : 'disconnected';
+        this.listenerManager.notifyConnectionListeners(connected);
+      });
+      
+      // Subscribe to number called events
+      webSocketService.addListener(
+        CHANNEL_NAMES.GAME_UPDATES,
+        'broadcast',
+        EVENT_TYPES.NUMBER_CALLED,
+        (payload) => {
+          if (payload && payload.payload) {
+            const { number, sessionId, calledNumbers } = payload.payload;
+            
+            // Ensure this is for our session
+            if (sessionId !== this.sessionId) return;
+            
+            // Notify listeners
+            this.listenerManager.notifyNumberCalledListeners(number, calledNumbers || []);
+          }
+        }
+      );
+      
+      // Subscribe to game reset events
+      webSocketService.addListener(
+        CHANNEL_NAMES.GAME_UPDATES,
+        'broadcast',
+        EVENT_TYPES.GAME_RESET,
+        (payload) => {
+          if (payload && payload.payload) {
+            const { sessionId } = payload.payload;
+            
+            // Ensure this is for our session
+            if (sessionId !== this.sessionId) return;
+            
+            // Notify listeners of reset with null number
+            this.listenerManager.notifyNumberCalledListeners(null, []);
+          }
+        }
+      );
+      
+      logWithTimestamp(`Connected to session: ${sessionId}`, 'info');
+    } catch (error) {
+      logWithTimestamp(`Error connecting: ${error}`, 'error');
+    }
+    
+    return this;
+  }
+  
+  /**
    * Check if a connection exists for a session
+   * @param sessionId Session ID to check
+   * @returns Whether connected to the session
    */
   public isConnectedToSession(sessionId: string): boolean {
     if (!this.initialized) return false;
@@ -53,29 +169,79 @@ export class SingleSourceTrueConnections {
   }
   
   /**
-   * Connect to a session channel
+   * Register a number called listener
+   * @param listener Function to call when a number is called
+   * @returns This instance for chaining
    */
-  public connectToSession(sessionId: string): boolean {
-    if (!this.initialized || !sessionId) return false;
-    
+  public onNumberCalled(listener: NumberCalledListener): SingleSourceTrueConnections {
+    this.listenerManager.onNumberCalled(listener);
+    return this;
+  }
+  
+  /**
+   * Register a session progress update listener
+   * @param listener Function to call when session progress is updated
+   * @returns This instance for chaining
+   */
+  public onSessionProgressUpdate(listener: SessionProgressListener): SingleSourceTrueConnections {
+    this.listenerManager.onSessionProgressUpdate(listener);
+    return this;
+  }
+  
+  /**
+   * Register a connection status listener
+   * @param listener Function to call when connection status changes
+   * @returns Function to remove the listener
+   */
+  public addConnectionListener(listener: ConnectionStatusListener): () => void {
+    return this.listenerManager.addConnectionListener(listener);
+  }
+  
+  /**
+   * Call a number
+   * @param number Number to call
+   * @param sessionId Session ID (optional)
+   * @returns Promise resolving to whether the call was successful
+   */
+  public async callNumber(number: number, sessionId?: string): Promise<boolean> {
     try {
+      const effectiveSessionId = sessionId || this.sessionId;
+      
+      if (!effectiveSessionId) {
+        logWithTimestamp('Cannot call number: No session ID', 'error');
+        return false;
+      }
+      
       const webSocketService = getWebSocketService();
-      const channelName = `session-${sessionId}`;
       
-      // Create and subscribe to the channel
-      webSocketService.subscribeWithReconnect(channelName, (status) => {
-        logWithTimestamp(`Session ${sessionId} connection status: ${status}`, 'info');
-      });
+      // Prepare the called numbers array with just the new number for now
+      // Backend will handle combining with existing called numbers
+      const payload = {
+        number,
+        sessionId: effectiveSessionId,
+        timestamp: Date.now()
+      };
       
-      return true;
+      // Broadcast the number
+      const success = await webSocketService.broadcastWithRetry(
+        CHANNEL_NAMES.GAME_UPDATES,
+        EVENT_TYPES.NUMBER_CALLED,
+        payload
+      );
+      
+      return success;
     } catch (error) {
-      logWithTimestamp(`Error connecting to session ${sessionId}: ${error}`, 'error');
+      logWithTimestamp(`Error calling number: ${error}`, 'error');
       return false;
     }
   }
   
   /**
    * Broadcast a number called event
+   * @param sessionId Session ID
+   * @param number Number called
+   * @param calledNumbers All called numbers
+   * @returns Promise resolving to whether the broadcast was successful
    */
   public async broadcastNumberCalled(sessionId: string, number: number, calledNumbers: number[]): Promise<boolean> {
     if (!this.initialized || !sessionId) return false;
@@ -103,6 +269,55 @@ export class SingleSourceTrueConnections {
   }
   
   /**
+   * Reconnect to the current session
+   */
+  public reconnect(): void {
+    if (!this.sessionId) return;
+    
+    logWithTimestamp(`Reconnecting to session ${this.sessionId}`, 'info');
+    
+    const webSocketService = getWebSocketService();
+    
+    // Reconnect the channel
+    webSocketService.reconnectChannel(CHANNEL_NAMES.GAME_UPDATES);
+    
+    // Reset heartbeat reconnect attempts
+    this.heartbeat.resetReconnectAttempts();
+  }
+  
+  /**
+   * Get the current connection state
+   * @returns Current connection state
+   */
+  public getConnectionState(): ConnectionState {
+    return this._connectionState;
+  }
+  
+  /**
+   * Get the last ping time
+   * @returns Last ping timestamp or null
+   */
+  public getLastPing(): number | null {
+    return this.heartbeat.getLastPing();
+  }
+  
+  /**
+   * Check if connected
+   * @returns Whether currently connected
+   */
+  public isConnected(): boolean {
+    return this._isConnected;
+  }
+  
+  /**
+   * Get the current session ID
+   * @returns Current session ID or null
+   */
+  public getSessionId(): string | null {
+    return this.sessionId;
+  }
+  
+  /**
    * Export constants for consistent usage
    */
   public static CHANNEL_NAMES = CHANNEL_NAMES;
@@ -115,3 +330,5 @@ export const getSingleSourceConnection = () => SingleSourceTrueConnections.getIn
 
 // Re-export needed types for convenience
 export { CHANNEL_NAMES, EVENT_TYPES, WEBSOCKET_STATUS } from '@/services/websocket';
+export { ConnectionState } from '@/constants/connectionConstants';
+export type { NumberCalledListener, SessionProgressListener, ConnectionStatusListener } from './connection/connectionTypes';

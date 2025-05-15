@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { connectionManager } from '@/utils/connectionManager';
+import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { addGameStateUpdateListener, addConnectionStatusListener, addNumberCalledListener } from './channelListeners';
 import { updatePlayerPresence } from './playerPresence';
 import { fetchClaimsForSession, submitBingoClaim, validateClaim } from './claimHandlers';
@@ -19,6 +20,12 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [lastPingTime, setLastPingTime] = useState<number | null>(null);
   const connectedSessionId = useRef<string | null>(null);
+  
+  // Initialize SingleSourceTrueConnections on mount
+  useEffect(() => {
+    // This ensures SingleSourceTrueConnections is initialized
+    getSingleSourceConnection();
+  }, []);
   
   // Update local state based on connection manager state
   const updateConnectionState = useCallback(() => {

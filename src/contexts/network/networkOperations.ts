@@ -1,7 +1,7 @@
 
 import { logWithTimestamp } from '@/utils/logUtils';
 import { connectionManager } from '@/utils/connectionManager';
-import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
+import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 
 /**
  * Connect to a session
@@ -18,7 +18,11 @@ export function connectToSession(sessionId: string, currentSessionId: string | n
   }
   
   logWithTimestamp(`Connecting to session: ${sessionId}`, 'info');
+  
+  // Connect using both the legacy and new systems for compatibility
   connectionManager.connect(sessionId);
+  getSingleSourceConnection().connect(sessionId);
+  
   return true;
 }
 
@@ -33,20 +37,8 @@ export async function callNumber(number: number, sessionId?: string): Promise<bo
   try {
     logWithTimestamp(`Broadcasting number ${number} for session ${sessionId}`, 'info');
     
-    const webSocketService = getWebSocketService();
-    
-    // Broadcast the number via WebSocket
-    const success = await webSocketService.broadcastWithRetry(
-      CHANNEL_NAMES.GAME_UPDATES,
-      EVENT_TYPES.NUMBER_CALLED,
-      {
-        number,
-        sessionId: sessionId,
-        timestamp: Date.now()
-      }
-    );
-    
-    return success;
+    // Use SingleSourceTrueConnections to call the number
+    return await getSingleSourceConnection().callNumber(number, sessionId);
   } catch (error) {
     logWithTimestamp(`Error broadcasting number: ${error}`, 'error');
     return false;
