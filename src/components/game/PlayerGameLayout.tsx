@@ -1,6 +1,5 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/router';
-import { useSession } from 'next-auth/react';
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -22,11 +21,6 @@ interface PlayerGameLayoutProps {
 }
 
 export default function PlayerGameLayout({ children, sessionId, gameId, gameStatus, playerData }: PlayerGameLayoutProps) {
-  const router = useRouter();
-  const { data: session } = useSession();
-  const [isConnected, setIsConnected] = useState(false);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [gameData, setGameData] = useState(null);
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const [winPatterns, setWinPatterns] = useState<any[]>([]);
@@ -36,18 +30,21 @@ export default function PlayerGameLayout({ children, sessionId, gameId, gameStat
   const [gameTitle, setGameTitle] = useState<string | null>(null);
   const [gameType, setGameType] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const instanceId = React.useRef(`PlayerGameLayout-${Math.random().toString(36).substring(2, 7)}`);
+
+  // Use our WebSocket hook for connection status
+  const { isConnected, lastError, listenForEvent } = useWebSocket(sessionId);
 
   // Custom logging function
   const log = useCallback((message: string, level: 'info' | 'warn' | 'error' | 'debug' = 'info') => {
     logWithTimestamp(`PlayerGameLayout (${instanceId.current}): ${message}`, level);
   }, []);
 
-  // Fetch initial game data and set up WebSocket connection
+  // Fetch initial game data
   useEffect(() => {
-    if (!sessionId || !session?.user?.email) {
-      log('Session ID or user email missing. Redirecting to home.', 'warn');
-      router.push('/');
+    if (!sessionId) {
+      log('Session ID missing. Cannot initialize game data.', 'warn');
       return;
     }
 
@@ -59,7 +56,7 @@ export default function PlayerGameLayout({ children, sessionId, gameId, gameStat
         const initialData = await useGameData(sessionId);
 
         if (initialData) {
-          setGameData(initialData);
+          log(`Initial game data loaded successfully: ${JSON.stringify(initialData)}`, 'debug');
           setLastCalledNumber(initialData.lastCalledNumber || null);
           setCalledNumbers(initialData.calledNumbers || []);
           setWinPatterns(initialData.winPatterns || []);
@@ -68,7 +65,6 @@ export default function PlayerGameLayout({ children, sessionId, gameId, gameStat
           setIsGameComplete(initialData.isGameComplete || false);
           setGameTitle(initialData.gameTitle || 'Bingo Game');
           setGameType(initialData.gameType || 'mainstage');
-          log(`Initial game data loaded successfully: ${JSON.stringify(initialData)}`, 'debug');
         } else {
           log('Failed to load initial game data.', 'error');
           setConnectionError('Failed to load initial game data.');
@@ -83,100 +79,35 @@ export default function PlayerGameLayout({ children, sessionId, gameId, gameStat
     };
 
     initializeGame();
-  }, [sessionId, session?.user?.email, router, log]);
+  }, [sessionId, log]);
 
-  // WebSocket setup and message handling
+  // Listen for WebSocket updates
   useEffect(() => {
     if (!sessionId) return;
 
-    const webSocketService = getWebSocketService();
+    log('Setting up WebSocket event listeners', 'info');
 
-    const onConnect = () => {
-      log('WebSocket connected successfully.', 'info');
-      setIsConnected(true);
-      setConnectionError(null);
-    };
-
-    const onDisconnect = () => {
-      log('WebSocket disconnected.', 'warn');
-      setIsConnected(false);
-      setConnectionError('WebSocket disconnected. Reconnecting...');
-    };
-
-    const onError = (error: any) => {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      log(`WebSocket error: ${errorMessage}`, 'error');
-      setIsConnected(false);
-      setConnectionError(`WebSocket error: ${errorMessage}`);
-    };
-
-    const handleNumberCalled = (number: number) => {
-      log(`Number called: ${number}`, 'info');
-      setLastCalledNumber(number);
-      setCalledNumbers(prevNumbers => [...prevNumbers, number]);
-    };
-
-    const handleWinPatternUpdate = (pattern: any) => {
-      log(`Win pattern updated: ${JSON.stringify(pattern)}`, 'info');
-      setCurrentWinPattern(pattern);
-    };
-
-    const handleGameStatusUpdate = (status: GameStatus) => {
-      log(`Game status updated: ${status}`, 'info');
-      setIsGameActive(status === 'active');
-      setIsGameComplete(status === 'complete');
-    };
-
-    const subscribeToGameUpdates = async () => {
-      try {
-        // Subscribe to the game updates channel
-        const channel = webSocketService.subscribeToChannel(CHANNEL_NAMES.GAME_UPDATES, sessionId);
-
-        if (channel) {
-          // Bind WebSocket events to handlers
-          channel.on(EVENT_TYPES.NUMBER_CALLED, handleNumberCalled);
-          channel.on(EVENT_TYPES.WIN_PATTERN_UPDATED, handleWinPatternUpdate);
-          channel.on(EVENT_TYPES.GAME_STATUS_UPDATED, handleGameStatusUpdate);
-
-          // Set up WebSocket event listeners
-          webSocketService.onConnect(onConnect);
-          webSocketService.onDisconnect(onDisconnect);
-          webSocketService.onError(onError);
-
-          log('Subscribed to game updates channel.', 'info');
-          setIsConnected(true);
-          setConnectionError(null);
+    // Listen for number called events
+    const numberListener = listenForEvent<{number: number, calledNumbers: number[]}>(
+      EVENT_TYPES.NUMBER_CALLED,
+      (data) => {
+        log(`Number called: ${data.number}`, 'info');
+        setLastCalledNumber(data.number);
+        if (data.calledNumbers && Array.isArray(data.calledNumbers)) {
+          setCalledNumbers(data.calledNumbers);
         } else {
-          log('Failed to subscribe to game updates channel.', 'error');
-          setIsConnected(false);
-          setConnectionError('Failed to subscribe to game updates. Check console for details.');
+          // If calledNumbers is not provided, append the new number to existing ones
+          setCalledNumbers(prev => [...prev, data.number]);
         }
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        log(`Error subscribing to game updates: ${errorMessage}`, 'error');
-        setIsConnected(false);
-        setConnectionError(`Error subscribing to game updates: ${errorMessage}`);
       }
-    };
+    );
 
-    subscribeToGameUpdates();
-
-    // Clean up WebSocket subscriptions and event listeners
+    // We need to clean up when component unmounts
     return () => {
-      webSocketService.offConnect(onConnect);
-      webSocketService.offDisconnect(onDisconnect);
-      webSocketService.offError(onError);
-
-      const channel = webSocketService.getChannel(CHANNEL_NAMES.GAME_UPDATES, sessionId);
-      if (channel) {
-        channel.off(EVENT_TYPES.NUMBER_CALLED, handleNumberCalled);
-        channel.off(EVENT_TYPES.WIN_PATTERN_UPDATED, handleWinPatternUpdate);
-        channel.off(EVENT_TYPES.GAME_STATUS_UPDATED, handleGameStatusUpdate);
-        webSocketService.unsubscribeFromChannel(CHANNEL_NAMES.GAME_UPDATES, sessionId);
-        log('Unsubscribed from game updates channel and removed event listeners.', 'info');
-      }
+      log('Cleaning up WebSocket event listeners', 'info');
+      numberListener();
     };
-  }, [sessionId, log]);
+  }, [sessionId, listenForEvent, log]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -205,7 +136,7 @@ export default function PlayerGameLayout({ children, sessionId, gameId, gameStat
                 ) : (
                   <Badge variant="outline" className="bg-red-100 text-red-800 border-red-500">
                     <AlertTriangle className="h-4 w-4 mr-1 inline-block" />
-                    {connectionError || 'Connecting...'}
+                    {connectionError || lastError || 'Connecting...'}
                   </Badge>
                 )}
               </>
@@ -233,7 +164,6 @@ export default function PlayerGameLayout({ children, sessionId, gameId, gameStat
         sessionId={sessionId}
         playerCode={playerData?.playerCode || playerData?.player_code}
       />
-      
     </div>
   );
 }
