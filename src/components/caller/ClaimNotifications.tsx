@@ -78,16 +78,13 @@ export default function ClaimNotifications({
           lastCalledNumber: claimData.lastCalledNumber,
           winPattern: claimData.winPattern || 'oneLine',
           gameType: claimData.gameType || 'mainstage',
-          status: 'pending',
+          status: 'pending' as ClaimStatus,
           timestamp: claimData.timestamp || new Date().toISOString()
         };
         
         // Add to our local state
         addOptimisticClaim(optimisticClaim);
       }
-      
-      // Also refresh from server to ensure consistency
-      forceRefresh();
       
       // Get details from the payload for the toast
       const playerName = payload.payload.playerName || 'Player';
@@ -209,20 +206,6 @@ export default function ClaimNotifications({
     fetchClaims();
   }, [sessionId, fetchClaims]);
   
-  // Set up periodic refresh
-  useEffect(() => {
-    if (!sessionIdRef.current) return;
-    
-    const interval = setInterval(() => {
-      if (mountedRef.current) {
-        log("Periodic refresh", 'debug');
-        fetchClaims();
-      }
-    }, 5000); // Check every 5 seconds
-    
-    return () => clearInterval(interval);
-  }, [sessionId, fetchClaims]);
-
   // Enhanced debugging for claims data
   useEffect(() => {
     if (claims?.length > 0) {

@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { ClaimData } from '@/types/claim';
+import { ClaimData, ClaimStatus } from '@/types/claim';
 
 /**
  * Hook for managing caller-side claims with optimistic UI updates
@@ -31,7 +31,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
     setError(null);
     
     try {
-      log(`Fetching claims for session ${sessionId}`, 'info');
+      log(`Initial fetch of claims for session ${sessionId}`, 'info');
       
       // Query claims table for pending claims
       const { data, error } = await supabase
@@ -55,8 +55,12 @@ export function useCallerClaimManagement(sessionId: string | null) {
       // First add database claims
       if (data) {
         data.forEach(claim => {
-          allClaimsMap.set(claim.id, {
+          // Convert database ID to string if needed
+          const claimId = typeof claim.id === 'number' ? String(claim.id) : claim.id;
+          
+          allClaimsMap.set(claimId, {
             ...claim,
+            id: claimId, // Ensure ID is stored as string
             isOptimistic: false
           });
         });
@@ -132,7 +136,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
       ticket_details: claimData.ticket || {},
       pattern_claimed: claimData.winPattern || 'unknown',
       called_numbers_snapshot: claimData.calledNumbers || [],
-      status: 'pending',
+      status: claimData.status || 'pending' as ClaimStatus,
       claimed_at: claimData.timestamp || new Date().toISOString(),
       isOptimistic: true
     };
@@ -200,7 +204,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
       }
       
       // Remove the claim from our optimistic list
-      removeOptimisticClaim(claim.id);
+      removeOptimisticClaim(String(claim.id));
       
       // Refresh to get updated data
       fetchClaims();
@@ -230,13 +234,8 @@ export function useCallerClaimManagement(sessionId: string | null) {
       log(`Initial fetch for session ${sessionId}`, 'info');
       fetchClaims();
       
-      // Set up periodic refresh
-      const interval = setInterval(() => {
-        fetchClaims();
-      }, 10000); // Every 10 seconds
-      
+      // Clean up
       return () => {
-        clearInterval(interval);
         if (refreshTimerRef.current) {
           clearTimeout(refreshTimerRef.current);
         }

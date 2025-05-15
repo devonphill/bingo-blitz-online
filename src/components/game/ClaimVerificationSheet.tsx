@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Sheet,
@@ -42,14 +43,15 @@ export default function ClaimVerificationSheet({
   // Use the improved claim management hook
   const { 
     claims, 
-    validateClaim, 
-    isProcessingClaim,
+    processClaim, 
     fetchClaims,
-    forceRefresh
+    forceRefresh,
+    isLoading
   } = useCallerClaimManagement(sessionId || null);
   
   const { toast } = useToast();
   const [autoClose, setAutoClose] = useState(true);
+  const [isProcessingClaim, setIsProcessingClaim] = useState(false);
 
   // Use the pattern progression hook with all its new capabilities
   const { 
@@ -144,6 +146,7 @@ export default function ClaimVerificationSheet({
     }
     
     logWithTimestamp(`ClaimVerificationSheet: Verifying claim: ${claim.id}`, 'info');
+    setIsProcessingClaim(true);
     
     try {
       // First, broadcast that we are checking this claim to all players
@@ -153,7 +156,7 @@ export default function ClaimVerificationSheet({
       await new Promise(resolve => setTimeout(resolve, 1000));
       
       // Then, validate the claim
-      const success = await validateClaim(claim, true);
+      const success = await processClaim(claim, true);
       
       if (success) {
         // Get active patterns for current game
@@ -230,9 +233,11 @@ export default function ClaimVerificationSheet({
         variant: "destructive",
         duration: 5000,
       });
+    } finally {
+      setIsProcessingClaim(false);
     }
   }, [
-    validateClaim, 
+    processClaim, 
     toast, 
     fetchClaims, 
     claims, 
@@ -259,19 +264,33 @@ export default function ClaimVerificationSheet({
     }
     
     logWithTimestamp(`ClaimVerificationSheet: Rejecting claim: ${claim.id}`, 'info');
-    const success = await validateClaim(claim, false);
+    setIsProcessingClaim(true);
     
-    if (success) {
-      toast({
-        title: "Claim Rejected",
-        description: `The claim by ${claim.playerName || claim.playerId} has been rejected.`,
-        duration: 3000,
-      });
+    try {
+      const success = await processClaim(claim, false);
       
-      // Refresh claims to update UI
-      fetchClaims();
+      if (success) {
+        toast({
+          title: "Claim Rejected",
+          description: `The claim by ${claim.playerName || claim.playerId} has been rejected.`,
+          duration: 3000,
+        });
+        
+        // Refresh claims to update UI
+        fetchClaims();
+      }
+    } catch (err) {
+      console.error("Error rejecting claim:", err);
+      toast({
+        title: "Error",
+        description: "Failed to reject claim",
+        variant: "destructive",
+        duration: 5000,
+      });
+    } finally {
+      setIsProcessingClaim(false);
     }
-  }, [validateClaim, toast, fetchClaims]);
+  }, [processClaim, toast, fetchClaims]);
 
   // Manual refresh function
   const handleRefresh = useCallback(() => {
