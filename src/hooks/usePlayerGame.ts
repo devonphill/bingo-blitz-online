@@ -416,12 +416,24 @@ export function usePlayerGame(playerCode: string | null) {
       
       // Make sure the ticket has all required fields
       const preparedTicket = {
-        serial: useTicket.serial,
+        serial: useTicket.serial || useTicket.id, // Try to use id as fallback if serial is missing
         perm: useTicket.perm,
         position: useTicket.position,
         layoutMask: useTicket.layoutMask || useTicket.layout_mask,
         numbers: useTicket.numbers
       };
+      
+      // Add detailed debug logging of the claim payload
+      console.log('CLAIM DEBUG - Original ticket:', useTicket);
+      console.log('CLAIM DEBUG - Prepared ticket for claim:', preparedTicket);
+      console.log('CLAIM DEBUG - Ticket fields available:', {
+        id: useTicket.id,
+        serial: useTicket.serial,
+        hasId: !!useTicket.id,
+        hasSerial: !!useTicket.serial,
+        hasPerm: !!useTicket.perm,
+        usedSerial: preparedTicket.serial
+      });
       
       logger('Submitting claim with ticket', 'info', { ticket: preparedTicket });
       

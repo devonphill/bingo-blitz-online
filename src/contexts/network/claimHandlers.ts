@@ -32,7 +32,22 @@ export async function fetchClaimsForSession(sessionId: string | null): Promise<a
  */
 export function submitBingoClaim(ticket: any, playerCode: string, sessionId: string): boolean {
   try {
+    // DEBUG: Log the incoming ticket data to identify what's missing
+    console.log('CLAIM DEBUG - Ticket data received:', ticket);
+    console.log('CLAIM DEBUG - Required fields check:', {
+      hasSerial: !!ticket?.serial,
+      hasPerm: !!ticket?.perm,
+      hasPosition: !!ticket?.position,
+      hasLayoutMask: !!(ticket?.layout_mask || ticket?.layoutMask),
+      hasNumbers: !!(ticket?.numbers && Array.isArray(ticket?.numbers))
+    });
+    
     logWithTimestamp(`NetworkContext: Submitting bingo claim for player ${playerCode} in session ${sessionId}`, 'info');
+    
+    if (!ticket || !ticket.serial) {
+      logWithTimestamp(`Missing required ticket field in claim: serial`, 'error');
+      return false;
+    }
     
     // First, we need to fetch the actual player ID
     supabase

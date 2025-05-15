@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -50,6 +49,9 @@ export function PlayerGameContent({
   
   const handleClaimBingo = () => {
     if (onClaimBingo) {
+      console.log('CLAIM DEBUG - Initiating claim from PlayerGameContent');
+      // Pass an empty object as the ticket - this will make the handler use the first available ticket
+      // This is likely part of the problem - we're not specifying which ticket to claim
       onClaimBingo({});
       toast({
         title: "Bingo Claim Submitted",
