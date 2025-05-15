@@ -39,3 +39,4 @@ export interface ClaimSubmittedPayload {
   sessionId: string;
   timestamp: number;
 }
+
