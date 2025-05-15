@@ -48,15 +48,16 @@ class ClaimBroadcastService {
         // Ticket data - full details for validation
         ticket: {
           serial: ticketData.serial || claim.ticketSerial || '',
-          perm: ticketData.perm || 0,
-          position: ticketData.position || 0,
-          layoutMask: ticketData.layoutMask || ticketData.layout_mask || 0,
-          numbers: ticketData.numbers || [],
-          calledNumbers: claim.calledNumbers || []
+          perm: ticketData.perm !== undefined ? ticketData.perm : 0,
+          position: ticketData.position !== undefined ? ticketData.position : 0,
+          layoutMask: ticketData.layoutMask !== undefined ? ticketData.layoutMask : 
+                     (ticketData.layout_mask !== undefined ? ticketData.layout_mask : 0),
+          numbers: Array.isArray(ticketData.numbers) ? ticketData.numbers : [],
+          calledNumbers: Array.isArray(claim.calledNumbers) ? claim.calledNumbers : []
         },
         
         // Called numbers for validation
-        calledNumbers: claim.calledNumbers || [],
+        calledNumbers: Array.isArray(claim.calledNumbers) ? claim.calledNumbers : [],
         lastCalledNumber: claim.lastCalledNumber,
         hasLastCalledNumber: claim.hasLastCalledNumber || false,
         
