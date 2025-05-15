@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { RefreshCw, Wifi, WifiOff } from 'lucide-react';
+import { Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { getSingleSourceConnection, WEBSOCKET_STATUS } from '@/utils/SingleSourceTrueConnections';
+import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { useToast } from '@/hooks/use-toast';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface ConnectionStatusProps {
   showFull?: boolean;
@@ -21,42 +22,32 @@ export default function ConnectionStatus({
 }: ConnectionStatusProps) {
   const [expanded, setExpanded] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
-  const [connectionState, setConnectionState] = useState<string>('unknown');
-  const [lastPingTime, setLastPingTime] = useState<number>(Date.now());
   const instanceId = useRef(`conn-${Math.random().toString(36).substring(2, 7)}`);
-  const singleSource = useRef(getSingleSourceConnection());
   const { toast } = useToast();
   
-  // Update connection state periodically
+  // Use the WebSocket hook to get connection status
+  const { isConnected, lastError, connect, disconnect } = useWebSocket(sessionId);
+  
+  // Get reference to the SingleSourceConnection for advanced operations
+  const singleSource = useRef(getSingleSourceConnection());
+  
+  // Get last ping time from the SingleSourceConnection
+  const [lastPingTime, setLastPingTime] = useState<number>(Date.now());
+  
+  // Update last ping time periodically
   useEffect(() => {
     if (!sessionId) return;
     
-    // Get SingleSourceTrueConnections instance
-    const connection = singleSource.current;
-    
     // Check connection state immediately
-    const state = connection.getConnectionState();
-    setConnectionState(state);
-    setLastPingTime(connection.getLastPing() || Date.now());
-    
-    // Add connection listener
-    const removeListener = connection.addConnectionListener((connected) => {
-      setConnectionState(connected ? WEBSOCKET_STATUS.SUBSCRIBED : WEBSOCKET_STATUS.CLOSED);
-      if (connected) {
-        setLastPingTime(connection.getLastPing() || Date.now());
-      }
-    });
+    setLastPingTime(singleSource.current.getLastPing() || Date.now());
     
     // Check connection state on interval
     const interval = setInterval(() => {
-      const currentState = connection.getConnectionState();
-      setConnectionState(currentState);
-      setLastPingTime(connection.getLastPing() || Date.now());
+      setLastPingTime(singleSource.current.getLastPing() || Date.now());
     }, 5000);
     
     return () => {
       clearInterval(interval);
-      removeListener();
     };
   }, [sessionId]);
   
@@ -72,8 +63,7 @@ export default function ConnectionStatus({
     
     try {
       // Get SingleSourceTrueConnections instance and reconnect
-      const connection = singleSource.current;
-      connection.reconnect();
+      singleSource.current.reconnect();
       
       // Call parent reconnect if provided
       if (onReconnect) {
@@ -94,8 +84,8 @@ export default function ConnectionStatus({
     }
   }, [sessionId, onReconnect, toast]);
   
-  // Only show connection issues after we know we're not connected
-  const isConnected = connectionState === WEBSOCKET_STATUS.SUBSCRIBED || connectionState === 'connected';
+  // Derive connection state from isConnected boolean
+  const connectionState = isConnected ? 'SUBSCRIBED' : 'CLOSED';
   
   // Derived status text
   const statusText = isConnected 
