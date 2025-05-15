@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { getWebSocketService, CHANNEL_NAMES, WEBSOCKET_STATUS } from '@/services/websocket';
+import { getSingleSourceConnection, WEBSOCKET_STATUS } from '@/utils/SingleSourceTrueConnections';
 import { useToast } from '@/hooks/use-toast';
 
 interface ConnectionStatusProps {
@@ -24,40 +24,39 @@ export default function ConnectionStatus({
   const [connectionState, setConnectionState] = useState<string>('unknown');
   const [lastPingTime, setLastPingTime] = useState<number>(Date.now());
   const instanceId = useRef(`conn-${Math.random().toString(36).substring(2, 7)}`);
-  const webSocketService = useRef(getWebSocketService());
+  const singleSource = useRef(getSingleSourceConnection());
   const { toast } = useToast();
   
   // Update connection state periodically
   useEffect(() => {
     if (!sessionId) return;
     
+    // Get SingleSourceTrueConnections instance
+    const connection = singleSource.current;
+    
     // Check connection state immediately
-    const state = webSocketService.current.getConnectionState(CHANNEL_NAMES.GAME_UPDATES);
+    const state = connection.getConnectionState();
     setConnectionState(state);
+    setLastPingTime(connection.getLastPing() || Date.now());
     
-    // Setup channel if not already done
-    webSocketService.current.createChannel(CHANNEL_NAMES.GAME_UPDATES);
-    
-    // Setup subscription with reconnect capability
-    const cleanup = webSocketService.current.subscribeWithReconnect(
-      CHANNEL_NAMES.GAME_UPDATES,
-      (status) => {
-        setConnectionState(status);
-        if (status === WEBSOCKET_STATUS.SUBSCRIBED) {
-          setLastPingTime(Date.now());
-        }
+    // Add connection listener
+    const removeListener = connection.addConnectionListener((connected) => {
+      setConnectionState(connected ? WEBSOCKET_STATUS.SUBSCRIBED : WEBSOCKET_STATUS.CLOSED);
+      if (connected) {
+        setLastPingTime(connection.getLastPing() || Date.now());
       }
-    );
+    });
     
     // Check connection state on interval
     const interval = setInterval(() => {
-      const currentState = webSocketService.current.getConnectionState(CHANNEL_NAMES.GAME_UPDATES);
+      const currentState = connection.getConnectionState();
       setConnectionState(currentState);
+      setLastPingTime(connection.getLastPing() || Date.now());
     }, 5000);
     
     return () => {
       clearInterval(interval);
-      cleanup();
+      removeListener();
     };
   }, [sessionId]);
   
@@ -72,8 +71,9 @@ export default function ConnectionStatus({
     setIsReconnecting(true);
     
     try {
-      // Tell WebSocketService to reconnect the channel
-      webSocketService.current.reconnectChannel(CHANNEL_NAMES.GAME_UPDATES);
+      // Get SingleSourceTrueConnections instance and reconnect
+      const connection = singleSource.current;
+      connection.reconnect();
       
       // Call parent reconnect if provided
       if (onReconnect) {
@@ -95,7 +95,7 @@ export default function ConnectionStatus({
   }, [sessionId, onReconnect, toast]);
   
   // Only show connection issues after we know we're not connected
-  const isConnected = connectionState === WEBSOCKET_STATUS.SUBSCRIBED;
+  const isConnected = connectionState === WEBSOCKET_STATUS.SUBSCRIBED || connectionState === 'connected';
   
   // Derived status text
   const statusText = isConnected 

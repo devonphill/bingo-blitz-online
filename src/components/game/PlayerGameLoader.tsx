@@ -2,10 +2,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { useNetwork } from '@/contexts/NetworkStatusContext';
+import { useNetwork } from '@/contexts/network';
 import { useGameManager } from '@/contexts/GameManager';
 import { logWithTimestamp } from '@/utils/logUtils';
-import PlayerGameContent from './PlayerGameContent';
+import { PlayerGameContent } from './PlayerGameContent';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import ConnectionStatus from './ConnectionStatus';
 import PlayerLobby from './PlayerLobby';
@@ -95,7 +95,7 @@ export default function PlayerGameLoader({
     fetchSessionStatus();
   }, [fetchTickets, fetchSessionStatus]);
 
-  // Handle reconnect
+  // Handle reconnect using the network context
   const handleReconnect = () => {
     network.connect(sessionId);
   };
@@ -105,8 +105,11 @@ export default function PlayerGameLoader({
     if (sessionId && playerCode) {
       fetchTickets();
       fetchSessionStatus();
+      
+      // Connect to session through network context
+      network.connect(sessionId);
     }
-  }, [sessionId, playerCode, fetchTickets, fetchSessionStatus]);
+  }, [sessionId, playerCode, fetchTickets, fetchSessionStatus, network]);
 
   // Check authentication and session
   useEffect(() => {

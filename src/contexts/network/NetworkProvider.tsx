@@ -1,7 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { connectionManager } from '@/utils/connectionManager';
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { addGameStateUpdateListener, addConnectionStatusListener, addNumberCalledListener } from './channelListeners';
 import { updatePlayerPresence } from './playerPresence';
@@ -21,18 +20,36 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [lastPingTime, setLastPingTime] = useState<number | null>(null);
   const connectedSessionId = useRef<string | null>(null);
   
+  // Get the SingleSourceTrueConnections instance
+  const singleSource = getSingleSourceConnection();
+  
   // Initialize SingleSourceTrueConnections on mount
   useEffect(() => {
     // This ensures SingleSourceTrueConnections is initialized
     getSingleSourceConnection();
   }, []);
   
-  // Update local state based on connection manager state
+  // Update local state based on connection state
   const updateConnectionState = useCallback(() => {
-    const state = connectionManager.getConnectionState() as ConnectionState;
+    const state = singleSource.getConnectionState() as ConnectionState;
     setConnectionState(state);
-    setLastPingTime(connectionManager.getLastPing());
-  }, []);
+    setLastPingTime(singleSource.getLastPing());
+  }, [singleSource]);
+  
+  // Set up connection status listener
+  useEffect(() => {
+    // Add connection status listener to update our local state
+    const removeListener = singleSource.addConnectionListener((isConnected) => {
+      updateConnectionState();
+    });
+    
+    // Initial state update
+    updateConnectionState();
+    
+    return () => {
+      removeListener();
+    };
+  }, [singleSource, updateConnectionState]);
   
   // Connect to a session
   const connect = useCallback((sessionId: string) => {
@@ -68,8 +85,8 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   
   // Add connection status listener
   const addConnectionStatusListenerHandler = useCallback((callback: (isConnected: boolean) => void): (() => void) => {
-    return addConnectionStatusListener(() => connectionManager.isConnected(), callback);
-  }, []);
+    return addConnectionStatusListener(() => singleSource.isConnected(), callback);
+  }, [singleSource]);
   
   // Add number called listener
   const addNumberCalledListenerHandler = useCallback((callback: (number: number | null, calledNumbers: number[]) => void): (() => void) => {

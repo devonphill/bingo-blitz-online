@@ -1,46 +1,54 @@
 
 import { logWithTimestamp } from '@/utils/logUtils';
-import { connectionManager } from '@/utils/connectionManager';
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 
 /**
  * Connect to a session
- * 
  * @param sessionId Session ID to connect to
- * @param currentSessionId Current session ID
- * @returns Whether connection was initiated
+ * @param currentSessionId Current session ID (optional)
+ * @returns Whether connection was successful
  */
-export function connectToSession(sessionId: string, currentSessionId: string | null): boolean {
-  // Don't reconnect if already connected to this session
-  if (currentSessionId === sessionId && connectionManager.isConnected()) {
-    logWithTimestamp(`Already connected to session: ${sessionId}`, 'info');
+export function connectToSession(
+  sessionId: string,
+  currentSessionId: string | null = null
+): boolean {
+  if (!sessionId) {
+    logWithTimestamp('Cannot connect: No session ID provided', 'error');
     return false;
   }
   
-  logWithTimestamp(`Connecting to session: ${sessionId}`, 'info');
+  // Skip if already connected to this session
+  if (currentSessionId === sessionId) {
+    logWithTimestamp(`Already connected to session ${sessionId}`, 'info');
+    return true;
+  }
   
-  // Connect using both the legacy and new systems for compatibility
-  connectionManager.connect(sessionId);
-  getSingleSourceConnection().connect(sessionId);
-  
-  return true;
+  try {
+    const singleSource = getSingleSourceConnection();
+    singleSource.connect(sessionId);
+    logWithTimestamp(`Connected to session: ${sessionId}`, 'info');
+    return true;
+  } catch (error) {
+    logWithTimestamp(`Error connecting to session: ${error}`, 'error');
+    return false;
+  }
 }
 
 /**
- * Call a number for a session
- * 
+ * Call a number
  * @param number Number to call
  * @param sessionId Session ID (optional)
- * @returns Promise resolving to whether the call was successful
+ * @returns Promise resolving to whether call was successful
  */
-export async function callNumber(number: number, sessionId?: string): Promise<boolean> {
+export async function callNumber(
+  number: number,
+  sessionId?: string
+): Promise<boolean> {
   try {
-    logWithTimestamp(`Broadcasting number ${number} for session ${sessionId}`, 'info');
-    
-    // Use SingleSourceTrueConnections to call the number
-    return await getSingleSourceConnection().callNumber(number, sessionId);
+    const singleSource = getSingleSourceConnection();
+    return await singleSource.callNumber(number, sessionId);
   } catch (error) {
-    logWithTimestamp(`Error broadcasting number: ${error}`, 'error');
+    logWithTimestamp(`Error calling number: ${error}`, 'error');
     return false;
   }
 }

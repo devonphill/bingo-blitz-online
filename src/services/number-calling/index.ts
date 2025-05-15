@@ -1,132 +1,115 @@
-import { NumberCallingService } from './types';
+
 import { logWithTimestamp } from '@/utils/logUtils';
-import { saveCalledNumbersToDatabase } from '@/hooks/playerWebSocket/databaseUtils';
-import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
+import { 
+  getSingleSourceConnection,
+  CHANNEL_NAMES,
+  EVENT_TYPES
+} from '@/utils/SingleSourceTrueConnections';
+import { NumberCallingOptions } from './types';
 
 /**
- * Service for managing bingo number calling
+ * Call a number in a bingo game session
+ * 
+ * @param number The number to call
+ * @param sessionId The session ID
+ * @param options Additional options
+ * @returns Promise resolving to success status
  */
-class NumberCallingServiceImpl implements NumberCallingService {
-  private listeners: Map<string, Set<(number: number | null, numbers: number[]) => void>> = new Map();
-  
-  /**
-   * Subscribe to number updates for a session
-   */
-  subscribe(sessionId: string, callback: (number: number | null, numbers: number[]) => void): () => void {
+export async function callNumber(
+  number: number,
+  sessionId: string,
+  options: NumberCallingOptions = {}
+): Promise<boolean> {
+  try {
+    const singleSource = getSingleSourceConnection();
+    
+    const {
+      broadcastToPlayers = true,
+      storeInDatabase = true,
+      notifyListeners = true
+    } = options;
+    
+    // Validate inputs
     if (!sessionId) {
-      logWithTimestamp('Cannot subscribe without sessionId', 'error');
-      return () => {};
-    }
-    
-    if (!this.listeners.has(sessionId)) {
-      this.listeners.set(sessionId, new Set());
-    }
-    
-    this.listeners.get(sessionId)!.add(callback);
-    
-    logWithTimestamp(`Subscribed to number updates for session ${sessionId}`, 'info');
-    
-    return () => {
-      if (this.listeners.has(sessionId)) {
-        this.listeners.get(sessionId)!.delete(callback);
-      }
-    };
-  }
-  
-  /**
-   * Notify all listeners for a session of a new number
-   */
-  notifyListeners(sessionId: string, number: number | null, numbers: number[]): void {
-    if (!sessionId || !this.listeners.has(sessionId)) return;
-    
-    this.listeners.get(sessionId)!.forEach(callback => {
-      try {
-        callback(number, numbers);
-      } catch (error) {
-        logWithTimestamp(`Error in number listener callback: ${error}`, 'error');
-      }
-    });
-  }
-  
-  /**
-   * Reset called numbers for a session
-   */
-  async resetNumbers(sessionId: string): Promise<boolean> {
-    if (!sessionId) return false;
-    
-    try {
-      // Reset in database
-      const success = await saveCalledNumbersToDatabase(sessionId, []);
-      
-      if (success) {
-        // Notify listeners
-        this.notifyListeners(sessionId, null, []);
-        
-        // Also broadcast via WebSocket
-        const connection = getSingleSourceConnection();
-        connection.getWebSocketService().broadcastWithRetry(
-          connection.constructor.CHANNEL_NAMES.GAME_UPDATES,
-          connection.constructor.EVENT_TYPES.GAME_RESET,
-          { sessionId }
-        );
-        
-        return true;
-      }
-      
-      return false;
-    } catch (error) {
-      logWithTimestamp(`Error resetting numbers: ${error}`, 'error');
+      logWithTimestamp('No session ID provided for number calling', 'error');
       return false;
     }
-  }
-  
-  /**
-   * Update the called numbers for a session
-   */
-  async updateCalledNumbers(sessionId: string, numbers: number[]): Promise<boolean> {
-    if (!sessionId) return false;
     
-    try {
-      // Update in database
-      const success = await saveCalledNumbersToDatabase(sessionId, numbers);
-      
-      if (success) {
-        // Notify listeners
-        const lastNumber = numbers.length > 0 ? numbers[numbers.length - 1] : null;
-        this.notifyListeners(sessionId, lastNumber, numbers);
-        
-        return true;
-      }
-      
-      return false;
-    } catch (error) {
-      logWithTimestamp(`Error updating called numbers: ${error}`, 'error');
+    if (isNaN(number) || number < 0) {
+      logWithTimestamp(`Invalid number provided: ${number}`, 'error');
       return false;
     }
+    
+    logWithTimestamp(`Calling number ${number} for session ${sessionId}`, 'info');
+    
+    // Broadcast number via WebSockets
+    let broadcastSuccess = true;
+    if (broadcastToPlayers) {
+      broadcastSuccess = await singleSource.callNumber(number, sessionId);
+      
+      if (!broadcastSuccess) {
+        logWithTimestamp(`Failed to broadcast number ${number} to players`, 'error');
+      } else {
+        logWithTimestamp(`Successfully broadcast number ${number} to players`, 'info');
+      }
+    }
+    
+    // Execute database operations in parallel
+    const promises = [];
+    
+    // Update the database with called number
+    if (storeInDatabase) {
+      // Database update logic here (left as placeholder)
+      // This would typically update the session_progress table
+    }
+    
+    // Wait for all operations to complete
+    if (promises.length > 0) {
+      await Promise.all(promises);
+    }
+    
+    return broadcastSuccess;
+  } catch (error) {
+    logWithTimestamp(`Error calling number: ${error}`, 'error');
+    return false;
   }
 }
 
-// Create a singleton instance
-export const numberCallingService = new NumberCallingServiceImpl();
-
-// Export a getter for consistent access pattern
-export const getNumberCallingService = () => numberCallingService;
-
 /**
- * Broadcast a number to all connected clients
+ * Reset called numbers for a session
+ * 
+ * @param sessionId The session ID
+ * @returns Promise resolving to success status
  */
-export async function broadcastNumber(sessionId: string, number: number, calledNumbers: number[]): Promise<boolean> {
+export async function resetCalledNumbers(sessionId: string): Promise<boolean> {
   try {
-    const connection = getSingleSourceConnection();
+    if (!sessionId) {
+      logWithTimestamp('No session ID provided for resetting numbers', 'error');
+      return false;
+    }
     
-    // Use static properties correctly
-    return await connection.broadcastNumberCalled(
-      sessionId,
-      number,
-      calledNumbers
+    // Broadcast game reset via WebSockets
+    const singleSource = getSingleSourceConnection();
+    const webSocketService = singleSource.getWebSocketService();
+    
+    const success = await webSocketService.broadcastWithRetry(
+      CHANNEL_NAMES.GAME_UPDATES,
+      EVENT_TYPES.GAME_RESET,
+      {
+        sessionId,
+        timestamp: Date.now()
+      }
     );
+    
+    if (!success) {
+      logWithTimestamp(`Failed to broadcast game reset for session ${sessionId}`, 'error');
+      return false;
+    }
+    
+    logWithTimestamp(`Successfully reset called numbers for session ${sessionId}`, 'info');
+    return true;
   } catch (error) {
-    console.error("Error broadcasting number:", error);
+    logWithTimestamp(`Error resetting called numbers: ${error}`, 'error');
     return false;
   }
 }

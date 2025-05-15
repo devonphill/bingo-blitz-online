@@ -1,141 +1,109 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { logWithTimestamp } from '@/utils/logUtils';
-import { setupNumberUpdateListeners } from './webSocketManager';
-import { WebSocketNumbersState } from './types';
-import { loadStoredNumbers, saveNumbersToStorage } from './storageUtils';
-import { fetchCalledNumbers } from './databaseUtils';
 
-/**
- * Hook for subscribing to real-time called numbers via WebSockets
- */
-export function usePlayerWebSocketNumbers(sessionId: string | null | undefined): WebSocketNumbersState {
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { logWithTimestamp } from '@/utils/logUtils';
+import { getSingleSourceConnection, CHANNEL_NAMES, EVENT_TYPES } from '@/utils/SingleSourceTrueConnections';
+
+export function usePlayerWebSocketNumbers(sessionId: string | undefined) {
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
-  const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
+  const [currentNumber, setCurrentNumber] = useState<number | null>(null);
+  const [numberCallTimestamp, setNumberCallTimestamp] = useState<number | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [lastUpdateTime, setLastUpdateTime] = useState(Date.now());
-  const instanceId = useRef(`wsNum-${Math.random().toString(36).substring(2, 9)}`);
+  const instanceId = useRef(`numUpdate-${Math.random().toString(36).substring(2, 7)}`);
   
-  // Load numbers from localStorage on init
-  useEffect(() => {
-    if (sessionId) {
-      const stored = loadStoredNumbers(sessionId);
-      if (stored) {
-        setCalledNumbers(stored.calledNumbers);
-        setLastCalledNumber(stored.lastCalledNumber);
-        setLastUpdateTime(stored.timestamp);
-      }
-    }
-  }, [sessionId]);
-  
-  // When a new number is received
-  const handleNumberUpdate = useCallback((number: number, allNumbers: number[]) => {
-    if (!number) return;
-    
-    logWithTimestamp(`[${instanceId.current}] Received number update: ${number}`, 'info');
-    
-    // If we received all numbers, use that
-    if (allNumbers && allNumbers.length > 0) {
-      setCalledNumbers(allNumbers);
-    } else {
-      // Otherwise add to our local state
-      setCalledNumbers(prev => {
-        if (prev.includes(number)) return prev;
-        return [...prev, number];
-      });
-    }
-    
-    // Set last called number
-    setLastCalledNumber(number);
-    
-    // Update timestamp
-    const timestamp = Date.now();
-    setLastUpdateTime(timestamp);
-    
-    // Save to localStorage
-    if (sessionId) {
-      saveNumbersToStorage(sessionId, allNumbers.length > 0 ? allNumbers : [...calledNumbers, number], number, timestamp);
-    }
-  }, [calledNumbers, sessionId]);
-  
-  // Handle game reset
-  const handleGameReset = useCallback(() => {
-    logWithTimestamp(`[${instanceId.current}] Received game reset`, 'info');
-    setCalledNumbers([]);
-    setLastCalledNumber(null);
-    
-    // Clear localStorage
-    if (sessionId) {
-      saveNumbersToStorage(sessionId, [], null, Date.now());
-    }
-  }, [sessionId]);
-  
-  // Setup WebSocket listeners
+  // Use SingleSourceTrueConnections instead of direct WebSocket access
+  const singleSource = useRef(getSingleSourceConnection());
+
+  // Setup listener for number called events
   useEffect(() => {
     if (!sessionId) return;
     
-    // Set up listeners
-    const cleanup = setupNumberUpdateListeners(
-      sessionId,
-      handleNumberUpdate,
-      handleGameReset,
-      instanceId.current
-    );
+    logWithTimestamp(`[${instanceId.current}] Setting up number called listener for session ${sessionId}`, 'info');
     
-    // Fetch initial numbers
-    const fetchInitial = async () => {
-      try {
-        const numbers = await fetchCalledNumbers(sessionId);
-        
-        if (numbers && numbers.length > 0) {
-          setCalledNumbers(numbers);
-          setLastCalledNumber(numbers[numbers.length - 1]);
-          
-          // Save to localStorage
-          saveNumbersToStorage(sessionId, numbers, numbers[numbers.length - 1], Date.now());
-        }
-      } catch (error) {
-        logWithTimestamp(`[${instanceId.current}] Error fetching initial numbers: ${error}`, 'error');
+    // Set up connection listener
+    const connectionRemover = singleSource.current.addConnectionListener((connected) => {
+      setIsConnected(connected);
+    });
+    
+    // Set up number called listener
+    const numberCalledRemover = singleSource.current.onNumberCalled((number, numbers) => {
+      logWithTimestamp(`[${instanceId.current}] Number called: ${number}`, 'info');
+      
+      if (number !== null) {
+        setCurrentNumber(number);
+        setNumberCallTimestamp(Date.now());
+        setCalledNumbers(numbers);
       }
+    });
+    
+    // Fetch existing called numbers
+    fetchExistingNumbers(sessionId);
+    
+    // Connect to session
+    singleSource.current.connect(sessionId);
+    
+    // Initial connection state
+    setIsConnected(singleSource.current.isConnected());
+    
+    return () => {
+      // Clean up listeners
+      connectionRemover();
+      numberCalledRemover();
     };
-    
-    fetchInitial();
-    
-    // Cleanup listeners on unmount
-    return cleanup;
-  }, [sessionId, handleNumberUpdate, handleGameReset]);
+  }, [sessionId]);
+
+  // Fetch existing called numbers from the database
+  const fetchExistingNumbers = useCallback(async (sessionId: string) => {
+    try {
+      logWithTimestamp(`[${instanceId.current}] Fetching existing called numbers for session ${sessionId}`, 'info');
+      
+      // Query called_numbers from sessions_progress table
+      const { data, error } = await supabase
+        .from('sessions_progress')
+        .select('called_numbers, updated_at')
+        .eq('session_id', sessionId)
+        .single();
+      
+      if (error) {
+        throw new Error(`Failed to fetch called numbers: ${error.message}`);
+      }
+      
+      if (data && data.called_numbers && data.called_numbers.length > 0) {
+        const numbers = data.called_numbers;
+        const lastNumber = numbers[numbers.length - 1];
+        const lastTimestamp = new Date(data.updated_at).getTime();
+        
+        setCalledNumbers(numbers);
+        setCurrentNumber(lastNumber);
+        setNumberCallTimestamp(lastTimestamp);
+        logWithTimestamp(`[${instanceId.current}] Loaded ${numbers.length} existing called numbers, last number: ${lastNumber}`, 'info');
+      }
+    } catch (error) {
+      logWithTimestamp(`[${instanceId.current}] Error fetching existing numbers: ${error}`, 'error');
+    }
+  }, []);
   
-  // Manual reconnect function
+  // Function to reconnect with SingleSourceTrueConnections
   const reconnect = useCallback(() => {
     if (!sessionId) return;
     
-    logWithTimestamp(`[${instanceId.current}] Manually reconnecting WebSocket numbers`, 'info');
+    logWithTimestamp(`[${instanceId.current}] Manual reconnection requested`, 'info');
     
-    // Re-fetch numbers
-    const fetchAgain = async () => {
-      try {
-        const numbers = await fetchCalledNumbers(sessionId);
-        
-        if (numbers && numbers.length > 0) {
-          setCalledNumbers(numbers);
-          setLastCalledNumber(numbers[numbers.length - 1]);
-          setLastUpdateTime(Date.now());
-        }
-      } catch (error) {
-        logWithTimestamp(`[${instanceId.current}] Error re-fetching numbers: ${error}`, 'error');
-      }
-    };
+    // Reconnect using SingleSourceTrueConnections
+    singleSource.current.reconnect();
     
-    fetchAgain();
-  }, [sessionId]);
-  
-  // Return the state object with getters/setters
+    // Set isConnected to false during reconnection attempt
+    setIsConnected(false);
+    
+    // Fetch fresh data
+    fetchExistingNumbers(sessionId);
+  }, [sessionId, fetchExistingNumbers]);
+
   return {
     calledNumbers,
-    lastCalledNumber,
-    currentNumber: lastCalledNumber, // Alias for compatibility
-    numberCallTimestamp: lastUpdateTime, // Alias for compatibility
+    currentNumber,
+    numberCallTimestamp,
     isConnected,
-    lastUpdateTime,
     reconnect
   };
 }

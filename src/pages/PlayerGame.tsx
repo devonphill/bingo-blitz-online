@@ -1,14 +1,16 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGameManager } from '@/contexts/GameManager';
-import { useNetwork } from '@/contexts/NetworkStatusContext';
+import { useNetwork } from '@/contexts/network';
 import { useToast } from "@/components/ui/use-toast";
 import { MainLayout } from '@/components/layout';
 import { PlayerGameContent } from '@/components/game';
 import { Spinner } from "@/components/ui/spinner";
 import { logWithTimestamp } from '@/utils/logUtils';
 import { supabase } from '@/integrations/supabase/client';
+import { GameProvider } from '@/contexts/GameContext';
 
 // Add this type mapping function
 const mapClaimStatus = (status: "none" | "pending" | "validating" | "validated" | "rejected"): "none" | "pending" | "valid" | "invalid" => {
@@ -31,11 +33,14 @@ const mapClaimStatus = (status: "none" | "pending" | "validating" | "validated" 
 const PlayerGame = () => {
   const { playerCode } = useParams<{ playerCode?: string }>();
   const navigate = useNavigate();
-  const { user, session, loading: authLoading } = useAuth();
-  const { currentSession, loading: sessionLoading } = useGameManager();
+  const { user, session } = useAuth();
+  const { getCurrentSession } = useGameManager();
   const { connect, connectionState, submitBingoClaim, updatePlayerPresence } = useNetwork();
   const [tickets, setTickets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [sessionLoading, setSessionLoading] = useState(true);
+  const [currentSession, setCurrentSession] = useState<any>(null);
   const [autoMarking, setAutoMarking] = useState(true);
   const [playerName, setPlayerName] = useState('');
   const [playerId, setPlayerId] = useState('');
@@ -49,6 +54,32 @@ const PlayerGame = () => {
   const log = (message: string, level: 'info' | 'warn' | 'error' | 'debug' = 'info') => {
     logWithTimestamp(`${instanceId.current}: ${message}`, level);
   };
+
+  // Load session on mount
+  useEffect(() => {
+    const loadSession = async () => {
+      try {
+        setSessionLoading(true);
+        const sessionData = await getCurrentSession();
+        setCurrentSession(sessionData);
+        setSessionLoading(false);
+      } catch (err) {
+        log(`Error fetching session: ${(err as Error).message}`, 'error');
+        setSessionLoading(false);
+      }
+    };
+    
+    if (user && session) {
+      loadSession();
+    }
+  }, [user, session, getCurrentSession]);
+
+  // Update auth loading state when user and session are available
+  useEffect(() => {
+    if (user !== undefined && session !== undefined) {
+      setAuthLoading(false);
+    }
+  }, [user, session]);
 
   // Fetch player name from local storage
   useEffect(() => {
@@ -73,7 +104,7 @@ const PlayerGame = () => {
     try {
       log(`Fetching tickets for session ${currentSession.id} and player ${playerId}`, 'info');
       const { data, error } = await supabase
-        .from('tickets')
+        .from('assigned_tickets')
         .select('*')
         .eq('session_id', currentSession.id)
         .eq('player_id', playerId);
@@ -222,29 +253,31 @@ const PlayerGame = () => {
   }
 
   return (
-    <MainLayout>
-      <div className="container mx-auto py-8">
-        {currentSession ? (
-          <PlayerGameContent
-            tickets={tickets}
-            currentSession={currentSession}
-            autoMarking={autoMarking}
-            setAutoMarking={setAutoMarking}
-            playerCode={playerCode || ''}
-            playerName={playerName}
-            playerId={playerId}
-            onRefreshTickets={refreshTickets}
-            onReconnect={handleReconnect}
-            sessionId={currentSession.id}
-          />
-        ) : (
-          <div className="text-center">
-            <h2>No Active Game Session</h2>
-            <p>Please wait for the game to start or contact your game administrator.</p>
-          </div>
-        )}
-      </div>
-    </MainLayout>
+    <GameProvider>
+      <MainLayout>
+        <div className="container mx-auto py-8">
+          {currentSession ? (
+            <PlayerGameContent
+              tickets={tickets}
+              currentSession={currentSession}
+              autoMarking={autoMarking}
+              setAutoMarking={setAutoMarking}
+              playerCode={playerCode || ''}
+              playerName={playerName}
+              playerId={playerId}
+              onRefreshTickets={refreshTickets}
+              onReconnect={handleReconnect}
+              sessionId={currentSession.id}
+            />
+          ) : (
+            <div className="text-center">
+              <h2>No Active Game Session</h2>
+              <p>Please wait for the game to start or contact your game administrator.</p>
+            </div>
+          )}
+        </div>
+      </MainLayout>
+    </GameProvider>
   );
 };
 

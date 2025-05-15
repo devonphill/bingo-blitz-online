@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { logWithTimestamp } from "@/utils/logUtils";
-import { useNetwork } from "@/contexts/NetworkStatusContext";
+import { useNetwork } from "@/contexts/network";
+import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 
 export default function NetworkDebugging() {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -14,6 +15,9 @@ export default function NetworkDebugging() {
   // Use the network context
   const network = useNetwork();
   const { connectionState, isConnected, sessionId } = network;
+  
+  // Access SingleSourceTrueConnections directly
+  const singleSource = getSingleSourceConnection();
   
   useEffect(() => {
     // Set up message capture
@@ -45,8 +49,8 @@ export default function NetworkDebugging() {
     logWithTimestamp("Manual reconnection requested from debug panel", 'info');
     
     if (sessionId) {
-      // Use the network context to reconnect
-      network.connect(sessionId);
+      // Use SingleSourceTrueConnections to reconnect
+      singleSource.reconnect();
     }
     
     // Add a message to the log
