@@ -167,8 +167,13 @@ class ClaimBroadcastService {
       // Use either the passed sessionId or the one from the claim object
       const effectiveSessionId = sessionId || claim.sessionId || claim.session_id;
       
+      // Log session ID for debugging
+      console.log('[ClaimBroadcastService] Attempting to broadcast claim check. Session ID:', 
+                 effectiveSessionId, 'Claim Data:', claim);
+      
       if (!claim || !effectiveSessionId) {
         logWithTimestamp(`[${this.instanceId}] Cannot broadcast claim check: Missing session ID`, 'error');
+        console.error('Missing session ID for broadcast. Session ID:', effectiveSessionId);
         return false;
       }
 

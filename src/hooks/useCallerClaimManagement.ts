@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -73,7 +72,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
             patternClaimed: claim.pattern_claimed,
             ticket: claim.ticket_details,
             ticketSerial: claim.ticket_serial,
-            gameNumber: claim.game_number || 1,
+            gameNumber: claim.game_number || 1, // Safely access game_number with default
             timestamp: claim.claimed_at,
             calledNumbers: claim.called_numbers_snapshot
           });

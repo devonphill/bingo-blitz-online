@@ -37,7 +37,15 @@ export default function ClaimItem({
   const handleSendToPlayers = async () => {
     setIsSendingToPlayers(true);
     try {
+      // Ensure we have a valid sessionId from the claim object
+      const sessionId = claim.sessionId || claim.session_id;
+      
       logWithTimestamp(`ClaimItem: Broadcasting claim check for ${claim.playerName || claim.playerId}`, 'info');
+      console.log(`ClaimItem: Using session ID for broadcast: ${sessionId}`);
+      
+      if (!sessionId) {
+        throw new Error("Missing session ID for broadcast");
+      }
       
       // Ensure we have properly formatted data for broadcasting
       const enhancedClaim = {
@@ -46,11 +54,7 @@ export default function ClaimItem({
         lastCalledNumber: currentNumber,
         winPattern: claim.winPattern || claim.pattern_claimed || currentWinPattern,
         gameType: claim.gameType || gameType,
-        sessionId: claim.sessionId || claim.session_id, // Important: Ensure sessionId is included
-        ticket: claim.ticket || claim.ticket_details ? {
-          ...((claim.ticket || claim.ticket_details) as any),
-          calledNumbers: currentCalledNumbers
-        } : null
+        sessionId: sessionId // Explicitly set sessionId to ensure it's available
       };
       
       console.log('Broadcasting claim check with data:', enhancedClaim);
@@ -66,7 +70,7 @@ export default function ClaimItem({
         
         success = await claimBroadcastService.broadcastClaimChecking(
           enhancedClaim,
-          claim.sessionId || claim.session_id
+          sessionId // Pass the sessionId explicitly
         );
         
         if (!success && attempts < maxAttempts) {
