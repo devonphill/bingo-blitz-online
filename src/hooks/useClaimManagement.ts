@@ -28,7 +28,7 @@ export function useClaimManagement(sessionId?: string, gameNumber?: number) {
     try {
       logWithTimestamp(`Validating claim ${claim.id} as ${isValid ? 'valid' : 'rejected'}`, 'info');
       
-      // Convert claim ID to the appropriate type for the database
+      // Use the claim ID as a string, since the database uses UUIDs
       const dbClaimId = parseClaimIdForDb(claim.id);
       
       // Update claim status in database

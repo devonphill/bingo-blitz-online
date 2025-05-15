@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useCallerClaimManagement } from '@/hooks/useCallerClaimManagement';
 import { Bell, AlertTriangle, RefreshCw } from 'lucide-react';
@@ -7,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { ClaimStatus } from '@/types/claim';
 
 // Define consistent channel name used across the application
 const GAME_UPDATES_CHANNEL = 'game-updates';

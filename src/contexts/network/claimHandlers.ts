@@ -116,12 +116,12 @@ export function submitBingoClaim(ticket: any, playerCode: string, sessionId: str
               return false;
             }
             
-            // Generate a unique ID for this claim
+            // Generate a unique ID for this claim - use UUID string which matches the column type
             const claimId = uuidv4();
             
-            // Insert complete claim data into the database
+            // Insert complete claim data into the database - make sure types match the schema
             const claimDataForDB = {
-              id: claimId, // Use the UUID string for the claim ID
+              id: claimId, // Use UUID string as the claim ID
               session_id: sessionId,
               player_id: player.id,
               player_name: player.nickname || playerCode,

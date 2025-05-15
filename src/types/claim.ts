@@ -1,24 +1,29 @@
 
-/**
- * Standard claim status types used throughout the application
- */
-export type ClaimStatus = 'none' | 'pending' | 'valid' | 'invalid' | 'validating' | 'validated' | 'rejected';
+export type ClaimStatus = 'pending' | 'valid' | 'rejected';
 
 export interface ClaimData {
   id: string;
-  sessionId: string;
   playerId: string;
   playerName?: string;
-  timestamp: number | string;
-  toGoCount?: number;
+  sessionId: string;
+  ticket?: {
+    serial: string;
+    perm?: number;
+    position?: number;
+    layoutMask?: number;
+    layout_mask?: number;
+    numbers?: number[];
+    calledNumbers?: number[];
+  };
   gameType?: string;
-  gameNumber?: number;
-  winPattern?: string;
-  ticket?: any;
   calledNumbers?: number[];
-  lastCalledNumber?: number;
+  lastCalledNumber?: number | null;
   hasLastCalledNumber?: boolean;
-  status?: ClaimStatus;
+  winPattern?: string;
+  status: ClaimStatus;
+  timestamp: string;
+  toGoCount?: number;
+  gameNumber?: number;
 }
 
 export interface ClaimResult {
@@ -26,6 +31,7 @@ export interface ClaimResult {
   playerId: string;
   playerName?: string;
   result: 'valid' | 'rejected';
+  timestamp: string;
   ticket?: any;
-  timestamp?: string;
+  message?: string;
 }

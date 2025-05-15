@@ -96,7 +96,7 @@ class ClaimManagementService {
       if (!claim) {
         logWithTimestamp(`Claim ${claimId} not found in session ${sessionId}, checking database`, 'info');
         
-        // Try to find the claim in the database
+        // Try to find the claim in the database - using the updated schema where id is a UUID string
         const { data: dbClaim, error } = await supabase
           .from('claims')
           .select('*')
@@ -110,7 +110,7 @@ class ClaimManagementService {
         
         logWithTimestamp(`Found claim ${claimId} in database`, 'info');
         
-        // Update the claim status in the database
+        // Update the claim status in the database - id is already a string in the new schema
         const { error: updateError } = await supabase
           .from('claims')
           .update({
