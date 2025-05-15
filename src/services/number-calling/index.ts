@@ -1,4 +1,3 @@
-
 import { NumberCallingService } from './types';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { saveCalledNumbersToDatabase } from '@/hooks/playerWebSocket/databaseUtils';
@@ -112,3 +111,22 @@ export const numberCallingService = new NumberCallingServiceImpl();
 
 // Export a getter for consistent access pattern
 export const getNumberCallingService = () => numberCallingService;
+
+/**
+ * Broadcast a number to all connected clients
+ */
+export async function broadcastNumber(sessionId: string, number: number, calledNumbers: number[]): Promise<boolean> {
+  try {
+    const connection = getSingleSourceConnection();
+    
+    // Use static properties correctly
+    return await connection.broadcastNumberCalled(
+      sessionId,
+      number,
+      calledNumbers
+    );
+  } catch (error) {
+    console.error("Error broadcasting number:", error);
+    return false;
+  }
+}

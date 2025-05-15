@@ -1,524 +1,250 @@
-import React, { useState, useEffect, useCallback, ErrorInfo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import PlayerGameHeader from '@/components/player/PlayerGameHeader';
-import PlayerTicketView from '@/components/player/PlayerTicketView';
-import PlayerGridView from '@/components/player/PlayerGridView';
-import { useGameSession } from '@/hooks/useGameSession';
-import { usePlayerTickets } from '@/hooks/usePlayerTickets';
-import { usePlayerWebSocketNumbers } from '@/hooks/playerWebSocket/usePlayerWebSocketNumbers';
-import { Button } from '@/components/ui/button';
-import { usePlayerContext } from '@/contexts/PlayerContext';
-import { useAuth } from '@/hooks/useAuth';
-import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import { X, AlertTriangle, UserX } from 'lucide-react';
-import { logWithTimestamp } from '@/utils/logUtils';
-import { setupClaimDebugging } from '@/utils/claimDebugUtils';
-import BingoClaim from '@/components/game/BingoClaim';
-import { usePlayerClaimManagement } from '@/hooks/usePlayerClaimManagement';
-import GameSheetControls from '@/components/game/GameSheetControls';
-import PlayerGameControls from '@/components/game/PlayerGameControls';
-import { useToast } from '@/components/ui/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
+import { useGameManager } from '@/contexts/GameManager';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
-import { useSessionProgress } from '@/hooks/useSessionProgress';
-import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
-import PlayerGameLobby from '@/components/player/PlayerGameLobby';
+import { useToast } from "@/components/ui/use-toast";
+import { MainLayout } from '@/components/layout';
+import { PlayerGameContent } from '@/components/game';
+import { Spinner } from "@/components/ui/spinner";
+import { logWithTimestamp } from '@/utils/logUtils';
+import { supabase } from '@/integrations/supabase/client';
 
-// Error boundary component for the player game
-class PlayerGameErrorBoundary extends React.Component<
-  { children: React.ReactNode; onError: (error: Error, errorInfo: ErrorInfo) => void },
-  { hasError: boolean, error: Error | null }
-> {
-  constructor(props: { children: React.ReactNode, onError: (error: Error, errorInfo: ErrorInfo) => void }) {
-    super(props);
-    this.state = { hasError: false, error: null };
+// Add this type mapping function
+const mapClaimStatus = (status: "none" | "pending" | "validating" | "validated" | "rejected"): "none" | "pending" | "valid" | "invalid" => {
+  switch (status) {
+    case "none":
+      return "none";
+    case "pending":
+      return "pending";
+    case "validating":
+      return "pending"; // Map validating to pending
+    case "validated":
+      return "valid";
+    case "rejected":
+      return "invalid";
+    default:
+      return "none";
   }
-
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    logWithTimestamp(`Player Game Error: ${error.message}`, 'error');
-    console.error("Player game error:", error, errorInfo);
-    this.props.onError(error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-red-50">
-          <AlertTriangle className="h-16 w-16 text-red-500 mb-4" />
-          <h1 className="text-xl font-bold mb-2">Game Error</h1>
-          <p className="text-gray-700 mb-4 text-center">
-            Sorry, something went wrong with the game. Please try refreshing.
-          </p>
-          <p className="text-sm text-red-700 mb-4 p-2 bg-red-100 rounded max-w-md overflow-auto">
-            {this.state.error?.message || "Unknown error"}
-          </p>
-          <Button onClick={() => window.location.reload()}>
-            Refresh Page
-          </Button>
-        </div>
-      );
-    }
-
-    return this.props.children;
-  }
-}
-
-// Main player game component
-const PlayerGame = () => {
-  const { playerCode } = useParams();
-  const navigate = useNavigate();
-  const { toast } = useToast();
-  const { isConnected } = useNetwork();
-  const { player, setPlayer } = usePlayerContext();
-
-  logWithTimestamp(`PlayerGame init with URL param playerCode: ${playerCode}`, 'info');
-
-  const handleError = useCallback((error: Error) => {
-    logWithTimestamp(`Player Game Critical Error: ${error.message}`, 'error');
-    toast({
-      title: "Game Error",
-      description: "There was a problem with the game. Please try refreshing.",
-      variant: "destructive",
-    });
-  }, [toast]);
-
-  // Get the game code from either URL param or localStorage
-  const gameCode = playerCode || localStorage.getItem('playerCode');
-
-  // Ensure we have a game code, either from URL parameters or localStorage
-  useEffect(() => {
-    if (!gameCode) {
-      logWithTimestamp('No game code found in URL or localStorage, redirecting to join page', 'warn');
-      navigate('/player/join');
-    } else {
-      logWithTimestamp(`Using game code for session: ${gameCode}`, 'info');
-    }
-  }, [gameCode, navigate]);
-
-  // Verify we have a game code
-  if (!gameCode) {
-    logWithTimestamp('Missing Game Code - rendering join suggestion', 'warn');
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Missing Game Code</h1>
-          <Button onClick={() => navigate('/player/join')}>Join a Game</Button>
-        </div>
-      </div>
-    );
-  }
-
-  // Verify player info is available in context or localStorage
-  const savedPlayerId = player?.id || localStorage.getItem('playerId');
-  
-  if (!savedPlayerId) {
-    logWithTimestamp('No player ID found in context or localStorage', 'warn');
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Player Information Missing</h1>
-          <p className="mb-4">Please join the game again to continue.</p>
-          <Button onClick={() => navigate('/player/join')}>Join Game</Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <PlayerGameErrorBoundary onError={handleError}>
-      <PlayerGameContent gameCode={gameCode} />
-    </PlayerGameErrorBoundary>
-  );
 };
 
-// Separated content component to work with the error boundary
-const PlayerGameContent = ({ gameCode }: { gameCode: string }) => {
-  const { 
-    sessionDetails, 
-    isLoadingSession, 
-    sessionError, 
-    currentWinPattern,
-    gameType,
-    playerId: fetchedPlayerId,
-    playerName: fetchedPlayerName
-  } = useGameSession(gameCode);
-
-  // Get the session progress data for lobby/game status
-  const {
-    progress: sessionProgress,
-    loading: loadingSessionProgress,
-    refreshSessionProgress
-  } = useSessionProgress(sessionDetails?.id);
-
-  const { 
-    playerTickets, 
-    isLoadingTickets, 
-    ticketError,
-    currentWinningTickets,
-    refreshTickets,
-    isRefreshingTickets
-  } = usePlayerTickets(sessionDetails?.id);
-
-  const { 
-    calledNumbers, 
-    currentNumber,
-    numberCallTimestamp,
-    isConnected: numbersConnected,
-    reconnect: reconnectNumberUpdates
-  } = usePlayerWebSocketNumbers(sessionDetails?.id);
-
-  const [isTicketView, setIsTicketView] = useState(true);
-  const { player, setPlayer } = usePlayerContext();
-  const { session, user } = useAuth();
-  const [claimDebuggingCleanup, setClaimDebuggingCleanup] = useState<(() => void) | null>(null);
-  const { isConnected } = useNetwork();
+const PlayerGame = () => {
+  const { playerCode } = useParams<{ playerCode?: string }>();
   const navigate = useNavigate();
+  const { user, session, loading: authLoading } = useAuth();
+  const { currentSession, loading: sessionLoading } = useGameManager();
+  const { connect, connectionState, submitBingoClaim, updatePlayerPresence } = useNetwork();
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [autoMarking, setAutoMarking] = useState(true);
+  const [playerName, setPlayerName] = useState('');
+  const [playerId, setPlayerId] = useState('');
+  const [claimStatus, setClaimStatus] = useState<"none" | "pending" | "valid" | "invalid">("none");
   const { toast } = useToast();
-  const [showLobbyOverride, setShowLobbyOverride] = useState<boolean | null>(null);
-  const webSocketService = getWebSocketService();
+  
+  // Generate a unique ID for this component instance
+  const instanceId = React.useRef(`PlayerGame-${Math.random().toString(36).substring(2, 7)}`);
+  
+  // Custom logging function
+  const log = (message: string, level: 'info' | 'warn' | 'error' | 'debug' = 'info') => {
+    logWithTimestamp(`${instanceId.current}: ${message}`, level);
+  };
 
-  // Get player ID from multiple possible sources in priority order
-  const playerId = fetchedPlayerId || player?.id || session?.user?.id || localStorage.getItem('playerId');
-  const playerName = fetchedPlayerName || player?.name || (session?.user ? session.user.email : null) || localStorage.getItem('playerName');
-
-  // Update the player context with the fetched player information if needed
+  // Fetch player name from local storage
   useEffect(() => {
-    if (fetchedPlayerId && !player?.id && gameCode) {
-      logWithTimestamp(`Updating player context with fetched player info: ${fetchedPlayerId}`, 'info');
-      // If the PlayerContext doesn't have the player ID but we got it from the API, update it
-      if (setPlayer) {
-        setPlayer({
-          id: fetchedPlayerId,
-          name: fetchedPlayerName || 'Player',
-          code: gameCode,
-          sessionId: sessionDetails?.id
-        });
-      }
-    }
-  }, [fetchedPlayerId, fetchedPlayerName, gameCode, player, sessionDetails?.id, setPlayer]);
-
-  // For debugging, log the session progress
-  useEffect(() => {
-    if (sessionProgress) {
-      logWithTimestamp(`PlayerGame: Session progress loaded - game_status: ${sessionProgress.game_status || 'null'}`, 'info');
-    }
-  }, [sessionProgress]);
-
-  // Player claim management
-  const {
-    claimStatus,
-    isSubmittingClaim,
-    submitClaim,
-    resetClaimStatus,
-    hasActiveClaims
-  } = usePlayerClaimManagement(
-    gameCode,
-    playerId || '',
-    sessionDetails?.id || null,
-    playerName || 'Player',
-    gameType || 'mainstage',
-    currentWinPattern || null
-  );
-
-  // Set up claim debugging utilities
-  useEffect(() => {
-    // Initialize claim debugging
-    const cleanup = setupClaimDebugging();
-    setClaimDebuggingCleanup(() => cleanup);
-
-    return () => {
-      if (cleanup) cleanup();
-    };
+    const storedPlayerName = localStorage.getItem('playerName') || '';
+    setPlayerName(storedPlayerName);
   }, []);
 
-  // Toggle between ticket view and grid view
-  const toggleView = useCallback(() => {
-    setIsTicketView(prev => !prev);
+  // Fetch player ID from local storage
+  useEffect(() => {
+    const storedPlayerId = localStorage.getItem('playerId') || '';
+    setPlayerId(storedPlayerId);
   }, []);
 
-  // Handle bingo claim - Now without client-side validation
-  const handleClaimBingo = useCallback(async () => {
-    if (!playerTickets || playerTickets.length === 0) {
-      logWithTimestamp('Cannot claim: No tickets', 'warn');
-      toast({
-        title: "No Tickets Available",
-        description: "You don't have any tickets to claim a prize with.",
-        variant: "destructive"
-      });
-      return false;
+  // Function to refresh tickets
+  const refreshTickets = useCallback(async () => {
+    if (!currentSession?.id || !playerId) {
+      log('Session ID or Player ID is missing, skipping ticket refresh', 'warn');
+      return;
     }
 
-    // Find potentially winning tickets
-    const winningTickets = playerTickets.filter(ticket => 
-      ticket.is_winning || ticket.winning_pattern === currentWinPattern || playerTickets.length > 0
-    );
+    setLoading(true);
+    try {
+      log(`Fetching tickets for session ${currentSession.id} and player ${playerId}`, 'info');
+      const { data, error } = await supabase
+        .from('tickets')
+        .select('*')
+        .eq('session_id', currentSession.id)
+        .eq('player_id', playerId);
 
-    if (winningTickets.length > 0) {
-      // If we have 0TG (winning) tickets, submit each one separately
-      const zeroTGTickets = winningTickets.filter(ticket => ticket.is_winning);
-      
-      if (zeroTGTickets.length > 0) {
-        // Submit each 0TG ticket as separate claim
-        for (const ticket of zeroTGTickets) {
-          logWithTimestamp(`Submitting claim for 0TG winning ticket ${ticket.serial}`, 'info');
-          await submitClaim(ticket);
-        }
-        return true;
-      } else {
-        // No 0TG tickets, submit the first ticket from potentially winning
-        const firstTicket = winningTickets[0];
-        logWithTimestamp(`Submitting claim for potentially winning ticket ${firstTicket.serial}`, 'info');
-        return await submitClaim(firstTicket);
-      }
-    } else {
-      // If we don't have any potential winners, just submit the first ticket
-      logWithTimestamp(`No potential winners found, submitting first ticket ${playerTickets[0].serial}`, 'info');
-      return await submitClaim(playerTickets[0]);
-    }
-  }, [playerTickets, currentWinPattern, submitClaim, toast]);
-
-  // Handle connection refresh
-  const handleRefreshConnection = useCallback(() => {
-    reconnectNumberUpdates();
-    refreshTickets();
-    logWithTimestamp('Manually refreshing connection and tickets', 'info');
-    toast({
-      title: "Refreshing",
-      description: "Reconnecting to game and refreshing tickets...",
-    });
-  }, [reconnectNumberUpdates, refreshTickets, toast]);
-
-  // NEW: Set up automatic transition from lobby when game goes live
-  useEffect(() => {
-    if (!sessionDetails?.id) return;
-
-    logWithTimestamp(`Setting up session state change listener for session ${sessionDetails.id}`, 'info');
-    
-    const channel = webSocketService.subscribe(CHANNEL_NAMES.SESSION_UPDATES, (message) => {
-      if (!message || message.sessionId !== sessionDetails.id) return;
-      
-      logWithTimestamp(`Received session state update: ${JSON.stringify(message)}`, 'info');
-      
-      if (
-        (message.type === EVENT_TYPES.GO_LIVE || message.type === EVENT_TYPES.SESSION_STATE_CHANGE) && 
-        message.status === 'active' && 
-        message.lifecycleState === 'live'
-      ) {
-        logWithTimestamp('Game is now live! Transitioning from lobby to game view...', 'info');
-        setShowLobbyOverride(false);
-        
-        // Refresh tickets and session progress to ensure we have the latest data
-        refreshTickets();
-        refreshSessionProgress();
-        
-        // Show toast notification
+      if (error) {
+        log(`Error fetching tickets: ${error.message}`, 'error');
         toast({
-          title: "Game is now live!",
-          description: "The host has started the game.",
+          title: "Error fetching tickets",
+          description: error.message,
+          variant: "destructive",
         });
-        
-        // Also reconnect number updates to ensure we're getting real-time updates
-        reconnectNumberUpdates();
+      } else {
+        log(`Successfully fetched ${data?.length || 0} tickets`, 'info');
+        setTickets(data || []);
       }
-    });
+    } catch (err) {
+      log(`Unexpected error fetching tickets: ${(err as Error).message}`, 'error');
+      toast({
+        title: "Unexpected error",
+        description: (err as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [currentSession?.id, playerId, toast]);
+
+  // Function to handle reconnection
+  const handleReconnect = useCallback(() => {
+    if (currentSession?.id) {
+      log(`Attempting to reconnect to session ${currentSession.id}`, 'info');
+      connect(currentSession.id);
+    } else {
+      log('No session ID available, cannot reconnect', 'warn');
+      toast({
+        title: "No Session",
+        description: "No session available to reconnect to.",
+      });
+    }
+  }, [currentSession?.id, connect, toast]);
+
+  // Initial useEffect to handle session and authentication
+  useEffect(() => {
+    if (authLoading || sessionLoading) {
+      log('Auth or session loading, waiting...', 'debug');
+      return;
+    }
+
+    if (!user || !session) {
+      log('No user or session found, redirecting to login', 'warn');
+      navigate('/login');
+      return;
+    }
+
+    if (!playerCode) {
+      log('No player code found, redirecting to join', 'warn');
+      navigate('/player/join');
+      return;
+    }
+
+    if (!currentSession?.id) {
+      log('No current session, please join a game', 'warn');
+      toast({
+        title: "No Active Session",
+        description: "Please join a game to start playing.",
+      });
+      navigate('/player/join');
+      return;
+    }
+
+    // Connect to the game session
+    log(`Connecting to session ${currentSession.id}`, 'info');
+    connect(currentSession.id);
+
+    // Update player presence
+    updatePlayerPresence({ player_id: playerId, player_code: playerCode })
+      .then(success => {
+        if (success) {
+          log('Player presence updated successfully', 'info');
+        } else {
+          log('Failed to update player presence', 'warn');
+        }
+      });
+
+    // Fetch tickets
+    refreshTickets();
+
+    // Set up interval to periodically refresh tickets
+    const intervalId = setInterval(refreshTickets, 60000); // Refresh every 60 seconds
 
     return () => {
-      webSocketService.unsubscribe(channel);
-      logWithTimestamp(`Cleaned up session state change listener for session ${sessionDetails.id}`, 'info');
+      log('Cleaning up: clearing ticket refresh interval', 'info');
+      clearInterval(intervalId);
     };
-  }, [sessionDetails?.id, toast, refreshTickets, refreshSessionProgress, reconnectNumberUpdates]);
+  }, [user, session, playerCode, navigate, currentSession, authLoading, sessionLoading, connect, refreshTickets, updatePlayerPresence, toast]);
 
-  // Ensure WebSocket connections are established immediately on component mount
-  useEffect(() => {
-    if (!sessionDetails?.id) return;
-    
-    // Force reconnection to ensure we're connected
-    reconnectNumberUpdates();
-    
-    // Set a timer to check connection and re-connect if needed
-    const timer = setTimeout(() => {
-      if (!numbersConnected) {
-        logWithTimestamp('Initial connection not established, forcing reconnection...', 'warn');
-        reconnectNumberUpdates();
-      }
-    }, 2000);
-    
-    return () => clearTimeout(timer);
-  }, [sessionDetails?.id, numbersConnected, reconnectNumberUpdates]);
+  // Handle claim submission
+  const handleClaim = async (ticket: any) => {
+    if (!currentSession?.id) {
+      log('No session ID available, cannot submit claim', 'warn');
+      toast({
+        title: "No Session",
+        description: "No session available to submit a claim.",
+      });
+      return;
+    }
 
-  // If there's no playerId, we can't continue
-  if (!playerId) {
+    if (!playerCode) {
+      log('No player code available, cannot submit claim', 'warn');
+      toast({
+        title: "No Player Code",
+        description: "No player code available to submit a claim.",
+      });
+      return;
+    }
+
+    log(`Submitting claim for ticket ${ticket.id} in session ${currentSession.id}`, 'info');
+    setClaimStatus("pending");
+    const success = submitBingoClaim(ticket, playerCode, currentSession.id);
+
+    if (success) {
+      log('Claim submitted successfully', 'info');
+      toast({
+        title: "Claim Submitted",
+        description: "Your claim has been submitted and is awaiting validation.",
+      });
+    } else {
+      log('Failed to submit claim', 'error');
+      toast({
+        title: "Claim Submission Failed",
+        description: "Failed to submit your claim. Please try again.",
+        variant: "destructive",
+      });
+      setClaimStatus("none");
+    }
+  };
+
+  if (authLoading || sessionLoading || loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <UserX className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold mb-4">Player Not Found</h1>
-          <p className="mb-4">We couldn't find your player information. Please join the game again.</p>
-          <Button onClick={() => navigate('/player/join')}>Join Game</Button>
+      <MainLayout>
+        <div className="flex items-center justify-center h-full">
+          <Spinner size="lg" />
         </div>
-      </div>
+      </MainLayout>
     );
   }
 
-  // Handle various loading and error states
-  if (isLoadingSession || isLoadingTickets || loadingSessionProgress) {
-    return <div className="flex items-center justify-center h-screen">
-      <div className="text-center">
-        <LoadingSpinner size="lg" />
-        <p className="mt-4 text-gray-600">Loading your game...</p>
-      </div>
-    </div>;
-  }
-
-  if (sessionError) {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen p-4">
-        <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
-        <h1 className="text-xl font-bold mb-2">Game Not Found</h1>
-        <p className="text-gray-700 mb-4 text-center">
-          {sessionError === 'Player not found with this code' 
-            ? "We couldn't find a player with your code. Please join again."
-            : sessionError === 'Player has no associated game session' 
-              ? "Your player code isn't linked to an active game session."
-              : sessionError}
-        </p>
-        <div className="space-x-2">
-          <Button onClick={() => navigate('/player/join')}>
-            Return to Join
-          </Button>
-          <Button variant="outline" onClick={() => window.location.reload()}>
-            Try Again
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (ticketError) {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen p-4">
-        <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
-        <h1 className="text-xl font-bold mb-2">Error Loading Tickets</h1>
-        <p className="text-gray-700 mb-4 text-center">
-          {ticketError}
-        </p>
-        <div className="space-x-2">
-          <Button onClick={() => refreshTickets()} disabled={isRefreshingTickets}>
-            Refresh Tickets
-          </Button>
-          <Button variant="outline" onClick={() => navigate('/player/join')}>
-            Join a Different Game
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!sessionDetails) {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen p-4">
-        <X className="h-12 w-12 text-red-500 mb-4" />
-        <h1 className="text-xl font-bold mb-2">Game Not Found</h1>
-        <p className="text-gray-700 mb-4">
-          The game you're looking for doesn't exist or has ended.
-        </p>
-        <Button onClick={() => navigate('/player/join')}>
-          Join a Game
-        </Button>
-      </div>
-    );
-  }
-
-  // Check if we should show the lobby based on session progress
-  const showLobby = showLobbyOverride !== null 
-    ? showLobbyOverride 
-    : (!sessionProgress?.game_status || 
-       sessionProgress.game_status === 'pending' || 
-       sessionDetails.lifecycle_state === 'setup' || 
-       sessionDetails.lifecycle_state === 'lobby');
-
-  logWithTimestamp(`PlayerGame: Lobby check - showLobby: ${showLobby}, game_status: ${sessionProgress?.game_status || 'null'}, lifecycle_state: ${sessionDetails.lifecycle_state || 'unknown'}`, 'info');
-
-  // If the game is in lobby/pending state, show the lobby
-  if (showLobby) {
-    return (
-      <PlayerGameLobby
-        sessionName={sessionDetails.name}
-        sessionId={sessionDetails.id}
-        playerName={playerName || undefined}
-        onRefreshStatus={() => {
-          refreshTickets();
-          refreshSessionProgress();
-        }}
-        errorMessage={null}
-        gameStatus={sessionProgress?.game_status}
-      />
-    );
-  }
-
-  // Otherwise, show the main game view
   return (
-    <div className="pb-20">
-      <PlayerGameHeader 
-        sessionName={sessionDetails.name}
-        callerName={sessionDetails.callerName}
-        lastNumber={currentNumber}
-        timestamp={numberCallTimestamp}
-        gameType={gameType || 'mainstage'}
-        pattern={currentWinPattern || 'No active pattern'}
-      />
-
-      {isTicketView ? (
-        <PlayerTicketView 
-          tickets={playerTickets || []} 
-          calledNumbers={calledNumbers || []}
-          lastCalledNumber={currentNumber}
-          currentWinPattern={currentWinPattern}
-        />
-      ) : (
-        <PlayerGridView 
-          calledNumbers={calledNumbers || []}
-          lastCalledNumber={currentNumber}
-          gameType={gameType || 'mainstage'}
-        />
-      )}
-
-      <PlayerGameControls 
-        isConnected={isConnected && numbersConnected}
-        onToggleTicketView={toggleView}
-        onRefreshConnection={handleRefreshConnection}
-        isTicketView={isTicketView}
-        showTicketToggle={true}
-      />
-
-      <GameSheetControls
-        onClaimBingo={handleClaimBingo}
-        onRefreshTickets={refreshTickets}
-        claimStatus={claimStatus}
-        isClaiming={isSubmittingClaim}
-        isRefreshing={isRefreshingTickets}
-        winningTickets={currentWinningTickets?.length || 0}
-        totalTickets={playerTickets?.length || 0}
-        sessionId={sessionDetails.id}
-        playerId={playerId}
-      />
-
-      <BingoClaim
-        claimStatus={claimStatus}
-        isClaiming={isSubmittingClaim}
-        resetClaimStatus={resetClaimStatus}
-        playerName={playerName || 'Player'}
-        sessionId={sessionDetails.id}
-        playerId={playerId}
-        calledNumbers={calledNumbers}
-        currentTicket={currentWinningTickets && currentWinningTickets.length > 0 
-          ? currentWinningTickets[0] 
-          : playerTickets && playerTickets.length > 0 ? playerTickets[0] : null}
-      />
-    </div>
+    <MainLayout>
+      <div className="container mx-auto py-8">
+        {currentSession ? (
+          <PlayerGameContent
+            tickets={tickets}
+            currentSession={currentSession}
+            autoMarking={autoMarking}
+            setAutoMarking={setAutoMarking}
+            playerCode={playerCode || ''}
+            playerName={playerName}
+            playerId={playerId}
+            onRefreshTickets={refreshTickets}
+            onReconnect={handleReconnect}
+            sessionId={currentSession.id}
+          />
+        ) : (
+          <div className="text-center">
+            <h2>No Active Game Session</h2>
+            <p>Please wait for the game to start or contact your game administrator.</p>
+          </div>
+        )}
+      </div>
+    </MainLayout>
   );
 };
 

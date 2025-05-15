@@ -16,6 +16,7 @@ import './index.css';
 import { logWithTimestamp } from './utils/logUtils';
 import { logReactEnvironment, patchReactHooks } from './utils/reactUtils';
 import { patchReactForCompatibility } from './utils/reactCompatUtils';
+import { SingleSourceTrueConnections } from './utils/SingleSourceTrueConnections';
 
 // Apply all React compatibility patches as early as possible - before any component imports
 // This needs to run before any React components are rendered
@@ -27,6 +28,11 @@ patchReactHooks();
 
 // Log React environment information
 logReactEnvironment();
+
+// Initialize SingleSourceTrueConnections EARLY to ensure WebSocketService is ready
+// This must happen before any component that uses WebSockets is rendered
+logWithTimestamp('[Initialization] Initializing SingleSourceTrueConnections', 'info');
+SingleSourceTrueConnections.getInstance();
 
 // Log initialization
 logWithTimestamp('[Initialization] ReactDOM type: ' + typeof ReactDOM, 'info');

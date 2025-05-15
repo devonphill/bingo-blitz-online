@@ -1,416 +1,201 @@
-import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import GameHeader from "./GameHeader";
-import BingoCardGrid from "./BingoCardGrid";
-import StatusBar from "./StatusBar";
-import GameSheetControls from "./GameSheetControls";
-import DebugPanel from "./DebugPanel";
-import { connectionManager } from "@/utils/connectionManager";
-import { logWithTimestamp } from "@/utils/logUtils";
-import { useNetwork } from "@/contexts/NetworkStatusContext";
-import { useGameManager } from "@/contexts/GameManager";
-import GameTypePlayspace from "./GameTypePlayspace";
-import { usePlayerClaimManagement } from "@/hooks/usePlayerClaimManagement";
-import { usePlayerWebSocketNumbers } from "@/hooks/playerWebSocket";
-import BingoClaim, { claimEvents } from "./BingoClaim";
-import { setupClaimDebugging } from "@/utils/claimDebugUtils";
-import PlayerLobby from "./PlayerLobby";
-import { ClaimStatus } from "@/types/claim";
+import React, { useState, useEffect, useCallback } from 'react';
+import { Grid } from '@/components/ui/grid';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useToast } from "@/components/ui/use-toast";
+import { useNetwork } from '@/contexts/NetworkStatusContext';
+import { logWithTimestamp } from '@/utils/logUtils';
+import { Ticket } from '@/components/game/Ticket';
+import { ClaimStatus } from '@/types/claim';
+import { useGameContext } from '@/contexts/GameContext';
 
 interface PlayerGameContentProps {
   tickets: any[];
-  calledNumbers?: number[];
-  currentNumber?: number | null;
-  currentSession?: any;
-  autoMarking?: boolean;
-  setAutoMarking?: (value: boolean) => void;
-  playerCode?: string;
-  playerName?: string;
-  playerId?: string;
-  winPrizes?: Record<string, string>;
-  activeWinPatterns?: string[];
-  onClaimBingo?: () => Promise<boolean>;
-  claimStatus?: ClaimStatus;
-  isClaiming?: boolean;
-  gameType?: string;
-  currentWinPattern?: string | null;
-  currentGameNumber?: number;
-  numberOfGames?: number;
-  backgroundColor?: string;
-  connectionState?: 'disconnected' | 'connecting' | 'connected' | 'error';
-  onRefreshTickets?: () => void;
-  onReconnect?: () => void;
-  children?: React.ReactNode;
+  currentSession: any;
+  autoMarking: boolean;
+  setAutoMarking: React.Dispatch<React.SetStateAction<boolean>>;
+  playerCode: string;
+  playerName: string;
+  playerId: string;
+  onRefreshTickets: () => void;
+  onReconnect: () => void;
+  sessionId: string; // Add this prop
 }
 
-export default function PlayerGameContent({
-  tickets = [],
-  calledNumbers = [],
-  currentNumber = null,
+export const PlayerGameContent: React.FC<PlayerGameContentProps> = ({
+  tickets,
   currentSession,
-  autoMarking = true,
+  autoMarking,
   setAutoMarking,
   playerCode,
   playerName,
   playerId,
-  winPrizes = {},
-  activeWinPatterns = [],
-  onClaimBingo,
-  claimStatus = 'none',
-  isClaiming = false,
-  gameType = 'mainstage',
-  currentWinPattern = null,
-  currentGameNumber = 1,
-  numberOfGames = 1,
-  backgroundColor = 'transparent',
-  connectionState = 'connected',
   onRefreshTickets,
   onReconnect,
-  children
-}: PlayerGameContentProps) {
-  // Keep a reference to track component instance
-  const componentId = useRef(`playerGame-${Math.random().toString(36).substring(2, 7)}`);
-  
-  // Check if we should show the lobby (game is pending/setup)
-  const showLobby = useMemo(() => {
-    return currentSession && 
-           (currentSession.status === 'pending' || 
-            currentSession.lifecycle_state === 'setup' || 
-            currentSession.lifecycle_state === 'lobby');
-  }, [currentSession]);
-  
-  // Log critical values to help with debugging
-  useEffect(() => {
-    console.log('PlayerGameContent critical values:', {
-      sessionId: currentSession?.id,
-      playerCode,
-      playerId,
-      playerName,
-      showLobby,
-      sessionStatus: currentSession?.status,
-      lifecycleState: currentSession?.lifecycle_state,
-      claimStatus
-    });
-  }, [currentSession, playerCode, playerId, playerName, claimStatus, showLobby]);
-  
-  const { getGameTypeById } = useGameManager();
-  
-  // Local states for UI elements
-  const [isAutoMarkingEnabled, setIsAutoMarkingEnabled] = useState(autoMarking);
-  const [showDebug, setShowDebug] = useState(false);
-  const [gameTypeDetails, setGameTypeDetails] = useState<any>(null);
-  const [localNumbers, setLocalNumbers] = useState<number[]>(calledNumbers || []); 
-  const [localCurrentNumber, setLocalCurrentNumber] = useState<number | null>(currentNumber);
+  sessionId
+}) => {
+  const { toast } = useToast();
+  const { submitBingoClaim } = useNetwork();
+  const { claimStatus, setClaimStatus } = useGameContext();
+  const [isClaiming, setIsClaiming] = useState(false);
+  const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([]);
+  const [isClaimButtonEnabled, setIsClaimButtonEnabled] = useState(false);
+  const [isClaimValidating, setIsClaimValidating] = useState(false);
+  const [isClaimSubmitted, setIsClaimSubmitted] = useState(false);
+  const [isClaimRejected, setIsClaimRejected] = useState(false);
+  const [isClaimValidated, setIsClaimValidated] = useState(false);
+  const [isClaimNone, setIsClaimNone] = useState(true);
+  const [isClaimPending, setIsClaimPending] = useState(false);
+  const [isClaimValid, setIsClaimValid] = useState(false);
+  const [isClaimInvalid, setIsClaimInvalid] = useState(false);
 
-  // Use the network context
-  const network = useNetwork();
-  
-  // Use our WebSocket numbers hook for reliable number reception
-  const {
-    calledNumbers: wsCalledNumbers,
-    lastCalledNumber: wsLastCalledNumber,
-    isConnected: wsConnected
-  } = usePlayerWebSocketNumbers(currentSession?.id);
-  
-  // Use our claim management hook with the correct number of arguments
-  const {
-    claimStatus: claimStatusFromHook,
-    isSubmittingClaim,
-    submitClaim,
-    resetClaimStatus
-  } = usePlayerClaimManagement(
-    playerCode || null,
-    playerId || null,
-    currentSession?.id || null,
-    playerName || null,
-    gameType,
-    currentWinPattern || null
-  );
-  
-  // Map claim status types if needed
-  const mapClaimStatus = (status: ClaimStatus): 'none' | 'pending' | 'valid' | 'invalid' => {
-    switch (status) {
-      case 'validated': return 'valid';
-      case 'rejected': return 'invalid';
-      case 'validating': return 'pending';
-      case 'valid': return 'valid';
-      case 'invalid': return 'invalid';
-      case 'pending': return 'pending';
-      default: return 'none';
-    }
+  // Update claim status state variables based on claimStatus context
+  useEffect(() => {
+    setIsClaimNone(claimStatus === "none");
+    setIsClaimPending(claimStatus === "pending");
+    setIsClaimValid(claimStatus === "valid");
+    setIsClaimInvalid(claimStatus === "invalid");
+  }, [claimStatus]);
+
+  // Function to handle ticket selection
+  const toggleTicketSelection = (ticketId: string) => {
+    setSelectedTicketIds((prevSelected) =>
+      prevSelected.includes(ticketId)
+        ? prevSelected.filter((id) => id !== ticketId)
+        : [...prevSelected, ticketId]
+    );
   };
-  
-  // Setup claim debugging - Enhanced with immediate testing
-  useEffect(() => {
-    logWithTimestamp(`PlayerGameContent (${componentId.current}): Setting up claim debugging`, 'info');
-    const cleanup = setupClaimDebugging();
-    
-    // After a short delay, test the drawer visibility
-    setTimeout(() => {
-      if (typeof window !== 'undefined' && (window as any).debugClaims) {
-        logWithTimestamp(`PlayerGameContent: Testing claim drawer visibility`, 'info');
-        (window as any).debugClaims.showTestToast("Claim system initialized - click to test");
-      }
-    }, 2000);
-    
-    return cleanup;
-  }, []);
 
-  // Use the WebSocket called numbers if available, otherwise use props
-  const effectiveCalledNumbers = wsCalledNumbers.length > 0 ? wsCalledNumbers : calledNumbers;
-  const effectiveLastCalledNumber = wsLastCalledNumber !== null ? wsLastCalledNumber : currentNumber;
-  
-  // Use claim status from hook if available, otherwise use props
-  const effectiveClaimStatus = claimStatusFromHook || claimStatus;
-  const effectiveIsClaiming = isSubmittingClaim || isClaiming;
-
-  // Load game type details
-  useEffect(() => {
-    if (gameType) {
-      const details = getGameTypeById(gameType);
-      if (details) {
-        setGameTypeDetails(details);
-      }
-    }
-  }, [gameType, getGameTypeById]);
-
-  // Handle changes to external props
-  useEffect(() => {
-    if (calledNumbers && calledNumbers.length > 0) {
-      setLocalNumbers(calledNumbers);
-    }
-  }, [calledNumbers]);
-
-  useEffect(() => {
-    setLocalCurrentNumber(currentNumber);
-  }, [currentNumber]);
-
-  useEffect(() => {
-    setIsAutoMarkingEnabled(autoMarking);
-  }, [autoMarking]);
-
-  // Toggle automarking (in local state and parent state if available)
-  const toggleAutoMarking = useCallback(() => {
-    const newValue = !isAutoMarkingEnabled;
-    setIsAutoMarkingEnabled(newValue);
-    
-    if (setAutoMarking) {
-      setAutoMarking(newValue);
-    }
-    
-    // Store preference in localStorage
-    localStorage.setItem('autoMarking', newValue.toString());
-  }, [isAutoMarkingEnabled, setAutoMarking]);
-
-  // Handle the key sequence to toggle debug panel
-  useEffect(() => {
-    const keySequence: string[] = [];
-    const targetSequence = 'debugon';
-    
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const key = event.key.toLowerCase();
-      
-      keySequence.push(key);
-      if (keySequence.length > targetSequence.length) {
-        keySequence.shift();
-      }
-      
-      if (keySequence.join('') === targetSequence) {
-        setShowDebug(true);
-      }
-      
-      if (keySequence.join('') === 'debugoff') {
-        setShowDebug(false);
-      }
-    };
-    
-    window.addEventListener('keydown', handleKeyDown);
-    
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, []);
-
-  // Initialize connection when we have a session
-  useEffect(() => {
-    if (!currentSession || !currentSession.id) {
-      logWithTimestamp('No session available for connection', 'warn');
+  // Function to handle claim submission
+  const handleClaimBingo = useCallback(async () => {
+    if (!selectedTicketIds.length) {
+      toast({
+        title: "No Tickets Selected",
+        description: "Please select at least one ticket to claim Bingo.",
+      });
       return;
     }
-    
+
+    setIsClaiming(true);
+    setClaimStatus("pending");
+
     try {
-      // Initialize connection with proper method chaining
-      connectionManager.init(currentSession.id)
-        .onNumberCalled((number, allNumbers) => {
-          if (number === null) {
-            // Handle reset event
-            setLocalNumbers([]);
-            setLocalCurrentNumber(null);
-            return;
-          }
-          
-          logWithTimestamp(`Received number call: ${number}`, 'info');
-          
-          // Update our local state with the new number
-          setLocalCurrentNumber(number);
-          
-          // Add to called numbers if not already present
-          setLocalNumbers(prev => {
-            if (prev.includes(number)) return prev;
-            return [...prev, number];
+      // Prepare the tickets data for submission
+      const ticketsToSubmit = tickets.filter(ticket => selectedTicketIds.includes(ticket.id));
+
+      // Submit the claim for each selected ticket
+      for (const ticket of ticketsToSubmit) {
+        const success = submitBingoClaim(ticket, playerCode, sessionId);
+        if (!success) {
+          toast({
+            title: "Claim Submission Failed",
+            description: `Failed to submit claim for ticket ${ticket.id}. Please try again.`,
+            variant: "destructive",
           });
-        })
-        // Add session progress update listener
-        .onSessionProgressUpdate((progress) => {
-          // This method just returns this for method chaining, it doesn't need to do anything
-          if (progress) {
-            // Could handle progress updates here if needed
-            logWithTimestamp('Received session progress update', 'debug');
-          }
-        });
-    } catch (error) {
-      logWithTimestamp(`Error initializing connection: ${error}`, 'error');
-    }
-  }, [currentSession]);
+          setClaimStatus("none");
+          return;
+        }
+      }
 
-  // Derive pattern-related data for display
-  const {
-    effectivePattern, 
-    effectivePrize,
-    effectivePatternDisplay
-  } = useMemo(() => {
-    const pattern = currentWinPattern || (activeWinPatterns && activeWinPatterns.length > 0 ? activeWinPatterns[0] : 'oneLine');
-    
-    // Map pattern IDs to display names
-    let patternDisplay = pattern;
-    switch (pattern) {
-      case 'oneLine': patternDisplay = 'One Line'; break;
-      case 'twoLines': patternDisplay = 'Two Lines'; break;
-      case 'fullHouse': patternDisplay = 'Full House'; break;
-      case 'fourCorners': patternDisplay = 'Four Corners'; break;
-      case 'centerSquare': patternDisplay = 'Center Square'; break;
-      default: patternDisplay = pattern?.charAt(0).toUpperCase() + pattern?.slice(1) || 'One Line';
+      // If all claims were successfully submitted
+      toast({
+        title: "Claim Submitted",
+        description: "Your claim has been submitted and is awaiting validation.",
+      });
+      setClaimStatus("pending");
+    } catch (error: any) {
+      console.error("Error submitting claim:", error);
+      toast({
+        title: "Claim Submission Error",
+        description: error.message || "Failed to submit claim. Please try again.",
+        variant: "destructive",
+      });
+      setClaimStatus("none");
+    } finally {
+      setIsClaiming(false);
     }
-    
-    return {
-      effectivePattern: pattern,
-      effectivePrize: winPrizes && pattern ? winPrizes[pattern] || 'Prize' : 'Prize',
-      effectivePatternDisplay: patternDisplay
-    };
-  }, [currentWinPattern, activeWinPatterns, winPrizes]);
+  }, [tickets, selectedTicketIds, playerCode, sessionId, submitBingoClaim, toast, setClaimStatus]);
 
-  // Handle local claim bingo
-  const handleLocalClaimBingo = async () => {
-    logWithTimestamp(`PlayerGameContent (${componentId.current}): Handling local claim bingo`, 'info');
-    
-    if (onClaimBingo) {
-      // Use the provided claim handler from props
-      return await onClaimBingo();
-    } 
-    else if (submitClaim && tickets && tickets.length > 0) {
-      // Use the claim manager hook if we have ticket data
-      return await submitClaim(tickets[0]);
-    }
-    
-    return false;
-  };
-  
-  // If the game is in pending/setup state, show the lobby
-  if (showLobby) {
-    return (
-      <PlayerLobby
-        sessionName={currentSession?.name}
-        playerName={playerName}
-        sessionId={currentSession?.id}
-        onRefreshStatus={onRefreshTickets}
-        errorMessage={null}
-      />
-    );
-  }
-  
-  // Map claim status for display where needed
-  const displayClaimStatus = mapClaimStatus(effectiveClaimStatus as ClaimStatus);
-  
+  // Enable/disable claim button based on ticket selection
+  useEffect(() => {
+    setIsClaimButtonEnabled(selectedTicketIds.length > 0);
+  }, [selectedTicketIds]);
+
   return (
-    <div className="min-h-full flex flex-col" style={{ backgroundColor }}>
-      <GameHeader 
-        gameNumber={currentGameNumber} 
-        totalGames={numberOfGames}
-        pattern={effectivePatternDisplay || 'Not set'}
-        prize={effectivePrize || 'Prize to be announced'}
-        claimStatus={displayClaimStatus}
-        isClaiming={effectiveIsClaiming}
-        onClaimBingo={handleLocalClaimBingo}
-      />
-      
-      <div className="flex-grow overflow-y-auto">
-        <div className="container mx-auto px-4 py-6">
-          <StatusBar
-            playerName={playerName}
-            currentNumber={effectiveLastCalledNumber}
-            calledNumbers={effectiveCalledNumbers}
-            gameType={gameType}
-            showAutoMarkToggle={true}
-            autoMarkEnabled={autoMarking}
-            onToggleAutoMark={toggleAutoMarking}
-            connectionState={wsConnected ? 'connected' : connectionState}
-          />
-          
-          <div className="mt-4">
-            {children || (
-              <GameTypePlayspace
-                gameType={gameType as any}
-                tickets={tickets}
-                calledNumbers={effectiveCalledNumbers}
-                lastCalledNumber={effectiveLastCalledNumber}
-                autoMarking={autoMarking}
-                setAutoMarking={setAutoMarking}
-                handleClaimBingo={handleLocalClaimBingo}
-                isClaiming={effectiveIsClaiming}
-                claimStatus={effectiveClaimStatus === 'valid' ? 'validated' : effectiveClaimStatus === 'invalid' ? 'rejected' : 'pending'}
-                sessionId={currentSession?.id}
-                playerId={playerId}
-                playerName={playerName}
-              />
-            )}
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Game Details</CardTitle>
+          <CardDescription>
+            Session: {currentSession?.id || 'N/A'} | Player: {playerName || 'N/A'} ({playerCode || 'N/A'})
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center space-x-4">
+            <Checkbox
+              id="auto-marking"
+              checked={autoMarking}
+              onCheckedChange={(checked) => {
+                setAutoMarking(!!checked);
+                localStorage.setItem('autoMarking', JSON.stringify(!!checked));
+              }}
+            />
+            <label
+              htmlFor="auto-marking"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+            >
+              Auto-Marking
+            </label>
+            <Button variant="outline" size="sm" onClick={onRefreshTickets}>
+              Refresh Tickets
+            </Button>
+            <Button variant="destructive" size="sm" onClick={onReconnect}>
+              Reconnect
+            </Button>
           </div>
-        </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Your Tickets</CardTitle>
+          <CardDescription>Select tickets to claim Bingo!</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {tickets.length > 0 ? (
+            <Grid className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {tickets.map((ticket) => (
+                <div key={ticket.id}>
+                  <Ticket
+                    ticket={ticket}
+                    autoMarking={autoMarking}
+                    selected={selectedTicketIds.includes(ticket.id)}
+                    onSelect={() => toggleTicketSelection(ticket.id)}
+                  />
+                </div>
+              ))}
+            </Grid>
+          ) : (
+            <p>No tickets available. Please refresh or join a game.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="flex justify-center">
+        <Button
+          size="lg"
+          variant="default"
+          disabled={!isClaimButtonEnabled || isClaiming || isClaimPending || isClaimValid || isClaimInvalid}
+          onClick={handleClaimBingo}
+        >
+          {isClaiming ? "Submitting Claim..." :
+            isClaimPending ? "Claim Pending..." :
+              isClaimValid ? "Claim Validated!" :
+                isClaimInvalid ? "Claim Rejected" :
+                  "Claim Bingo!"}
+        </Button>
       </div>
-      
-      <GameSheetControls
-        onClaimBingo={handleLocalClaimBingo}
-        claimStatus={displayClaimStatus}
-        isClaiming={effectiveIsClaiming}
-        onRefreshTickets={onRefreshTickets}
-        sessionId={currentSession?.id}
-        playerId={playerId}
-      />
-      
-      {/* Use our portal-based claim notification system */}
-      <BingoClaim
-        onClaimBingo={handleLocalClaimBingo}
-        claimStatus={displayClaimStatus}
-        isClaiming={effectiveIsClaiming}
-        resetClaimStatus={resetClaimStatus}
-        playerName={playerName}
-        currentTicket={tickets && tickets.length > 0 ? tickets[0] : null}
-        calledNumbers={effectiveCalledNumbers}
-        sessionId={currentSession?.id}
-        playerId={playerId}
-      />
-      
-      {showDebug && (
-        <div className="fixed bottom-4 right-4 w-64">
-          <DebugPanel 
-            playerCode={playerCode}
-            sessionId={currentSession?.id}
-            gameType={gameType}
-            calledNumbers={effectiveCalledNumbers}
-            lastCalledNumber={effectiveLastCalledNumber}
-            connectionState={wsConnected ? 'connected' : network.connectionState || connectionState}
-            onReconnect={onReconnect}
-          />
-        </div>
-      )}
     </div>
   );
-}
+};
