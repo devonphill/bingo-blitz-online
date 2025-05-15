@@ -25,6 +25,10 @@ class ClaimBroadcastService {
       }
 
       logWithTimestamp(`[${this.instanceId}] Broadcasting claim ${claim.id} for player ${claim.playerName || claim.playerId} in session ${claim.sessionId}`);
+      
+      // Debug log the ticket object to verify it's arriving correctly
+      console.log('[ClaimBroadcastService] Ticket object received for broadcast:', 
+                  claim.ticket ? JSON.stringify(claim.ticket, null, 2) : 'No ticket data');
 
       // Make sure we have the full ticket object
       const ticketData = claim.ticket || {};
@@ -45,14 +49,28 @@ class ClaimBroadcastService {
         gameNumber: claim.gameNumber || 1,
         winPattern: claim.winPattern || 'oneLine',
         
-        // Ticket data - full details for validation
+        // Ticket data - full details for validation with safe access
         ticket: {
-          serial: ticketData.serial || claim.ticketSerial || '',
-          perm: ticketData.perm !== undefined ? ticketData.perm : 0,
-          position: ticketData.position !== undefined ? ticketData.position : 0,
-          layoutMask: ticketData.layoutMask !== undefined ? ticketData.layoutMask : 
-                     (ticketData.layout_mask !== undefined ? ticketData.layout_mask : 0),
-          numbers: Array.isArray(ticketData.numbers) ? ticketData.numbers : [],
+          serial: typeof ticketData === 'object' && ticketData !== null && 'serial' in ticketData 
+                  ? ticketData.serial 
+                  : claim.ticketSerial || '',
+          perm: typeof ticketData === 'object' && ticketData !== null && 'perm' in ticketData 
+                ? Number(ticketData.perm) 
+                : 0,
+          position: typeof ticketData === 'object' && ticketData !== null && 'position' in ticketData 
+                    ? Number(ticketData.position) 
+                    : 0,
+          layoutMask: typeof ticketData === 'object' && ticketData !== null 
+                      ? ('layoutMask' in ticketData 
+                        ? Number(ticketData.layoutMask) 
+                        : ('layout_mask' in ticketData 
+                          ? Number(ticketData.layout_mask) 
+                          : 0))
+                      : 0,
+          numbers: typeof ticketData === 'object' && ticketData !== null && 'numbers' in ticketData 
+                   && Array.isArray(ticketData.numbers) 
+                   ? ticketData.numbers 
+                   : [],
           calledNumbers: Array.isArray(claim.calledNumbers) ? claim.calledNumbers : []
         },
         
