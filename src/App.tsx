@@ -1,9 +1,8 @@
-
 import React, { Suspense, lazy } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { Toaster } from "@/components/ui/toaster";
 import { Spinner } from "@/components/ui/spinner";
-import { MainLayout } from '@/components/layout/MainLayout';
+import { MainLayout, PlayerLayout } from '@/components/layout';
 import LoginForm from '@/components/auth/LoginForm';
 import { PlayerContextProvider } from '@/contexts/PlayerContext';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -59,17 +58,19 @@ const CallerHome = () => <div className="p-8"><h1 className="text-2xl">Caller Ho
 const GameSetup = () => <div className="p-8"><h1 className="text-2xl">Game Setup</h1><p>This page is not yet implemented.</p></div>;
 const GameManagement = () => <div className="p-8"><h1 className="text-2xl">Game Management</h1><p>This page is not yet implemented.</p></div>;
 
-// PlayerRoutes component wrapped with PlayerContextProvider
+// PlayerRoutes component wrapped with PlayerContextProvider and PlayerLayout
 const PlayerRoutes = () => {
   logWithTimestamp('Initializing PlayerRoutes component with PlayerContextProvider', 'info');
   return (
     <PlayerContextProvider>
-      <Suspense fallback={<LoadingSpinner size="lg" />}>
-        <Routes>
-          <Route path="join" element={<PlayerJoin />} />
-          <Route path="game/:playerCode?" element={<PlayerGame />} />
-        </Routes>
-      </Suspense>
+      <PlayerLayout>
+        <Suspense fallback={<LoadingSpinner size="lg" />}>
+          <Routes>
+            <Route path="join" element={<PlayerJoin />} />
+            <Route path="game/:playerCode?" element={<PlayerGame />} />
+          </Routes>
+        </Suspense>
+      </PlayerLayout>
     </PlayerContextProvider>
   );
 };
