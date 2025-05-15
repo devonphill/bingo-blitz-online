@@ -26,13 +26,17 @@ class ClaimBroadcastService {
 
       logWithTimestamp(`[${this.instanceId}] Broadcasting claim ${claim.id} for player ${claim.playerName || claim.playerId} in session ${claim.sessionId}`);
 
-      // Clean up the payload to avoid circular references but include full details
+      // Make sure we have the full ticket object
+      const ticketData = claim.ticket || {};
+
+      // Clean up the payload to avoid circular references but include full ticket details
       const broadcastPayload = {
         // Core claim data
         claimId: claim.id,
         sessionId: claim.sessionId,
         playerId: claim.playerId,
         playerName: claim.playerName || 'unknown',
+        playerCode: claim.playerCode,
         timestamp: claim.timestamp,
         status: claim.status || 'pending',
         
@@ -42,14 +46,14 @@ class ClaimBroadcastService {
         winPattern: claim.winPattern || 'oneLine',
         
         // Ticket data - full details for validation
-        ticket: claim.ticket ? {
-          serial: claim.ticket.serial,
-          perm: claim.ticket.perm || 0,
-          position: claim.ticket.position || 0,
-          layoutMask: claim.ticket.layoutMask || claim.ticket.layout_mask || 0,
-          numbers: claim.ticket.numbers || [],
-          calledNumbers: claim.ticket.calledNumbers || []
-        } : undefined,
+        ticket: {
+          serial: ticketData.serial || claim.ticketSerial || '',
+          perm: ticketData.perm || 0,
+          position: ticketData.position || 0,
+          layoutMask: ticketData.layoutMask || ticketData.layout_mask || 0,
+          numbers: ticketData.numbers || [],
+          calledNumbers: claim.calledNumbers || []
+        },
         
         // Called numbers for validation
         calledNumbers: claim.calledNumbers || [],
@@ -62,7 +66,7 @@ class ClaimBroadcastService {
       };
 
       // Log the full broadcast payload for debugging
-      console.log('Broadcasting claim data via WebSocket:', JSON.stringify(broadcastPayload, null, 2));
+      console.log('Final broadcast payload via WebSocket:', JSON.stringify(broadcastPayload, null, 2));
 
       // Use WebSocketService for consistent broadcasting
       const webSocketService = getWebSocketService();

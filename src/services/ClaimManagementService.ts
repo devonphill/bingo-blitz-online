@@ -27,16 +27,33 @@ class ClaimManagementService {
       // Generate a unique ID for this claim if not provided
       const claimId = claimData.id || generateUUID();
 
+      // Ensure ticket data is preserved in its full form
+      // IMPORTANT: Don't transform the ticket data to "present"
+      const ticketData = claimData.ticket || {};
+
       // Create the full claim object
       const claim: ClaimData = {
         id: claimId,
         timestamp: new Date().toISOString(),
-        ...claimData,
-        status: 'pending'
+        playerId: claimData.playerId,
+        playerName: claimData.playerName,
+        playerCode: claimData.playerCode,
+        sessionId: claimData.sessionId,
+        ticket: ticketData, // Preserve full ticket object
+        ticketSerial: ticketData.serial || claimData.ticketSerial,
+        gameType: claimData.gameType || 'mainstage',
+        calledNumbers: claimData.calledNumbers || [],
+        lastCalledNumber: claimData.lastCalledNumber,
+        hasLastCalledNumber: !!claimData.lastCalledNumber,
+        winPattern: claimData.winPattern || claimData.patternClaimed,
+        patternClaimed: claimData.patternClaimed || claimData.winPattern,
+        status: 'pending',
+        toGoCount: claimData.toGoCount || 0,
+        gameNumber: claimData.gameNumber || 1
       };
 
-      // Log the claim for debugging
-      logWithTimestamp(`Submitting claim: ${JSON.stringify({
+      // Log the full claim object for debugging
+      console.log('CLAIM DEBUG - Full claim object in ClaimManagementService:', {
         id: claim.id,
         playerId: claim.playerId,
         playerName: claim.playerName,
@@ -47,8 +64,8 @@ class ClaimManagementService {
           hasNumbers: !!claim.ticket.numbers
         } : 'missing',
         winPattern: claim.winPattern
-      })}`, 'info');
-
+      });
+      
       // Add to storage - this should store it in memory for caller retrieval
       const added = claimStorageService.storeClaim(claim);
       if (!added) {

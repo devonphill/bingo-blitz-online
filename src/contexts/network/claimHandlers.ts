@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { claimService } from '@/services/ClaimManagementService';
@@ -126,7 +127,7 @@ export function submitBingoClaim(ticket: any, playerCode: string, sessionId: str
               player_name: player.nickname || playerCode,
               player_code: playerCode,
               ticket_serial: ticket.serial,
-              ticket_details: ticketData,
+              ticket_details: ticketData, // Store the full ticket object in JSONB column
               pattern_claimed: gameState?.current_win_pattern || 'fullhouse',
               called_numbers_snapshot: gameState?.called_numbers || [],
               status: 'pending',
@@ -134,7 +135,7 @@ export function submitBingoClaim(ticket: any, playerCode: string, sessionId: str
             };
             
             // Log the data that will be inserted into the claims table
-            console.log('Data to be inserted into claims table:', JSON.stringify(claimDataForDB, null, 2));
+            console.log('Final object being inserted into "claims" table:', JSON.stringify(claimDataForDB, null, 2));
             
             // Insert into claims table
             supabase
@@ -150,7 +151,7 @@ export function submitBingoClaim(ticket: any, playerCode: string, sessionId: str
                     playerId: player.id,
                     playerName: player.nickname || playerCode,
                     sessionId: sessionId,
-                    ticket: ticketData,
+                    ticket: ticketData, // FIXED: Pass full ticket data, not a placeholder
                     gameType: 'mainstage', // Default, can be updated if we have more info
                     calledNumbers: gameState?.called_numbers || [],
                     lastCalledNumber: gameState?.called_numbers ? 
@@ -169,7 +170,7 @@ export function submitBingoClaim(ticket: any, playerCode: string, sessionId: str
                   playerId: player.id,
                   playerName: player.nickname || playerCode,
                   sessionId: sessionId,
-                  ticket: ticketData,
+                  ticket: ticketData, // FIXED: Pass full ticket data, not a placeholder
                   gameType: 'mainstage',
                   calledNumbers: gameState?.called_numbers || [],
                   lastCalledNumber: gameState?.called_numbers ? 
@@ -180,7 +181,7 @@ export function submitBingoClaim(ticket: any, playerCode: string, sessionId: str
                 };
                 
                 // Log the WebSocket broadcast payload
-                console.log('Broadcasting claim data via WebSocket:', JSON.stringify(detailedClaimDataForBroadcast, null, 2));
+                console.log('Final object being broadcast for claim:', JSON.stringify(detailedClaimDataForBroadcast, null, 2));
                 
                 // Use claim service for memory storage and WebSocket broadcasting
                 claimService.submitClaim(detailedClaimDataForBroadcast);

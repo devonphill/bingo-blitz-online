@@ -39,6 +39,6 @@ export interface ClaimResult {
   playerName?: string;
   result: 'valid' | 'rejected';
   timestamp: string;
-  ticket?: any;
+  ticket?: any; // This should include the full ticket data
   message?: string;
 }
