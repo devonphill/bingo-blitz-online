@@ -38,21 +38,22 @@ export default function PlayerClaimCheckingNotification({
 
         // Set the claim data
         setClaimBeingChecked({
-          id: payload.claimId || 'unknown',
+          id: payload.claimId || payload.id || 'unknown',
           playerId: payload.playerId || 'unknown',
-          playerName: payload.playerName || 'Unknown Player',
-          sessionId: payload.sessionId,
-          ticket: payload.ticket,
-          calledNumbers: payload.calledNumbers || [],
-          winPattern: payload.winPattern || 'unknown',
+          playerName: payload.playerName || payload.player_name || 'Unknown Player',
+          sessionId: payload.sessionId || payload.session_id,
+          ticket: payload.ticket || payload.ticket_details,
+          calledNumbers: payload.calledNumbers || payload.called_numbers_snapshot || [],
+          winPattern: payload.winPattern || payload.pattern_claimed || 'unknown',
           gameType: payload.gameType || 'mainstage',
-          timestamp: payload.timestamp || new Date().toISOString(),
+          timestamp: payload.timestamp || payload.claimed_at || new Date().toISOString(),
           status: 'pending'
         });
 
         // Check if this is my claim (based on playerCode, if available)
         const isMyClaimChecking = playerCode && (
-          payload.playerCode === playerCode || payload.player_code === playerCode
+          payload.playerCode === playerCode || 
+          payload.player_code === playerCode
         );
         
         setIsMyClaimBeingChecked(isMyClaimChecking);
@@ -64,7 +65,7 @@ export default function PlayerClaimCheckingNotification({
         playNotificationSound();
         
         // Log the notification
-        logWithTimestamp(`Claim check notification opened for ${payload.playerName}`, 'info');
+        logWithTimestamp(`Claim check notification opened for ${payload.playerName || payload.player_name}`, 'info');
       } catch (error) {
         console.error('Error processing claim validating event:', error);
       }
@@ -82,21 +83,41 @@ export default function PlayerClaimCheckingNotification({
       'broadcast', 
       EVENT_TYPES.CLAIM_VALIDATING_TKT, 
       (payloadWrapper) => {
+        logWithTimestamp('Received claim validating broadcast event', 'info');
+        console.log('Full payload wrapper:', payloadWrapper);
+        
         const payload = payloadWrapper?.payload;
         if (payload) {
           handleClaimValidatingEvent(payload);
+        } else {
+          logWithTimestamp('Invalid payload in claim validating event', 'warn');
         }
       }
     );
     
     // Also listen to custom browser events that might be dispatched by other components
     const handleCustomEvent = (event: CustomEvent) => {
+      logWithTimestamp('Received custom claimBroadcast event', 'info');
+      console.log('Custom event details:', event.detail);
+      
       if (event.detail?.claim && event.detail?.type === 'checking') {
         handleClaimValidatingEvent(event.detail.claim);
       }
     };
     
     window.addEventListener('claimBroadcast', handleCustomEvent as EventListener);
+    
+    // Listen for forceOpenClaimDrawer events
+    const handleForceOpenEvent = (event: CustomEvent) => {
+      logWithTimestamp('Received forceOpenClaimDrawer event', 'info');
+      console.log('Force open event details:', event.detail);
+      
+      if (event.detail?.data) {
+        handleClaimValidatingEvent(event.detail.data);
+      }
+    };
+    
+    window.addEventListener('forceOpenClaimDrawer', handleForceOpenEvent as EventListener);
 
     // Log that we've set up the listener
     logWithTimestamp(`Subscribed to claim validating events for session ${sessionId}`, 'info');
@@ -108,6 +129,7 @@ export default function PlayerClaimCheckingNotification({
         logWithTimestamp(`Unsubscribed from claim validating events listener`, 'info');
       }
       window.removeEventListener('claimBroadcast', handleCustomEvent as EventListener);
+      window.removeEventListener('forceOpenClaimDrawer', handleForceOpenEvent as EventListener);
     };
   }, [sessionId, playerCode]);
 

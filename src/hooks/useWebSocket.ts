@@ -7,7 +7,8 @@ import { logWithTimestamp } from '@/utils/logUtils';
 const EXTENDED_EVENT_TYPES = {
   ...EVENT_TYPES,
   WIN_PATTERN_UPDATED: 'win-pattern-updated',
-  GAME_STATUS_UPDATED: 'game-status-updated'
+  GAME_STATUS_UPDATED: 'game-status-updated',
+  CLAIM_VALIDATING_TKT: 'claim-validating-ticket'
 };
 
 export function useWebSocket(sessionId: string | null) {
@@ -70,15 +71,35 @@ export function useWebSocket(sessionId: string | null) {
     try {
       const webSocketService = getWebSocketService();
       
+      logWithTimestamp(`[${instanceId}] Setting up listener for event: ${eventType}`, 'info');
+      
       // Add listener for the event
       const cleanup = webSocketService.addListener(
         CHANNEL_NAMES.GAME_UPDATES,
         'broadcast',
         eventType,
         (payloadWrapper: any) => {
+          logWithTimestamp(`[${instanceId}] Received event: ${eventType}`, 'info');
+          console.log(`Full payload for ${eventType}:`, payloadWrapper);
+          
           const payload = payloadWrapper?.payload;
-          if (payload && payload.sessionId === sessionId) {
-            handler(payload as T);
+          if (payload) {
+            // For claim validation events, always process them regardless of sessionId
+            // This ensures players see claim validations even if there's a mismatch
+            if (eventType === EXTENDED_EVENT_TYPES.CLAIM_VALIDATING_TKT) {
+              logWithTimestamp(`[${instanceId}] Processing claim validation event regardless of session match`, 'info');
+              handler(payload as T);
+              return;
+            }
+            
+            // For other events, check session matching
+            if (!payload.sessionId || payload.sessionId === sessionId) {
+              handler(payload as T);
+            } else {
+              logWithTimestamp(`[${instanceId}] Event ${eventType} sessionId mismatch: ${payload.sessionId} vs ${sessionId}`, 'debug');
+            }
+          } else {
+            logWithTimestamp(`[${instanceId}] Event ${eventType} has no payload`, 'warn');
           }
         }
       );

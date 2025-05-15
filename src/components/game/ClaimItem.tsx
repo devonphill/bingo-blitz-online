@@ -125,6 +125,9 @@ export default function ClaimItem({
   // Format the timestamp for display - improved to handle various formats and potential errors
   const formattedTime = React.useMemo(() => {
     try {
+      // Log the raw claimed_at value to debug
+      console.log('[ClaimItem] Raw claimed_at value:', claim.claimed_at || claim.timestamp);
+      
       const timestamp = claim.claimed_at || claim.timestamp;
       if (!timestamp) return "Unknown time";
       
@@ -153,26 +156,49 @@ export default function ClaimItem({
 
   // Get the win pattern from the claim data with better fallbacks
   const winPattern = claim.winPattern || claim.pattern_claimed || currentWinPattern || "Unknown";
+  
+  // Log claim data to debug
+  console.log('[ClaimItem] Displaying claim:', claim.id, 
+    'Player:', claim.playerName || claim.player_name, 
+    'Pattern:', winPattern,
+    'Claimed At (raw):', claim.claimed_at || claim.timestamp,
+    'Ticket Details:', claim.ticket_details || claim.ticket
+  );
 
   // Get the game number - safely extract from ticket_details if available
   const gameNumber = (() => {
+    console.log('[ClaimItem] Extracting game number from:', {
+      directGameNumber: claim.gameNumber || claim.game_number,
+      ticketDetails: claim.ticket_details,
+      ticket: claim.ticket
+    });
+    
     if (typeof claim.gameNumber === 'number') return claim.gameNumber;
+    if (typeof claim.game_number === 'number') return claim.game_number;
     
     // Check ticket_details object (which might be stored under different property names)
     if (claim.ticket_details && typeof claim.ticket_details === 'object') {
       // Handle both camelCase and snake_case property names
-      return claim.ticket_details.gameNumber || 
-             claim.ticket_details.game_number || 
-             "Unknown";
+      const ticketDetailsGameNum = claim.ticket_details.gameNumber || 
+             claim.ticket_details.game_number;
+             
+      if (ticketDetailsGameNum) {
+        console.log('[ClaimItem] Found game number in ticket_details:', ticketDetailsGameNum);
+        return ticketDetailsGameNum;
+      }
     }
     
     // Check if game info is in the ticket property instead
     if (claim.ticket && typeof claim.ticket === 'object') {
-      return claim.ticket.gameNumber || 
-             claim.ticket.game_number || 
-             "Unknown";
+      const ticketGameNum = claim.ticket.gameNumber || claim.ticket.game_number;
+      
+      if (ticketGameNum) {
+        console.log('[ClaimItem] Found game number in ticket:', ticketGameNum);
+        return ticketGameNum;
+      }
     }
     
+    console.log('[ClaimItem] Could not find game number in claim data');
     return "Unknown";
   })();
 
