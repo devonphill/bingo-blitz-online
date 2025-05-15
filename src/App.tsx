@@ -1,9 +1,8 @@
-
 import React, { Suspense, lazy } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { Toaster } from "@/components/ui/toaster";
 import { Spinner } from "@/components/ui/spinner";
-import MainLayout from '@/components/layout/MainLayout';
+import { MainLayout } from '@/components/layout/MainLayout';
 import LoginForm from '@/components/auth/LoginForm';
 import { PlayerContextProvider } from '@/contexts/PlayerContext';
 import { logWithTimestamp } from '@/utils/logUtils';

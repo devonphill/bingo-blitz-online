@@ -1,6 +1,6 @@
 
 import React, { useState } from "react";
-import PlayerGameContent from "./PlayerGameContent";
+import { PlayerGameContent } from "./PlayerGameContent";
 import { Menu, X } from "lucide-react";
 import { Button } from "../ui/button";
 
