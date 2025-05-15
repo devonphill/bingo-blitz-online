@@ -37,7 +37,7 @@ export default function ClaimItem({
   const handleSendToPlayers = async () => {
     setIsSendingToPlayers(true);
     try {
-      // Ensure we have a valid sessionId from the claim object
+      // Get session ID from claim object - check multiple possible locations
       const sessionId = claim.sessionId || claim.session_id;
       
       logWithTimestamp(`ClaimItem: Broadcasting claim check for ${claim.playerName || claim.playerId}`, 'info');
@@ -137,8 +137,17 @@ export default function ClaimItem({
   // Get the win pattern from the claim data
   const winPattern = claim.winPattern || claim.pattern_claimed || currentWinPattern || "Unknown";
 
-  // Get the game number 
-  const gameNumber = claim.gameNumber || "Unknown";
+  // Get the game number - safely extract from ticket_details if available
+  const gameNumber = (() => {
+    if (typeof claim.gameNumber === 'number') return claim.gameNumber;
+    if (claim.ticket_details && typeof claim.ticket_details === 'object') {
+      return claim.ticket_details.game_number || "Unknown";
+    }
+    if (claim.ticket && typeof claim.ticket === 'object') {
+      return claim.ticket.game_number || "Unknown";
+    }
+    return "Unknown";
+  })();
 
   // Get player name
   const playerName = claim.playerName || claim.player_name || claim.playerId || "Unknown Player";

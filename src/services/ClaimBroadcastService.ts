@@ -1,3 +1,4 @@
+
 import { logWithTimestamp } from '@/utils/logUtils';
 import { ClaimData, ClaimResult } from '@/types/claim';
 import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
@@ -163,6 +164,12 @@ class ClaimBroadcastService {
    */
   public async broadcastClaimChecking(claim: ClaimData, sessionId: string): Promise<boolean> {
     try {
+      // Log incoming parameters for debugging
+      console.log('[ClaimBroadcastService] broadcastClaimChecking called with:');
+      console.log('- sessionId parameter:', sessionId);
+      console.log('- claim.sessionId:', claim.sessionId || claim.session_id);
+      console.log('- claim object:', claim);
+      
       // Use either the passed sessionId or the one from the claim object
       const effectiveSessionId = sessionId || claim.sessionId || claim.session_id;
       

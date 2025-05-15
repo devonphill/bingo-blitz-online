@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { ClaimData, ClaimStatus } from '@/types/claim';
+import { parseJson } from '@/types/json';
 
 /**
  * Hook for managing caller-side claims with optimistic UI updates
@@ -61,6 +62,24 @@ export function useCallerClaimManagement(sessionId: string | null) {
           // Convert database ID to string if needed
           const claimId = typeof claim.id === 'number' ? String(claim.id) : claim.id;
           
+          // Safely handle ticket_details which could be a string or an object
+          let ticketDetails = claim.ticket_details;
+          if (typeof ticketDetails === 'string') {
+            try {
+              ticketDetails = JSON.parse(ticketDetails);
+            } catch (e) {
+              console.error('Error parsing ticket_details:', e);
+              ticketDetails = {};
+            }
+          }
+          
+          // Extract game number from ticket_details with proper type checking
+          let gameNumber = 1; // Default value
+          if (ticketDetails && typeof ticketDetails === 'object') {
+            gameNumber = 'game_number' in ticketDetails ? 
+              Number(ticketDetails.game_number) : 1;
+          }
+          
           allClaimsMap.set(claimId, {
             ...claim,
             id: claimId, // Ensure ID is stored as string
@@ -71,11 +90,12 @@ export function useCallerClaimManagement(sessionId: string | null) {
             playerCode: claim.player_code,
             winPattern: claim.pattern_claimed,
             patternClaimed: claim.pattern_claimed,
-            ticket: claim.ticket_details,
+            ticket: ticketDetails,
             ticketSerial: claim.ticket_serial,
-            gameNumber: claim.ticket_details?.game_number || 1, // Access game_number from ticket_details
+            gameNumber: gameNumber, // Use the extracted game number
             timestamp: claim.claimed_at,
-            calledNumbers: claim.called_numbers_snapshot
+            calledNumbers: claim.called_numbers_snapshot,
+            sessionId: claim.session_id // Ensure sessionId is explicitly included
           });
         });
       }
@@ -84,7 +104,8 @@ export function useCallerClaimManagement(sessionId: string | null) {
       optimisticClaims.forEach(claim => {
         allClaimsMap.set(claim.id, {
           ...claim,
-          isOptimistic: true
+          isOptimistic: true,
+          sessionId: sessionId // Ensure sessionId is set for optimistic claims too
         });
       });
       
