@@ -1,4 +1,3 @@
-
 import React, { Suspense, lazy } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { Toaster } from "@/components/ui/toaster";
@@ -8,6 +7,7 @@ import LoginForm from '@/components/auth/LoginForm';
 import { PlayerContextProvider } from '@/contexts/PlayerContext';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { AuthContextProvider } from '@/contexts/AuthContext'; // Import the AuthContextProvider
+import { GameManagerProvider } from '@/contexts/GameManager'; // Import the GameManagerProvider
 
 // Simplified loading spinner component
 const LoadingSpinner = ({ size = "md" }: { size?: "sm" | "md" | "lg" }) => {
@@ -75,45 +75,47 @@ const PlayerRoutes = () => {
 function App() {
   return (
     <AuthContextProvider>
-      <Suspense fallback={<LoadingSpinner size="lg" />}>
-        <Routes>
-          {/* Public routes */}
-          <Route path="/" element={<PublicLayout><Home /></PublicLayout>} />
-          <Route path="/about" element={<PublicLayout><About /></PublicLayout>} />
-          <Route path="/attract-hosts" element={<PublicLayout><AttractHosts /></PublicLayout>} />
-          <Route path="/faq-players" element={<PublicLayout><FAQPlayers /></PublicLayout>} />
-          <Route path="/faq-hosts" element={<PublicLayout><FAQHosts /></PublicLayout>} />
-          
-          {/* Public auth routes (accessible only when NOT logged in) */}
-          <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-          <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
-          <Route path="/forgot-password" element={<PublicRoute><PublicLayout><ForgotPassword /></PublicLayout></PublicRoute>} />
-          <Route path="/register-superuser" element={<RegisterSuperuser />} />
-          
-          {/* Protected routes (require auth) */}
-          <Route path="/dashboard" element={<PrivateRoute><MainLayout><Dashboard /></MainLayout></PrivateRoute>} />
-          <Route path="/reports" element={<PrivateRoute><MainLayout><UserReports /></MainLayout></PrivateRoute>} />
-          <Route path="/add-tokens" element={<PrivateRoute><MainLayout><AddTokens /></MainLayout></PrivateRoute>} />
-          <Route path="/payment-success" element={<PrivateRoute><MainLayout><PaymentSuccess /></MainLayout></PrivateRoute>} />
-          
-          {/* Admin only routes */}
-          <Route path="/caller" element={<AdminRoute><MainLayout><CallerHome /></MainLayout></AdminRoute>} />
-          <Route path="/caller/setup" element={<AdminRoute><MainLayout><GameSetup /></MainLayout></AdminRoute>} />
-          <Route path="/caller/manage" element={<AdminRoute><MainLayout><GameManagement /></MainLayout></AdminRoute>} />
-          <Route path="/caller/session/:sessionId" element={<AdminRoute><MainLayout><CallerSession /></MainLayout></AdminRoute>} />
-          
-          {/* Superuser only routes */}
-          <Route path="/superuser/manage" element={<SuperuserRoute><MainLayout><SuperuserManagement /></MainLayout></SuperuserRoute>} />
-          <Route path="/superuser/reports" element={<SuperuserRoute><MainLayout><SuperuserReports /></MainLayout></SuperuserRoute>} />
-          
-          {/* Players management */}
-          <Route path="/session/:sessionId/players/add" element={<PrivateRoute><MainLayout><AddPlayers /></MainLayout></PrivateRoute>} />
-          
-          {/* Player routes with PlayerContextProvider */}
-          <Route path="player/*" element={<PlayerRoutes />} />
-        </Routes>
-      </Suspense>
-      <Toaster />
+      <GameManagerProvider>
+        <Suspense fallback={<LoadingSpinner size="lg" />}>
+          <Routes>
+            {/* Public routes */}
+            <Route path="/" element={<PublicLayout><Home /></PublicLayout>} />
+            <Route path="/about" element={<PublicLayout><About /></PublicLayout>} />
+            <Route path="/attract-hosts" element={<PublicLayout><AttractHosts /></PublicLayout>} />
+            <Route path="/faq-players" element={<PublicLayout><FAQPlayers /></PublicLayout>} />
+            <Route path="/faq-hosts" element={<PublicLayout><FAQHosts /></PublicLayout>} />
+            
+            {/* Public auth routes (accessible only when NOT logged in) */}
+            <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+            <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
+            <Route path="/forgot-password" element={<PublicRoute><PublicLayout><ForgotPassword /></PublicLayout></PublicRoute>} />
+            <Route path="/register-superuser" element={<RegisterSuperuser />} />
+            
+            {/* Protected routes (require auth) */}
+            <Route path="/dashboard" element={<PrivateRoute><MainLayout><Dashboard /></MainLayout></PrivateRoute>} />
+            <Route path="/reports" element={<PrivateRoute><MainLayout><UserReports /></MainLayout></PrivateRoute>} />
+            <Route path="/add-tokens" element={<PrivateRoute><MainLayout><AddTokens /></MainLayout></PrivateRoute>} />
+            <Route path="/payment-success" element={<PrivateRoute><MainLayout><PaymentSuccess /></MainLayout></PrivateRoute>} />
+            
+            {/* Admin only routes */}
+            <Route path="/caller" element={<AdminRoute><MainLayout><CallerHome /></MainLayout></AdminRoute>} />
+            <Route path="/caller/setup" element={<AdminRoute><MainLayout><GameSetup /></MainLayout></AdminRoute>} />
+            <Route path="/caller/manage" element={<AdminRoute><MainLayout><GameManagement /></MainLayout></AdminRoute>} />
+            <Route path="/caller/session/:sessionId" element={<AdminRoute><MainLayout><CallerSession /></MainLayout></AdminRoute>} />
+            
+            {/* Superuser only routes */}
+            <Route path="/superuser/manage" element={<SuperuserRoute><MainLayout><SuperuserManagement /></MainLayout></SuperuserRoute>} />
+            <Route path="/superuser/reports" element={<SuperuserRoute><MainLayout><SuperuserReports /></MainLayout></SuperuserRoute>} />
+            
+            {/* Players management */}
+            <Route path="/session/:sessionId/players/add" element={<PrivateRoute><MainLayout><AddPlayers /></MainLayout></PrivateRoute>} />
+            
+            {/* Player routes with PlayerContextProvider */}
+            <Route path="player/*" element={<PlayerRoutes />} />
+          </Routes>
+        </Suspense>
+        <Toaster />
+      </GameManagerProvider>
     </AuthContextProvider>
   );
 }
