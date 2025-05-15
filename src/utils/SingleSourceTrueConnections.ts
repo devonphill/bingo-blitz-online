@@ -171,21 +171,19 @@ export class SingleSourceTrueConnections {
   /**
    * Register a number called listener
    * @param listener Function to call when a number is called
-   * @returns This instance for chaining
+   * @returns Function to remove the listener
    */
-  public onNumberCalled(listener: NumberCalledListener): SingleSourceTrueConnections {
-    this.listenerManager.onNumberCalled(listener);
-    return this;
+  public onNumberCalled(listener: NumberCalledListener): () => void {
+    return this.listenerManager.onNumberCalled(listener);
   }
   
   /**
    * Register a session progress update listener
    * @param listener Function to call when session progress is updated
-   * @returns This instance for chaining
+   * @returns Function to remove the listener
    */
-  public onSessionProgressUpdate(listener: SessionProgressListener): SingleSourceTrueConnections {
-    this.listenerManager.onSessionProgressUpdate(listener);
-    return this;
+  public onSessionProgressUpdate(listener: SessionProgressListener): () => void {
+    return this.listenerManager.onSessionProgressUpdate(listener);
   }
   
   /**
@@ -318,6 +316,44 @@ export class SingleSourceTrueConnections {
   }
   
   /**
+   * Set up number update listeners for a specific session
+   * @param sessionId Session ID to listen for
+   * @param onNumberUpdate Function to call when a number is updated
+   * @param onGameReset Function to call when the game is reset
+   * @param instanceId Unique instance identifier for logging
+   * @returns Function to remove the listeners
+   */
+  public setupNumberUpdateListeners(
+    sessionId: string | null | undefined,
+    onNumberUpdate: (number: number, numbers: number[]) => void,
+    onGameReset: () => void,
+    instanceId: string
+  ): () => void {
+    if (!sessionId) {
+      logWithTimestamp(`[${instanceId}] Cannot setup listeners: No session ID`, 'warn');
+      return () => {};
+    }
+    
+    logWithTimestamp(`[${instanceId}] Setting up number update listeners for session ${sessionId}`, 'info');
+    
+    // Connect if not already connected
+    if (this.sessionId !== sessionId) {
+      this.connect(sessionId);
+    }
+    
+    // Set up event listeners
+    const numberListener = this.onNumberCalled((number, calledNumbers) => {
+      if (number === null) {
+        onGameReset();
+      } else {
+        onNumberUpdate(number, calledNumbers);
+      }
+    });
+    
+    return numberListener;
+  }
+  
+  /**
    * Export constants for consistent usage
    */
   public static CHANNEL_NAMES = CHANNEL_NAMES;
@@ -330,5 +366,5 @@ export const getSingleSourceConnection = () => SingleSourceTrueConnections.getIn
 
 // Re-export needed types for convenience
 export { CHANNEL_NAMES, EVENT_TYPES, WEBSOCKET_STATUS } from '@/services/websocket';
-export { ConnectionState } from '@/constants/connectionConstants';
+export type { ConnectionState } from '@/constants/connectionConstants';
 export type { NumberCalledListener, SessionProgressListener, ConnectionStatusListener } from './connection/connectionTypes';

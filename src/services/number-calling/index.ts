@@ -1,115 +1,118 @@
 
+import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { 
-  getSingleSourceConnection,
-  CHANNEL_NAMES,
-  EVENT_TYPES
-} from '@/utils/SingleSourceTrueConnections';
-import { NumberCallingOptions } from './types';
+import { supabase } from '@/integrations/supabase/client';
 
 /**
- * Call a number in a bingo game session
- * 
- * @param number The number to call
- * @param sessionId The session ID
- * @param options Additional options
- * @returns Promise resolving to success status
+ * Service for handling number calling and listening operations
  */
-export async function callNumber(
-  number: number,
-  sessionId: string,
-  options: NumberCallingOptions = {}
-): Promise<boolean> {
-  try {
+export const numberCallingService = {
+  /**
+   * Subscribe to number updates for a session
+   * @param sessionId Session ID to subscribe to
+   * @param listener Function to call with number updates
+   * @returns Function to unsubscribe
+   */
+  subscribe: (sessionId: string, listener: (number: number | null, calledNumbers: number[]) => void) => {
+    if (!sessionId) {
+      logWithTimestamp('Cannot subscribe: No session ID', 'warn');
+      return () => {};
+    }
+    
+    logWithTimestamp(`Subscribing to number updates for session ${sessionId}`, 'info');
+    
+    // Use SingleSourceTrueConnections for subscription
     const singleSource = getSingleSourceConnection();
     
-    const {
-      broadcastToPlayers = true,
-      storeInDatabase = true,
-      notifyListeners = true
-    } = options;
+    // Connect to session if not already connected
+    singleSource.connect(sessionId);
     
-    // Validate inputs
-    if (!sessionId) {
-      logWithTimestamp('No session ID provided for number calling', 'error');
-      return false;
-    }
+    // Add listener for number called events
+    return singleSource.onNumberCalled(listener);
+  },
+  
+  /**
+   * Notify listeners of number updates
+   * @param sessionId Session ID
+   * @param number Number called
+   * @param calledNumbers All called numbers
+   */
+  notifyListeners: (sessionId: string, number: number | null, calledNumbers: number[]) => {
+    const singleSource = getSingleSourceConnection();
     
-    if (isNaN(number) || number < 0) {
-      logWithTimestamp(`Invalid number provided: ${number}`, 'error');
-      return false;
-    }
-    
-    logWithTimestamp(`Calling number ${number} for session ${sessionId}`, 'info');
-    
-    // Broadcast number via WebSockets
-    let broadcastSuccess = true;
-    if (broadcastToPlayers) {
-      broadcastSuccess = await singleSource.callNumber(number, sessionId);
+    // Use SingleSourceTrueConnections to broadcast number called event
+    singleSource.broadcastNumberCalled(sessionId, number as number, calledNumbers);
+  },
+  
+  /**
+   * Reset numbers for a session
+   * @param sessionId Session ID
+   * @returns Promise resolving to whether the reset was successful
+   */
+  resetNumbers: async (sessionId: string): Promise<boolean> => {
+    try {
+      logWithTimestamp(`Resetting numbers for session ${sessionId}`, 'info');
       
-      if (!broadcastSuccess) {
-        logWithTimestamp(`Failed to broadcast number ${number} to players`, 'error');
-      } else {
-        logWithTimestamp(`Successfully broadcast number ${number} to players`, 'info');
+      // Update database
+      const { error } = await supabase
+        .from('sessions_progress')
+        .update({ called_numbers: [] })
+        .eq('session_id', sessionId);
+      
+      if (error) {
+        logWithTimestamp(`Error resetting numbers in database: ${error.message}`, 'error');
+        return false;
       }
-    }
-    
-    // Execute database operations in parallel
-    const promises = [];
-    
-    // Update the database with called number
-    if (storeInDatabase) {
-      // Database update logic here (left as placeholder)
-      // This would typically update the session_progress table
-    }
-    
-    // Wait for all operations to complete
-    if (promises.length > 0) {
-      await Promise.all(promises);
-    }
-    
-    return broadcastSuccess;
-  } catch (error) {
-    logWithTimestamp(`Error calling number: ${error}`, 'error');
-    return false;
-  }
-}
-
-/**
- * Reset called numbers for a session
- * 
- * @param sessionId The session ID
- * @returns Promise resolving to success status
- */
-export async function resetCalledNumbers(sessionId: string): Promise<boolean> {
-  try {
-    if (!sessionId) {
-      logWithTimestamp('No session ID provided for resetting numbers', 'error');
+      
+      // Broadcast reset event
+      const singleSource = getSingleSourceConnection();
+      const webSocketService = singleSource.getWebSocketService();
+      
+      await webSocketService.broadcastWithRetry(
+        'game-updates',
+        'game-reset',
+        { sessionId }
+      );
+      
+      return true;
+    } catch (error) {
+      logWithTimestamp(`Error resetting numbers: ${error}`, 'error');
       return false;
     }
-    
-    // Broadcast game reset via WebSockets
-    const singleSource = getSingleSourceConnection();
-    const webSocketService = singleSource.getWebSocketService();
-    
-    const success = await webSocketService.broadcastWithRetry(
-      CHANNEL_NAMES.GAME_UPDATES,
-      EVENT_TYPES.GAME_RESET,
-      {
-        sessionId,
-        timestamp: Date.now()
+  },
+  
+  /**
+   * Update called numbers for a session
+   * @param sessionId Session ID
+   * @param numbers Called numbers
+   * @returns Promise resolving to whether the update was successful
+   */
+  updateCalledNumbers: async (sessionId: string, numbers: number[]): Promise<boolean> => {
+    try {
+      logWithTimestamp(`Updating called numbers for session ${sessionId}`, 'info');
+      
+      // Update database
+      const { error } = await supabase
+        .from('sessions_progress')
+        .update({ called_numbers: numbers })
+        .eq('session_id', sessionId);
+      
+      if (error) {
+        logWithTimestamp(`Error updating called numbers in database: ${error.message}`, 'error');
+        return false;
       }
-    );
-    
-    if (!success) {
-      logWithTimestamp(`Failed to broadcast game reset for session ${sessionId}`, 'error');
+      
+      // Broadcast last number if available
+      if (numbers.length > 0) {
+        const lastNumber = numbers[numbers.length - 1];
+        const singleSource = getSingleSourceConnection();
+        await singleSource.broadcastNumberCalled(sessionId, lastNumber, numbers);
+      }
+      
+      return true;
+    } catch (error) {
+      logWithTimestamp(`Error updating called numbers: ${error}`, 'error');
       return false;
     }
-    
-    logWithTimestamp(`Successfully reset called numbers for session ${sessionId}`, 'info');
-    return true;
-  } catch (error) {
-    logWithTimestamp(`Error resetting called numbers: ${error}`, 'error');
-    return false;
   }
-}
+};

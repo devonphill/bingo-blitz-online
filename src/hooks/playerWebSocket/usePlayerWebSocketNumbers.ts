@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { getSingleSourceConnection, CHANNEL_NAMES, EVENT_TYPES } from '@/utils/SingleSourceTrueConnections';
+import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 
 export function usePlayerWebSocketNumbers(sessionId: string | undefined) {
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
