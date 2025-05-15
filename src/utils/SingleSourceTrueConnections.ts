@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { getWebSocketService, initializeWebSocketService, CHANNEL_NAMES, EVENT_TYPES, WEBSOCKET_STATUS } from '@/services/websocket';
 import { logWithTimestamp } from './logUtils';
@@ -20,6 +19,10 @@ export class SingleSourceTrueConnections {
   private listenerManager = new ConnectionListenerManager();
   private heartbeat: ConnectionHeartbeat;
   
+  // Remove the problematic properties that were incorrectly declared:
+  // public onSessionProgressUpdate: () => void = this.listenerManager;
+  // public onConnectionStateChange: () => void = this.listenerManager;
+  
   private constructor() {
     // Initialize WebSocket service with Supabase client
     initializeWebSocketService(supabase);
@@ -39,6 +42,7 @@ export class SingleSourceTrueConnections {
     this.initialized = true;
     logWithTimestamp('SingleSourceTrueConnections initialized', 'info');
   }
+  
   
   /**
    * Get the singleton instance
@@ -149,6 +153,7 @@ export class SingleSourceTrueConnections {
     return this;
   }
   
+  
   /**
    * Check if a connection exists for a session
    * @param sessionId Session ID to check
@@ -194,6 +199,7 @@ export class SingleSourceTrueConnections {
   public addConnectionListener(listener: ConnectionStatusListener): () => void {
     return this.listenerManager.addConnectionListener(listener);
   }
+  
   
   /**
    * Call a number
@@ -265,6 +271,7 @@ export class SingleSourceTrueConnections {
       return false;
     }
   }
+  
   
   /**
    * Reconnect to the current session

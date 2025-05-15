@@ -1,3 +1,4 @@
+
 import React, { useState } from "react";
 import { PlayerGameContent } from "./PlayerGameContent";
 import { Menu, X } from "lucide-react";
@@ -107,6 +108,12 @@ export default function PlayerGameLayout({
     setSidebarOpen(!sidebarOpen);
   };
 
+  // Define a simple refresh tickets function that can be passed to PlayerGameContent
+  const handleRefreshTickets = () => {
+    console.log("Refreshing tickets...");
+    // In a real implementation, this would trigger a fetch of updated tickets
+  };
+
   return (
     <div className="flex h-full overflow-hidden relative bg-gradient-to-b from-bingo-background to-bingo-background-alt">
       {/* Sidebar */}
@@ -152,6 +159,7 @@ export default function PlayerGameLayout({
               onClaimWin={onClaimWin}
               sessionId={sessionId}
               onReconnect={onReconnect}
+              onRefreshTickets={handleRefreshTickets} // Add the missing prop here
             />
           )}
         </div>
