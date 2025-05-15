@@ -19,6 +19,7 @@ export const EVENT_TYPES = {
   GAME_RESET: 'game-reset',
   WIN_PATTERN_UPDATED: 'win-pattern-updated',
   GAME_STATUS_UPDATED: 'game-status-updated',
+  CLAIM_RESULT: 'claim-result',
   
   // Player -> Caller events
   CLAIM_SUBMITTED: 'claim-submitted',

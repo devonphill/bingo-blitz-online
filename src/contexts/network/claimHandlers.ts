@@ -32,8 +32,8 @@ export async function fetchClaimsForSession(sessionId: string | null): Promise<a
       return claimService.getClaimsForSession(sessionId);
     }
     
-    logWithTimestamp(`NetworkContext: Found ${claims.length} claims in database`, 'debug');
-    return claims;
+    logWithTimestamp(`NetworkContext: Found ${claims?.length || 0} claims in database`, 'debug');
+    return claims || [];
   } catch (err) {
     logWithTimestamp(`Exception fetching claims: ${(err as Error).message}`, 'error');
     // Fallback to in-memory service
@@ -248,6 +248,15 @@ export async function validateClaim(
     
     if (ticketDetails.numbers) {
       logEntry.ticket_numbers = JSON.stringify(ticketDetails.numbers);
+    }
+    
+    // Add prize fields if available
+    if (claim.prize) {
+      logEntry.prize = claim.prize;
+    }
+    
+    if (claim.prizeAmount) {
+      logEntry.prize_amount = claim.prizeAmount;
     }
     
     // Log the attempt

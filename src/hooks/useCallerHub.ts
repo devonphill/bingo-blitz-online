@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -61,7 +62,7 @@ export function useCallerHub(sessionId: string | undefined) {
       const { data, error } = await supabase
         .from('universal_game_logs')
         .select('*')
-        .eq('session_id', sessionId)
+        .eq('session_uuid', sessionId)
         .is('validated_at', null)
         .not('claimed_at', 'is', null);  // Make sure we only get claims
       
