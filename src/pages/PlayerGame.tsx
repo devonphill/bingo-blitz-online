@@ -7,6 +7,7 @@ import { usePlayerContext } from '@/contexts/PlayerContext';
 import { useSessionContext } from '@/contexts/SessionProvider';
 import { MainLayout } from '@/components/layout';
 import { PlayerGameContent } from '@/components/game';
+import { PlayerClaimCheckingNotification } from '@/components/game';
 import { Spinner } from "@/components/ui/spinner";
 import { logWithTimestamp } from '@/utils/logUtils';
 import { GameProvider } from '@/contexts/GameContext';
@@ -185,6 +186,14 @@ const PlayerGame = () => {
             onClaimBingo={handleClaimBingo}
           />
         </div>
+        
+        {/* Add PlayerClaimCheckingNotification component to listen for claim verification broadcasts */}
+        {player && player.sessionId && (
+          <PlayerClaimCheckingNotification 
+            sessionId={player.sessionId}
+            playerCode={playerCode || player.code}
+          />
+        )}
       </MainLayout>
     </GameProvider>
   );
