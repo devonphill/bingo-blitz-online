@@ -8,8 +8,7 @@ const EXTENDED_EVENT_TYPES = {
   ...EVENT_TYPES,
   WIN_PATTERN_UPDATED: 'win-pattern-updated',
   GAME_STATUS_UPDATED: 'game-status-updated',
-  CLAIM_VALIDATING_TKT: 'claim-validating-ticket',
-  CLAIM_VALIDATION_RESULT: 'claim-validation-result'  // Add this new event type for claim results
+  CLAIM_VALIDATING_TKT: 'claim-validating-ticket'
 };
 
 export function useWebSocket(sessionId: string | null) {
@@ -87,9 +86,8 @@ export function useWebSocket(sessionId: string | null) {
           if (payload) {
             // For claim validation events, always process them regardless of sessionId
             // This ensures players see claim validations even if there's a mismatch
-            if (eventType === EXTENDED_EVENT_TYPES.CLAIM_VALIDATING_TKT || 
-                eventType === EXTENDED_EVENT_TYPES.CLAIM_VALIDATION_RESULT) {
-              logWithTimestamp(`[${instanceId}] Processing claim event regardless of session match`, 'info');
+            if (eventType === EXTENDED_EVENT_TYPES.CLAIM_VALIDATING_TKT) {
+              logWithTimestamp(`[${instanceId}] Processing claim validation event regardless of session match`, 'info');
               handler(payload as T);
               return;
             }

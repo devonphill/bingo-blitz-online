@@ -23,60 +23,32 @@ export default function PlayerClaimCheckingNotification({
 
   // Listen for claim checking broadcasts
   useEffect(() => {
-    if (!sessionId) {
-      logWithTimestamp('PlayerClaimCheckingNotification: Cannot setup listener - No session ID', 'warn');
-      return;
-    }
-
-    logWithTimestamp(`PlayerClaimCheckingNotification: Setting up listener for session ${sessionId}`, 'info');
+    if (!sessionId) return;
 
     const handleClaimValidatingEvent = (payload: any) => {
       try {
-        // Detailed logging as requested
-        console.log('[PlayerClaimCheckingNotification] <<<< RAW EVENT RECEIVED FOR CLAIM_VALIDATING_TKT >>>> PayloadWrapper:', 
-          JSON.stringify(payload, null, 2));
-        
-        if (!payload) {
-          console.error('[PlayerClaimCheckingNotification] Received event but payload is missing or undefined.');
+        logWithTimestamp('Received claim validating event:', 'info');
+        console.log('Claim validating payload:', payload);
+
+        // Check if this is for our session
+        if (payload?.sessionId !== sessionId) {
+          logWithTimestamp(`Ignoring claim validation for different session (${payload?.sessionId} != ${sessionId})`, 'info');
           return;
         }
 
-        // Log specific fields critical for display
-        console.log(`[PlayerClaimCheckingNotification] Details: Claim ID: ${payload.claimId || payload.id}, ` +
-          `Player: ${payload.playerName || payload.player_name}, ` + 
-          `Session IDs - Event: ${payload.sessionId}, Component: ${sessionId}`);
-
-        // Check if this is for our session
-        if (payload?.sessionId && payload.sessionId !== sessionId) {
-          logWithTimestamp(`PlayerClaimCheckingNotification: Ignoring claim validation for different session (${payload.sessionId} != ${sessionId})`, 'info');
-          console.log(`[PlayerClaimCheckingNotification] Session ID mismatch: payload ${payload.sessionId} vs component ${sessionId}`);
-          // For now, we'll still process it even if session IDs don't match (matches hook behavior)
-        }
-
-        // Log ticket details if present
-        if (payload.ticket || payload.ticket_details) {
-          console.log('[PlayerClaimCheckingNotification] Ticket details:', 
-            JSON.stringify(payload.ticket || payload.ticket_details, null, 2));
-        }
-
         // Set the claim data
-        const claimData = {
+        setClaimBeingChecked({
           id: payload.claimId || payload.id || 'unknown',
-          playerId: payload.playerId || payload.player_id || 'unknown',
+          playerId: payload.playerId || 'unknown',
           playerName: payload.playerName || payload.player_name || 'Unknown Player',
-          sessionId: payload.sessionId || payload.session_id || sessionId,
+          sessionId: payload.sessionId || payload.session_id,
           ticket: payload.ticket || payload.ticket_details,
           calledNumbers: payload.calledNumbers || payload.called_numbers_snapshot || [],
           winPattern: payload.winPattern || payload.pattern_claimed || 'unknown',
-          gameType: payload.gameType || payload.game_type || 'mainstage',
+          gameType: payload.gameType || 'mainstage',
           timestamp: payload.timestamp || payload.claimed_at || new Date().toISOString(),
-          status: payload.status || 'pending'
-        };
-
-        // Log transformed claim data
-        console.log('[PlayerClaimCheckingNotification] Transformed claim data:', JSON.stringify(claimData, null, 2));
-
-        setClaimBeingChecked(claimData);
+          status: 'pending'
+        });
 
         // Check if this is my claim (based on playerCode, if available)
         const isMyClaimChecking = playerCode && (
@@ -85,11 +57,9 @@ export default function PlayerClaimCheckingNotification({
         );
         
         setIsMyClaimBeingChecked(isMyClaimChecking);
-        console.log(`[PlayerClaimCheckingNotification] Is my claim being checked: ${isMyClaimChecking}`);
         
         // Open the sheet
         setIsOpen(true);
-        console.log('[PlayerClaimCheckingNotification] Sheet set to open');
         
         // Play sound for notification
         playNotificationSound();
@@ -97,7 +67,7 @@ export default function PlayerClaimCheckingNotification({
         // Log the notification
         logWithTimestamp(`Claim check notification opened for ${payload.playerName || payload.player_name}`, 'info');
       } catch (error) {
-        console.error('[PlayerClaimCheckingNotification] Error processing claim validating event:', error);
+        console.error('Error processing claim validating event:', error);
       }
     };
 
@@ -113,22 +83,22 @@ export default function PlayerClaimCheckingNotification({
       'broadcast', 
       EVENT_TYPES.CLAIM_VALIDATING_TKT, 
       (payloadWrapper) => {
-        logWithTimestamp('PlayerClaimCheckingNotification: Received claim validating broadcast event', 'info');
-        console.log('[PlayerClaimCheckingNotification] Full payload wrapper:', payloadWrapper);
+        logWithTimestamp('Received claim validating broadcast event', 'info');
+        console.log('Full payload wrapper:', payloadWrapper);
         
         const payload = payloadWrapper?.payload;
         if (payload) {
           handleClaimValidatingEvent(payload);
         } else {
-          logWithTimestamp('PlayerClaimCheckingNotification: Invalid payload in claim validating event', 'warn');
+          logWithTimestamp('Invalid payload in claim validating event', 'warn');
         }
       }
     );
     
     // Also listen to custom browser events that might be dispatched by other components
     const handleCustomEvent = (event: CustomEvent) => {
-      logWithTimestamp('PlayerClaimCheckingNotification: Received custom claimBroadcast event', 'info');
-      console.log('[PlayerClaimCheckingNotification] Custom event details:', event.detail);
+      logWithTimestamp('Received custom claimBroadcast event', 'info');
+      console.log('Custom event details:', event.detail);
       
       if (event.detail?.claim && event.detail?.type === 'checking') {
         handleClaimValidatingEvent(event.detail.claim);
@@ -139,8 +109,8 @@ export default function PlayerClaimCheckingNotification({
     
     // Listen for forceOpenClaimDrawer events
     const handleForceOpenEvent = (event: CustomEvent) => {
-      logWithTimestamp('PlayerClaimCheckingNotification: Received forceOpenClaimDrawer event', 'info');
-      console.log('[PlayerClaimCheckingNotification] Force open event details:', event.detail);
+      logWithTimestamp('Received forceOpenClaimDrawer event', 'info');
+      console.log('Force open event details:', event.detail);
       
       if (event.detail?.data) {
         handleClaimValidatingEvent(event.detail.data);
@@ -149,46 +119,14 @@ export default function PlayerClaimCheckingNotification({
     
     window.addEventListener('forceOpenClaimDrawer', handleForceOpenEvent as EventListener);
 
-    // Manual trigger for testing - dispatch a synthetic event after a delay
-    setTimeout(() => {
-      try {
-        // Only in dev environment to help with testing
-        if (import.meta.env.DEV) {
-          logWithTimestamp('PlayerClaimCheckingNotification: Dispatching synthetic test event for debugging', 'info');
-          const testEvent = new CustomEvent('forceOpenClaimDrawer', {
-            detail: {
-              data: {
-                id: 'test-claim-id',
-                player_name: 'Test Player',
-                sessionId: sessionId,
-                pattern_claimed: 'One Line',
-                claimed_at: new Date().toISOString(),
-                ticket_details: {
-                  numbers: [1, 2, 3, 4, 5, 6, 7, 8, 9],
-                  layoutMask: 511, // Binary 111111111
-                  serial: 'TEST-123',
-                  perm: 1234,
-                  position: 1
-                },
-                called_numbers_snapshot: [1, 2, 3, 7, 9]
-              }
-            }
-          });
-          window.dispatchEvent(testEvent);
-        }
-      } catch (e) {
-        console.error('Error dispatching test event:', e);
-      }
-    }, 5000);
-
     // Log that we've set up the listener
-    logWithTimestamp(`PlayerClaimCheckingNotification: Subscribed to claim validating events for session ${sessionId}`, 'info');
+    logWithTimestamp(`Subscribed to claim validating events for session ${sessionId}`, 'info');
     
     // Clean up
     return () => {
       if (cleanupListener) {
         cleanupListener();
-        logWithTimestamp(`PlayerClaimCheckingNotification: Unsubscribed from claim validating events listener`, 'info');
+        logWithTimestamp(`Unsubscribed from claim validating events listener`, 'info');
       }
       window.removeEventListener('claimBroadcast', handleCustomEvent as EventListener);
       window.removeEventListener('forceOpenClaimDrawer', handleForceOpenEvent as EventListener);

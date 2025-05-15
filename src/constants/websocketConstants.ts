@@ -15,7 +15,6 @@ export const EVENT_TYPES = {
   NUMBER_CALLED: 'number-called',
   CLAIM_VALIDATION: 'claim-validation',
   CLAIM_VALIDATING_TKT: 'claim-validating-ticket',
-  CLAIM_VALIDATION_RESULT: 'claim-validation-result', // New event type for results
   GAME_STATE_UPDATE: 'game-state-update',
   GAME_RESET: 'game-reset',
   WIN_PATTERN_UPDATED: 'win-pattern-updated',
