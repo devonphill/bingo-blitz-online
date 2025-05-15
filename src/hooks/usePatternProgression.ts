@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -24,48 +23,44 @@ export function usePatternProgression(sessionId: string | null) {
   const { toast } = useToast();
 
   // Fetch all available patterns for the current game
-  const getActivePatterns = useCallback(async (gameNumber?: number) => {
+  const getActivePatterns = useCallback(async (gameNumber: number = 1) => {
     if (!sessionId) return [];
-    
-    setIsLoading(true);
-    
+
     try {
-      // First get the session's game config
-      const { data: session, error: sessionError } = await supabase
+      // Fetch the game session for its configuration
+      const { data: sessionData, error: sessionError } = await supabase
         .from('game_sessions')
         .select('games_config')
         .eq('id', sessionId)
         .single();
-      
-      if (sessionError || !session?.games_config) {
-        throw new Error(`Failed to load game configuration: ${sessionError?.message}`);
-      }
-      
-      // Parse the game config
-      const gamesConfig = session.games_config;
-      
-      // Find the current game's patterns
-      const currentGameNumber = gameNumber || 1;
-      const currentGame = Array.isArray(gamesConfig) 
-        ? gamesConfig.find((g: any) => g.gameNumber === currentGameNumber) 
-        : null;
-      
-      if (!currentGame) {
-        logWithTimestamp(`No configuration found for game ${currentGameNumber}`, 'warn');
-        setPatterns([]);
+
+      if (sessionError || !sessionData) {
+        console.error("Error fetching session config:", sessionError);
         return [];
       }
+
+      const gamesConfig = sessionData.games_config as any[];
       
-      const gamePatterns = currentGame.patterns || [];
-      setPatterns(gamePatterns);
+      if (!gamesConfig || !Array.isArray(gamesConfig)) {
+        console.error("Invalid games config format");
+        return [];
+      }
+
+      // Find the specific game configuration
+      const gameConfig = gamesConfig.find(g => g.gameNumber === gameNumber);
       
-      return gamePatterns;
+      if (!gameConfig) {
+        console.error(`Game ${gameNumber} not found in config`);
+        return [];
+      }
+
+      // Access patterns safely
+      return gameConfig.patterns && Array.isArray(gameConfig.patterns) 
+        ? gameConfig.patterns 
+        : [];
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      logWithTimestamp(`Error fetching active patterns: ${errorMessage}`, 'error');
+      console.error("Error getting active patterns:", err);
       return [];
-    } finally {
-      setIsLoading(false);
     }
   }, [sessionId]);
 

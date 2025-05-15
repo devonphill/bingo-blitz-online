@@ -124,51 +124,76 @@ export type Database = {
       }
       claims: {
         Row: {
-          called_numbers_snapshot: Json | null
+          called_numbers_snapshot: number[] | null
           claimed_at: string
-          id: number
-          pattern_claimed: string | null
+          id: string
+          pattern_claimed: string
+          player_code: string | null
           player_id: string
-          player_name: string
+          player_name: string | null
           session_id: string
           status: string
-          ticket_details: Json
-          ticket_serial: string | null
+          ticket_details: Json | null
+          ticket_serial: string
           verification_notes: string | null
           verified_at: string | null
           verified_by_user_id: string | null
         }
         Insert: {
-          called_numbers_snapshot?: Json | null
+          called_numbers_snapshot?: number[] | null
           claimed_at?: string
-          id?: number
-          pattern_claimed?: string | null
+          id?: string
+          pattern_claimed: string
+          player_code?: string | null
           player_id: string
-          player_name?: string
-          session_id?: string
-          status: string
-          ticket_details: Json
-          ticket_serial?: string | null
+          player_name?: string | null
+          session_id: string
+          status?: string
+          ticket_details?: Json | null
+          ticket_serial: string
           verification_notes?: string | null
           verified_at?: string | null
           verified_by_user_id?: string | null
         }
         Update: {
-          called_numbers_snapshot?: Json | null
+          called_numbers_snapshot?: number[] | null
           claimed_at?: string
-          id?: number
-          pattern_claimed?: string | null
+          id?: string
+          pattern_claimed?: string
+          player_code?: string | null
           player_id?: string
-          player_name?: string
+          player_name?: string | null
           session_id?: string
           status?: string
-          ticket_details?: Json
-          ticket_serial?: string | null
+          ticket_details?: Json | null
+          ticket_serial?: string
           verification_notes?: string | null
           verified_at?: string | null
           verified_by_user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "fk_player"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_session"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "game_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_verifier"
+            columns: ["verified_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       game_sessions: {
         Row: {

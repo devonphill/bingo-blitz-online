@@ -1,10 +1,11 @@
 
-export type ClaimStatus = 'pending' | 'valid' | 'rejected';
+export type ClaimStatus = 'pending' | 'verified' | 'rejected' | 'paid_out';
 
 export interface ClaimData {
   id: string;
   playerId: string;
   playerName?: string;
+  playerCode?: string;
   sessionId: string;
   ticket?: {
     serial: string;
@@ -15,13 +16,19 @@ export interface ClaimData {
     numbers?: number[];
     calledNumbers?: number[];
   };
+  ticketSerial?: string;
   gameType?: string;
   calledNumbers?: number[];
   lastCalledNumber?: number | null;
   hasLastCalledNumber?: boolean;
   winPattern?: string;
+  patternClaimed?: string;
   status: ClaimStatus;
   timestamp: string;
+  claimedAt?: string;
+  verifiedAt?: string;
+  verifiedById?: string;
+  verificationNotes?: string;
   toGoCount?: number;
   gameNumber?: number;
 }

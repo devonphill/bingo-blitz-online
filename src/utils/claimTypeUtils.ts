@@ -5,10 +5,10 @@
 
 /**
  * Normalizes a claim ID to string format
- * This is needed because the database stores IDs as UUIDs but we work with them as strings in UI
+ * This is needed because we work with UUIDs as strings in the UI
  */
 export function normalizeClaimId(id: string | number): string {
-  return typeof id === 'number' ? String(id) : id;
+  return String(id);
 }
 
 /**
@@ -21,7 +21,7 @@ export function claimIdsEqual(id1: string | number | undefined, id2: string | nu
 
 /**
  * Safely parses a claim ID to the appropriate type for database operations
- * In our updated schema, claim IDs are UUIDs (string), not numbers
+ * Claims now use UUID strings, not numbers
  */
 export function parseClaimIdForDb(id: string | number): string {
   return String(id);

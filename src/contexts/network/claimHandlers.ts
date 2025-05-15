@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { claimService } from '@/services/ClaimManagementService';
@@ -121,10 +120,11 @@ export function submitBingoClaim(ticket: any, playerCode: string, sessionId: str
             
             // Insert complete claim data into the database - make sure types match the schema
             const claimDataForDB = {
-              id: claimId, // Use UUID string as the claim ID
+              id: claimId, // UUID string
               session_id: sessionId,
               player_id: player.id,
               player_name: player.nickname || playerCode,
+              player_code: playerCode,
               ticket_serial: ticket.serial,
               ticket_details: ticketData,
               pattern_claimed: gameState?.current_win_pattern || 'fullhouse',

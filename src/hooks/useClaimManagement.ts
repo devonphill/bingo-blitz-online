@@ -1,4 +1,3 @@
-
 import { useState, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -28,14 +27,14 @@ export function useClaimManagement(sessionId?: string, gameNumber?: number) {
     try {
       logWithTimestamp(`Validating claim ${claim.id} as ${isValid ? 'valid' : 'rejected'}`, 'info');
       
-      // Use the claim ID as a string, since the database uses UUIDs
+      // Use the claim ID as a string UUID
       const dbClaimId = parseClaimIdForDb(claim.id);
       
       // Update claim status in database
       const { error } = await supabase
         .from('claims')
         .update({
-          status: isValid ? 'valid' : 'rejected',
+          status: isValid ? 'verified' : 'rejected',
           verified_at: new Date().toISOString()
         })
         .eq('id', dbClaimId);
