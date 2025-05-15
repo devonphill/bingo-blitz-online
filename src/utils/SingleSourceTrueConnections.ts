@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { getWebSocketService, initializeWebSocketService, CHANNEL_NAMES, EVENT_TYPES, WEBSOCKET_STATUS } from '@/services/websocket';
 import { logWithTimestamp } from './logUtils';
@@ -19,10 +20,6 @@ export class SingleSourceTrueConnections {
   private listenerManager = new ConnectionListenerManager();
   private heartbeat: ConnectionHeartbeat;
   
-  // Remove the problematic properties that were incorrectly declared:
-  // public onSessionProgressUpdate: () => void = this.listenerManager;
-  // public onConnectionStateChange: () => void = this.listenerManager;
-  
   private constructor() {
     // Initialize WebSocket service with Supabase client
     initializeWebSocketService(supabase);
@@ -42,7 +39,6 @@ export class SingleSourceTrueConnections {
     this.initialized = true;
     logWithTimestamp('SingleSourceTrueConnections initialized', 'info');
   }
-  
   
   /**
    * Get the singleton instance
@@ -91,59 +87,8 @@ export class SingleSourceTrueConnections {
     // Start heartbeat
     this.heartbeat.startHeartbeat();
     
-    // Get WebSocketService
-    const webSocketService = getWebSocketService();
-    
     try {
-      // Create and subscribe to channels
-      webSocketService.createChannel(CHANNEL_NAMES.GAME_UPDATES);
-      
-      // Subscribe with reconnect capability
-      webSocketService.subscribeWithReconnect(CHANNEL_NAMES.GAME_UPDATES, (status) => {
-        logWithTimestamp(`Game updates channel status: ${status}`, 'info');
-        
-        // Update connection state
-        const connected = status === WEBSOCKET_STATUS.SUBSCRIBED;
-        this._isConnected = connected;
-        this._connectionState = connected ? 'connected' : 'disconnected';
-        this.listenerManager.notifyConnectionListeners(connected);
-      });
-      
-      // Subscribe to number called events
-      webSocketService.addListener(
-        CHANNEL_NAMES.GAME_UPDATES,
-        'broadcast',
-        EVENT_TYPES.NUMBER_CALLED,
-        (payload) => {
-          if (payload && payload.payload) {
-            const { number, sessionId, calledNumbers } = payload.payload;
-            
-            // Ensure this is for our session
-            if (sessionId !== this.sessionId) return;
-            
-            // Notify listeners
-            this.listenerManager.notifyNumberCalledListeners(number, calledNumbers || []);
-          }
-        }
-      );
-      
-      // Subscribe to game reset events
-      webSocketService.addListener(
-        CHANNEL_NAMES.GAME_UPDATES,
-        'broadcast',
-        EVENT_TYPES.GAME_RESET,
-        (payload) => {
-          if (payload && payload.payload) {
-            const { sessionId } = payload.payload;
-            
-            // Ensure this is for our session
-            if (sessionId !== this.sessionId) return;
-            
-            // Notify listeners of reset with null number
-            this.listenerManager.notifyNumberCalledListeners(null, []);
-          }
-        }
-      );
+      this.setupChannelSubscription(CHANNEL_NAMES.GAME_UPDATES);
       
       logWithTimestamp(`Connected to session: ${sessionId}`, 'info');
     } catch (error) {
@@ -153,6 +98,73 @@ export class SingleSourceTrueConnections {
     return this;
   }
   
+  /**
+   * Setup a channel subscription with proper cleanup of existing subscriptions
+   * @param channelName The channel name to subscribe to
+   */
+  private setupChannelSubscription(channelName: string): void {
+    // Get WebSocketService
+    const webSocketService = getWebSocketService();
+    
+    // First, properly clean up any existing channel to prevent multiple subscriptions
+    try {
+      webSocketService.leaveChannel(channelName);
+      logWithTimestamp(`Cleaned up existing channel: ${channelName}`, 'info');
+    } catch (cleanupError) {
+      logWithTimestamp(`Error during channel cleanup: ${cleanupError}`, 'warn');
+      // Continue with new subscription even if cleanup fails
+    }
+    
+    // Create a new channel
+    const channel = webSocketService.createChannel(channelName);
+    
+    // Subscribe with reconnect capability
+    webSocketService.subscribeWithReconnect(channelName, (status) => {
+      logWithTimestamp(`Game updates channel status: ${status}`, 'info');
+      
+      // Update connection state
+      const connected = status === WEBSOCKET_STATUS.SUBSCRIBED;
+      this._isConnected = connected;
+      this._connectionState = connected ? 'connected' : 'disconnected';
+      this.listenerManager.notifyConnectionListeners(connected);
+    });
+    
+    // Subscribe to number called events
+    webSocketService.addListener(
+      channelName,
+      'broadcast',
+      EVENT_TYPES.NUMBER_CALLED,
+      (payload) => {
+        if (payload && payload.payload) {
+          const { number, sessionId, calledNumbers } = payload.payload;
+          
+          // Ensure this is for our session
+          if (sessionId !== this.sessionId) return;
+          
+          // Notify listeners
+          this.listenerManager.notifyNumberCalledListeners(number, calledNumbers || []);
+        }
+      }
+    );
+    
+    // Subscribe to game reset events
+    webSocketService.addListener(
+      channelName,
+      'broadcast',
+      EVENT_TYPES.GAME_RESET,
+      (payload) => {
+        if (payload && payload.payload) {
+          const { sessionId } = payload.payload;
+          
+          // Ensure this is for our session
+          if (sessionId !== this.sessionId) return;
+          
+          // Notify listeners of reset with null number
+          this.listenerManager.notifyNumberCalledListeners(null, []);
+        }
+      }
+    );
+  }
   
   /**
    * Check if a connection exists for a session
@@ -199,7 +211,6 @@ export class SingleSourceTrueConnections {
   public addConnectionListener(listener: ConnectionStatusListener): () => void {
     return this.listenerManager.addConnectionListener(listener);
   }
-  
   
   /**
    * Call a number
@@ -272,19 +283,34 @@ export class SingleSourceTrueConnections {
     }
   }
   
-  
   /**
    * Reconnect to the current session
    */
   public reconnect(): void {
-    if (!this.sessionId) return;
+    if (!this.sessionId) {
+      logWithTimestamp(`Cannot reconnect: No session ID`, 'warn');
+      return;
+    }
     
     logWithTimestamp(`Reconnecting to session ${this.sessionId}`, 'info');
     
-    const webSocketService = getWebSocketService();
-    
-    // Reconnect the channel
-    webSocketService.reconnectChannel(CHANNEL_NAMES.GAME_UPDATES);
+    // Clean up existing connections first
+    try {
+      const webSocketService = getWebSocketService();
+      webSocketService.leaveChannel(CHANNEL_NAMES.GAME_UPDATES);
+      
+      // Delay slightly before reconnecting to ensure proper cleanup
+      setTimeout(() => {
+        logWithTimestamp(`Setting up new connection after cleanup`, 'info');
+        this.setupChannelSubscription(CHANNEL_NAMES.GAME_UPDATES);
+      }, 500);
+      
+    } catch (error) {
+      logWithTimestamp(`Error during reconnection cleanup: ${error}`, 'error');
+      
+      // Even if cleanup fails, try to establish a new connection
+      this.setupChannelSubscription(CHANNEL_NAMES.GAME_UPDATES);
+    }
     
     // Reset heartbeat reconnect attempts
     this.heartbeat.resetReconnectAttempts();

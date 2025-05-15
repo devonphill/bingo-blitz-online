@@ -13,6 +13,7 @@ export class ConnectionHeartbeat {
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 10;
   private isConnected: boolean = false;
+  private reconnectInProgress: boolean = false;
   
   constructor(
     private readonly onConnectionChange: (connected: boolean) => void,
@@ -48,6 +49,7 @@ export class ConnectionHeartbeat {
    */
   public resetReconnectAttempts(): void {
     this.reconnectAttempts = 0;
+    this.reconnectInProgress = false;
   }
 
   /**
@@ -91,15 +93,26 @@ export class ConnectionHeartbeat {
       // Update last ping time if connected
       if (connected) {
         this.lastPingTime = Date.now();
+        // Reset reconnect attempts if we're connected
+        if (this.reconnectAttempts > 0) {
+          this.resetReconnectAttempts();
+        }
       }
       
-      // If not connected, attempt reconnect
-      if (!connected && this.reconnectAttempts < this.maxReconnectAttempts) {
+      // If not connected and not already trying to reconnect, attempt reconnect
+      if (!connected && !this.reconnectInProgress && this.reconnectAttempts < this.maxReconnectAttempts) {
         this.reconnectAttempts++;
+        this.reconnectInProgress = true;
         
         logWithTimestamp(`Connection lost. Attempting reconnect (attempt ${this.reconnectAttempts})`, 'warn');
         
+        // Trigger reconnect
         this.onReconnectNeeded();
+        
+        // Allow some time before allowing another reconnect attempt
+        setTimeout(() => {
+          this.reconnectInProgress = false;
+        }, 5000); // 5 second cooldown between reconnect attempts
       }
     } catch (error) {
       logWithTimestamp(`Error in heartbeat: ${error}`, 'error');

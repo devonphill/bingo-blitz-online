@@ -20,6 +20,7 @@ class WebSocketService {
   private channels: Map<string, RealtimeChannel> = new Map();
   private listeners: Map<string, Array<{id: string, callback: (data: any) => void}>> = new Map();
   private connectionState: Map<string, string> = new Map();
+  private subscriptionInProgress: Map<string, boolean> = new Map(); // Track channels being subscribed
 
   private constructor(supabaseClient: SupabaseClient) {
     this.client = supabaseClient;
@@ -83,12 +84,29 @@ class WebSocketService {
     channelName: string, 
     statusCallback: (status: string) => void
   ): () => void {
+    // Exit early if subscription is already in progress to prevent multiple subscribe calls
+    if (this.subscriptionInProgress.get(channelName)) {
+      logWithTimestamp(`WebSocketService: Subscription already in progress for ${channelName}`, 'warn');
+      return () => {};
+    }
+    
     const channel = this.createChannel(channelName);
+    
+    // Mark this channel as being subscribed
+    this.subscriptionInProgress.set(channelName, true);
     
     const subscription = channel.subscribe((status) => {
       this.connectionState.set(channelName, status);
       statusCallback(status);
       logWithTimestamp(`WebSocketService: Channel ${channelName} status: ${status}`, 'info');
+      
+      // Subscription attempt is done
+      if (status === WEBSOCKET_STATUS.SUBSCRIBED || 
+          status === WEBSOCKET_STATUS.CLOSED || 
+          status === WEBSOCKET_STATUS.TIMED_OUT ||
+          status === WEBSOCKET_STATUS.CHANNEL_ERROR) {
+        this.subscriptionInProgress.set(channelName, false);
+      }
     });
     
     return () => {
@@ -142,12 +160,17 @@ class WebSocketService {
   public leaveChannel(channelName: string): void {
     const channel = this.channels.get(channelName);
     if (channel) {
+      // Mark channel as closed before unsubscribing to prevent race conditions
+      this.connectionState.set(channelName, 'CLOSED');
+      this.subscriptionInProgress.set(channelName, false);
+      
       channel.unsubscribe().then(() => {
         this.channels.delete(channelName);
-        this.connectionState.set(channelName, 'CLOSED');
         logWithTimestamp(`WebSocketService: Unsubscribed from channel ${channelName}`, 'info');
       }).catch(error => {
         logWithTimestamp(`WebSocketService: Error unsubscribing from channel ${channelName}: ${error}`, 'error');
+        // Even if unsubscribe fails, remove the channel from our tracking
+        this.channels.delete(channelName);
       });
     }
   }
@@ -156,19 +179,51 @@ class WebSocketService {
    * Reconnect a specific channel
    */
   public reconnectChannel(channelName: string): void {
-    // First, leave the channel if it exists
-    this.leaveChannel(channelName);
+    // If subscription is in progress, don't attempt to reconnect
+    if (this.subscriptionInProgress.get(channelName)) {
+      logWithTimestamp(`WebSocketService: Cannot reconnect ${channelName} - subscription in progress`, 'warn');
+      return;
+    }
     
-    // Then create a new channel
+    // First, leave the channel if it exists
+    if (this.channels.has(channelName)) {
+      this.leaveChannel(channelName);
+      
+      // Give some time for cleanup to complete
+      setTimeout(() => {
+        this.createAndSubscribeChannel(channelName);
+      }, 300);
+    } else {
+      // No existing channel, can create and subscribe immediately
+      this.createAndSubscribeChannel(channelName);
+    }
+    
+    logWithTimestamp(`WebSocketService: Reconnection initiated for channel ${channelName}`, 'info');
+  }
+  
+  /**
+   * Helper to create and subscribe to a channel
+   */
+  private createAndSubscribeChannel(channelName: string): void {
+    // Create a new channel
     const channel = this.createChannel(channelName);
+    
+    // Mark as subscribing
+    this.subscriptionInProgress.set(channelName, true);
     
     // Re-subscribe
     channel.subscribe((status) => {
       this.connectionState.set(channelName, status);
-      logWithTimestamp(`WebSocketService: Reconnected channel ${channelName}, status: ${status}`, 'info');
+      logWithTimestamp(`WebSocketService: Channel ${channelName} new status: ${status}`, 'info');
+      
+      // Subscription attempt is done
+      if (status === WEBSOCKET_STATUS.SUBSCRIBED || 
+          status === WEBSOCKET_STATUS.CLOSED || 
+          status === WEBSOCKET_STATUS.TIMED_OUT ||
+          status === WEBSOCKET_STATUS.CHANNEL_ERROR) {
+        this.subscriptionInProgress.set(channelName, false);
+      }
     });
-    
-    logWithTimestamp(`WebSocketService: Reconnected channel ${channelName}`, 'info');
   }
 
   /**
