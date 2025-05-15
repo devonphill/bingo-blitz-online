@@ -1,109 +1,103 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { setupNumberUpdateListeners } from './webSocketManager';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
+import { useSessionContext } from '@/contexts/SessionProvider';
+import { NumberCalledPayload } from '@/types/websocket';
 
-export function usePlayerWebSocketNumbers(sessionId: string | undefined) {
-  const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
-  const [currentNumber, setCurrentNumber] = useState<number | null>(null);
-  const [numberCallTimestamp, setNumberCallTimestamp] = useState<number | null>(null);
+/**
+ * Hook for listening to number updates via WebSocket
+ * 
+ * @param sessionId Session ID to listen for updates from
+ * @returns Called numbers and connection state
+ */
+export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) {
+  const [numbers, setNumbers] = useState<number[]>([]);
+  const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const instanceId = useRef(`numUpdate-${Math.random().toString(36).substring(2, 7)}`);
+  const [connectionState, setConnectionState] = useState<'connected' | 'connecting' | 'disconnected' | 'error'>('disconnected');
+  const { currentSession } = useSessionContext();
   
-  // Use SingleSourceTrueConnections instead of direct WebSocket access
-  const singleSource = useRef(getSingleSourceConnection());
-
-  // Setup listener for number called events
-  useEffect(() => {
-    if (!sessionId) return;
-    
-    logWithTimestamp(`[${instanceId.current}] Setting up number called listener for session ${sessionId}`, 'info');
-    
-    // Set up connection listener
-    const connectionRemover = singleSource.current.addConnectionListener((connected) => {
-      setIsConnected(connected);
-    });
-    
-    // Set up number called listener
-    const numberCalledRemover = singleSource.current.onNumberCalled((number, numbers) => {
-      logWithTimestamp(`[${instanceId.current}] Number called: ${number}`, 'info');
-      
-      if (number !== null) {
-        setCurrentNumber(number);
-        setNumberCallTimestamp(Date.now());
-        setCalledNumbers(numbers);
-      }
-    });
-    
-    // Fetch existing called numbers
-    fetchExistingNumbers(sessionId);
-    
-    // Connect to session
-    singleSource.current.connect(sessionId);
-    
-    // Initial connection state
-    setIsConnected(singleSource.current.isConnected());
-    
-    return () => {
-      // Clean up listeners
-      connectionRemover();
-      numberCalledRemover();
-    };
-  }, [sessionId]);
-
-  // Fetch existing called numbers from the database
-  const fetchExistingNumbers = useCallback(async (sessionId: string) => {
-    try {
-      logWithTimestamp(`[${instanceId.current}] Fetching existing called numbers for session ${sessionId}`, 'info');
-      
-      // Query called_numbers from sessions_progress table
-      const { data, error } = await supabase
-        .from('sessions_progress')
-        .select('called_numbers, updated_at')
-        .eq('session_id', sessionId)
-        .single();
-      
-      if (error) {
-        throw new Error(`Failed to fetch called numbers: ${error.message}`);
-      }
-      
-      if (data && data.called_numbers && data.called_numbers.length > 0) {
-        const numbers = data.called_numbers;
-        const lastNumber = numbers[numbers.length - 1];
-        const lastTimestamp = new Date(data.updated_at).getTime();
-        
-        setCalledNumbers(numbers);
-        setCurrentNumber(lastNumber);
-        setNumberCallTimestamp(lastTimestamp);
-        logWithTimestamp(`[${instanceId.current}] Loaded ${numbers.length} existing called numbers, last number: ${lastNumber}`, 'info');
-      }
-    } catch (error) {
-      logWithTimestamp(`[${instanceId.current}] Error fetching existing numbers: ${error}`, 'error');
-    }
+  // Create unique instance ID for this hook
+  const instanceId = useRef(`WSNum-${Math.random().toString(36).substring(2, 9)}`);
+  
+  // Generate a unique reference for this component instance to track listeners
+  const listenersRef = useRef<(() => void)[]>([]);
+  
+  // Custom log helper
+  const log = useCallback((message: string, level: 'info' | 'warn' | 'error' | 'debug' = 'info') => {
+    logWithTimestamp(`[${instanceId.current}] ${message}`, level);
   }, []);
   
-  // Function to reconnect with SingleSourceTrueConnections
-  const reconnect = useCallback(() => {
-    if (!sessionId) return;
+  // Set up event listeners for number updates
+  useEffect(() => {
+    if (!sessionId) {
+      log('No session ID provided, skipping setup', 'warn');
+      setConnectionState('disconnected');
+      return;
+    }
     
-    logWithTimestamp(`[${instanceId.current}] Manual reconnection requested`, 'info');
+    log(`Setting up listeners for session ${sessionId}`, 'info');
+    setConnectionState('connecting');
     
-    // Reconnect using SingleSourceTrueConnections
-    singleSource.current.reconnect();
+    // Handle new number broadcasts
+    const handleNumberUpdate = (number: number, calledNumbers: number[]) => {
+      log(`Received number update: ${number}, total numbers: ${calledNumbers.length}`, 'info');
+      setNumbers(calledNumbers);
+      setLastCalledNumber(number);
+      setConnectionState('connected');
+      setIsConnected(true);
+    };
     
-    // Set isConnected to false during reconnection attempt
-    setIsConnected(false);
+    // Handle game reset
+    const handleGameReset = () => {
+      log('Game reset detected', 'info');
+      setNumbers([]);
+      setLastCalledNumber(null);
+    };
     
-    // Fetch fresh data
-    fetchExistingNumbers(sessionId);
-  }, [sessionId, fetchExistingNumbers]);
+    // Set up the listener via SingleSourceTrueConnections
+    const removeListener = setupNumberUpdateListeners(
+      sessionId,
+      handleNumberUpdate,
+      handleGameReset,
+      instanceId.current
+    );
+    
+    // Store the cleanup function
+    listenersRef.current.push(removeListener);
+    
+    // Clean up on unmount/change
+    return () => {
+      log('Cleaning up number update listeners', 'info');
+      listenersRef.current.forEach(removeListener => removeListener());
+      listenersRef.current = [];
+      setConnectionState('disconnected');
+    };
+  }, [sessionId, log]);
+  
+  // Reset connection if session changes significantly
+  useEffect(() => {
+    // If there's a mismatch between our session ID and the current session context
+    if (sessionId && currentSession && currentSession.id !== sessionId) {
+      log(`Session changed from ${sessionId} to ${currentSession.id}, resetting`, 'info');
+      setConnectionState('disconnected');
+      
+      // Clean up existing listeners
+      listenersRef.current.forEach(removeListener => removeListener());
+      listenersRef.current = [];
+      
+      // Reset state
+      setNumbers([]);
+      setLastCalledNumber(null);
+      setIsConnected(false);
+    }
+  }, [currentSession, sessionId, log]);
 
   return {
-    calledNumbers,
-    currentNumber,
-    numberCallTimestamp,
+    calledNumbers: numbers,
+    lastCalledNumber,
     isConnected,
-    reconnect
+    connectionState
   };
 }

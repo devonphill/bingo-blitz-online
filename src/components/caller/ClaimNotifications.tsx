@@ -21,7 +21,7 @@ export default function ClaimNotifications({
   sessionId, 
   onOpenClaimSheet 
 }: ClaimNotificationsProps) {
-  const { claims, claimsCount, fetchClaims, forceRefresh } = useCallerClaimManagement(sessionId);
+  const { claims, claimsCount, fetchClaims, forceRefresh, addOptimisticClaim } = useCallerClaimManagement(sessionId);
   const [isAnimating, setIsAnimating] = useState(false);
   const [previousCount, setPreviousCount] = useState(0);
   const { toast } = useToast();
@@ -50,6 +50,57 @@ export default function ClaimNotifications({
       log('Component unmounting', 'info');
     };
   }, []);
+  
+  // Handle WebSocket message for a new claim
+  const handleClaimMessage = (payload: any) => {
+    if (!mountedRef.current) return;
+    
+    // Check if this claim is for our session
+    if (payload.payload?.sessionId === sessionIdRef.current) {
+      log("Real-time claim received via WebSocket", 'info');
+      console.log("Detailed claim payload:", payload.payload);
+      
+      // Extract claim data from payload
+      const claimData = payload.payload;
+      
+      // Before refreshing claims from the server, add this claim optimistically to the UI
+      if (addOptimisticClaim && typeof addOptimisticClaim === 'function') {
+        log("Adding optimistic claim to UI", 'info');
+        
+        // Create a proper claim object from the WebSocket data
+        const optimisticClaim = {
+          id: claimData.claimId,
+          playerId: claimData.playerId,
+          playerName: claimData.playerName || 'Player',
+          sessionId: claimData.sessionId,
+          ticket: claimData.ticket || null,
+          calledNumbers: claimData.calledNumbers || [],
+          lastCalledNumber: claimData.lastCalledNumber,
+          winPattern: claimData.winPattern || 'oneLine',
+          gameType: claimData.gameType || 'mainstage',
+          status: 'pending',
+          timestamp: claimData.timestamp || new Date().toISOString()
+        };
+        
+        // Add to our local state
+        addOptimisticClaim(optimisticClaim);
+      }
+      
+      // Also refresh from server to ensure consistency
+      forceRefresh();
+      
+      // Get details from the payload for the toast
+      const playerName = payload.payload.playerName || 'Player';
+      
+      // Show toast
+      toast({
+        title: "New Bingo Claim!",
+        description: `${playerName} has claimed bingo`,
+        variant: "destructive",
+        duration: 8000
+      });
+    }
+  };
   
   // Set up real-time claim monitoring
   useEffect(() => {
@@ -88,28 +139,7 @@ export default function ClaimNotifications({
               }
             }
           })
-          .on('broadcast', { event: CLAIM_SUBMITTED_EVENT }, payload => {
-            if (!mountedRef.current) return;
-            
-            // Check if this is for our session
-            if (payload.payload?.sessionId === currentSessionId) {
-              log("Real-time claim received", 'info');
-              
-              // Force refresh claims list
-              forceRefresh();
-              
-              // Get details from the payload
-              const playerName = payload.payload.playerName || 'Player';
-              
-              // Show toast
-              toast({
-                title: "New Bingo Claim!",
-                description: `${playerName} has claimed bingo`,
-                variant: "destructive",
-                duration: 8000
-              });
-            }
-          })
+          .on('broadcast', { event: CLAIM_SUBMITTED_EVENT }, handleClaimMessage)
           .subscribe((status) => {
             log(`Claim channel subscription status: ${status}`, 'info');
           });
@@ -133,7 +163,7 @@ export default function ClaimNotifications({
         claimChannelRef.current = null;
       }
     };
-  }, [sessionId, toast, forceRefresh]);
+  }, [sessionId, toast, forceRefresh, addOptimisticClaim]);
 
   // Handle sessionId changes
   useEffect(() => {
@@ -159,21 +189,7 @@ export default function ClaimNotifications({
               .channel(GAME_UPDATES_CHANNEL, {
                 config: { broadcast: { self: true, ack: true } }
               })
-              .on('broadcast', { event: CLAIM_SUBMITTED_EVENT }, payload => {
-                if (!mountedRef.current) return;
-                
-                if (payload.payload?.sessionId === sessionId) {
-                  log("Real-time claim received on reconnected channel", 'info');
-                  forceRefresh();
-                  const playerName = payload.payload.playerName || 'Player';
-                  toast({
-                    title: "New Bingo Claim!",
-                    description: `${playerName} has claimed bingo`,
-                    variant: "destructive",
-                    duration: 8000
-                  });
-                }
-              })
+              .on('broadcast', { event: CLAIM_SUBMITTED_EVENT }, handleClaimMessage)
               .subscribe();
             
             claimChannelRef.current = channel;
@@ -183,7 +199,7 @@ export default function ClaimNotifications({
         }
       }, 300);
     }
-  }, [sessionId, toast, forceRefresh]);
+  }, [sessionId, toast, forceRefresh, addOptimisticClaim]);
 
   // Refresh claims initially
   useEffect(() => {
@@ -212,7 +228,7 @@ export default function ClaimNotifications({
     if (claims?.length > 0) {
       log(`${claims.length} claims found:`, 'info');
       claims.forEach((claim, i) => {
-        log(`Claim ${i+1}: ID=${claim.id}, Player=${claim.playerName || claim.playerId}`, 'info');
+        log(`Claim ${i+1}: ID=${claim.id}, Player=${claim.player_name || claim.playerId}`, 'info');
       });
     }
     
@@ -227,7 +243,7 @@ export default function ClaimNotifications({
       toast({
         title: "New Bingo Claims",
         description: newestClaim 
-          ? `${newestClaim.playerName || 'Player'} has claimed bingo!` 
+          ? `${newestClaim.player_name || 'Player'} has claimed bingo!` 
           : `${claimsCount - previousCount} new claims received`,
         variant: "destructive",
         duration: 8000 // Longer duration so it's not missed

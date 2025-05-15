@@ -2,6 +2,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { claimService } from '@/services/ClaimManagementService';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Fetch pending claims for a session
@@ -115,8 +116,12 @@ export function submitBingoClaim(ticket: any, playerCode: string, sessionId: str
               return false;
             }
             
+            // Generate a unique ID for this claim
+            const claimId = uuidv4();
+            
             // Insert complete claim data into the database
             const claimDataForDB = {
+              id: claimId, // Use the UUID string for the claim ID
               session_id: sessionId,
               player_id: player.id,
               player_name: player.nickname || playerCode,
@@ -129,7 +134,7 @@ export function submitBingoClaim(ticket: any, playerCode: string, sessionId: str
             };
             
             // Log the data that will be inserted into the claims table
-            console.log('Data to be inserted into claims table:', claimDataForDB);
+            console.log('Data to be inserted into claims table:', JSON.stringify(claimDataForDB, null, 2));
             
             // Insert into claims table
             supabase
@@ -141,6 +146,7 @@ export function submitBingoClaim(ticket: any, playerCode: string, sessionId: str
                   
                   // Even if DB insert fails, still use the claim service as fallback
                   claimService.submitClaim({
+                    id: claimId,
                     playerId: player.id,
                     playerName: player.nickname || playerCode,
                     sessionId: sessionId,
@@ -155,10 +161,11 @@ export function submitBingoClaim(ticket: any, playerCode: string, sessionId: str
                   return;
                 }
                 
-                logWithTimestamp(`Successfully inserted claim into database`, 'info');
+                logWithTimestamp(`Successfully inserted claim into database with ID ${claimId}`, 'info');
                 
-                // Still use claim service to handle in-memory storage and broadcasting
-                claimService.submitClaim({
+                // Create a detailed broadcast payload for WebSocket
+                const detailedClaimDataForBroadcast = {
+                  id: claimId,
                   playerId: player.id,
                   playerName: player.nickname || playerCode,
                   sessionId: sessionId,
@@ -167,8 +174,16 @@ export function submitBingoClaim(ticket: any, playerCode: string, sessionId: str
                   calledNumbers: gameState?.called_numbers || [],
                   lastCalledNumber: gameState?.called_numbers ? 
                     gameState.called_numbers[gameState.called_numbers.length - 1] : null,
-                  winPattern: gameState?.current_win_pattern || 'fullhouse'
-                });
+                  winPattern: gameState?.current_win_pattern || 'fullhouse',
+                  status: 'pending',
+                  timestamp: new Date().toISOString()
+                };
+                
+                // Log the WebSocket broadcast payload
+                console.log('Broadcasting claim data via WebSocket:', JSON.stringify(detailedClaimDataForBroadcast, null, 2));
+                
+                // Use claim service for memory storage and WebSocket broadcasting
+                claimService.submitClaim(detailedClaimDataForBroadcast);
               });
           });
       });

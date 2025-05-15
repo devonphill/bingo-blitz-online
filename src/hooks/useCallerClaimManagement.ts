@@ -1,289 +1,263 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { claimService } from '@/services/ClaimManagementService';
-import { claimStorageService } from '@/services/ClaimStorageService';
 import { supabase } from '@/integrations/supabase/client';
-import { logWithTimestamp } from '@/utils/logUtils';
 import { useToast } from '@/hooks/use-toast';
-import { useNetwork } from '@/contexts/NetworkStatusContext';
-import { validateChannelType, ensureString } from '@/utils/typeUtils';
+import { logWithTimestamp } from '@/utils/logUtils';
 import { ClaimData } from '@/types/claim';
-import { generateUUID } from '@/services/ClaimUtils';
 
 /**
- * Hook for managing bingo claims from the caller's perspective
+ * Hook for managing caller-side claims with optimistic UI updates
  */
 export function useCallerClaimManagement(sessionId: string | null) {
-  const [claims, setClaims] = useState<ClaimData[]>([]);
-  const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
-  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const [isProcessingClaim, setIsProcessingClaim] = useState<boolean>(false);
+  const [claims, setClaims] = useState<any[]>([]);
+  const [claimsCount, setClaimsCount] = useState<number>(0);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
-  const network = useNetwork(); // Get network context
-  const channelRef = useRef<any>(null);
-  const claimCheckingChannelRef = useRef<any>(null);
+  const refreshTimerRef = useRef<number | null>(null);
+  const instanceId = useRef(`CallerClaimMgmt-${Math.random().toString(36).substring(2, 7)}`);
+  const optimisticClaimsRef = useRef<Map<string, any>>(new Map());
   
-  // Refresh claims from the service
-  const fetchClaims = useCallback(() => {
-    if (!sessionId) {
-      setClaims([]);
-      return;
-    }
-    
-    logWithTimestamp(`Manually fetching claims for session ${sessionId}`);
-    setIsRefreshing(true);
-    
-    try {
-      // Use claimStorageService directly to ensure we're getting the actual stored claims
-      const sessionClaims = claimStorageService.getClaimsForSession(sessionId);
-      logWithTimestamp(`Found ${sessionClaims.length} claims directly from storage service for session ${sessionId}`, 'info');
-      
-      // For debugging
-      if (sessionClaims.length > 0) {
-        sessionClaims.forEach((claim, idx) => {
-          logWithTimestamp(`Claim ${idx+1}: ID=${claim.id}, Player=${claim.playerName || claim.playerId}`, 'debug');
-        });
-      }
-      
-      setClaims(sessionClaims);
-      setLastRefreshTime(Date.now());
-      
-      // Setup or cleanup claim checking channel based on having claims
-      manageClaimCheckingChannel(sessionClaims.length > 0);
-      
-    } catch (error) {
-      console.error('Error fetching claims:', error);
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [sessionId]);
-
-  // Force refresh function to manually reload claims when needed
-  const forceRefresh = useCallback(() => {
-    logWithTimestamp(`Force refreshing claims for session ${sessionId}`, 'info');
-    fetchClaims();
-    
-    // Attempt to re-subscribe to ensure we're getting events
-    setupChannelSubscription();
-    
-    return true;
-  }, [sessionId, fetchClaims]);
-  
-  // Manage the claim checking channel based on having claims
-  const manageClaimCheckingChannel = useCallback((hasActiveClaims: boolean) => {
-    // Only manage if we have a session ID
-    if (!sessionId) return;
-    
-    // If we have claims and no channel, set up the claim checking channel
-    if (hasActiveClaims && !claimCheckingChannelRef.current) {
-      logWithTimestamp(`Setting up claim checking channel for session ${sessionId}`, 'info');
-      
-      const channel = supabase.channel('claim_checking_broadcaster')
-        .subscribe((status) => {
-          logWithTimestamp(`Claim checking channel subscription status: ${status}`, 'info');
-        });
-        
-      claimCheckingChannelRef.current = channel;
-    } 
-    // If we have no claims and a channel, clean it up
-    else if (!hasActiveClaims && claimCheckingChannelRef.current) {
-      logWithTimestamp(`Cleaning up claim checking channel - no active claims`, 'info');
-      
-      supabase.removeChannel(claimCheckingChannelRef.current);
-      claimCheckingChannelRef.current = null;
-    }
-  }, [sessionId]);
-  
-  // Create a claim directly from broadcast payload
-  const createClaimFromBroadcast = useCallback((payload: any): ClaimData | null => {
-    try {
-      if (!payload || !payload.sessionId) {
-        logWithTimestamp(`Invalid claim broadcast payload`, 'error');
-        return null;
-      }
-      
-      // Construct a valid claim object from the broadcast payload
-      const claimData: ClaimData = {
-        id: payload.claimId || payload.id || generateUUID(),
-        timestamp: payload.timestamp || new Date().toISOString(),
-        sessionId: payload.sessionId,
-        playerId: payload.playerId,
-        playerName: payload.playerName,
-        gameType: payload.gameType || 'mainstage',
-        winPattern: payload.winPattern || 'oneLine',
-        status: 'pending',
-        ticket: payload.ticket,
-        toGoCount: payload.toGoCount || 0,
-        calledNumbers: payload.calledNumbers || [],
-        lastCalledNumber: payload.lastCalledNumber || null,
-        hasLastCalledNumber: payload.hasLastCalledNumber || false
-      };
-      
-      logWithTimestamp(`Created claim object from broadcast: ID=${claimData.id}, Player=${claimData.playerName || claimData.playerId}`, 'info');
-      return claimData;
-    } catch (err) {
-      logWithTimestamp(`Error creating claim from broadcast: ${(err as Error).message}`, 'error');
-      return null;
-    }
+  // Custom logging function
+  const log = useCallback((message: string, level: 'info' | 'warn' | 'error' | 'debug' = 'info') => {
+    logWithTimestamp(`CallerClaimManagement (${instanceId.current}): ${message}`, level);
   }, []);
   
-  // Method to validate a claim
-  const validateClaim = useCallback(async (
-    claim: ClaimData, 
-    isValid: boolean, 
-    onGameProgress?: () => void
-  ) => {
-    if (!sessionId || !claim?.id) {
-      toast({
-        title: "Error",
-        description: "Invalid claim data",
-        variant: "destructive"
-      });
-      return false;
-    }
+  // Fetch all pending claims from database
+  const fetchClaims = useCallback(async () => {
+    if (!sessionId) return;
     
-    setIsProcessingClaim(true);
+    setIsLoading(true);
+    setError(null);
+    
     try {
-      logWithTimestamp(`Processing claim ${claim.id} with result: ${isValid ? 'valid' : 'invalid'}`);
+      log(`Fetching claims for session ${sessionId}`, 'info');
       
-      // Use claimService to process the claim
-      const success = await claimService.processClaim(
-        ensureString(claim.id),
-        ensureString(sessionId),
-        isValid,
-        onGameProgress
-      );
+      // Query claims table for pending claims
+      const { data, error } = await supabase
+        .from('claims')
+        .select('*')
+        .eq('session_id', sessionId)
+        .eq('status', 'pending')
+        .order('claimed_at', { ascending: false });
       
-      if (!success) {
-        toast({
-          title: "Error",
-          description: "Failed to process claim",
-          variant: "destructive"
-        });
-        return false;
+      if (error) {
+        throw new Error(`Database error: ${error.message}`);
       }
       
-      // Refresh claims after processing
-      fetchClaims();
+      // Combine with any optimistic claims we have
+      const optimisticClaims = Array.from(optimisticClaimsRef.current.values());
+      log(`Found ${data?.length || 0} pending claims in DB + ${optimisticClaims.length} optimistic claims`, 'info');
       
-      return true;
-    } catch (error) {
-      console.error('Error validating claim:', error);
+      // Deduplicate by claim ID
+      const allClaimsMap = new Map<string, any>();
+      
+      // First add database claims
+      if (data) {
+        data.forEach(claim => {
+          allClaimsMap.set(claim.id, {
+            ...claim,
+            isOptimistic: false
+          });
+        });
+      }
+      
+      // Then add optimistic claims (will override DB values if same ID)
+      optimisticClaims.forEach(claim => {
+        allClaimsMap.set(claim.id, {
+          ...claim,
+          isOptimistic: true
+        });
+      });
+      
+      // Convert back to array and sort by timestamp (newest first)
+      const allClaims = Array.from(allClaimsMap.values()).sort((a, b) => {
+        const timeA = new Date(a.claimed_at || a.timestamp).getTime();
+        const timeB = new Date(b.claimed_at || b.timestamp).getTime();
+        return timeB - timeA; // Newest first
+      });
+      
+      setClaims(allClaims);
+      setClaimsCount(allClaims.length);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      log(`Error fetching claims: ${errorMessage}`, 'error');
+      setError(errorMessage);
       toast({
-        title: "Error",
-        description: "An unexpected error occurred during claim validation",
+        title: "Error Fetching Claims",
+        description: errorMessage,
         variant: "destructive"
       });
-      return false;
     } finally {
-      setIsProcessingClaim(false);
+      setIsLoading(false);
     }
-  }, [sessionId, toast, fetchClaims]);
+  }, [sessionId, toast, log]);
   
-  // Function to handle a new claim broadcast
-  const handleClaimBroadcast = useCallback((payload: any) => {
-    if (!payload || payload.sessionId !== sessionId) return;
+  // Force refresh claims (triggered by WebSocket or UI)
+  const forceRefresh = useCallback(() => {
+    log('Forced refresh of claims', 'info');
     
-    logWithTimestamp(`Received new claim broadcast for session ${sessionId}`, 'info');
-    logWithTimestamp(`Broadcast payload: ${JSON.stringify(payload)}`, 'debug');
+    // Clear any pending refresh timer
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
     
-    // Convert broadcast payload to a claim object
-    const claimData = createClaimFromBroadcast(payload);
-    if (!claimData) {
-      logWithTimestamp(`Failed to create claim from broadcast`, 'error');
+    // Fetch claims immediately
+    fetchClaims();
+    
+    // Schedule another refresh after a delay to catch any DB latency
+    refreshTimerRef.current = window.setTimeout(() => {
+      log('Performing follow-up refresh after forced refresh', 'info');
+      fetchClaims();
+    }, 2000);
+  }, [fetchClaims, log]);
+  
+  // Add an optimistic claim to the UI (triggered by WebSocket)
+  const addOptimisticClaim = useCallback((claimData: ClaimData) => {
+    if (!claimData || !claimData.id) {
+      log('Cannot add optimistic claim: Missing ID', 'warn');
       return;
     }
     
-    // Directly store the claim in storage service
-    const stored = claimStorageService.storeClaim(claimData);
+    log(`Adding optimistic claim ${claimData.id} to UI`, 'info');
     
-    if (stored) {
-      logWithTimestamp(`Successfully stored broadcast claim in local storage: ${claimData.id}`, 'info');
-      
-      // Show toast notification
-      toast({
-        title: "New Claim Submitted!",
-        description: `Player ${claimData.playerName || 'Unknown'} has submitted a bingo claim.`,
-        duration: 8000, // Longer duration to ensure visibility
-      });
-      
-      // Refresh the claims list
-      fetchClaims();
-    } else {
-      logWithTimestamp(`Failed to store broadcast claim in local storage`, 'error');
-    }
-  }, [sessionId, toast, fetchClaims, createClaimFromBroadcast]);
-  
-  // Function to set up channel subscription - extracted to be reusable
-  const setupChannelSubscription = useCallback(() => {
-    if (!sessionId) return null;
-    
-    // Clean up old channel if it exists
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-    }
-    
-    logWithTimestamp(`Setting up claim listening for session ${sessionId}`, 'info');
-    
-    // Set up channel to listen for new claims - using "game-updates" channel with "claim-submitted" event
-    const channel = supabase
-      .channel('game-updates')
-      .on('broadcast', { event: 'claim-submitted' }, payload => {
-        logWithTimestamp(`Received broadcast event: claim-submitted`, 'info');
-        handleClaimBroadcast(payload.payload);
-      })
-      .subscribe((status) => {
-        logWithTimestamp(`Claim channel subscription status: ${status}`, 'info');
-      });
-      
-    // Store the channel reference for cleanup
-    channelRef.current = channel;
-    return channel;
-  }, [sessionId, handleClaimBroadcast]);
-  
-  // Listen for new claims - using the extracted function
-  useEffect(() => {
-    const channel = setupChannelSubscription();
-      
-    // Initial fetch
-    fetchClaims();
-    
-    // Clean up on unmount
-    return () => {
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
-      
-      // Also clean up the claim checking channel if it exists
-      if (claimCheckingChannelRef.current) {
-        supabase.removeChannel(claimCheckingChannelRef.current);
-        claimCheckingChannelRef.current = null;
-      }
+    // Normalize the claim format to match what the UI expects
+    const normalizedClaim = {
+      id: claimData.id,
+      session_id: claimData.sessionId,
+      player_id: claimData.playerId,
+      player_name: claimData.playerName || 'Player',
+      ticket_serial: claimData.ticket?.serial || '',
+      ticket_details: claimData.ticket || {},
+      pattern_claimed: claimData.winPattern || 'unknown',
+      called_numbers_snapshot: claimData.calledNumbers || [],
+      status: 'pending',
+      claimed_at: claimData.timestamp || new Date().toISOString(),
+      isOptimistic: true
     };
-  }, [sessionId, setupChannelSubscription, fetchClaims]);
-  
-  // Periodic refresh to ensure claims are up to date
-  useEffect(() => {
-    if (!sessionId) return;
     
-    const interval = setInterval(() => {
+    // Store in our ref so it persists across renders
+    optimisticClaimsRef.current.set(claimData.id, normalizedClaim);
+    
+    // Update state to trigger UI refresh
+    setClaims(prev => {
+      // Remove any existing claim with same ID
+      const filtered = prev.filter(claim => claim.id !== claimData.id);
+      // Add new claim at the beginning
+      return [normalizedClaim, ...filtered];
+    });
+    
+    setClaimsCount(prev => prev + 1);
+    
+    // Schedule a refresh to sync with database
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+    }
+    refreshTimerRef.current = window.setTimeout(() => {
+      log('Syncing optimistic claims with database', 'info');
       fetchClaims();
-    }, 5000); // Check every 5 seconds
-    
-    return () => clearInterval(interval);
-  }, [sessionId, fetchClaims]);
+    }, 3000);
+  }, [log, fetchClaims]);
   
-  // Get claims count for convenience
-  const claimsCount = claims.length;
+  // Remove an optimistic claim (usually after processing)
+  const removeOptimisticClaim = useCallback((claimId: string) => {
+    if (!claimId) return;
+    
+    log(`Removing optimistic claim ${claimId}`, 'info');
+    
+    // Remove from our ref
+    const hadClaim = optimisticClaimsRef.current.delete(claimId);
+    
+    // Update state if we actually removed something
+    if (hadClaim) {
+      setClaims(prev => prev.filter(claim => claim.id !== claimId));
+      setClaimsCount(prev => Math.max(0, prev - 1));
+    }
+  }, [log]);
+  
+  // Process a claim (approve or reject)
+  const processClaim = useCallback(async (claim: any, isValid: boolean) => {
+    if (!claim || !claim.id || !sessionId) {
+      log('Cannot process claim: Missing ID or session', 'warn');
+      return false;
+    }
+    
+    try {
+      log(`Processing claim ${claim.id}, isValid=${isValid}`, 'info');
+      
+      // Update the claim in the database
+      const { error } = await supabase
+        .from('claims')
+        .update({
+          status: isValid ? 'valid' : 'rejected',
+          verified_at: new Date().toISOString()
+        })
+        .eq('id', claim.id);
+      
+      if (error) {
+        throw new Error(`Database error: ${error.message}`);
+      }
+      
+      // Remove the claim from our optimistic list
+      removeOptimisticClaim(claim.id);
+      
+      // Refresh to get updated data
+      fetchClaims();
+      
+      toast({
+        title: isValid ? "Claim Validated" : "Claim Rejected",
+        description: `${claim.player_name || 'Player'}'s claim has been ${isValid ? 'validated' : 'rejected'}.`,
+        duration: 3000
+      });
+      
+      return true;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      log(`Error processing claim: ${errorMessage}`, 'error');
+      toast({
+        title: "Error Processing Claim",
+        description: errorMessage,
+        variant: "destructive"
+      });
+      return false;
+    }
+  }, [sessionId, removeOptimisticClaim, fetchClaims, toast, log]);
+  
+  // Initial fetch of claims
+  useEffect(() => {
+    if (sessionId) {
+      log(`Initial fetch for session ${sessionId}`, 'info');
+      fetchClaims();
+      
+      // Set up periodic refresh
+      const interval = setInterval(() => {
+        fetchClaims();
+      }, 10000); // Every 10 seconds
+      
+      return () => {
+        clearInterval(interval);
+        if (refreshTimerRef.current) {
+          clearTimeout(refreshTimerRef.current);
+        }
+      };
+    }
+  }, [sessionId, fetchClaims, log]);
+  
+  // Clean up optimistic claims when session changes
+  useEffect(() => {
+    optimisticClaimsRef.current.clear();
+  }, [sessionId]);
   
   return {
     claims,
     claimsCount,
+    isLoading,
+    error,
     fetchClaims,
     forceRefresh,
-    validateClaim,
-    isProcessingClaim,
-    isRefreshing,
-    lastRefreshTime
+    processClaim,
+    addOptimisticClaim,
+    removeOptimisticClaim
   };
 }

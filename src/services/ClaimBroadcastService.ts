@@ -1,3 +1,4 @@
+
 import { logWithTimestamp } from '@/utils/logUtils';
 import { ClaimData, ClaimResult } from '@/types/claim';
 import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
@@ -25,29 +26,43 @@ class ClaimBroadcastService {
 
       logWithTimestamp(`[${this.instanceId}] Broadcasting claim ${claim.id} for player ${claim.playerName || claim.playerId} in session ${claim.sessionId}`);
 
-      // Clean up the payload to avoid circular references
+      // Clean up the payload to avoid circular references but include full details
       const broadcastPayload = {
+        // Core claim data
         claimId: claim.id,
         sessionId: claim.sessionId,
         playerId: claim.playerId,
         playerName: claim.playerName || 'unknown',
         timestamp: claim.timestamp,
-        toGoCount: claim.toGoCount || 0,
+        status: claim.status || 'pending',
+        
+        // Game context
         gameType: claim.gameType || 'mainstage',
+        gameNumber: claim.gameNumber || 1,
         winPattern: claim.winPattern || 'oneLine',
-        // Sanitize ticket data to avoid circular references
+        
+        // Ticket data - full details for validation
         ticket: claim.ticket ? {
           serial: claim.ticket.serial,
-          perm: claim.ticket.perm,
-          position: claim.ticket.position,
-          layoutMask: claim.ticket.layoutMask,
-          numbers: claim.ticket.numbers,
+          perm: claim.ticket.perm || 0,
+          position: claim.ticket.position || 0,
+          layoutMask: claim.ticket.layoutMask || claim.ticket.layout_mask || 0,
+          numbers: claim.ticket.numbers || [],
           calledNumbers: claim.ticket.calledNumbers || []
         } : undefined,
+        
+        // Called numbers for validation
         calledNumbers: claim.calledNumbers || [],
         lastCalledNumber: claim.lastCalledNumber,
-        hasLastCalledNumber: claim.hasLastCalledNumber || false
+        hasLastCalledNumber: claim.hasLastCalledNumber || false,
+        
+        // Metadata
+        claimed_at: claim.timestamp || new Date().toISOString(),
+        toGoCount: claim.toGoCount || 0
       };
+
+      // Log the full broadcast payload for debugging
+      console.log('Broadcasting claim data via WebSocket:', JSON.stringify(broadcastPayload, null, 2));
 
       // Use WebSocketService for consistent broadcasting
       const webSocketService = getWebSocketService();
