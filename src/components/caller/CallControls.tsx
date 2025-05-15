@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,7 +9,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useCallerHub } from '@/hooks/useCallerHub';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { GoLiveButton } from '@/components/ui/go-live-button';
-import { connectionManager } from '@/utils/connectionManager';
+import { getSingleSourceConnection } from '@/utils/connectionManager';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -110,8 +109,9 @@ export default function CallControls({
       }
       
       // Also use the connection manager for database persistence
-      if (connectionManager) {
-        connectionManager.callNumber(number, sessionId)
+      const connection = getSingleSourceConnection();
+      if (connection) {
+        connection.callNumber(number, sessionId)
           .then(success => {
             if (!success) {
               console.error("Failed to call number through connection manager");

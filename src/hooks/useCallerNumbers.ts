@@ -1,8 +1,9 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from '@/components/ui/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { numberCallingService } from '@/services/number-calling';
-import { connectionManager } from '@/utils/connectionManager';
+import { getSingleSourceConnection } from '@/utils/connectionManager';
 
 /**
  * Hook for managing called numbers as a caller
@@ -66,8 +67,9 @@ export function useCallerNumbers(sessionId: string | undefined, autoConnect: boo
     try {
       logWithTimestamp(`Calling number ${number} for session ${sessionId}`, 'info');
       
-      // Call the number via connection manager
-      const success = await connectionManager.callNumber(number, sessionId);
+      // Get the connection instance and call the number
+      const connection = getSingleSourceConnection();
+      const success = await connection.callNumber(number, sessionId);
       
       if (success) {
         // Get the current called numbers to pass to the notifyListeners method
@@ -177,8 +179,9 @@ export function useCallerNumbers(sessionId: string | undefined, autoConnect: boo
     try {
       logWithTimestamp(`Reconnecting Caller Number connection for session: ${sessionId}`, 'info');
       
-      // Force reconnect via connection manager
-      connectionManager.reconnect();
+      // Get the connection instance and call reconnect
+      const connection = getSingleSourceConnection();
+      connection.reconnect();
       
       toast({
         title: "Reconnecting",

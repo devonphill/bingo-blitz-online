@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { RefreshCw, Signal, Info } from 'lucide-react';
-import { connectionManager } from '@/utils/connectionManager';
+import { getSingleSourceConnection } from '@/utils/connectionManager';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
 
 export interface DebugPanelProps {
@@ -35,9 +34,12 @@ export default function DebugPanel({
   // Periodically update the last update time
   useEffect(() => {
     const timer = setInterval(() => {
+      // Get the connection instance
+      const connectionInstance = getSingleSourceConnection();
+      
       // Use connectionManager or network state to determine connection state
-      const connectionIsActive = network.isConnected || connectionManager.isConnected();
-      const pingTime = connectionManager.getLastPing();
+      const connectionIsActive = network.isConnected || connectionInstance.isConnected();
+      const pingTime = connectionInstance.getLastPing();
       
       if (pingTime) {
         const now = Date.now();
