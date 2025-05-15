@@ -1,8 +1,6 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
-import { useGameManager } from '@/contexts/GameManager';
 import { useNetwork } from '@/contexts/network';
 import { useToast } from "@/hooks/use-toast";
 import { usePlayerContext } from '@/contexts/PlayerContext';
@@ -11,7 +9,6 @@ import { MainLayout } from '@/components/layout';
 import { PlayerGameContent } from '@/components/game';
 import { Spinner } from "@/components/ui/spinner";
 import { logWithTimestamp } from '@/utils/logUtils';
-import { supabase } from '@/integrations/supabase/client';
 import { GameProvider } from '@/contexts/GameContext';
 
 const PlayerGame = () => {
@@ -19,11 +16,14 @@ const PlayerGame = () => {
   const navigate = useNavigate();
   const { player } = usePlayerContext();
   const { currentSession } = useSessionContext();
-  const { connect, connectionState, submitBingoClaim, updatePlayerPresence } = useNetwork();
-  const [tickets, setTickets] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [autoMarking, setAutoMarking] = useState(true);
+  const { connect, connectionState, submitBingoClaim } = useNetwork();
+  const [autoMarking, setAutoMarking] = useState<boolean>(() => {
+    // Get from localStorage with default of true
+    const stored = localStorage.getItem('autoMarking');
+    return stored !== null ? stored === 'true' : true;
+  });
   const [claimStatus, setClaimStatus] = useState<"none" | "pending" | "valid" | "invalid">("none");
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   
   // Generate a unique ID for this component instance
@@ -34,141 +34,63 @@ const PlayerGame = () => {
     logWithTimestamp(`${instanceId.current}: ${message}`, level);
   };
 
-  // Load player data from context
-  useEffect(() => {
+  // Check if we have the required data
+  React.useEffect(() => {
     if (!player) {
-      log('No player data found in context, trying to load from localStorage', 'warn');
-      const storedPlayerCode = localStorage.getItem('playerCode');
-      const storedPlayerId = localStorage.getItem('playerId');
-      
-      if (!storedPlayerCode || !storedPlayerId) {
-        log('No player data in localStorage either, redirecting to join page', 'error');
-        navigate('/player/join');
-        return;
-      }
-      
-      log(`Found player data in localStorage: ${storedPlayerCode}, ${storedPlayerId}`, 'info');
-    } else {
-      log(`Player data loaded from context: ${player.code}, ${player.id}`, 'info');
-    }
-  }, [player, navigate]);
-
-  // Function to refresh tickets
-  const refreshTickets = useCallback(async () => {
-    if (!player?.sessionId || !player?.id) {
-      log('Session ID or Player ID is missing, skipping ticket refresh', 'warn');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      log(`Fetching tickets for session ${player.sessionId} and player ${player.id}`, 'info');
-      const { data, error } = await supabase
-        .from('assigned_tickets')
-        .select('*')
-        .eq('session_id', player.sessionId)
-        .eq('player_id', player.id);
-
-      if (error) {
-        log(`Error fetching tickets: ${error.message}`, 'error');
-        toast({
-          title: "Error fetching tickets",
-          description: error.message,
-          variant: "destructive",
-        });
-      } else {
-        log(`Successfully fetched ${data?.length || 0} tickets`, 'info');
-        setTickets(data || []);
-      }
-    } catch (err) {
-      log(`Unexpected error fetching tickets: ${(err as Error).message}`, 'error');
-      toast({
-        title: "Unexpected error",
-        description: (err as Error).message,
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [player?.sessionId, player?.id, toast]);
-
-  // Function to handle reconnection
-  const handleReconnect = useCallback(() => {
-    if (player?.sessionId) {
-      log(`Attempting to reconnect to session ${player.sessionId}`, 'info');
-      connect(player.sessionId);
-    } else {
-      log('No session ID available, cannot reconnect', 'warn');
-      toast({
-        title: "No Session",
-        description: "No session available to reconnect to.",
-      });
-    }
-  }, [player?.sessionId, connect, toast]);
-
-  // Initial useEffect to connect to the game session
-  useEffect(() => {
-    if (!player || !player.sessionId) {
-      log('Player or session ID missing, waiting...', 'debug');
-      return;
-    }
-
-    if (!playerCode) {
-      log('No player code found in URL, redirecting to join', 'warn');
+      log('No player data found in context, redirecting to join page', 'warn');
       navigate('/player/join');
       return;
     }
-
-    // Connect to the game session
-    log(`Connecting to session ${player.sessionId}`, 'info');
+    
+    if (!player.sessionId) {
+      log('Player has no sessionId, redirecting to join page', 'warn');
+      navigate('/player/join');
+      return;
+    }
+    
+    log(`Player data loaded: ${player.id} in session ${player.sessionId}`, 'info');
+    
+    // Connect to game session
     connect(player.sessionId);
+    
+  }, [player, connect, navigate]);
 
-    // Update player presence
-    updatePlayerPresence({ player_id: player.id, player_code: playerCode })
-      .then(success => {
-        if (success) {
-          log('Player presence updated successfully', 'info');
-        } else {
-          log('Failed to update player presence', 'warn');
-        }
-      });
-
-    // Fetch tickets
-    refreshTickets();
-
-    // Set up interval to periodically refresh tickets
-    const intervalId = setInterval(refreshTickets, 60000); // Refresh every 60 seconds
-
-    return () => {
-      log('Cleaning up: clearing ticket refresh interval', 'info');
-      clearInterval(intervalId);
-    };
-  }, [player, playerCode, navigate, connect, refreshTickets, updatePlayerPresence]);
-
-  // Handle claim submission
-  const handleClaim = async (ticket: any) => {
+  // Function to handle reconnection
+  const handleReconnect = useCallback(() => {
     if (!player?.sessionId) {
-      log('No session ID available, cannot submit claim', 'warn');
+      log('Cannot reconnect: No session ID available', 'warn');
       toast({
         title: "No Session",
-        description: "No session available to submit a claim.",
+        description: "No session available to reconnect to.",
+        variant: "destructive"
       });
       return;
     }
 
-    if (!playerCode) {
-      log('No player code available, cannot submit claim', 'warn');
+    log(`Attempting to reconnect to session ${player.sessionId}`, 'info');
+    connect(player.sessionId);
+    toast({
+      title: "Reconnecting",
+      description: "Attempting to reconnect to the game session...",
+    });
+  }, [player?.sessionId, connect, toast]);
+
+  // Handle bingo claim
+  const handleClaimBingo = useCallback((ticket: any) => {
+    if (!player?.sessionId || !playerCode) {
+      log('Cannot submit claim: Missing session ID or player code', 'warn');
       toast({
-        title: "No Player Code",
-        description: "No player code available to submit a claim.",
+        title: "Cannot Submit Claim",
+        description: "Missing session ID or player code.",
+        variant: "destructive"
       });
       return;
     }
 
-    log(`Submitting claim for ticket ${ticket.id} in session ${player.sessionId}`, 'info');
+    log(`Submitting bingo claim for ticket in session ${player.sessionId}`, 'info');
     setClaimStatus("pending");
+    
     const success = submitBingoClaim(ticket, playerCode, player.sessionId);
-
     if (success) {
       log('Claim submitted successfully', 'info');
       toast({
@@ -180,17 +102,41 @@ const PlayerGame = () => {
       toast({
         title: "Claim Submission Failed",
         description: "Failed to submit your claim. Please try again.",
-        variant: "destructive",
+        variant: "destructive"
       });
       setClaimStatus("none");
     }
-  };
+  }, [player?.sessionId, playerCode, submitBingoClaim, toast]);
 
-  if (loading) {
+  // Display loading state when we're checking session
+  if (isLoading) {
     return (
       <MainLayout>
         <div className="flex items-center justify-center h-full">
           <Spinner size="lg" />
+          <p className="ml-3">Loading game session...</p>
+        </div>
+      </MainLayout>
+    );
+  }
+
+  // If no player or session, show error
+  if (!player || !player.sessionId) {
+    return (
+      <MainLayout>
+        <div className="container mx-auto py-8">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+            <h2 className="text-xl font-bold text-red-800 mb-2">No Active Game Session</h2>
+            <p className="text-red-600 mb-4">
+              Unable to find your game session. Please try joining again.
+            </p>
+            <button 
+              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+              onClick={() => navigate('/player/join')}
+            >
+              Return to Join Page
+            </button>
+          </div>
         </div>
       </MainLayout>
     );
@@ -200,25 +146,17 @@ const PlayerGame = () => {
     <GameProvider>
       <MainLayout>
         <div className="container mx-auto py-8">
-          {player?.sessionId ? (
-            <PlayerGameContent
-              tickets={tickets}
-              currentSession={currentSession || { id: player.sessionId, name: "Game Session" }}
-              autoMarking={autoMarking}
-              setAutoMarking={setAutoMarking}
-              playerCode={playerCode || ''}
-              playerName={player.name}
-              playerId={player.id}
-              onRefreshTickets={refreshTickets}
-              onReconnect={handleReconnect}
-              sessionId={player.sessionId}
-            />
-          ) : (
-            <div className="text-center">
-              <h2>No Active Game Session</h2>
-              <p>Please wait for the game to start or contact your game administrator.</p>
-            </div>
-          )}
+          <PlayerGameContent
+            currentSession={currentSession || { id: player.sessionId, name: "Game Session" }}
+            autoMarking={autoMarking}
+            setAutoMarking={setAutoMarking}
+            playerCode={playerCode || player.code}
+            playerName={player.name}
+            playerId={player.id}
+            onReconnect={handleReconnect}
+            sessionId={player.sessionId}
+            onClaimBingo={handleClaimBingo}
+          />
         </div>
       </MainLayout>
     </GameProvider>

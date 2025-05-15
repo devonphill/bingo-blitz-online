@@ -1,130 +1,153 @@
 
-import React from 'react';
-import { Button } from '@/components/ui/button';
+import React, { useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { BellRing, RefreshCw } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { NetworkDebugging } from '@/components/game';
+import { Spinner } from "@/components/ui/spinner";
+import { PlayerTicketManager } from '@/components/player/PlayerTicketManager';
 
-export interface PlayerGameContentProps {
-  tickets: any[];
+interface PlayerGameContentProps {
+  tickets?: any[];
   currentSession: any;
   autoMarking: boolean;
   setAutoMarking: (value: boolean) => void;
   playerCode: string;
   playerName?: string;
   playerId?: string;
-  onRefreshTickets: () => void;
-  onReconnect: () => void;
-  sessionId?: string | null;
-  showLobby?: boolean;
-  lobbyComponent?: React.ReactNode;
-  claimCount?: number;
-  winPatterns?: any[];
-  isClaimable?: boolean;
-  onClaimWin?: () => void;
-  calledNumbers?: number[];
-  currentNumber?: number;
+  onRefreshTickets?: () => void;
+  onReconnect?: () => void;
+  sessionId?: string;
+  onClaimBingo?: (ticket: any) => void;
 }
 
-export const PlayerGameContent: React.FC<PlayerGameContentProps> = ({
-  tickets,
+export function PlayerGameContent({
   currentSession,
   autoMarking,
   setAutoMarking,
   playerCode,
   playerName,
-  playerId,
-  onRefreshTickets,
   onReconnect,
-  sessionId,
-  showLobby,
-  lobbyComponent,
-  claimCount,
-  winPatterns,
-  isClaimable,
-  onClaimWin,
-  calledNumbers,
-  currentNumber,
-}) => {
-  // If lobby should be shown, render the lobby component
-  if (showLobby && lobbyComponent) {
-    return <>{lobbyComponent}</>;
-  }
-
-  // Default game content
+  onClaimBingo
+}: PlayerGameContentProps) {
+  const { toast } = useToast();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Handle saving auto-marking preference to localStorage
+  const handleAutoMarkingChange = (checked: boolean) => {
+    setAutoMarking(checked);
+    localStorage.setItem('autoMarking', checked.toString());
+    toast({
+      title: checked ? "Auto-marking enabled" : "Auto-marking disabled",
+      description: checked 
+        ? "Numbers will be automatically marked on your tickets." 
+        : "You'll need to mark numbers manually.",
+    });
+  };
+  
+  const handleClaimBingo = () => {
+    if (onClaimBingo) {
+      onClaimBingo({});
+      toast({
+        title: "Bingo Claim Submitted",
+        description: "Your claim has been submitted and is awaiting verification.",
+      });
+    } else {
+      toast({
+        title: "Claim Not Available",
+        description: "The claim function is not available at this time.",
+        variant: "destructive",
+      });
+    }
+  };
+  
+  const handleRefreshClick = () => {
+    if (onReconnect) {
+      setIsRefreshing(true);
+      onReconnect();
+      setTimeout(() => setIsRefreshing(false), 1000);
+    }
+  };
+  
   return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-lg shadow-md p-4">
-        <h2 className="text-xl font-bold mb-2">Game Session: {currentSession?.name}</h2>
-        <p className="text-sm text-gray-600">Player: {playerName || playerCode}</p>
-        <p className="text-sm text-gray-600">Game Type: {currentSession?.gameType}</p>
-      </div>
-
-      {/* Display tickets if available */}
-      {tickets && tickets.length > 0 ? (
-        <div className="space-y-4">
-          <p className="text-sm text-gray-600">You have {tickets.length} ticket(s)</p>
-          
-          {/* Render tickets here */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {tickets.map((ticket, index) => (
-              <div key={index} className="bg-white rounded-lg shadow-md p-2 border-2 border-gray-200">
-                <h3 className="text-md font-semibold">Ticket #{index + 1}</h3>
-                <p className="text-xs text-gray-500">ID: {ticket.id}</p>
-                {/* Ticket content would go here */}
+    <div className="space-y-6">
+      {/* Game Header */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle>
+            {currentSession?.name || "Game Session"}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <p className="text-sm text-gray-500">
+                Playing as: <span className="font-semibold">{playerName || playerCode}</span>
+              </p>
+              <p className="text-sm text-gray-500">
+                Game Type: <span className="font-semibold">{currentSession?.gameType || "Standard"}</span>
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex items-center space-x-2">
+                <Switch 
+                  id="auto-marking" 
+                  checked={autoMarking} 
+                  onCheckedChange={handleAutoMarkingChange} 
+                />
+                <Label htmlFor="auto-marking">Auto-marking</Label>
               </div>
-            ))}
-          </div>
-
-          {/* Game controls */}
-          <div className="bg-white rounded-lg shadow-md p-4">
-            <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" onClick={onRefreshTickets}>
-                Refresh Tickets
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="flex items-center gap-2" 
+                onClick={handleRefreshClick}
+                disabled={isRefreshing}
+              >
+                {isRefreshing ? (
+                  <>
+                    <Spinner size="sm" />
+                    <span>Reconnecting...</span>
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-3 w-3" />
+                    <span>Reconnect</span>
+                  </>
+                )}
               </Button>
-              
-              <Button variant="outline" onClick={onReconnect}>
-                Reconnect
+              <Button 
+                variant="secondary" 
+                size="sm"
+                className="flex items-center gap-2"
+                onClick={handleClaimBingo}
+              >
+                <BellRing className="h-4 w-4" />
+                <span>Claim Bingo</span>
               </Button>
-
-              {isClaimable && onClaimWin && (
-                <Button variant="default" className="bg-green-600 hover:bg-green-700" onClick={onClaimWin}>
-                  Claim Win!
-                </Button>
-              )}
             </div>
           </div>
-        </div>
-      ) : (
-        <div className="bg-white rounded-lg shadow-md p-4 text-center">
-          <p>No tickets assigned yet.</p>
-          <Button 
-            variant="outline" 
-            className="mt-2"
-            onClick={onRefreshTickets}
-          >
-            Check for Tickets
-          </Button>
-        </div>
-      )}
-
-      {/* Display current game information */}
-      {currentNumber && (
-        <div className="bg-white rounded-lg shadow-md p-4 text-center">
-          <h3 className="text-xl font-bold">Current Number</h3>
-          <div className="text-4xl font-bold text-blue-600 my-2">{currentNumber}</div>
-        </div>
-      )}
+        </CardContent>
+      </Card>
       
-      {calledNumbers && calledNumbers.length > 0 && (
-        <div className="bg-white rounded-lg shadow-md p-4">
-          <h3 className="text-md font-semibold mb-2">Called Numbers</h3>
-          <div className="flex flex-wrap gap-1">
-            {calledNumbers.map((number) => (
-              <span key={number} className="inline-block bg-gray-100 px-2 py-1 rounded text-sm">
-                {number}
-              </span>
-            ))}
+      {/* Tickets Display */}
+      <PlayerTicketManager 
+        autoMarking={autoMarking}
+        onClaimBingo={onClaimBingo}
+      />
+      
+      {/* Network Debugging (for development only) */}
+      <div className="mt-8 border-t pt-4">
+        <details className="text-sm">
+          <summary className="cursor-pointer text-gray-500 hover:text-gray-700">Debug Information</summary>
+          <div className="mt-2 p-4 bg-gray-50 rounded-md">
+            <NetworkDebugging />
           </div>
-        </div>
-      )}
+        </details>
+      </div>
     </div>
   );
-};
+}
