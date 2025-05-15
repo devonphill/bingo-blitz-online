@@ -1,4 +1,3 @@
-
 import { logWithTimestamp } from '@/utils/logUtils';
 import { ClaimData, ClaimResult } from '@/types/claim';
 import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
