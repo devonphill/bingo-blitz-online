@@ -106,6 +106,7 @@ const PlayerGame = () => {
     setClaimStatus("pending");
     
     // Prepare the ticket with required fields
+    // Fix here to ensure we have a valid ticket with serial
     const claimTicket = {
       serial: ticket.serial || ticket.id, // Use ID as fallback for serial
       perm: ticket.perm || 0,

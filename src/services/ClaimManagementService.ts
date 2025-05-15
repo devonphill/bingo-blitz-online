@@ -4,6 +4,7 @@ import { claimStorageService } from './ClaimStorageService';
 import { claimBroadcastService } from './ClaimBroadcastService';
 import { generateUUID, validateClaimData } from './ClaimUtils';
 import { ClaimData } from '@/types/claim';
+import { supabase } from '@/integrations/supabase/client';
 
 /**
  * Service for managing bingo claim events and lifecycle.
@@ -40,7 +41,12 @@ class ClaimManagementService {
         playerId: claim.playerId,
         playerName: claim.playerName,
         sessionId: claim.sessionId,
-        ticket: claim.ticket ? 'present' : 'missing'
+        ticket: claim.ticket ? {
+          serial: claim.ticket.serial,
+          perm: claim.ticket.perm,
+          hasNumbers: !!claim.ticket.numbers
+        } : 'missing',
+        winPattern: claim.winPattern
       })}`, 'info');
 
       // Add to storage - this should store it in memory for caller retrieval
@@ -84,12 +90,57 @@ class ClaimManagementService {
 
       logWithTimestamp(`Looking for claim ${claimId} in session ${sessionId}`, 'info');
 
-      // Find and remove the claim
+      // Find claim in storage service
       const claim = claimStorageService.removeClaim(sessionId, claimId);
       
       if (!claim) {
-        logWithTimestamp(`Claim ${claimId} not found in session ${sessionId}`, 'error');
-        return false;
+        logWithTimestamp(`Claim ${claimId} not found in session ${sessionId}, checking database`, 'info');
+        
+        // Try to find the claim in the database
+        const { data: dbClaim, error } = await supabase
+          .from('claims')
+          .select('*')
+          .eq('id', claimId)
+          .single();
+        
+        if (error || !dbClaim) {
+          logWithTimestamp(`Claim ${claimId} not found in database either: ${error?.message || 'No claim found'}`, 'error');
+          return false;
+        }
+        
+        logWithTimestamp(`Found claim ${claimId} in database`, 'info');
+        
+        // Update the claim status in the database
+        const { error: updateError } = await supabase
+          .from('claims')
+          .update({
+            status: isValid ? 'valid' : 'rejected',
+            verified_at: new Date().toISOString()
+          })
+          .eq('id', dbClaim.id);
+        
+        if (updateError) {
+          logWithTimestamp(`Error updating claim in database: ${updateError.message}`, 'error');
+          return false;
+        }
+        
+        // Broadcast result to the player
+        await claimBroadcastService.broadcastClaimResult({
+          sessionId,
+          playerId: dbClaim.player_id,
+          playerName: dbClaim.player_name || 'Player',
+          result: isValid ? 'valid' : 'rejected',
+          timestamp: new Date().toISOString(),
+          ticket: dbClaim.ticket_details
+        });
+        
+        // If valid and there's a progression callback, trigger it
+        if (isValid && onGameProgress) {
+          logWithTimestamp('Triggering game progression callback', 'info');
+          onGameProgress();
+        }
+        
+        return true;
       }
       
       logWithTimestamp(`Found and removed claim ${claimId} from storage`, 'info');

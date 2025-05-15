@@ -122,6 +122,54 @@ export type Database = {
         }
         Relationships: []
       }
+      claims: {
+        Row: {
+          called_numbers_snapshot: Json | null
+          claimed_at: string
+          id: number
+          pattern_claimed: string | null
+          player_id: string
+          player_name: string
+          session_id: string
+          status: string
+          ticket_details: Json
+          ticket_serial: string | null
+          verification_notes: string | null
+          verified_at: string | null
+          verified_by_user_id: string | null
+        }
+        Insert: {
+          called_numbers_snapshot?: Json | null
+          claimed_at?: string
+          id?: number
+          pattern_claimed?: string | null
+          player_id: string
+          player_name?: string
+          session_id?: string
+          status: string
+          ticket_details: Json
+          ticket_serial?: string | null
+          verification_notes?: string | null
+          verified_at?: string | null
+          verified_by_user_id?: string | null
+        }
+        Update: {
+          called_numbers_snapshot?: Json | null
+          claimed_at?: string
+          id?: number
+          pattern_claimed?: string | null
+          player_id?: string
+          player_name?: string
+          session_id?: string
+          status?: string
+          ticket_details?: Json
+          ticket_serial?: string | null
+          verification_notes?: string | null
+          verified_at?: string | null
+          verified_by_user_id?: string | null
+        }
+        Relationships: []
+      }
       game_sessions: {
         Row: {
           access_code: string

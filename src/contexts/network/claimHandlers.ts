@@ -16,10 +16,28 @@ export async function fetchClaimsForSession(sessionId: string | null): Promise<a
   
   logWithTimestamp(`NetworkContext: Fetching claims for session ${sessionId}`, 'info');
   
-  // Use claimService instead of direct database calls
-  const claims = claimService.getClaimsForSession(sessionId);
-  logWithTimestamp(`NetworkContext: Found ${claims.length} claims in service`, 'debug');
-  return claims;
+  try {
+    // First try fetching from database for most accurate data
+    const { data: claims, error } = await supabase
+      .from('claims')
+      .select('*')
+      .eq('session_id', sessionId)
+      .eq('status', 'pending')
+      .order('claimed_at', { ascending: true });
+    
+    if (error) {
+      logWithTimestamp(`Error fetching claims from database: ${error.message}`, 'error');
+      // Fallback to in-memory service
+      return claimService.getClaimsForSession(sessionId);
+    }
+    
+    logWithTimestamp(`NetworkContext: Found ${claims.length} claims in database`, 'debug');
+    return claims;
+  } catch (err) {
+    logWithTimestamp(`Exception fetching claims: ${(err as Error).message}`, 'error');
+    // Fallback to in-memory service
+    return claimService.getClaimsForSession(sessionId);
+  }
 }
 
 /**
@@ -63,13 +81,13 @@ export function submitBingoClaim(ticket: any, playerCode: string, sessionId: str
       .eq('player_code', playerCode)
       .eq('session_id', sessionId)
       .single()
-      .then(({ data, error }) => {
+      .then(({ data: player, error }) => {
         if (error) {
           logWithTimestamp(`Error finding player by code: ${error.message}`, 'error');
           return false;
         }
         
-        if (!data) {
+        if (!player) {
           logWithTimestamp(`No player found with code ${playerCode}`, 'error');
           return false;
         }
@@ -85,18 +103,74 @@ export function submitBingoClaim(ticket: any, playerCode: string, sessionId: str
         
         console.log('CLAIM DEBUG - Normalized ticket data for submission:', ticketData);
         
-        // Submit the claim using the claim service
-        const result = claimService.submitClaim({
-          playerId: data.id,
-          playerName: data.nickname || playerCode,
-          sessionId: sessionId,
-          ticket: ticketData,
-          gameType: 'mainstage', // Default, can be changed later
-          calledNumbers: ticket.calledNumbers || [],
-          lastCalledNumber: ticket.lastCalledNumber || null
-        });
-        
-        return result;
+        // Now we need to fetch the current game state to get the win pattern and called numbers
+        supabase
+          .from('sessions_progress')
+          .select('current_win_pattern, called_numbers')
+          .eq('session_id', sessionId)
+          .single()
+          .then(({ data: gameState, error: gameStateError }) => {
+            if (gameStateError) {
+              logWithTimestamp(`Error fetching game state: ${gameStateError.message}`, 'error');
+              return false;
+            }
+            
+            // Insert complete claim data into the database
+            const claimDataForDB = {
+              session_id: sessionId,
+              player_id: player.id,
+              player_name: player.nickname || playerCode,
+              ticket_serial: ticket.serial,
+              ticket_details: ticketData,
+              pattern_claimed: gameState?.current_win_pattern || 'fullhouse',
+              called_numbers_snapshot: gameState?.called_numbers || [],
+              status: 'pending',
+              claimed_at: new Date().toISOString()
+            };
+            
+            // Log the data that will be inserted into the claims table
+            console.log('Data to be inserted into claims table:', claimDataForDB);
+            
+            // Insert into claims table
+            supabase
+              .from('claims')
+              .insert(claimDataForDB)
+              .then(({ data: insertData, error: insertError }) => {
+                if (insertError) {
+                  logWithTimestamp(`Error inserting claim into database: ${insertError.message}`, 'error');
+                  
+                  // Even if DB insert fails, still use the claim service as fallback
+                  claimService.submitClaim({
+                    playerId: player.id,
+                    playerName: player.nickname || playerCode,
+                    sessionId: sessionId,
+                    ticket: ticketData,
+                    gameType: 'mainstage', // Default, can be updated if we have more info
+                    calledNumbers: gameState?.called_numbers || [],
+                    lastCalledNumber: gameState?.called_numbers ? 
+                      gameState.called_numbers[gameState.called_numbers.length - 1] : null,
+                    winPattern: gameState?.current_win_pattern || 'fullhouse'
+                  });
+                  
+                  return;
+                }
+                
+                logWithTimestamp(`Successfully inserted claim into database`, 'info');
+                
+                // Still use claim service to handle in-memory storage and broadcasting
+                claimService.submitClaim({
+                  playerId: player.id,
+                  playerName: player.nickname || playerCode,
+                  sessionId: sessionId,
+                  ticket: ticketData,
+                  gameType: 'mainstage',
+                  calledNumbers: gameState?.called_numbers || [],
+                  lastCalledNumber: gameState?.called_numbers ? 
+                    gameState.called_numbers[gameState.called_numbers.length - 1] : null,
+                  winPattern: gameState?.current_win_pattern || 'fullhouse'
+                });
+              });
+          });
       });
     
     return true; // Return true to indicate claim submission attempt started
@@ -120,8 +194,24 @@ export async function validateClaim(claim: any, isValid: boolean, sessionId: str
   }
   
   logWithTimestamp(`NetworkContext: Processing claim ${claim.id}, isValid=${isValid}`, 'info');
+  
   try {
-    // Use claim service to process claim
+    // Update the claim status in the database
+    const { error } = await supabase
+      .from('claims')
+      .update({
+        status: isValid ? 'valid' : 'rejected',
+        verified_at: new Date().toISOString()
+      })
+      .eq('id', claim.id);
+    
+    if (error) {
+      logWithTimestamp(`Error updating claim in database: ${error.message}`, 'error');
+    } else {
+      logWithTimestamp(`Updated claim ${claim.id} in database to ${isValid ? 'valid' : 'rejected'}`, 'info');
+    }
+    
+    // Use claim service to process claim (broadcasts result, etc.)
     const result = await claimService.processClaim(claim.id, claim.sessionId || sessionId || '', isValid);
     
     if (result) {
