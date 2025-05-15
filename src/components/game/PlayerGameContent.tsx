@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { BellRing, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { NetworkDebugging } from '@/components/game';
+import { NetworkDebugging, PlayerClaimCheckingNotification } from '@/components/game';
 import { Spinner } from "@/components/ui/spinner";
 import { PlayerTicketManager } from '@/components/player/PlayerTicketManager';
 import { usePlayerContext } from '@/contexts/PlayerContext';
@@ -33,6 +33,7 @@ export function PlayerGameContent({
   playerCode,
   playerName,
   onReconnect,
+  sessionId,
   onClaimBingo
 }: PlayerGameContentProps) {
   const { toast } = useToast();
@@ -107,6 +108,14 @@ export function PlayerGameContent({
   
   return (
     <div className="space-y-6">
+      {/* Add the PlayerClaimCheckingNotification component at the top level */}
+      {sessionId && playerCode && (
+        <PlayerClaimCheckingNotification 
+          sessionId={sessionId} 
+          playerCode={playerCode} 
+        />
+      )}
+      
       {/* Game Header */}
       <Card>
         <CardHeader className="pb-3">
