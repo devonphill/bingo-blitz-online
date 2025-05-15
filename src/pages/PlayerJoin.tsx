@@ -5,8 +5,9 @@ import PlayerJoinForm from '@/components/player/PlayerJoinForm';
 import { Button } from '@/components/ui/button';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { usePlayerContext } from '@/contexts/PlayerContext';
+import { useSessionContext } from '@/contexts/SessionProvider';
 import { supabase } from '@/integrations/supabase/client';
-import { toast } from '@/components/ui/use-toast';
+import { toast } from '@/hooks/use-toast';
 
 export default function PlayerJoin() {
   const navigate = useNavigate();
@@ -14,6 +15,7 @@ export default function PlayerJoin() {
   const [storedCode, setStoredCode] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const { player, setPlayer } = usePlayerContext();
+  const { setCurrentSession } = useSessionContext();
   
   // Check if player already has a code stored and validate it with the database
   useEffect(() => {
@@ -38,7 +40,11 @@ export default function PlayerJoin() {
           code: storedPlayerCode,
           sessionId: storedSessionId
         });
-        logWithTimestamp('PlayerJoin: Updated player context with stored data', 'info');
+        
+        // Also update the session context with the session ID
+        setCurrentSession(storedSessionId);
+        
+        logWithTimestamp('PlayerJoin: Updated player and session contexts with stored data', 'info');
       }
     } else {
       // Clean up any invalid stored codes
@@ -48,7 +54,7 @@ export default function PlayerJoin() {
       localStorage.removeItem('playerSessionId');
       logWithTimestamp('PlayerJoin: No valid stored player code found', 'info');
     }
-  }, [player, setPlayer]);
+  }, [player, setPlayer, setCurrentSession]);
 
   // Verify the stored player code with the database
   const verifyPlayerCodeWithDatabase = async (code: string) => {
@@ -86,7 +92,10 @@ export default function PlayerJoin() {
         sessionId: playerData.session_id
       });
       
-      logWithTimestamp(`PlayerJoin: Successfully verified player code and updated context with sessionId: ${playerData.session_id}`, 'info');
+      // Update session context with the session ID
+      setCurrentSession(playerData.session_id);
+      
+      logWithTimestamp(`PlayerJoin: Successfully verified player code and updated contexts with sessionId: ${playerData.session_id}`, 'info');
     } catch (err) {
       logWithTimestamp(`PlayerJoin: Error during code verification: ${(err as Error).message}`, 'error');
       handleUseNewCode(); // Clear the stored code if there's an error

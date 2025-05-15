@@ -4,7 +4,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGameManager } from '@/contexts/GameManager';
 import { useNetwork } from '@/contexts/network';
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
+import { usePlayerContext } from '@/contexts/PlayerContext';
+import { useSessionContext } from '@/contexts/SessionProvider';
 import { MainLayout } from '@/components/layout';
 import { PlayerGameContent } from '@/components/game';
 import { Spinner } from "@/components/ui/spinner";
@@ -12,38 +14,15 @@ import { logWithTimestamp } from '@/utils/logUtils';
 import { supabase } from '@/integrations/supabase/client';
 import { GameProvider } from '@/contexts/GameContext';
 
-// Add this type mapping function
-const mapClaimStatus = (status: "none" | "pending" | "validating" | "validated" | "rejected"): "none" | "pending" | "valid" | "invalid" => {
-  switch (status) {
-    case "none":
-      return "none";
-    case "pending":
-      return "pending";
-    case "validating":
-      return "pending"; // Map validating to pending
-    case "validated":
-      return "valid";
-    case "rejected":
-      return "invalid";
-    default:
-      return "none";
-  }
-};
-
 const PlayerGame = () => {
   const { playerCode } = useParams<{ playerCode?: string }>();
   const navigate = useNavigate();
-  const { user, session } = useAuth();
-  const { getCurrentSession } = useGameManager();
+  const { player } = usePlayerContext();
+  const { currentSession } = useSessionContext();
   const { connect, connectionState, submitBingoClaim, updatePlayerPresence } = useNetwork();
   const [tickets, setTickets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [sessionLoading, setSessionLoading] = useState(true);
-  const [currentSession, setCurrentSession] = useState<any>(null);
   const [autoMarking, setAutoMarking] = useState(true);
-  const [playerName, setPlayerName] = useState('');
-  const [playerId, setPlayerId] = useState('');
   const [claimStatus, setClaimStatus] = useState<"none" | "pending" | "valid" | "invalid">("none");
   const { toast } = useToast();
   
@@ -55,59 +34,40 @@ const PlayerGame = () => {
     logWithTimestamp(`${instanceId.current}: ${message}`, level);
   };
 
-  // Load session on mount
+  // Load player data from context
   useEffect(() => {
-    const loadSession = async () => {
-      try {
-        setSessionLoading(true);
-        const sessionData = await getCurrentSession();
-        setCurrentSession(sessionData);
-        setSessionLoading(false);
-      } catch (err) {
-        log(`Error fetching session: ${(err as Error).message}`, 'error');
-        setSessionLoading(false);
+    if (!player) {
+      log('No player data found in context, trying to load from localStorage', 'warn');
+      const storedPlayerCode = localStorage.getItem('playerCode');
+      const storedPlayerId = localStorage.getItem('playerId');
+      
+      if (!storedPlayerCode || !storedPlayerId) {
+        log('No player data in localStorage either, redirecting to join page', 'error');
+        navigate('/player/join');
+        return;
       }
-    };
-    
-    if (user && session) {
-      loadSession();
+      
+      log(`Found player data in localStorage: ${storedPlayerCode}, ${storedPlayerId}`, 'info');
+    } else {
+      log(`Player data loaded from context: ${player.code}, ${player.id}`, 'info');
     }
-  }, [user, session, getCurrentSession]);
-
-  // Update auth loading state when user and session are available
-  useEffect(() => {
-    if (user !== undefined && session !== undefined) {
-      setAuthLoading(false);
-    }
-  }, [user, session]);
-
-  // Fetch player name from local storage
-  useEffect(() => {
-    const storedPlayerName = localStorage.getItem('playerName') || '';
-    setPlayerName(storedPlayerName);
-  }, []);
-
-  // Fetch player ID from local storage
-  useEffect(() => {
-    const storedPlayerId = localStorage.getItem('playerId') || '';
-    setPlayerId(storedPlayerId);
-  }, []);
+  }, [player, navigate]);
 
   // Function to refresh tickets
   const refreshTickets = useCallback(async () => {
-    if (!currentSession?.id || !playerId) {
+    if (!player?.sessionId || !player?.id) {
       log('Session ID or Player ID is missing, skipping ticket refresh', 'warn');
       return;
     }
 
     setLoading(true);
     try {
-      log(`Fetching tickets for session ${currentSession.id} and player ${playerId}`, 'info');
+      log(`Fetching tickets for session ${player.sessionId} and player ${player.id}`, 'info');
       const { data, error } = await supabase
         .from('assigned_tickets')
         .select('*')
-        .eq('session_id', currentSession.id)
-        .eq('player_id', playerId);
+        .eq('session_id', player.sessionId)
+        .eq('player_id', player.id);
 
       if (error) {
         log(`Error fetching tickets: ${error.message}`, 'error');
@@ -130,13 +90,13 @@ const PlayerGame = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentSession?.id, playerId, toast]);
+  }, [player?.sessionId, player?.id, toast]);
 
   // Function to handle reconnection
   const handleReconnect = useCallback(() => {
-    if (currentSession?.id) {
-      log(`Attempting to reconnect to session ${currentSession.id}`, 'info');
-      connect(currentSession.id);
+    if (player?.sessionId) {
+      log(`Attempting to reconnect to session ${player.sessionId}`, 'info');
+      connect(player.sessionId);
     } else {
       log('No session ID available, cannot reconnect', 'warn');
       toast({
@@ -144,43 +104,27 @@ const PlayerGame = () => {
         description: "No session available to reconnect to.",
       });
     }
-  }, [currentSession?.id, connect, toast]);
+  }, [player?.sessionId, connect, toast]);
 
-  // Initial useEffect to handle session and authentication
+  // Initial useEffect to connect to the game session
   useEffect(() => {
-    if (authLoading || sessionLoading) {
-      log('Auth or session loading, waiting...', 'debug');
-      return;
-    }
-
-    if (!user || !session) {
-      log('No user or session found, redirecting to login', 'warn');
-      navigate('/login');
+    if (!player || !player.sessionId) {
+      log('Player or session ID missing, waiting...', 'debug');
       return;
     }
 
     if (!playerCode) {
-      log('No player code found, redirecting to join', 'warn');
-      navigate('/player/join');
-      return;
-    }
-
-    if (!currentSession?.id) {
-      log('No current session, please join a game', 'warn');
-      toast({
-        title: "No Active Session",
-        description: "Please join a game to start playing.",
-      });
+      log('No player code found in URL, redirecting to join', 'warn');
       navigate('/player/join');
       return;
     }
 
     // Connect to the game session
-    log(`Connecting to session ${currentSession.id}`, 'info');
-    connect(currentSession.id);
+    log(`Connecting to session ${player.sessionId}`, 'info');
+    connect(player.sessionId);
 
     // Update player presence
-    updatePlayerPresence({ player_id: playerId, player_code: playerCode })
+    updatePlayerPresence({ player_id: player.id, player_code: playerCode })
       .then(success => {
         if (success) {
           log('Player presence updated successfully', 'info');
@@ -199,11 +143,11 @@ const PlayerGame = () => {
       log('Cleaning up: clearing ticket refresh interval', 'info');
       clearInterval(intervalId);
     };
-  }, [user, session, playerCode, navigate, currentSession, authLoading, sessionLoading, connect, refreshTickets, updatePlayerPresence, toast]);
+  }, [player, playerCode, navigate, connect, refreshTickets, updatePlayerPresence]);
 
   // Handle claim submission
   const handleClaim = async (ticket: any) => {
-    if (!currentSession?.id) {
+    if (!player?.sessionId) {
       log('No session ID available, cannot submit claim', 'warn');
       toast({
         title: "No Session",
@@ -221,9 +165,9 @@ const PlayerGame = () => {
       return;
     }
 
-    log(`Submitting claim for ticket ${ticket.id} in session ${currentSession.id}`, 'info');
+    log(`Submitting claim for ticket ${ticket.id} in session ${player.sessionId}`, 'info');
     setClaimStatus("pending");
-    const success = submitBingoClaim(ticket, playerCode, currentSession.id);
+    const success = submitBingoClaim(ticket, playerCode, player.sessionId);
 
     if (success) {
       log('Claim submitted successfully', 'info');
@@ -242,7 +186,7 @@ const PlayerGame = () => {
     }
   };
 
-  if (authLoading || sessionLoading || loading) {
+  if (loading) {
     return (
       <MainLayout>
         <div className="flex items-center justify-center h-full">
@@ -256,18 +200,18 @@ const PlayerGame = () => {
     <GameProvider>
       <MainLayout>
         <div className="container mx-auto py-8">
-          {currentSession ? (
+          {player?.sessionId ? (
             <PlayerGameContent
               tickets={tickets}
-              currentSession={currentSession}
+              currentSession={currentSession || { id: player.sessionId, name: "Game Session" }}
               autoMarking={autoMarking}
               setAutoMarking={setAutoMarking}
               playerCode={playerCode || ''}
-              playerName={playerName}
-              playerId={playerId}
+              playerName={player.name}
+              playerId={player.id}
               onRefreshTickets={refreshTickets}
               onReconnect={handleReconnect}
-              sessionId={currentSession.id}
+              sessionId={player.sessionId}
             />
           ) : (
             <div className="text-center">

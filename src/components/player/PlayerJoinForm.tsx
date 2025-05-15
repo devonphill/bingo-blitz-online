@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useSessionContext } from '@/contexts/SessionProvider';
-import { toast } from '@/components/ui/use-toast';
+import { toast } from '@/hooks/use-toast';
 import { Loader } from 'lucide-react';
 import { usePlayerContext } from '@/contexts/PlayerContext';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -15,7 +15,7 @@ export default function PlayerJoinForm() {
   const [playerCode, setPlayerCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  const { joinSession } = useSessionContext();
+  const { joinSession, setCurrentSession } = useSessionContext();
   const { setPlayer } = usePlayerContext();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -74,7 +74,12 @@ export default function PlayerJoinForm() {
           code: playerCode,
           sessionId: playerData.session_id
         });
+        
+        // Set the current session in SessionContext
+        setCurrentSession(playerData.session_id);
+        
         logWithTimestamp(`PlayerJoinForm: Updated player context with id: ${playerData.id} and sessionId: ${playerData.session_id}`, 'info');
+        logWithTimestamp(`PlayerJoinForm: Updated session context with sessionId: ${playerData.session_id}`, 'info');
         
         toast({
           title: "Success",

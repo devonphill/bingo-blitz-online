@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { usePlayerContext } from '@/contexts/PlayerContext';
 
 export function useGameSession(gameCode: string) {
   const [sessionDetails, setSessionDetails] = useState<any>(null);
@@ -9,53 +10,71 @@ export function useGameSession(gameCode: string) {
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [currentWinPattern, setCurrentWinPattern] = useState<string | null>(null);
   const [gameType, setGameType] = useState<string | null>(null);
-  const [playerId, setPlayerId] = useState<string | null>(null);
-  const [playerName, setPlayerName] = useState<string | null>(null);
+  const { player } = usePlayerContext();
 
   useEffect(() => {
     async function fetchSessionDetails() {
-      if (!gameCode) return;
+      if (!gameCode && (!player || !player.sessionId)) {
+        logWithTimestamp("No game code or player session ID available", "error");
+        return;
+      }
       
       setIsLoadingSession(true);
       setSessionError(null);
       
       try {
-        logWithTimestamp(`Fetching player information for gameCode ${gameCode}`, 'info');
+        // First try to get sessionId from player context
+        let sessionId = player?.sessionId;
+        let playerId = player?.id;
+        let playerName = player?.name;
         
-        // Step 1: Get the player by player_code
-        const { data: playerData, error: playerError } = await supabase
-          .from('players')
-          .select('id, nickname, player_code, session_id')
-          .eq('player_code', gameCode)
-          .single();
-        
-        if (playerError) {
-          throw new Error(`Failed to find player: ${playerError.message}`);
+        // If not available in context, get it from localStorage or fetch it
+        if (!sessionId || !playerId) {
+          const storedSessionId = localStorage.getItem('playerSessionId');
+          const storedPlayerId = localStorage.getItem('playerId');
+          const storedPlayerName = localStorage.getItem('playerName');
+          
+          if (storedSessionId && storedPlayerId) {
+            sessionId = storedSessionId;
+            playerId = storedPlayerId;
+            playerName = storedPlayerName || 'Player';
+            logWithTimestamp(`Using stored session ID: ${sessionId} and player ID: ${playerId}`, 'info');
+          } else {
+            logWithTimestamp(`Fetching player information for gameCode ${gameCode}`, 'info');
+            
+            // Fetch from Supabase if not in localStorage
+            const { data: playerData, error: playerError } = await supabase
+              .from('players')
+              .select('id, nickname, session_id')
+              .eq('player_code', gameCode)
+              .single();
+            
+            if (playerError || !playerData) {
+              throw new Error(`Failed to find player: ${playerError?.message || 'Player not found'}`);
+            }
+            
+            sessionId = playerData.session_id;
+            playerId = playerData.id;
+            playerName = playerData.nickname || 'Player';
+            
+            logWithTimestamp(`Player found: ${playerName}, session ID: ${sessionId}`, 'info');
+            
+            // Save to localStorage for future use
+            localStorage.setItem('playerSessionId', sessionId);
+            localStorage.setItem('playerId', playerId);
+            localStorage.setItem('playerName', playerName);
+          }
         }
         
-        if (!playerData) {
-          throw new Error('Player not found with this code');
+        if (!sessionId) {
+          throw new Error('No session ID available to fetch session details');
         }
         
-        logWithTimestamp(`Player found: ${playerData.nickname || playerData.player_code}, session ID: ${playerData.session_id}`, 'info');
-        setPlayerId(playerData.id);
-        setPlayerName(playerData.nickname || playerData.player_code);
-        
-        if (!playerData.session_id) {
-          throw new Error('Player has no associated game session');
-        }
-        
-        // Save player data to localStorage for persistence
-        localStorage.setItem('playerCode', gameCode);
-        localStorage.setItem('playerName', playerData.nickname || playerData.player_code);
-        localStorage.setItem('playerId', playerData.id);
-        localStorage.setItem('playerSessionId', playerData.session_id);
-        
-        // Step 2: Get the session using the player's session_id
+        // Step 2: Get the session using the session_id
         const { data: sessionData, error: sessionError } = await supabase
           .from('game_sessions')
-          .select('*')  // Select all columns to avoid missing column errors
-          .eq('id', playerData.session_id)
+          .select('*')
+          .eq('id', sessionId)
           .single();
         
         if (sessionError) {
@@ -105,7 +124,7 @@ export function useGameSession(gameCode: string) {
     }
     
     fetchSessionDetails();
-  }, [gameCode]);
+  }, [gameCode, player]);
   
   return {
     sessionDetails,
@@ -113,7 +132,7 @@ export function useGameSession(gameCode: string) {
     sessionError,
     currentWinPattern,
     gameType,
-    playerId,
-    playerName
+    playerId: player?.id,
+    playerName: player?.name
   };
 }
