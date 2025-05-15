@@ -22,6 +22,8 @@ export interface ClaimData {
     layout_mask?: number;
     numbers?: number[];
     calledNumbers?: number[];
+    gameNumber?: number;
+    game_number?: number;
   };
   ticket_details?: any; // For DB field
   ticket_serial?: string; // For DB field

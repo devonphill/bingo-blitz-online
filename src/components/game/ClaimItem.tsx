@@ -122,34 +122,61 @@ export default function ClaimItem({
     }
   };
 
-  // Format the timestamp for display
+  // Format the timestamp for display - improved to handle various formats and potential errors
   const formattedTime = React.useMemo(() => {
     try {
       const timestamp = claim.claimed_at || claim.timestamp;
       if (!timestamp) return "Unknown time";
-      return new Date(timestamp).toLocaleTimeString();
+      
+      // Parse date and format it nicely
+      const date = new Date(timestamp);
+      
+      // Check if date is valid before formatting
+      if (isNaN(date.getTime())) {
+        console.warn(`Invalid date from timestamp: ${timestamp}`);
+        return "Invalid date";
+      }
+      
+      // Format with time and date in readable format
+      return date.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+        day: 'numeric',
+        month: 'short'
+      });
     } catch (err) {
       console.error("Error formatting claim timestamp:", err);
       return "Invalid date";
     }
   }, [claim.claimed_at, claim.timestamp]);
 
-  // Get the win pattern from the claim data
+  // Get the win pattern from the claim data with better fallbacks
   const winPattern = claim.winPattern || claim.pattern_claimed || currentWinPattern || "Unknown";
 
   // Get the game number - safely extract from ticket_details if available
   const gameNumber = (() => {
     if (typeof claim.gameNumber === 'number') return claim.gameNumber;
+    
+    // Check ticket_details object (which might be stored under different property names)
     if (claim.ticket_details && typeof claim.ticket_details === 'object') {
-      return claim.ticket_details.game_number || "Unknown";
+      // Handle both camelCase and snake_case property names
+      return claim.ticket_details.gameNumber || 
+             claim.ticket_details.game_number || 
+             "Unknown";
     }
+    
+    // Check if game info is in the ticket property instead
     if (claim.ticket && typeof claim.ticket === 'object') {
-      return claim.ticket.game_number || "Unknown";
+      return claim.ticket.gameNumber || 
+             claim.ticket.game_number || 
+             "Unknown";
     }
+    
     return "Unknown";
   })();
 
-  // Get player name
+  // Get player name with fallbacks
   const playerName = claim.playerName || claim.player_name || claim.playerId || "Unknown Player";
 
   return (
