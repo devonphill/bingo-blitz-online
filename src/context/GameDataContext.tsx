@@ -31,4 +31,5 @@ export const GameDataContext = createContext<GameDataContextType>({
   gameType: null
 });
 
-export const useGameData = () => useContext(GameDataContext);
+// Update the hook to accept an optional sessionId parameter
+export const useGameData = (sessionId?: string) => useContext(GameDataContext);

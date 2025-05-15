@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -50,6 +51,7 @@ export default function PlayerGameLayout({ children, sessionId, gameId, gameStat
       try {
         // Fetch initial game data
         log(`Fetching initial game data for session ${sessionId}`, 'info');
+        // Pass sessionId to useGameData, it will now correctly accept this parameter
         const initialData = await useGameData(sessionId);
 
         if (initialData) {
