@@ -12,6 +12,10 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PlayerGameContent } from "@/components/game";
+import GameHeader from "@/components/game/GameHeader";
+// Remove incorrect imports for GameBoard, GameController
+import { useNetwork } from "@/contexts/NetworkStatusContext";
+import { ConnectionStatus } from "@/components/game"; // Assume this is exported from index.ts
 
 interface PlayerGameLayoutProps {
     playerCode: string;
@@ -22,6 +26,7 @@ export const PlayerGameLayout: React.FC<PlayerGameLayoutProps> = ({ playerCode }
     const [isLoading, setIsLoading] = useState(true);
     const [tickets, setTickets] = useState<any[]>([]);
     const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
+    const [autoMarking, setAutoMarking] = useState<boolean>(true); // Added state for autoMarking
     const { toast } = useToast();
 
     // Simulate loading state - in a real implementation you'd fetch tickets
@@ -65,9 +70,9 @@ export const PlayerGameLayout: React.FC<PlayerGameLayoutProps> = ({ playerCode }
                         <PlayerGameContent 
                             tickets={tickets}
                             playerCode={playerCode}
-                            currentSession={{ id: "", name: "Game Session" }}
-                            autoMarking={true}
-                            setAutoMarking={() => {}}
+                            currentSession={{ id: "", name: "Game Session" }} // Added required prop
+                            autoMarking={autoMarking} // Added required prop
+                            setAutoMarking={setAutoMarking} // Added required prop
                             playerName=""
                             playerId=""
                             onReconnect={() => {}}

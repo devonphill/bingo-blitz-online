@@ -1,6 +1,6 @@
 
-// Import from the shadcn/ui toast component
-import { toast as toastUI, useToast as useToastUI } from "@/components/ui/toast";
+// Re-export useToast and toast from our UI components
+import { useToast, toast } from "@/components/ui/use-toast";
 
-export const useToast = useToastUI;
-export const toast = toastUI;
+// Re-export for easier access throughout the app
+export { useToast, toast };
