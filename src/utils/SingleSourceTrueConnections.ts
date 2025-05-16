@@ -31,14 +31,15 @@ export class SingleSourceTrueConnections {
   private currentSessionIdInternal: string | null = null;
   private connectionStatusInternal: WebSocketConnectionStatus = 'disconnected';
   private isServiceInitializedInternal: boolean = false;
+  private listenerIdCounter: number = 0; // For generating unique listener IDs
   
   /**
    * Private constructor to enforce singleton pattern
    */
   private constructor() {
     this.webSocketService = new WebSocketService(supabase);
-    this.initializeBaseListeners();
-    logWithTimestamp('[SSTC] Singleton instance created', 'info');
+    this.initializeBaseWebServiceListeners();
+    logWithTimestamp('[SSTC] Singleton instance created and WebSocketService instantiated.', 'info');
   }
   
   /**
@@ -60,30 +61,84 @@ export class SingleSourceTrueConnections {
   
   /**
    * Initialize base listeners for WebSocket service
+   * Content to be implemented in the next step
    */
-  private initializeBaseListeners(): void {
-    // Set up global connection event listeners
-    // Note: These need to be adapted to match what WebSocketService actually provides
-    
-    // Connection opened handler
-    this.webSocketService.onOpen = () => {
-      this.isServiceInitializedInternal = true;
-      this.connectionStatusInternal = 'connected';
-      logWithTimestamp('[SSTC] WebSocket connection opened', 'info');
-    };
-    
-    // Connection closed handler
-    this.webSocketService.onClose = () => {
-      this.isServiceInitializedInternal = false;
-      this.connectionStatusInternal = 'disconnected';
-      logWithTimestamp('[SSTC] WebSocket connection closed', 'info');
-    };
-    
-    // Connection error handler
-    this.webSocketService.onError = (error: any) => {
-      this.connectionStatusInternal = 'error';
-      logWithTimestamp(`[SSTC] WebSocket connection error: ${error}`, 'error');
-    };
+  private initializeBaseWebServiceListeners(): void {
+    // Content to be added in the next step
+    logWithTimestamp('[SSTC] Base WebSocket service listeners to be set up.', 'info');
+  }
+  
+  // Stub methods to satisfy interface requirements
+  // These will be properly implemented in later steps
+  
+  public connect(sessionId: string): void {
+    logWithTimestamp(`[SSTC] Stub: Connect to session ${sessionId}`, 'info');
+  }
+  
+  public isConnected(): boolean {
+    return this.connectionStatusInternal === 'connected';
+  }
+  
+  public getConnectionState(): ConnectionState {
+    return this.connectionStatusInternal as ConnectionState;
+  }
+  
+  public getLastPing(): number | null {
+    return Date.now();
+  }
+  
+  public reconnect(): void {
+    logWithTimestamp('[SSTC] Stub: Reconnect called', 'info');
+  }
+  
+  public addConnectionListener(listener: (isConnected: boolean) => void): () => void {
+    logWithTimestamp('[SSTC] Stub: Add connection listener', 'info');
+    return () => {};
+  }
+  
+  public listenForEvent<T>(eventType: string, handler: (data: T) => void): () => void {
+    logWithTimestamp(`[SSTC] Stub: Listen for event ${eventType}`, 'info');
+    return () => {};
+  }
+  
+  public onNumberCalled(handler: (number: number | null, allNumbers: number[]) => void): () => void {
+    logWithTimestamp('[SSTC] Stub: onNumberCalled listener added', 'info');
+    return () => {};
+  }
+  
+  public onSessionProgressUpdate(handler: (update: any) => void): () => void {
+    logWithTimestamp('[SSTC] Stub: onSessionProgressUpdate listener added', 'info');
+    return () => {};
+  }
+  
+  public broadcastNumberCalled(sessionId: string, number: number, allNumbers: number[]): Promise<boolean> {
+    logWithTimestamp(`[SSTC] Stub: Broadcast number ${number} called for session ${sessionId}`, 'info');
+    return Promise.resolve(true);
+  }
+  
+  public broadcastWithRetry(channelName: string, eventName: string, payload: any): Promise<boolean> {
+    logWithTimestamp(`[SSTC] Stub: Broadcast with retry on channel ${channelName}, event ${eventName}`, 'info');
+    return Promise.resolve(true);
+  }
+  
+  public callNumber(number: number, sessionId?: string): Promise<boolean> {
+    logWithTimestamp(`[SSTC] Stub: Call number ${number} ${sessionId ? `for session ${sessionId}` : ''}`, 'info');
+    return Promise.resolve(true);
+  }
+  
+  public submitBingoClaim(ticket: any, playerCode: string, sessionId: string): boolean {
+    logWithTimestamp(`[SSTC] Stub: Submit bingo claim for session ${sessionId}`, 'info');
+    return true;
+  }
+  
+  public setupNumberUpdateListeners(
+    sessionId: string,
+    onNumberUpdate: (number: number, numbers: number[]) => void,
+    onGameReset: () => void,
+    instanceId: string
+  ): () => void {
+    logWithTimestamp(`[SSTC] Stub: Setup number update listeners for session ${sessionId}`, 'info');
+    return () => {};
   }
 }
 
