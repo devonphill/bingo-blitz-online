@@ -119,7 +119,8 @@ export const NetworkProvider: React.FC<{
     }
   }, []);
 
-  const value: NetworkContextValue = {
+// ... (previous code: imports, type definitions, context creation, NetworkProvider component body up to value object)
+  const value: NetworkContextValue = { // Line 114 (approximately, based on typical structure)
     isConnected,
     connectionState,
     connectionTimestamp,
@@ -129,14 +130,14 @@ export const NetworkProvider: React.FC<{
     connect,
     submitBingoClaim,
     updatePlayerPresence
-  };
+  }; // Line 132 - This semicolon terminates the 'value' object assignment.
 
-  return (
-    <NetworkContext.Provider value={value}>
-      {children}
-    </NetworkContext.Provider>
-  );
-};
+  return ( // Line 134 - This parenthesis opens the return statement's JSX block.
+    <NetworkContext.Provider value={value}> // Line 135 - Errors point here
+      {children}                             // Line 136
+    </NetworkContext.Provider>              // Line 137 - Error "Unterminated regular expression literal"
+  ); // Line 138 - Error "Declaration or statement expected."
+}; // Line 139 - Error "Declaration or statement expected."
 
 export const useNetwork = () => {
   const context = useContext(NetworkContext);
