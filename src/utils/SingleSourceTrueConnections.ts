@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { RealtimeChannel } from '@supabase/supabase-js';
@@ -37,7 +36,7 @@ export class SingleSourceTrueConnections {
    * Private constructor to enforce singleton pattern
    */
   private constructor() {
-    this.webSocketService = new WebSocketService(supabase);
+    this.webSocketService = WebSocketService.getInstance(supabase);
     this.initializeBaseWebServiceListeners();
     logWithTimestamp('[SSTC] Singleton instance created and WebSocketService instantiated.', 'info');
   }
