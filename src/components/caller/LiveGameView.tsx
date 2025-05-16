@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,7 +14,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useNetwork } from '@/contexts/NetworkStatusContext';
 import { useCallerClaimManagement } from '@/hooks/useCallerClaimManagement';
 import ClaimNotifications from './ClaimNotifications';
-import { useSessionPatternManager } from '@/hooks/useSessionPatternManager'; // Import our new hook
+import { useSessionPatternManager } from '@/hooks/useSessionPatternManager';
+import { useSessionProgress } from '@/hooks/useSessionProgress';
 
 interface WinPattern {
   id: string;
@@ -62,6 +64,7 @@ export function LiveGameView({
   const { toast } = useToast();
   const [connectedPlayers, setConnectedPlayers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [actualGameNumber, setActualGameNumber] = useState(currentGameNumber);
   
   // Track component mount state
   const isMounted = React.useRef(true);
@@ -78,8 +81,19 @@ export function LiveGameView({
   // Use our claim management hook
   const { claims, claimsCount, fetchClaims } = useCallerClaimManagement(sessionId || null);
 
-  // Use our session pattern manager hook with the fixed implementation
+  // Use our session pattern manager hook
   const { updateWinPattern, initializeSessionPattern, updatePatternPrizeInfo } = useSessionPatternManager(sessionId || null);
+
+  // Get session progress for latest game number
+  const { progress, refreshSessionProgress } = useSessionProgress(sessionId);
+
+  // Update local game number when session progress updates
+  useEffect(() => {
+    if (progress && progress.current_game_number) {
+      logWithTimestamp(`LiveGameView: Progress update received, current_game_number: ${progress.current_game_number}`);
+      setActualGameNumber(progress.current_game_number);
+    }
+  }, [progress]);
 
   // Log when currentWinPattern changes
   React.useEffect(() => {
@@ -130,10 +144,50 @@ export function LiveGameView({
     return () => clearInterval(interval);
   }, [sessionId, fetchClaims]);
   
+  // Fetch connected players
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    const fetchPlayers = async () => {
+      setIsLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('players')
+          .select('*')
+          .eq('session_id', sessionId);
+          
+        if (error) throw error;
+        
+        if (data) {
+          setConnectedPlayers(data);
+        }
+      } catch (err) {
+        console.error('Error fetching players:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchPlayers();
+    
+    // Set up a periodic refresh of player data
+    const interval = setInterval(() => {
+      if (isMounted.current) {
+        fetchPlayers();
+      }
+    }, 10000); // Refresh every 10 seconds
+    
+    return () => clearInterval(interval);
+  }, [sessionId]);
+  
   const handleReconnect = () => {
     // Simple reconnect using network context
     if (sessionId) {
       network.connect(sessionId);
+      
+      // Also refresh session progress and claims
+      refreshSessionProgress();
+      fetchClaims();
       
       toast({
         title: "Reconnecting",
@@ -253,6 +307,20 @@ export function LiveGameView({
     return allNumbers.filter(num => !calledNumbers.includes(num));
   }, [calledNumbers, gameType]);
 
+  // Update actual game number if the prop changes
+  useEffect(() => {
+    setActualGameNumber(prev => {
+      if (currentGameNumber !== prev) {
+        logWithTimestamp(`LiveGameView: Game number changed from ${prev} to ${currentGameNumber}`);
+        return currentGameNumber;
+      }
+      return prev;
+    });
+  }, [currentGameNumber]);
+
+  // Game number to display - use actual game number from progress if available
+  const displayGameNumber = progress?.current_game_number || actualGameNumber || currentGameNumber;
+  
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       <div className="md:col-span-2 space-y-6">
@@ -270,7 +338,7 @@ export function LiveGameView({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="bg-gray-100 p-4 rounded-md text-center">
                 <div className="text-sm text-gray-500 mb-1">Game</div>
-                <div className="text-2xl font-bold">{currentGameNumber} / {numberOfGames}</div>
+                <div className="text-2xl font-bold">{displayGameNumber} / {numberOfGames}</div>
               </div>
               
               <div className="bg-gray-100 p-4 rounded-md text-center">
@@ -365,7 +433,7 @@ export function LiveGameView({
         isOpen={isClaimSheetOpen}
         onClose={closeClaimSheet}
         sessionId={sessionId}
-        gameNumber={currentGameNumber}
+        gameNumber={displayGameNumber}
         currentCalledNumbers={calledNumbers}
         gameType={gameType}
         currentNumber={lastCalledNumber}
