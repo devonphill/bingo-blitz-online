@@ -1,82 +1,61 @@
 
-// Import the logWithTimestamp rather than the non-existent onSessionProgressUpdate
 import { logWithTimestamp } from '@/utils/logUtils';
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { CHANNEL_NAMES, EVENT_TYPES } from '@/constants/websocketConstants';
 
-export const setupChannelListeners = (sessionId: string, onError: (error: any) => void) => {
-  if (!sessionId) {
-    logWithTimestamp("Cannot setup channel listeners without session ID", "warn");
-    return () => {};
-  }
-  
-  try {
-    const singleSource = getSingleSourceConnection();
-    
-    // Set up connection to the session
-    singleSource.connect(sessionId);
-    
-    // Log successful setup
-    logWithTimestamp(`Channel listeners set up for session ${sessionId}`, "info");
-    
-    // Return cleanup function
-    return () => {
-      // No explicit disconnect needed as SingleSourceTrueConnections
-      // manages connection reference counting internally
-      logWithTimestamp(`Cleaning up channel listeners for session ${sessionId}`, "info");
-    };
-  } catch (error) {
-    onError(error);
-    return () => {};
-  }
-};
-
-// Add specific listener functions to support other components
-export const addGameStateUpdateListener = (
+/**
+ * Sets up claim update listeners for a session
+ * 
+ * @param sessionId The session ID to listen for
+ * @param onClaimUpdate Callback for claim updates
+ * @returns Cleanup function
+ */
+export const setupChannelListeners = (
   sessionId: string,
-  callback: (state: any) => void
-) => {
+  onClaimUpdate: (claimData: any) => void
+): () => void => {
   if (!sessionId) {
-    logWithTimestamp("Cannot add game state listener without session ID", "warn");
+    logWithTimestamp('Cannot set up channel listeners: No session ID provided', 'error');
     return () => {};
   }
   
-  const singleSource = getSingleSourceConnection();
-  return singleSource.listenForEvent(
-    CHANNEL_NAMES.GAME_UPDATES,
-    EVENT_TYPES.GAME_STATE_UPDATE,
-    (data: any) => {
-      if (data?.sessionId === sessionId) {
-        callback(data);
+  const connection = getSingleSourceConnection();
+  if (!connection) {
+    logWithTimestamp('Cannot set up channel listeners: Connection not available', 'error');
+    return () => {};
+  }
+  
+  logWithTimestamp(`Setting up claim update listeners for session ${sessionId}`, 'info');
+  
+  // Listen for claim validation events
+  const validationCleanup = connection.listenForEvent(
+    CHANNEL_NAMES.CLAIM_UPDATES,
+    EVENT_TYPES.CLAIM_VALIDATION,
+    (payload: any) => {
+      // Only process updates for our session
+      if (payload?.sessionId === sessionId) {
+        logWithTimestamp(`Received claim validation for session ${sessionId}`, 'info');
+        onClaimUpdate(payload);
       }
     }
   );
-};
-
-export const addConnectionStatusListener = (
-  callback: (connected: boolean) => void
-) => {
-  const singleSource = getSingleSourceConnection();
-  return singleSource.addConnectionListener(callback);
-};
-
-export const addNumberCalledListener = (
-  sessionId: string,
-  callback: (number: number, calledNumbers: number[]) => void
-) => {
-  if (!sessionId) {
-    logWithTimestamp("Cannot add number called listener without session ID", "warn");
-    return () => {};
-  }
   
-  const singleSource = getSingleSourceConnection();
-  return singleSource.listenForEvent(
-    CHANNEL_NAMES.GAME_UPDATES,
-    EVENT_TYPES.NUMBER_CALLED,
-    (data: any) => {
-      if (data?.sessionId === sessionId) {
-        callback(data.number, data.calledNumbers || []);
+  // Listen for claim result events
+  const resultCleanup = connection.listenForEvent(
+    CHANNEL_NAMES.CLAIM_UPDATES,
+    EVENT_TYPES.CLAIM_RESULT,
+    (payload: any) => {
+      // Only process updates for our session
+      if (payload?.sessionId === sessionId) {
+        logWithTimestamp(`Received claim result for session ${sessionId}`, 'info');
+        onClaimUpdate(payload);
       }
     }
   );
+  
+  // Return a combined cleanup function
+  return () => {
+    validationCleanup();
+    resultCleanup();
+  };
 };

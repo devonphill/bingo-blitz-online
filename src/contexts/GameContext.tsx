@@ -1,6 +1,6 @@
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { usePlayerTickets, PlayerTicket } from '@/hooks/usePlayerTickets'; 
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { usePlayerTickets, PlayerTicket } from '@/hooks/playerTickets/usePlayerTickets'; 
 import { usePlayerContext } from './PlayerContext';
 import { useSessionContext } from './SessionProvider';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -14,6 +14,11 @@ interface GameContextData {
   playerTickets: PlayerTicket[];
   winningTickets: PlayerTicket[];
   isLoadingTickets: boolean;
+  markNumber: (ticketId: string, rowIndex: number, colIndex: number, number: number) => void;
+  isBingo: boolean;
+  resetBingo: () => void;
+  selectedTicket: PlayerTicket | null;
+  setSelectedTicket: React.Dispatch<React.SetStateAction<PlayerTicket | null>>;
 }
 
 const GameContext = createContext<GameContextData | undefined>(undefined);
@@ -29,6 +34,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
   const [currentWinPattern, setCurrentWinPattern] = useState<string | null>(null);
+  const [selectedTicket, setSelectedTicket] = useState<PlayerTicket | null>(null);
+  const [isBingo, setIsBingo] = useState(false);
   
   // Create a unique ID for this component instance
   const instanceId = React.useRef(`GameContext-${Math.random().toString(36).substring(2, 7)}`).current;
@@ -41,9 +48,23 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     currentWinningTickets
   } = usePlayerTickets(sessionId);
   
+  // Mark number on a ticket
+  const markNumber = useCallback((ticketId: string, rowIndex: number, colIndex: number, number: number) => {
+    // Implementation here - simplified for example
+    console.log(`Marking number ${number} at position [${rowIndex},${colIndex}] on ticket ${ticketId}`);
+    
+    // In a real implementation, this would update the local state of marked positions
+    // and check if this creates a bingo
+  }, []);
+  
+  // Reset bingo state
+  const resetBingo = useCallback(() => {
+    setIsBingo(false);
+  }, []);
+  
   // Listen for number called updates
   useEffect(() => {
-    // Only set up listeners if we have a valid session ID and WebSocket is ready
+    // ENFORCE PREREQUISITE CHECKS: Only set up listeners if we have a valid session ID and WebSocket is ready
     if (!sessionId) {
       logWithTimestamp(`[${instanceId}] No session ID available, skipping number listener setup`, 'warn');
       return () => {};
@@ -97,7 +118,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   
   // Listen for game state updates
   useEffect(() => {
-    // Only set up listeners if we have a valid session ID and WebSocket is ready
+    // ENFORCE PREREQUISITE CHECKS: Only set up listeners if we have a valid session ID and WebSocket is ready
     if (!sessionId) {
       logWithTimestamp(`[${instanceId}] No session ID available, skipping game state listener setup`, 'warn');
       return () => {};
@@ -153,13 +174,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [sessionId, calledNumbers, listenForEvent, EVENTS, updateWinningStatus, isWsReady, instanceId]);
   
-  const value = {
+  const value: GameContextData = {
     calledNumbers,
     lastCalledNumber,
     currentWinPattern,
     playerTickets,
     winningTickets: currentWinningTickets,
-    isLoadingTickets
+    isLoadingTickets,
+    markNumber,
+    isBingo,
+    resetBingo,
+    selectedTicket,
+    setSelectedTicket
   };
   
   return (

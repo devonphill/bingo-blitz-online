@@ -1,11 +1,10 @@
-
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { performClaimBroadcast } from './claimHandlers';
 import { setupChannelListeners } from './channelListeners';
 import { NetworkProviderProps, NetworkContextType } from './types';
-import { updatePlayerPresenceInDb } from './playerPresence';
+import { updatePlayerPresence } from './playerPresence';
 
 // Create Context
 export const NetworkContext = createContext<NetworkContextType>({
@@ -108,7 +107,7 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({
   
   // Player presence
   const updatePlayerPresence = useCallback(async (sessionId: string, playerData: any) => {
-    return updatePlayerPresenceInDb(sessionId, playerData);
+    return updatePlayerPresence(sessionId, playerData);
   }, []);
   
   // Set up channel listeners

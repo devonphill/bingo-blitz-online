@@ -1,28 +1,44 @@
 
-import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { supabase } from '@/integrations/supabase/client';
 
 /**
  * Update player presence in the database
- * 
- * @param presenceData Player presence data containing player_id and player_code
- * @returns Whether the operation was successful
+ * @param sessionId Game session ID
+ * @param playerData Player data to update
+ * @returns Promise resolving to success state
  */
-export async function updatePlayerPresence(presenceData: any): Promise<boolean> {
+export const updatePlayerPresence = async (
+  sessionId: string,
+  playerData: any
+): Promise<boolean> => {
+  if (!sessionId || !playerData) {
+    logWithTimestamp('Cannot update player presence: Missing sessionId or playerData', 'error');
+    return false;
+  }
+  
   try {
-    // FIX: Use the 'players' table instead of 'player_presence'
-    // Since 'updated_at' doesn't exist, use joined_at which is a timestamp field
+    // Update the last_seen timestamp for the player
     const { error } = await supabase
       .from('players')
       .update({
-        joined_at: new Date().toISOString() // Use joined_at instead of updated_at
+        last_seen: new Date().toISOString(),
+        ...playerData
       })
-      .eq('id', presenceData.player_id)
-      .eq('player_code', presenceData.player_code);
+      .eq('id', playerData.id);
       
-    return !error;
-  } catch (err) {
-    logWithTimestamp(`Error updating player presence: ${(err as Error).message}`, 'error');
+    if (error) {
+      logWithTimestamp(`Error updating player presence: ${error.message}`, 'error');
+      return false;
+    }
+    
+    logWithTimestamp(`Updated presence for player ${playerData.id} in session ${sessionId}`, 'info');
+    return true;
+  } catch (error) {
+    logWithTimestamp(`Exception updating player presence: ${error}`, 'error');
     return false;
   }
-}
+};
+
+// Alias for backward compatibility
+export const updatePlayerPresenceInDb = updatePlayerPresence;

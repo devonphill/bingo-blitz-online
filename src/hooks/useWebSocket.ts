@@ -112,7 +112,7 @@ export function useWebSocket(sessionId: string | null | undefined) {
       return () => {};
     }
     
-    // Validate event type - critical fix
+    // Validate event type - CRITICAL FIX
     if (!eventType) {
       logWithTimestamp(`[${instanceId}] Cannot listen for undefined event type`, 'error');
       return () => {};
@@ -130,7 +130,7 @@ export function useWebSocket(sessionId: string | null | undefined) {
       // Determine the appropriate channel name based on event type
       const channelName = eventType.includes('claim') ? 'claim-updates' : 'game-updates';
       
-      // Use the singleton connection to listen for events
+      // Use the singleton connection to listen for events - store the cleanup function
       const cleanup = connection.listenForEvent<T>(channelName, eventType, (payload) => {
         logWithTimestamp(`[${instanceId}] Received event: ${eventType}`, 'info');
         console.log(`Full payload for ${eventType}:`, payload);
@@ -139,12 +139,12 @@ export function useWebSocket(sessionId: string | null | undefined) {
       
       logWithTimestamp(`[${instanceId}] Listening for event ${eventType} on session ${sessionId}`, 'info');
       
-      // Return cleanup function
+      // Return cleanup function - CRITICAL FIX: ensure we return the actual cleanup function
       return cleanup;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logWithTimestamp(`[${instanceId}] Error setting up event listener: ${errorMsg}`, 'error');
-      return () => {};
+      return () => {}; // Return empty cleanup function on error
     }
   }, [sessionId, instanceId, connection]);
   

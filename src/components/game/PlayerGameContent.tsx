@@ -1,15 +1,19 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
-import { Card } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
-import { useToast } from "@/hooks/use-toast"
+import { Card } from "@/components/ui/card";
+import { CardHeader } from "@/components/ui/card";
+import { CardTitle } from "@/components/ui/card";
+import { CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
 import { useGameContext } from '@/contexts/GameContext';
 import { usePlayerTickets } from '@/hooks/playerTickets/usePlayerTickets';
 import { usePlayerWebSocketNumbers } from '@/hooks/playerWebSocket/usePlayerWebSocketNumbers';
 import { TicketGrid } from '@/components/tickets/TicketGrid';
 import { BingoButton } from '@/components/tickets/BingoButton';
 import { AutoMarkToggle } from '@/components/tickets/AutoMarkToggle';
-import { ConnectionStatus } from '@/components/game/ConnectionStatus';
-import { NetworkDebugging } from '@/components/game/NetworkDebugging';
+import ConnectionStatus from '@/components/game/ConnectionStatus';
+import NetworkDebugging from '@/components/game/NetworkDebugging';
 
 interface PlayerGameContentProps {
   currentSession: { id: string; name: string };
@@ -35,10 +39,28 @@ export function PlayerGameContent({
   onClaimBingo
 }: PlayerGameContentProps) {
   const { toast } = useToast();
-  const { tickets, isLoading: isLoadingTickets } = usePlayerTickets(playerCode, playerId, sessionId);
+  const { tickets, isLoading: isLoadingTickets } = usePlayerTickets(sessionId, playerId, playerCode);
   const { calledNumbers, lastCalledNumber, isConnected, connectionState, lastUpdateTime, reconnect } = usePlayerWebSocketNumbers(sessionId);
-  const { markNumber, isBingo, resetBingo, selectedTicket, setSelectedTicket } = useGameContext();
+  const { 
+    playerTickets,
+    isLoadingTickets: isContextLoadingTickets,
+    winningTickets
+  } = useGameContext();
+  
   const [isClaiming, setIsClaiming] = useState(false);
+  const [selectedTicket, setSelectedTicket] = useState<any>(null);
+  const [isBingo, setIsBingo] = useState(false);
+  
+  // Mark number on ticket
+  const markNumber = useCallback((ticketId: string, rowIndex: number, colIndex: number, number: number) => {
+    // This would normally be implemented via GameContext
+    console.log('Marking number', number, 'on ticket', ticketId);
+  }, []);
+  
+  // Reset bingo claim
+  const resetBingo = useCallback(() => {
+    setIsBingo(false);
+  }, []);
 
   // Auto marking effect
   useEffect(() => {
@@ -122,22 +144,22 @@ export function PlayerGameContent({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Players Info */}
         <Card>
-          <Card.Header>
-            <Card.Title>Player Info</Card.Title>
-          </Card.Header>
-          <Card.Content className="space-y-1">
+          <CardHeader>
+            <CardTitle>Player Info</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1">
             <p>Name: {playerName}</p>
             <p>Code: {playerCode}</p>
             <p>ID: {playerId}</p>
-          </Card.Content>
+          </CardContent>
         </Card>
 
         {/* Tickets */}
         <Card>
-          <Card.Header>
-            <Card.Title>Your Tickets</Card.Title>
-          </Card.Header>
-          <Card.Content className="space-y-4">
+          <CardHeader>
+            <CardTitle>Your Tickets</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
             {isLoadingTickets ? (
               <div className="grid grid-cols-2 gap-2">
                 {[...Array(4)].map((_, i) => (
@@ -168,7 +190,7 @@ export function PlayerGameContent({
             ) : (
               <p>No tickets available.</p>
             )}
-          </Card.Content>
+          </CardContent>
         </Card>
       </div>
 

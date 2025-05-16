@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useNetworkContext } from './network';
 import { ConnectionState } from '@/constants/connectionConstants';
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
@@ -21,7 +21,7 @@ const NetworkStatusContext = createContext<NetworkStatusContextType>({
 export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
   children 
 }) => {
-  const { isConnected: networkIsConnected, sessionId, connect } = useNetworkContext();
+  const { isConnected: networkIsConnected, sessionId } = useNetworkContext();
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   
   // Use direct connection to SingleSourceTrueConnections
@@ -38,11 +38,12 @@ export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({
     return cleanup;
   }, []);
   
-  const reconnect = React.useCallback(() => {
+  const reconnect = useCallback(() => {
     if (sessionId) {
-      connect(sessionId);
+      const connection = getSingleSourceConnection();
+      connection.connect(sessionId);
     }
-  }, [connect, sessionId]);
+  }, [sessionId]);
   
   const value = {
     isConnected: networkIsConnected,
