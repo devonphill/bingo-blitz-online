@@ -1,8 +1,9 @@
+
 /**
  * WebSocket communication types
  */
 
-// WebSocketConnectionStatus - modified to match CONNECTION_STATES values
+// WebSocketConnectionStatus - derived from CONNECTION_STATES values
 export type WebSocketConnectionStatus = 
   | 'connected'
   | 'connecting'
