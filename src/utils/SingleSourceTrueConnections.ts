@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { RealtimeChannel } from '@supabase/supabase-js';
@@ -75,7 +76,7 @@ export class SingleSourceTrueConnections {
   }
   
   public isConnected(): boolean {
-    return this.connectionStatusInternal === 'connected';
+    return this.connectionStatusInternal === CONNECTION_STATES.CONNECTED;
   }
   
   public getConnectionState(): ConnectionState {
