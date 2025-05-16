@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Sheet,
@@ -344,7 +343,7 @@ export default function ClaimVerificationSheet({
           </div>
           
           <ClaimsList
-            claims={claims || []}
+            claims={claims as ClaimData[] || []} // Fixed: Type cast to ensure compatibility with ClaimData[]
             currentCalledNumbers={currentCalledNumbers}
             currentNumber={currentNumber}
             gameType={gameType}
