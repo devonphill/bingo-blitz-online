@@ -66,7 +66,8 @@ export default function PlayerClaimCheckingNotification({
         // Check if this is my claim (based on playerCode, if available)
         const isMyClaimChecking = playerCode && (
           payload.playerCode === playerCode || 
-          payload.player_code === playerCode
+          payload.player_code === playerCode ||
+          payload.playerId === playerCode
         );
         
         setIsMyClaimBeingChecked(isMyClaimChecking);
@@ -91,13 +92,18 @@ export default function PlayerClaimCheckingNotification({
         console.log('Claim result payload:', payload);
 
         // Check if this claim result is for the current player
-        if (playerCode && payload.playerId !== playerCode && !payload.isGlobalBroadcast) {
+        const isForCurrentPlayer = playerCode && (
+          payload.playerId === playerCode || 
+          payload.playerCode === playerCode
+        );
+
+        if (!isForCurrentPlayer && !payload.isGlobalBroadcast) {
           logWithTimestamp(`[${instanceId}] Ignoring claim result for different player (${payload.playerId} != ${playerCode})`, 'info');
           return;
         }
 
         // If we don't have a claim being checked, but this is for our player code, open the sheet
-        if (!claimBeingChecked && playerCode && payload.playerId === playerCode) {
+        if (!claimBeingChecked && isForCurrentPlayer) {
           // Set minimal claim data from the result
           setClaimBeingChecked({
             id: payload.claimId || 'unknown',
@@ -106,27 +112,27 @@ export default function PlayerClaimCheckingNotification({
             sessionId: sessionId,
             ticket: payload.ticket || {},
             calledNumbers: [],
-            winPattern: payload.patternClaimed || 'unknown',
+            winPattern: payload.patternClaimed || payload.winPattern || 'unknown',
             gameType: 'mainstage',
             timestamp: payload.timestamp || new Date().toISOString(),
             status: payload.result || 'pending'
           });
           
-          setIsMyClaimBeingChecked(true);
+          setIsMyClaimBeingChecked(isForCurrentPlayer);
           setIsOpen(true);
         }
 
         // Set the claim result
-        setClaimResult(payload.result === 'valid' ? 'valid' : 'rejected');
+        setClaimResult(payload.result === 'valid' || payload.validationStatus === 'VALID' ? 'valid' : 'rejected');
         
         // Play notification sound for result
         playNotificationSound();
 
         // Log the result
-        logWithTimestamp(`[${instanceId}] Claim result received: ${payload.result}`, 'info');
+        logWithTimestamp(`[${instanceId}] Claim result received: ${payload.result || payload.validationStatus}`, 'info');
         
         // If the sheet is open, keep it open for 3 seconds and then close it
-        if (isOpen || (playerCode && payload.playerId === playerCode)) {
+        if (isOpen || isForCurrentPlayer) {
           setTimeout(() => {
             setIsOpen(false);
             setClaimBeingChecked(null);
@@ -146,8 +152,14 @@ export default function PlayerClaimCheckingNotification({
     
     // Listen for claim result events
     const cleanupResult = listenForEvent(
-      'claim-result',
+      EVENTS.CLAIM_RESULT,
       handleClaimResultEvent
+    );
+    
+    // Listen for the new claim resolution event
+    const cleanupResolution = listenForEvent(
+      EVENTS.CLAIM_RESOLUTION,
+      handleClaimResultEvent  // Reuse the same handler as it will process the same type of data
     );
     
     // Also listen to custom browser events that might be dispatched by other components
@@ -157,7 +169,7 @@ export default function PlayerClaimCheckingNotification({
       
       if (event.detail?.claim && event.detail?.type === 'checking') {
         handleClaimValidatingEvent(event.detail.claim);
-      } else if (event.detail?.claim && event.detail?.type === 'result') {
+      } else if (event.detail?.claim && (event.detail?.type === 'result' || event.detail?.type === 'resolution')) {
         handleClaimResultEvent(event.detail.claim);
       }
     };
@@ -183,6 +195,7 @@ export default function PlayerClaimCheckingNotification({
     return () => {
       cleanupValidating();
       cleanupResult();
+      cleanupResolution();
       window.removeEventListener('claimBroadcast', handleCustomEvent as EventListener);
       window.removeEventListener('forceOpenClaimDrawer', handleForceOpenEvent as EventListener);
       logWithTimestamp(`[${instanceId}] Cleaned up claim validating events listener`, 'info');

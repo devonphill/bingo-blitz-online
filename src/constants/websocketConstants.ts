@@ -6,7 +6,8 @@
 
 // Primary channel name used for all game-related WebSocket communications
 export const CHANNEL_NAMES = {
-  GAME_UPDATES: 'game-updates'
+  GAME_UPDATES: 'game-updates',
+  CLAIM_UPDATES: 'claim-updates'
 };
 
 // Event types for different message types
@@ -20,12 +21,12 @@ export const EVENT_TYPES = {
   WIN_PATTERN_UPDATED: 'win-pattern-updated',
   GAME_STATUS_UPDATED: 'game-status-updated',
   CLAIM_RESULT: 'claim-result',
-  CLAIM_RESOLUTION: 'claim-resolution', // New event for the claim resolution workflow
+  CLAIM_RESOLUTION: 'claim-resolution', // Event for the claim resolution workflow
+  CLAIM_VALIDATED: 'claim-validated',
   
   // Player -> Caller events
   CLAIM_SUBMITTED: 'claim-submitted',
-  PLAYER_NAME: 'player-name',
-  CLAIM_VALIDATED: 'claim-validated'
+  PLAYER_NAME: 'player-name'
 };
 
 // Connection states
