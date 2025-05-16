@@ -1,6 +1,9 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { setupChannelListeners } from './channelListeners';
+import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
+import { CHANNEL_NAMES, EVENT_TYPES } from '@/constants/websocketConstants';
 
 export const NetworkContext = createContext<any>(null);
 
@@ -29,6 +32,35 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const recordHeartbeat = () => {
     setLastHeartbeat(new Date());
     setIsConnected(true);
+  };
+
+  // Submit bingo claim
+  const submitBingoClaim = (ticket: any, playerCode: string, sessionId: string) => {
+    if (!ticket || !playerCode || !sessionId) {
+      logWithTimestamp('Cannot submit bingo claim: Missing required parameters', 'error');
+      return false;
+    }
+
+    try {
+      const singleSource = getSingleSourceConnection();
+      
+      // Prepare claim data
+      const claimData = {
+        playerCode,
+        sessionId,
+        ticket,
+        timestamp: new Date().toISOString()
+      };
+      
+      // Broadcast claim
+      singleSource.broadcast(CHANNEL_NAMES.CLAIM_UPDATES, EVENT_TYPES.CLAIM_SUBMITTED, claimData);
+      
+      logWithTimestamp(`Bingo claim submitted for player ${playerCode}`, 'info');
+      return true;
+    } catch (error) {
+      logWithTimestamp(`Error submitting bingo claim: ${error}`, 'error');
+      return false;
+    }
   };
 
   // Set up channel listeners when session ID changes
@@ -62,6 +94,21 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => clearInterval(interval);
   }, [sessionId, lastHeartbeat]);
 
+  // Connect function
+  const connect = (sessionId: string) => {
+    if (!sessionId) {
+      logWithTimestamp('Cannot connect: No session ID provided', 'error');
+      return false;
+    }
+    
+    logWithTimestamp(`Connecting to session ${sessionId}`, 'info');
+    updateSessionId(sessionId);
+    
+    // Use SingleSourceTrueConnections to connect
+    const singleSource = getSingleSourceConnection();
+    return singleSource.connect(sessionId);
+  };
+
   const value = {
     sessionId,
     isConnected,
@@ -69,6 +116,8 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     lastHeartbeat,
     updateSessionId,
     recordHeartbeat,
+    connect,
+    submitBingoClaim
   };
 
   return (
@@ -85,3 +134,31 @@ export const useNetworkContext = () => {
   }
   return context;
 };
+
+// Export a temporary useNetwork hook to fix build errors
+export const useNetwork = () => {
+  const {
+    sessionId,
+    isConnected,
+    networkError,
+    lastHeartbeat,
+    updateSessionId,
+    recordHeartbeat,
+    connect,
+    submitBingoClaim
+  } = useNetworkContext();
+  
+  return {
+    sessionId,
+    isConnected,
+    networkError,
+    lastHeartbeat,
+    updateSessionId,
+    recordHeartbeat,
+    connect,
+    submitBingoClaim
+  };
+};
+
+// Export ConnectionState from constants for components that need it
+export { ConnectionState } from '@/constants/connectionConstants';

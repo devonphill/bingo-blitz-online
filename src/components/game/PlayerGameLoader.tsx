@@ -1,183 +1,90 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
-import { useNetwork } from '@/contexts/network';
-import { useGameManager } from '@/contexts/GameManager';
-import { logWithTimestamp } from '@/utils/logUtils';
-import { PlayerGameContent } from './PlayerGameContent';
-import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import ConnectionStatus from './ConnectionStatus';
-import PlayerLobby from './PlayerLobby';
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Spinner } from '@/components/ui/spinner';
+import { useNetworkContext } from '@/contexts/network';
+import { usePlayerContext } from '@/contexts/PlayerContext';
 
 interface PlayerGameLoaderProps {
-  sessionName: string;
-  sessionId: string;
-  playerCode: string;
-  playerName?: string;
-  brandingInfo?: any;
+  children: React.ReactNode;
 }
 
-export default function PlayerGameLoader({
-  sessionName,
-  sessionId,
-  playerCode,
-  playerName,
-  brandingInfo
-}: PlayerGameLoaderProps) {
-  const [tickets, setTickets] = useState<any[]>([]);
+export default function PlayerGameLoader({ children }: PlayerGameLoaderProps) {
+  const { playerCode } = useParams<{ playerCode: string }>();
+  const navigate = useNavigate();
+  const { player, loadPlayer } = usePlayerContext();
+  const { connect } = useNetworkContext();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [autoMarking, setAutoMarking] = useState(true);
-  const [gameStatus, setGameStatus] = useState<string | null>(null);
-  const [currentSession, setCurrentSession] = useState<any>(null);
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { session: authSession, user } = useAuth();
-  const network = useNetwork();
-  const { getSessionById } = useGameManager();
-
-  // Load automarking preference from localStorage
+  
+  // Load player data and connect to session
   useEffect(() => {
-    const storedAutoMarking = localStorage.getItem('autoMarking');
-    if (storedAutoMarking !== null) {
-      setAutoMarking(storedAutoMarking === 'true');
-    }
-  }, []);
-
-  // Fetch tickets and session status on initial load
-  const fetchTickets = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // Fetch tickets from API
-      const response = await fetch(`/api/player/tickets?session_id=${sessionId}&player_code=${playerCode}`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch tickets: ${response.status} ${response.statusText}`);
+    const initializePlayer = async () => {
+      if (!playerCode) {
+        setError('No player code provided');
+        setIsLoading(false);
+        return;
       }
-      const data = await response.json();
-      setTickets(data);
-
-      // Fetch session status
-      const sessionData = await getSessionById(sessionId);
-      if (!sessionData) {
-        throw new Error('Failed to fetch session data');
-      }
-      setCurrentSession(sessionData);
-      setGameStatus(sessionData.status);
-    } catch (e: any) {
-      logWithTimestamp(`Error fetching tickets: ${e.message}`, 'error');
-      setError(e.message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [sessionId, playerCode, getSessionById]);
-
-  // Fetch session status separately
-  const fetchSessionStatus = useCallback(async () => {
-    try {
-      const sessionData = await getSessionById(sessionId);
-      if (!sessionData) {
-        throw new Error('Failed to fetch session data');
-      }
-      setCurrentSession(sessionData);
-      setGameStatus(sessionData.status);
-    } catch (e: any) {
-      logWithTimestamp(`Error fetching session status: ${e.message}`, 'error');
-      setError(e.message);
-    }
-  }, [sessionId, getSessionById]);
-
-  // Refresh status and tickets
-  const handleRefreshStatus = useCallback(() => {
-    fetchTickets();
-    fetchSessionStatus();
-  }, [fetchTickets, fetchSessionStatus]);
-
-  // Handle reconnect using the network context
-  const handleReconnect = () => {
-    network.connect(sessionId);
-  };
-
-  // Initial data fetch
-  useEffect(() => {
-    if (sessionId && playerCode) {
-      fetchTickets();
-      fetchSessionStatus();
       
-      // Connect to session through network context
-      network.connect(sessionId);
-    }
-  }, [sessionId, playerCode, fetchTickets, fetchSessionStatus, network]);
-
-  // Check authentication and session
-  useEffect(() => {
-    if (!authSession) {
-      navigate('/auth/signin');
-    }
-  }, [authSession, navigate]);
-
-  if (!authSession) {
-    return <div>Please sign in to play.</div>;
+      try {
+        setIsLoading(true);
+        setError(null);
+        
+        // Load player data
+        const playerData = await loadPlayer(playerCode);
+        
+        if (!playerData || !playerData.sessionId) {
+          setError('Player data not found or invalid');
+          setIsLoading(false);
+          return;
+        }
+        
+        // Connect to game session
+        connect(playerData.sessionId);
+        
+        setIsLoading(false);
+      } catch (error) {
+        setError('Failed to load player data');
+        setIsLoading(false);
+      }
+    };
+    
+    initializePlayer();
+  }, [playerCode, loadPlayer, connect]);
+  
+  // Handle errors
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[50vh] p-4">
+        <div className="text-red-500 mb-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+        </div>
+        <h2 className="text-xl font-bold mb-2">Error Loading Game</h2>
+        <p className="text-gray-600 mb-4">{error}</p>
+        <button 
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          onClick={() => navigate('/player/join')}
+        >
+          Return to Join Page
+        </button>
+      </div>
+    );
   }
-
-  return (
-    <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-          <h1 className="text-3xl font-bold text-gray-900">{sessionName}</h1>
-          <ConnectionStatus 
-            sessionId={sessionId}
-            onReconnect={handleReconnect}
-            className="mt-2"
-          />
-        </div>
-      </header>
-
-      <main>
-        <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-          {isLoading && !authSession && (
-            <PlayerLobby
-              sessionName={sessionName}
-              sessionId={sessionId}
-              playerName={playerName}
-              onRefreshStatus={handleRefreshStatus}
-              errorMessage={error || null}
-              gameStatus={gameStatus}
-              brandingInfo={brandingInfo || {}}
-            />
-          )}
-
-          {!isLoading && tickets.length > 0 && currentSession && (
-            <PlayerGameContent
-              tickets={tickets}
-              currentSession={currentSession}
-              autoMarking={autoMarking}
-              setAutoMarking={setAutoMarking}
-              playerCode={playerCode}
-              playerName={playerName}
-              playerId={user?.id}
-              onRefreshTickets={handleRefreshStatus}
-              onReconnect={handleReconnect}
-              sessionId={sessionId}
-            />
-          )}
-
-          {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
-              <strong className="font-bold">Error:</strong>
-              <span className="block sm:inline">{error}</span>
-            </div>
-          )}
-
-          {isLoading && authSession && (
-            <div className="flex justify-center items-center h-64">
-              <LoadingSpinner size="lg" />
-            </div>
-          )}
-        </div>
-      </main>
-    </div>
-  );
+  
+  // Show loader while initializing
+  if (isLoading || !player) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <Spinner />
+        <span className="ml-3">Loading game session...</span>
+      </div>
+    );
+  }
+  
+  // Render children once loaded
+  return <>{children}</>;
 }

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -51,10 +52,24 @@ export default function PlayerClaimCheckingNotification({
     logWithTimestamp(`[${instanceId}] Setting up claim validation listener for session ${sessionId}`, 'info');
 
     // Function to handle claim validating event
-    const handleClaimValidatingEvent = (payload: any) => {
+    const handleClaimValidatingEvent = (payloadWrapper: any) => {
       try {
-        logWithTimestamp(`[${instanceId}] Received claim validating event:`, 'info');
-        console.log('Claim validating payload:', payload);
+        console.log(`%c[${instanceId}] <<<< EVENT RECEIVED >>>> Event Name: CLAIM_VALIDATING_TKT`, 'color: lime; font-weight: bold;');
+        console.log(`[${instanceId}] Full PayloadWrapper:`, JSON.stringify(payloadWrapper, null, 2));
+        
+        // Extract the payload from the wrapper if needed
+        const payload = payloadWrapper?.payload || payloadWrapper;
+        console.log(`[${instanceId}] Extracted actual event payload:`, JSON.stringify(payload, null, 2));
+        
+        if (!payload) {
+          console.error(`[${instanceId}] Payload is missing or undefined in received event.`);
+          return;
+        }
+        
+        // Log critical fields needed for the panel
+        console.log(`[${instanceId}] Event sessionId: ${payload.sessionId}, My sessionId: ${sessionId}`);
+        console.log(`[${instanceId}] Event playerId: ${payload.playerId}, My playerCode: ${playerCode}`);
+        console.log(`[${instanceId}] Event claimId: ${payload.claimId || payload.id || 'unknown'}`);
 
         // Check if this is for our session
         if (payload?.sessionId !== sessionId) {
@@ -102,10 +117,14 @@ export default function PlayerClaimCheckingNotification({
     };
 
     // Function to handle claim resolution event
-    const handleClaimResultEvent = (payload: any) => {
+    const handleClaimResultEvent = (payloadWrapper: any) => {
       try {
-        logWithTimestamp(`[${instanceId}] Received claim result event:`, 'info');
-        console.log('Claim result payload:', payload);
+        console.log(`%c[${instanceId}] <<<< EVENT RECEIVED >>>> Event Name: CLAIM_RESOLUTION`, 'color: lime; font-weight: bold;');
+        console.log(`[${instanceId}] Full PayloadWrapper:`, JSON.stringify(payloadWrapper, null, 2));
+        
+        // Extract the payload
+        const payload = payloadWrapper?.payload || payloadWrapper;
+        console.log(`[${instanceId}] Extracted actual event payload:`, JSON.stringify(payload, null, 2));
 
         // Check if this claim result is for the current player
         const isForCurrentPlayer = playerCode && (

@@ -1,7 +1,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useNetwork } from '@/contexts/network';
+import { useNetworkContext } from '@/contexts/network';
 import { useToast } from "@/hooks/use-toast";
 import { usePlayerContext } from '@/contexts/PlayerContext';
 import { useSessionContext } from '@/contexts/SessionProvider';
@@ -16,7 +16,7 @@ const PlayerGame = () => {
   const navigate = useNavigate();
   const { player } = usePlayerContext();
   const { currentSession } = useSessionContext();
-  const { connect, connectionState, submitBingoClaim } = useNetwork();
+  const { connect, submitBingoClaim } = useNetworkContext();
   const [autoMarking, setAutoMarking] = useState<boolean>(() => {
     // Get from localStorage with default of true
     const stored = localStorage.getItem('autoMarking');

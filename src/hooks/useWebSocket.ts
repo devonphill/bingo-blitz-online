@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { ConnectionState } from '@/constants/connectionConstants';
+import { EVENT_TYPES } from '@/constants/websocketConstants';
 
 export type WebSocketConnectionStatus = ConnectionState | 'SUBSCRIBED' | 'CLOSED' | 'CHANNEL_ERROR' | 'TIMED_OUT' | 'CONNECTING' | 'JOINING' | 'JOINED' | 'unknown';
 
@@ -22,16 +23,9 @@ export function useWebSocket(sessionId: string | null | undefined) {
   
   // Get singleton connection
   const connection = getSingleSourceConnection();
-  const EVENTS = connection.constructor['EVENT_TYPES'] || {
-    NUMBER_CALLED: 'number-called',
-    GAME_STATE_UPDATE: 'game-state-changed',
-    GAME_RESET: 'game-reset',
-    CLAIM_SUBMITTED: 'claim-submitted',
-    CLAIM_VALIDATION: 'claim-validation',
-    CLAIM_VALIDATING_TKT: 'claim-validating-ticket',
-    CLAIM_RESULT: 'claim-result',
-    CLAIM_RESOLUTION: 'claim-resolution'
-  };
+
+  // Expose event types from constants
+  const EVENTS = EVENT_TYPES;
 
   // Connect to WebSocket
   const connect = useCallback(() => {
@@ -107,7 +101,7 @@ export function useWebSocket(sessionId: string | null | undefined) {
     return () => {};
   }, [instanceId]);
   
-  // Listen for a specific event
+  // Listen for a specific event with added validation
   const listenForEvent = useCallback(<T>(
     eventType: string, 
     handler: (data: T) => void
@@ -133,9 +127,10 @@ export function useWebSocket(sessionId: string | null | undefined) {
     try {
       logWithTimestamp(`[${instanceId}] Setting up listener for event: ${eventType}`, 'info');
       
-      // Use the singleton connection to listen for events
-      // This will increment the reference count for the channel
+      // Determine the appropriate channel name based on event type
       const channelName = eventType.includes('claim') ? 'claim-updates' : 'game-updates';
+      
+      // Use the singleton connection to listen for events
       const cleanup = connection.listenForEvent<T>(channelName, eventType, (payload) => {
         logWithTimestamp(`[${instanceId}] Received event: ${eventType}`, 'info');
         console.log(`Full payload for ${eventType}:`, payload);
@@ -144,7 +139,7 @@ export function useWebSocket(sessionId: string | null | undefined) {
       
       logWithTimestamp(`[${instanceId}] Listening for event ${eventType} on session ${sessionId}`, 'info');
       
-      // Return cleanup function that will decrement the reference count
+      // Return cleanup function
       return cleanup;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
