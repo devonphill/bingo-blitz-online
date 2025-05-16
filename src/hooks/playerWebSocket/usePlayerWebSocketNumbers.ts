@@ -4,6 +4,8 @@ import { logWithTimestamp } from '@/utils/logUtils';
 import { useSessionContext } from '@/contexts/SessionProvider';
 import { NumberCalledPayload } from '@/types/websocket';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { loadStoredNumbers, saveNumbersToStorage } from './storageUtils';
+import { fetchCalledNumbers } from './databaseUtils';
 
 /**
  * Hook for listening to number updates via WebSocket
@@ -14,8 +16,7 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) {
   const [numbers, setNumbers] = useState<number[]>([]);
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [connectionState, setConnectionState] = useState<'connected' | 'connecting' | 'disconnected' | 'error'>('disconnected');
+  const [lastUpdateTime, setLastUpdateTime] = useState<number>(Date.now());
   const { currentSession } = useSessionContext();
   
   // Create unique instance ID for this hook
@@ -25,8 +26,9 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) 
   const { 
     listenForEvent, 
     EVENTS, 
-    isConnected: wsConnected, 
-    connectionState: wsConnectionState 
+    isConnected, 
+    connectionState,
+    connect
   } = useWebSocket(sessionId);
   
   // Custom log helper
@@ -34,39 +36,72 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) 
     logWithTimestamp(`[${instanceId}] ${message}`, level);
   }, [instanceId]);
   
+  // Load initial numbers from storage and database
+  useEffect(() => {
+    if (!sessionId) {
+      log('No session ID provided, skipping initial load', 'warn');
+      return;
+    }
+
+    // First try to load from local storage for immediate display
+    const storedData = loadStoredNumbers(sessionId);
+    if (storedData) {
+      log(`Loaded ${storedData.calledNumbers.length} numbers from storage`, 'info');
+      setNumbers(storedData.calledNumbers);
+      setLastCalledNumber(storedData.lastCalledNumber);
+      setLastUpdateTime(storedData.timestamp);
+    }
+
+    // Then fetch from database to ensure we have latest data
+    fetchCalledNumbers(sessionId).then(dbNumbers => {
+      if (dbNumbers && dbNumbers.length > 0) {
+        log(`Fetched ${dbNumbers.length} numbers from database`, 'info');
+        setNumbers(dbNumbers);
+        setLastCalledNumber(dbNumbers[dbNumbers.length - 1]);
+        setLastUpdateTime(Date.now());
+        
+        // Save to storage for future loads
+        saveNumbersToStorage(sessionId, dbNumbers, dbNumbers[dbNumbers.length - 1], Date.now());
+      }
+    });
+  }, [sessionId, log]);
+  
   // Set up event listeners for number updates
   useEffect(() => {
     if (!sessionId) {
-      log('No session ID provided, skipping setup', 'warn');
-      setConnectionState('disconnected');
+      log('No session ID provided, skipping event listener setup', 'warn');
       return;
     }
     
     // Ensure WebSocket is connected before setting up listeners
-    if (!wsConnected || (wsConnectionState !== 'SUBSCRIBED' && wsConnectionState !== 'connected')) {
-      log(`WebSocket not ready (state: ${wsConnectionState}), deferring number listener setup`, 'warn');
-      setConnectionState('connecting');
+    if (!isConnected || (connectionState !== 'SUBSCRIBED' && connectionState !== 'connected')) {
+      log(`WebSocket not ready (state: ${connectionState}), deferring number listener setup`, 'warn');
       return;
     }
     
     log(`Setting up listeners for session ${sessionId}`, 'info');
-    setConnectionState('connecting');
     
     // Handle new number broadcasts
     const handleNumberUpdate = (data: NumberCalledPayload) => {
       const { number, calledNumbers } = data;
       log(`Received number update: ${number}, total numbers: ${calledNumbers?.length || 0}`, 'info');
       
+      const timestamp = Date.now();
+      
       if (calledNumbers && Array.isArray(calledNumbers)) {
         setNumbers(calledNumbers);
+        // Save to local storage
+        saveNumbersToStorage(sessionId, calledNumbers, number, timestamp);
       } else {
         // If we only got the new number, append it
-        setNumbers(prev => [...prev, number]);
+        const updatedNumbers = [...numbers, number];
+        setNumbers(updatedNumbers);
+        // Save to local storage
+        saveNumbersToStorage(sessionId, updatedNumbers, number, timestamp);
       }
       
       setLastCalledNumber(number);
-      setConnectionState('connected');
-      setIsConnected(true);
+      setLastUpdateTime(timestamp);
     };
     
     // Handle game reset
@@ -74,6 +109,10 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) 
       log('Game reset detected', 'info');
       setNumbers([]);
       setLastCalledNumber(null);
+      setLastUpdateTime(Date.now());
+      
+      // Clear storage
+      saveNumbersToStorage(sessionId, [], null, Date.now());
     };
     
     // Set up listeners using the useWebSocket hook
@@ -87,40 +126,38 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) 
       handleGameReset
     );
     
-    // Update connection state based on WebSocket connection
-    setIsConnected(wsConnected);
-    setConnectionState(
-      wsConnectionState === 'SUBSCRIBED' ? 'connected' :
-      wsConnectionState === 'CONNECTING' || wsConnectionState === 'JOINING' ? 'connecting' :
-      wsConnectionState === 'error' ? 'error' : 'disconnected'
-    );
-    
     // Clean up on unmount/change - call both cleanup functions
     return () => {
       log('Cleaning up number update listeners', 'info');
       numberCleanup();
       resetCleanup();
     };
-  }, [sessionId, log, listenForEvent, EVENTS, wsConnected, wsConnectionState]);
+  }, [sessionId, log, listenForEvent, EVENTS, isConnected, connectionState, numbers]);
   
-  // Reset connection if session changes significantly
-  useEffect(() => {
-    // If there's a mismatch between our session ID and the current session context
-    if (sessionId && currentSession && currentSession.id !== sessionId) {
-      log(`Session changed from ${sessionId} to ${currentSession.id}, resetting`, 'info');
-      setConnectionState('disconnected');
+  // Manual reconnect function
+  const reconnect = useCallback(() => {
+    if (sessionId) {
+      log(`Manually reconnecting to session ${sessionId}`, 'info');
+      connect(sessionId);
       
-      // Reset state
-      setNumbers([]);
-      setLastCalledNumber(null);
-      setIsConnected(false);
+      // Re-fetch data from database
+      fetchCalledNumbers(sessionId).then(dbNumbers => {
+        if (dbNumbers && dbNumbers.length > 0) {
+          log(`Re-fetched ${dbNumbers.length} numbers from database`, 'info');
+          setNumbers(dbNumbers);
+          setLastCalledNumber(dbNumbers[dbNumbers.length - 1]);
+          setLastUpdateTime(Date.now());
+        }
+      });
     }
-  }, [currentSession, sessionId, log]);
+  }, [sessionId, log, connect]);
 
   return {
     calledNumbers: numbers,
     lastCalledNumber,
     isConnected,
-    connectionState
+    connectionState,
+    lastUpdateTime,
+    reconnect
   };
 }

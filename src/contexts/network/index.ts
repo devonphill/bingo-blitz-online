@@ -1,6 +1,6 @@
 
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { getSingleSourceConnection, CHANNEL_NAMES, EVENT_TYPES } from '@/utils/SingleSourceTrueConnections';
+import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { logWithTimestamp } from '@/utils/logUtils';
 
 export type ConnectionState = 'connected' | 'connecting' | 'disconnected' | 'error';
@@ -82,7 +82,7 @@ export const NetworkProvider: React.FC<{
 
   // Add game state update listener
   const addGameStateUpdateListener = useCallback((handler: (gameState: any) => void) => {
-    return connection.listenForEvent(EVENT_TYPES.GAME_STATE_UPDATE, handler);
+    return connection.listenForEvent('GAME_STATE_UPDATE', handler);
   }, [connection]);
 
   // Add presence listener
