@@ -7,6 +7,32 @@ import { useClaimBroadcaster } from './useClaimBroadcaster';
 import { supabase } from '@/integrations/supabase/client';
 
 /**
+ * Type for universal_game_logs insert to satisfy TypeScript
+ */
+interface GameLogEntry {
+  validation_status: string;
+  win_pattern: string;
+  session_uuid: string;
+  session_name: string;
+  player_id: string;
+  player_uuid?: string;
+  player_name: string;
+  game_type: string;
+  game_number: number;
+  called_numbers: number[];
+  last_called_number: number | null;
+  total_calls: number;
+  claimed_at: string;
+  ticket_serial: string[];
+  ticket_perm: number[];
+  ticket_layout_mask: number[];
+  ticket_position: number[];
+  ticket_numbers?: string;
+  prize?: string | null;
+  prize_amount?: string | null;
+}
+
+/**
  * Hook for handling claim validation logic
  */
 export function useClaimValidator(sessionId?: string, gameNumber?: number, sessionName?: string) {
@@ -62,8 +88,8 @@ export function useClaimValidator(sessionId?: string, gameNumber?: number, sessi
       // Prepare ticket details
       const ticketDetails = claim.ticket || claim.ticket_details || {};
       
-      // Prepare log entry for universal_game_logs as a Record<string, any> to avoid type issues
-      const logEntry: Record<string, any> = {
+      // Prepare log entry for universal_game_logs with proper typing
+      const logEntry: GameLogEntry = {
         validation_status: validationStatus,
         win_pattern: winPattern,
         session_uuid: sessionId,
@@ -82,24 +108,19 @@ export function useClaimValidator(sessionId?: string, gameNumber?: number, sessi
         ticket_serial: [ticketDetails.serial || claim.ticketSerial || ''], 
         ticket_perm: [ticketDetails.perm || 0],
         ticket_layout_mask: [ticketDetails.layoutMask || ticketDetails.layout_mask || 0],
-        ticket_position: [ticketDetails.position || 0]
+        ticket_position: [ticketDetails.position || 0],
+        
+        // Adding prize fields with defaults
+        prize: claim.prize || null,
+        prize_amount: claim.prizeAmount || null
       };
       
-      // Add ticket_numbers as JSON
-      if (ticketDetails.numbers) {
+      // Add ticket_numbers as JSON string if available
+      if (ticketDetails.numbers && Array.isArray(ticketDetails.numbers)) {
         logEntry.ticket_numbers = JSON.stringify(ticketDetails.numbers);
       }
       
-      // Additional fields if available
-      if (claim.prize) {
-        logEntry.prize = claim.prize;
-      }
-      
-      if (claim.prizeAmount) {
-        logEntry.prize_amount = claim.prizeAmount;
-      }
-      
-      // Log the attempt
+      // Log the attempt with full payload for debugging
       console.log('[CallerAction] Attempting to insert into universal_game_logs:', logEntry);
       
       // Insert into universal_game_logs

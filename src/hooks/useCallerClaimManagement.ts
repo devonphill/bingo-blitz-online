@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -7,17 +6,45 @@ import { ClaimData, ClaimStatus } from '@/types/claim';
 import { parseJson } from '@/types/json';
 
 /**
+ * Type for optimistic claims to avoid excessive type nesting
+ */
+interface OptimisticClaim {
+  id: string;
+  session_id?: string;
+  player_id?: string;
+  player_name?: string;
+  playerName?: string;
+  playerId?: string;
+  playerCode?: string;
+  ticket_serial?: string;
+  ticketSerial?: string;
+  ticket_details?: any;
+  ticket?: any;
+  pattern_claimed?: string;
+  winPattern?: string;
+  patternClaimed?: string;
+  called_numbers_snapshot?: number[];
+  calledNumbers?: number[];
+  status?: ClaimStatus;
+  claimed_at?: string;
+  timestamp?: string;
+  gameNumber?: number;
+  isOptimistic?: boolean;
+  sessionId?: string;
+}
+
+/**
  * Hook for managing caller-side claims with optimistic UI updates
  */
 export function useCallerClaimManagement(sessionId: string | null) {
-  const [claims, setClaims] = useState<any[]>([]);
+  const [claims, setClaims] = useState<OptimisticClaim[]>([]);
   const [claimsCount, setClaimsCount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   const refreshTimerRef = useRef<number | null>(null);
   const instanceId = useRef(`CallerClaimMgmt-${Math.random().toString(36).substring(2, 7)}`);
-  const optimisticClaimsRef = useRef<Map<string, any>>(new Map());
+  const optimisticClaimsRef = useRef<Map<string, OptimisticClaim>>(new Map());
   
   // Custom logging function
   const log = useCallback((message: string, level: 'info' | 'warn' | 'error' | 'debug' = 'info') => {
@@ -39,7 +66,6 @@ export function useCallerClaimManagement(sessionId: string | null) {
         .from('claims')
         .select('*')
         .eq('session_id', sessionId)
-        .eq('status', 'pending')
         .order('claimed_at', { ascending: false });
       
       if (error) {
@@ -54,7 +80,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
       log(`Found ${data?.length || 0} pending claims in DB + ${optimisticClaims.length} optimistic claims`, 'info');
       
       // Deduplicate by claim ID
-      const allClaimsMap = new Map<string, any>();
+      const allClaimsMap = new Map<string, OptimisticClaim>();
       
       // First add database claims
       if (data) {
@@ -111,8 +137,8 @@ export function useCallerClaimManagement(sessionId: string | null) {
       
       // Convert back to array and sort by timestamp (newest first)
       const allClaims = Array.from(allClaimsMap.values()).sort((a, b) => {
-        const timeA = new Date(a.claimed_at || a.timestamp).getTime();
-        const timeB = new Date(b.claimed_at || b.timestamp).getTime();
+        const timeA = new Date(a.claimed_at || a.timestamp || '').getTime();
+        const timeB = new Date(b.claimed_at || b.timestamp || '').getTime();
         return timeB - timeA; // Newest first
       });
       
@@ -162,7 +188,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
     log(`Adding optimistic claim ${claimData.id} to UI`, 'info');
     
     // Normalize the claim format to match what the UI expects
-    const normalizedClaim = {
+    const normalizedClaim: OptimisticClaim = {
       id: claimData.id,
       session_id: claimData.sessionId,
       player_id: claimData.playerId,
@@ -183,7 +209,8 @@ export function useCallerClaimManagement(sessionId: string | null) {
       claimed_at: claimData.timestamp || new Date().toISOString(),
       timestamp: claimData.timestamp || new Date().toISOString(),
       gameNumber: claimData.gameNumber || 1,
-      isOptimistic: true
+      isOptimistic: true,
+      sessionId: claimData.sessionId
     };
     
     // Store in our ref so it persists across renders
@@ -226,7 +253,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
   }, [log]);
   
   // Process a claim (approve or reject)
-  const processClaim = useCallback(async (claim: any, isValid: boolean) => {
+  const processClaim = useCallback(async (claim: OptimisticClaim, isValid: boolean) => {
     if (!claim || !claim.id || !sessionId) {
       log('Cannot process claim: Missing ID or session', 'warn');
       return false;
@@ -235,18 +262,17 @@ export function useCallerClaimManagement(sessionId: string | null) {
     try {
       log(`Processing claim ${claim.id}, isValid=${isValid}`, 'info');
       
-      // Update the claim in the database
-      const { error } = await supabase
-        .from('claims')
-        .update({
-          status: isValid ? 'valid' : 'rejected',
-          verified_at: new Date().toISOString()
-        })
-        .eq('id', claim.id);
+      // Update the claim in the database - We'll remove this update since status field will be removed
+      // const { error } = await supabase
+      //  .from('claims')
+      //  .update({
+      //    status: isValid ? 'valid' : 'rejected',
+      //    verified_at: new Date().toISOString()
+      //  })
+      //  .eq('id', claim.id);
       
-      if (error) {
-        throw new Error(`Database error: ${error.message}`);
-      }
+      // Instead, we'll directly delete the claim and log it to universal_game_logs
+      // which will be handled in the validateClaim function
       
       // Remove the claim from our optimistic list
       removeOptimisticClaim(String(claim.id));

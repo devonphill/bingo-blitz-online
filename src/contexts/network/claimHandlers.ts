@@ -5,6 +5,32 @@ import { claimService } from '@/services/ClaimManagementService';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
+ * Type for universal_game_logs insert to satisfy TypeScript
+ */
+interface GameLogEntry {
+  validation_status: string;
+  win_pattern: string;
+  session_uuid: string;
+  session_name: string;
+  player_id: string;
+  player_uuid?: string;
+  player_name: string;
+  game_type: string;
+  game_number: number;
+  called_numbers: number[];
+  last_called_number: number | null;
+  total_calls: number;
+  claimed_at: string;
+  ticket_serial: string[];
+  ticket_perm: number[];
+  ticket_layout_mask: number[];
+  ticket_position: number[];
+  ticket_numbers?: string;
+  prize?: string | null;
+  prize_amount?: string | null;
+}
+
+/**
  * Fetch pending claims for a session
  * 
  * @param sessionId The session ID to fetch claims for
@@ -224,11 +250,11 @@ export async function validateClaim(
     const playerName = claim.playerName || claim.player_name || 'Unknown Player';
     const playerCode = claim.playerCode || claim.player_code;
     
-    // Create the logEntry object with explicit types to avoid deep recursive types
-    const logEntry: Record<string, any> = {
+    // Create a properly typed log entry object
+    const logEntry: GameLogEntry = {
       validation_status: isValid ? 'VALID' : 'INVALID',
       win_pattern: claim.winPattern || claim.pattern_claimed || '',
-      session_uuid: sessionId,
+      session_uuid: sessionId || '',
       session_name: sessionName,
       player_id: playerCode, // Using player_code for the text field
       player_name: playerName,
@@ -243,21 +269,16 @@ export async function validateClaim(
       ticket_serial: [ticketDetails.serial || claim.ticketSerial || ''], 
       ticket_perm: [ticketDetails.perm || 0],
       ticket_layout_mask: [ticketDetails.layoutMask || ticketDetails.layout_mask || 0],
-      ticket_position: [ticketDetails.position || 0]
+      ticket_position: [ticketDetails.position || 0],
+      
+      // Add prize fields with defaults
+      prize: claim.prize || null,
+      prize_amount: claim.prizeAmount || null
     };
     
     // Add ticket_numbers as JSON string if it exists
-    if (ticketDetails.numbers) {
+    if (ticketDetails.numbers && Array.isArray(ticketDetails.numbers)) {
       logEntry.ticket_numbers = JSON.stringify(ticketDetails.numbers);
-    }
-    
-    // Add prize fields if available
-    if (claim.prize) {
-      logEntry.prize = claim.prize;
-    }
-    
-    if (claim.prizeAmount) {
-      logEntry.prize_amount = claim.prizeAmount;
     }
     
     // Log the attempt
