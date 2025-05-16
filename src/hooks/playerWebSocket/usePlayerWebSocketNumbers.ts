@@ -83,11 +83,12 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) 
       wsConnectionState === 'error' ? 'error' : 'disconnected'
     );
     
-    // Clean up on unmount/change
+    // Clean up on unmount/change - call both cleanup functions
     return () => {
       log('Cleaning up number update listeners', 'info');
       numberCleanup();
       resetCleanup();
+      // We do NOT call any global disconnect here
     };
   }, [sessionId, log, listenForEvent, EVENTS, wsConnected, wsConnectionState]);
   

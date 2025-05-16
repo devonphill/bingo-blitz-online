@@ -71,10 +71,17 @@ export function useWebSocket(sessionId: string | null) {
       return () => {};
     }
     
+    // Validate event type
+    if (!eventType) {
+      logWithTimestamp(`[${instanceId}] Cannot listen for undefined event type`, 'error');
+      return () => {};
+    }
+    
     try {
       logWithTimestamp(`[${instanceId}] Setting up listener for event: ${eventType}`, 'info');
       
       // Use the singleton connection to listen for events
+      // This will increment the reference count for the channel
       const cleanup = connection.listenForEvent<T>(eventType, (payload) => {
         logWithTimestamp(`[${instanceId}] Received event: ${eventType}`, 'info');
         console.log(`Full payload for ${eventType}:`, payload);
@@ -82,6 +89,8 @@ export function useWebSocket(sessionId: string | null) {
       });
       
       logWithTimestamp(`[${instanceId}] Listening for event ${eventType} on session ${sessionId}`, 'info');
+      
+      // Return cleanup function that will decrement the reference count
       return cleanup;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -97,11 +106,11 @@ export function useWebSocket(sessionId: string | null) {
     logWithTimestamp(`[${instanceId}] Auto-connecting to session ${sessionId}`, 'info');
     const cleanup = connect();
     
-    // Only disconnect specific listeners, not the channel itself
+    // Only call the specific listener cleanup function
     return () => {
-      logWithTimestamp(`[${instanceId}] Cleaning up listeners for session ${sessionId}`, 'info');
+      logWithTimestamp(`[${instanceId}] Cleaning up connection listener for session ${sessionId}`, 'info');
       cleanup();
-      // We don't call disconnect() here anymore to prevent aggressive channel cleanup
+      // We explicitly do NOT call any global disconnect here to preserve shared channels
     };
   }, [sessionId, connect, instanceId]);
   

@@ -4,6 +4,7 @@ import { usePlayerTickets, PlayerTicket } from '@/hooks/usePlayerTickets';
 import { usePlayerContext } from './PlayerContext';
 import { useSessionContext } from './SessionProvider';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 interface GameContextData {
   calledNumbers: number[];
@@ -22,7 +23,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const sessionId = player?.sessionId || null;
   
   // Only set up WebSocket when we have a valid session ID
-  const { listenForEvent, EVENTS } = useWebSocket(sessionId);
+  const { listenForEvent, EVENTS, isConnected } = useWebSocket(sessionId);
   
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
@@ -40,15 +41,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     // Only set up listeners if we have a valid session ID
     if (!sessionId) {
-      console.log('GameContext: No session ID available, skipping listener setup');
+      logWithTimestamp('GameContext: No session ID available, skipping listener setup', 'warn');
       return;
     }
     
-    console.log('GameContext: Setting up number called listener');
+    logWithTimestamp('GameContext: Setting up number called listener', 'info');
     const removeNumberListener = listenForEvent(
       EVENTS.NUMBER_CALLED, 
       (data: any) => {
-        console.log('GameContext: Number called update', { number: data.number, count: data.calledNumbers?.length });
+        logWithTimestamp('GameContext: Number called update', { number: data.number, count: data.calledNumbers?.length });
         
         if (data.number !== null) {
           setLastCalledNumber(data.number);
@@ -65,8 +66,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     );
     
-    // Clean up when unmounting or session changes
+    // Clean up when unmounting or session changes - only remove this specific listener
     return () => {
+      logWithTimestamp('GameContext: Cleaning up number called listener', 'info');
       removeNumberListener();
     };
   }, [sessionId, currentWinPattern, listenForEvent, EVENTS, updateWinningStatus]);
@@ -75,16 +77,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     // Only set up listeners if we have a valid session ID
     if (!sessionId) {
-      console.log('GameContext: No session ID available, skipping game state listener setup');
+      logWithTimestamp('GameContext: No session ID available, skipping game state listener setup', 'warn');
       return;
     }
     
-    console.log('GameContext: Setting up game state listener');
+    logWithTimestamp('GameContext: Setting up game state listener', 'info');
     const removeStateListener = listenForEvent(
       EVENTS.GAME_STATE_UPDATE,
       (gameState: any) => {
         if (gameState?.currentWinPattern) {
-          console.log('GameContext: Win pattern update', gameState.currentWinPattern);
+          logWithTimestamp('GameContext: Win pattern update', gameState.currentWinPattern);
           setCurrentWinPattern(gameState.currentWinPattern);
           
           // Update winning status when pattern changes
@@ -104,8 +106,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     );
     
-    // Clean up when unmounting or session changes
+    // Clean up when unmounting or session changes - only remove this specific listener
     return () => {
+      logWithTimestamp('GameContext: Cleaning up game state listener', 'info');
       removeStateListener();
     };
   }, [sessionId, calledNumbers, listenForEvent, EVENTS, updateWinningStatus]);

@@ -98,4 +98,4 @@ export const useNetwork = () => {
   return context;
 };
 
-export type { ConnectionState };
+export { ConnectionState };
