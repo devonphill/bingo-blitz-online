@@ -20,6 +20,7 @@ export const EVENT_TYPES = {
   WIN_PATTERN_UPDATED: 'win-pattern-updated',
   GAME_STATUS_UPDATED: 'game-status-updated',
   CLAIM_RESULT: 'claim-result',
+  CLAIM_RESOLUTION: 'claim-resolution', // New event for the claim resolution workflow
   
   // Player -> Caller events
   CLAIM_SUBMITTED: 'claim-submitted',

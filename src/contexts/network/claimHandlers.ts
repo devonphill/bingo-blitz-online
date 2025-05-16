@@ -23,7 +23,6 @@ export async function fetchClaimsForSession(sessionId: string | null): Promise<a
       .from('claims')
       .select('*')
       .eq('session_id', sessionId)
-      .eq('status', 'pending')
       .order('claimed_at', { ascending: true });
     
     if (error) {
@@ -225,7 +224,8 @@ export async function validateClaim(
     const playerName = claim.playerName || claim.player_name || 'Unknown Player';
     const playerCode = claim.playerCode || claim.player_code;
     
-    const logEntry = {
+    // Create the logEntry object with explicit types to avoid deep recursive types
+    const logEntry: Record<string, any> = {
       validation_status: isValid ? 'VALID' : 'INVALID',
       win_pattern: claim.winPattern || claim.pattern_claimed || '',
       session_uuid: sessionId,
@@ -246,6 +246,7 @@ export async function validateClaim(
       ticket_position: [ticketDetails.position || 0]
     };
     
+    // Add ticket_numbers as JSON string if it exists
     if (ticketDetails.numbers) {
       logEntry.ticket_numbers = JSON.stringify(ticketDetails.numbers);
     }

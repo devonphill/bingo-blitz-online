@@ -62,8 +62,8 @@ export function useClaimValidator(sessionId?: string, gameNumber?: number, sessi
       // Prepare ticket details
       const ticketDetails = claim.ticket || claim.ticket_details || {};
       
-      // Prepare log entry for universal_game_logs
-      const logEntry = {
+      // Prepare log entry for universal_game_logs as a Record<string, any> to avoid type issues
+      const logEntry: Record<string, any> = {
         validation_status: validationStatus,
         win_pattern: winPattern,
         session_uuid: sessionId,
@@ -82,13 +82,22 @@ export function useClaimValidator(sessionId?: string, gameNumber?: number, sessi
         ticket_serial: [ticketDetails.serial || claim.ticketSerial || ''], 
         ticket_perm: [ticketDetails.perm || 0],
         ticket_layout_mask: [ticketDetails.layoutMask || ticketDetails.layout_mask || 0],
-        ticket_position: [ticketDetails.position || 0],
-        ticket_numbers: ticketDetails.numbers ? JSON.stringify(ticketDetails.numbers) : null,
+        ticket_position: [ticketDetails.position || 0]
       };
       
+      // Add ticket_numbers as JSON
+      if (ticketDetails.numbers) {
+        logEntry.ticket_numbers = JSON.stringify(ticketDetails.numbers);
+      }
+      
       // Additional fields if available
-      if (claim.prize) logEntry.prize = claim.prize;
-      if (claim.prizeAmount) logEntry.prize_amount = claim.prizeAmount;
+      if (claim.prize) {
+        logEntry.prize = claim.prize;
+      }
+      
+      if (claim.prizeAmount) {
+        logEntry.prize_amount = claim.prizeAmount;
+      }
       
       // Log the attempt
       console.log('[CallerAction] Attempting to insert into universal_game_logs:', logEntry);
@@ -124,7 +133,7 @@ export function useClaimValidator(sessionId?: string, gameNumber?: number, sessi
         toast({
           title: "Warning",
           description: "Validation recorded but failed to remove from queue",
-          variant: "warning"
+          variant: "default" // Fixed: Changed from "warning" to "default"
         });
       } else {
         console.log('[DB Delete Success] Claim deleted from claims queue:', claimId);
