@@ -29,6 +29,9 @@ export const ALL_CONNECTION_STATES: ConnectionState[] = [
   'JOINING'
 ];
 
+// Heartbeat interval in milliseconds (30 seconds)
+export const HEARTBEAT_INTERVAL = 30000;
+
 // Helper function to check if a connection state represents being connected
 export const isConnectedState = (state: ConnectionState): boolean => {
   return state === 'connected' || state === 'SUBSCRIBED';

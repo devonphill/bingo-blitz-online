@@ -66,9 +66,9 @@ export const numberCallingService = {
       
       // Broadcast reset event
       const singleSource = getSingleSourceConnection();
-      const webSocketService = singleSource.getWebSocketService();
       
-      await webSocketService.broadcastWithRetry(
+      // Use broadcastWithRetry directly from singleSource instead of accessing private webSocketService
+      singleSource.broadcastWithRetry(
         'game-updates',
         'game-reset',
         { sessionId }

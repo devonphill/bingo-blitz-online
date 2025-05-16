@@ -58,7 +58,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const removeNumberListener = listenForEvent(
       EVENTS.NUMBER_CALLED, 
       (data: any) => {
-        logWithTimestamp(`[${instanceId}] Number called update`, { number: data.number, count: data.calledNumbers?.length });
+        logWithTimestamp(`[${instanceId}] Number called update: ${data.number}, count: ${data.calledNumbers?.length}`);
         
         if (data.number !== null) {
           setLastCalledNumber(data.number);

@@ -2,13 +2,29 @@
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { ConnectionState } from '@/constants/connectionConstants';
-import { WEBSOCKET_EVENTS, WEBSOCKET_CHANNELS } from '@/utils/connection';
+import { EVENT_TYPES } from '@/constants/websocketConstants';
 
 // Type definitions
 type NumberCalledHandler = (number: number | null, allNumbers: number[]) => void;
 type ConnectionStatusListener = (connected: boolean) => void;
 type SessionProgressListener = (progress: any) => void;
 type EventListener<T> = (data: T) => void;
+
+// Define channels
+const WEBSOCKET_CHANNELS = {
+  GAME_UPDATES: 'game-updates',
+  CLAIM_UPDATES: 'claim-updates',
+  CLAIM_CHECKING: 'claim-checking',
+  PRESENCE: 'presence'
+};
+
+// Define events (for backward compatibility)
+const WEBSOCKET_EVENTS = {
+  NUMBER_CALLED: EVENT_TYPES.NUMBER_CALLED,
+  GAME_STATE_CHANGED: EVENT_TYPES.GAME_STATE_UPDATE,
+  CLAIM_SUBMITTED: EVENT_TYPES.CLAIM_SUBMITTED,
+  CLAIM_VALIDATED: EVENT_TYPES.CLAIM_VALIDATION
+};
 
 /**
  * Singleton class for managing WebSocket connections and events
@@ -26,13 +42,7 @@ class SingleSourceConnection {
   private connectionState: ConnectionState = 'disconnected';
   
   // Event types for reference
-  public static EVENT_TYPES = {
-    NUMBER_CALLED: WEBSOCKET_EVENTS.NUMBER_CALLED,
-    GAME_STATE_UPDATE: WEBSOCKET_EVENTS.GAME_STATE_CHANGED,
-    GAME_RESET: 'game-reset',
-    CLAIM_SUBMITTED: WEBSOCKET_EVENTS.CLAIM_SUBMITTED,
-    CLAIM_VALIDATED: WEBSOCKET_EVENTS.CLAIM_VALIDATED
-  };
+  public static EVENT_TYPES = EVENT_TYPES;
 
   /**
    * Private constructor to enforce singleton pattern
@@ -62,17 +72,38 @@ class SingleSourceConnection {
   }
 
   /**
-   * Initialize or get WebSocket service
+   * Get WebSocket service (exposed as public for compatibility)
    */
-  private getWebSocketService() {
+  public getWebSocketService() {
     if (!this.webSocketService) {
       this.webSocketService = {
         channels: new Map(),
         connect: this.connect.bind(this),
         isConnected: this.isConnected.bind(this),
+        broadcastWithRetry: this.broadcastWithRetry.bind(this)
       };
     }
     return this.webSocketService;
+  }
+
+  /**
+   * Broadcast with retry functionality
+   */
+  public broadcastWithRetry(channel: string, event: string, payload: any, options = {}) {
+    try {
+      const channelObj = supabase.channel(channel);
+      
+      channelObj.send({
+        type: 'broadcast',
+        event: event,
+        payload: payload
+      });
+      
+      return true;
+    } catch (error) {
+      logWithTimestamp(`SingleSourceConnection: Error broadcasting message: ${error}`, 'error');
+      return false;
+    }
   }
 
   /**
@@ -387,7 +418,7 @@ class SingleSourceConnection {
       
       channel.send({
         type: 'broadcast',
-        event: WEBSOCKET_EVENTS.NUMBER_CALLED,
+        event: EVENT_TYPES.NUMBER_CALLED,
         payload: {
           sessionId,
           number,
@@ -412,11 +443,11 @@ class SingleSourceConnection {
     try {
       logWithTimestamp(`SingleSourceConnection: Submitting bingo claim for player ${playerCode} in session ${sessionId}`, 'info');
       
-      const channel = supabase.channel(WEBSOCKET_CHANNELS.CLAIM_SUBMITTED);
+      const channel = supabase.channel(WEBSOCKET_CHANNELS.CLAIM_UPDATES);
       
       channel.send({
         type: 'broadcast',
-        event: WEBSOCKET_EVENTS.CLAIM_SUBMITTED,
+        event: EVENT_TYPES.CLAIM_SUBMITTED,
         payload: {
           sessionId,
           playerCode,
@@ -447,7 +478,7 @@ class SingleSourceConnection {
       }
     });
     
-    const resetCleanup = this.listenForEvent(SingleSourceConnection.EVENT_TYPES.GAME_RESET, () => {
+    const resetCleanup = this.listenForEvent(EVENT_TYPES.GAME_RESET, () => {
       onGameReset();
     });
     
