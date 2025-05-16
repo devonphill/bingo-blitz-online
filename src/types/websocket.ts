@@ -9,14 +9,7 @@ export type WebSocketConnectionStatus =
   | 'connecting'
   | 'disconnected'
   | 'error'
-  | 'unknown'
-  | 'SUBSCRIBED'
-  | 'TIMED_OUT'
-  | 'CLOSED'
-  | 'CHANNEL_ERROR'
-  | 'CONNECTING'
-  | 'JOINED'
-  | 'JOINING';
+  | 'unknown';
 
 // WebSocket event payload
 export interface WebSocketEventPayload<T = any> {

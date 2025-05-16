@@ -28,7 +28,7 @@ export class SingleSourceTrueConnections {
   
   // Session and connection state
   private currentSessionIdInternal: string | null = null;
-  private connectionStatusInternal: WebSocketConnectionStatus = 'disconnected';
+  private connectionStatusInternal: WebSocketConnectionStatus = CONNECTION_STATES.DISCONNECTED;
   private isServiceInitializedInternal: boolean = false;
   private listenerIdCounter: number = 0; // For generating unique listener IDs
   

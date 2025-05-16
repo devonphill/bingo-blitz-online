@@ -35,7 +35,7 @@ export const CONNECTION_STATES = {
   DISCONNECTED: 'disconnected',
   ERROR: 'error',
   UNKNOWN: 'unknown'
-};
+} as const;
 
 // WebSocket status
 export const WEBSOCKET_STATUS = {
