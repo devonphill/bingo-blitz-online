@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -29,6 +30,7 @@ interface OptimisticClaim {
   claimed_at?: string;
   timestamp?: string;
   gameNumber?: number;
+  game_number?: number;
   isOptimistic?: boolean;
   sessionId?: string;
 }
@@ -103,7 +105,9 @@ export function useCallerClaimManagement(sessionId: string | null) {
           let gameNumber = 1; // Default value
           if (ticketDetails && typeof ticketDetails === 'object') {
             gameNumber = 'game_number' in ticketDetails ? 
-              Number(ticketDetails.game_number) : 1;
+              Number(ticketDetails.game_number) : 
+              ('gameNumber' in ticketDetails ? 
+                Number(ticketDetails.gameNumber) : 1);
           }
           
           allClaimsMap.set(claimId, {
@@ -119,6 +123,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
             ticket: ticketDetails,
             ticketSerial: claim.ticket_serial,
             gameNumber: gameNumber, // Use the extracted game number
+            game_number: gameNumber, // Also provide as game_number for consistency
             timestamp: claim.claimed_at,
             calledNumbers: claim.called_numbers_snapshot,
             sessionId: claim.session_id // Ensure sessionId is explicitly included
@@ -209,6 +214,7 @@ export function useCallerClaimManagement(sessionId: string | null) {
       claimed_at: claimData.timestamp || new Date().toISOString(),
       timestamp: claimData.timestamp || new Date().toISOString(),
       gameNumber: claimData.gameNumber || 1,
+      game_number: claimData.gameNumber || 1, // Also provide as game_number for consistency
       isOptimistic: true,
       sessionId: claimData.sessionId
     };

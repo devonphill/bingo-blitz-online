@@ -178,10 +178,11 @@ export default function ClaimItem({
     if (typeof claim.game_number === 'number') return claim.game_number;
     
     // Check ticket_details object (which might be stored under different property names)
-    if (claim.ticket_details && typeof claim.ticket_details === 'object') {
+    const ticketDetails = claim.ticket_details || claim.ticket || {};
+    if (ticketDetails && typeof ticketDetails === 'object') {
       // Handle both camelCase and snake_case property names
-      const ticketDetailsGameNum = claim.ticket_details.gameNumber || 
-             claim.ticket_details.game_number;
+      const ticketDetailsGameNum = ticketDetails.gameNumber || 
+             ticketDetails.game_number;
              
       if (ticketDetailsGameNum) {
         console.log('[ClaimItem] Found game number in ticket_details:', ticketDetailsGameNum);
@@ -189,18 +190,7 @@ export default function ClaimItem({
       }
     }
     
-    // Check if game info is in the ticket property instead
-    if (claim.ticket && typeof claim.ticket === 'object') {
-      const ticketGameNum = claim.ticket.gameNumber || claim.ticket.game_number;
-      
-      if (ticketGameNum) {
-        console.log('[ClaimItem] Found game number in ticket:', ticketGameNum);
-        return ticketGameNum;
-      }
-    }
-    
-    console.log('[ClaimItem] Could not find game number in claim data');
-    return "Unknown";
+    return 1; // Default to game 1 if not found
   })();
 
   // Get player name with fallbacks
