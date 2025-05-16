@@ -15,6 +15,12 @@ interface NetworkContextValue {
   addGameStateUpdateListener: (handler: (gameState: any) => void) => () => void;
   // Presence events
   addPresenceListener: (handler: (action: 'join' | 'leave' | 'update', userId: string, data: any) => void) => () => void;
+  // Connection management
+  connect: (sessionId: string) => void;
+  // Claim management
+  submitBingoClaim: (ticket: any, playerCode: string, sessionId: string) => boolean;
+  // Player presence tracking
+  updatePlayerPresence: (presenceData: any) => Promise<boolean>;
 }
 
 const NetworkContext = createContext<NetworkContextValue | undefined>(undefined);
@@ -31,13 +37,24 @@ export const NetworkProvider: React.FC<{
   const connection = getSingleSourceConnection();
 
   // Connect to the session
-  useEffect(() => {
-    if (!sessionId) {
-      logWithTimestamp('[NetworkProvider] No session ID, skipping connection', 'warn');
+  const connect = useCallback((sid: string) => {
+    if (!sid) {
+      logWithTimestamp('[NetworkProvider] No session ID provided for connect', 'warn');
       return;
     }
 
-    logWithTimestamp(`[NetworkProvider] Connecting to session: ${sessionId}`, 'info');
+    logWithTimestamp(`[NetworkProvider] Explicitly connecting to session: ${sid}`, 'info');
+    connection.connect(sid);
+  }, [connection]);
+
+  // Connect to the session if provided in props
+  useEffect(() => {
+    if (!sessionId) {
+      logWithTimestamp('[NetworkProvider] No session ID in props, skipping auto-connection', 'warn');
+      return;
+    }
+
+    logWithTimestamp(`[NetworkProvider] Auto-connecting to session: ${sessionId}`, 'info');
     connection.connect(sessionId);
 
     // Set up connection status listener
@@ -74,6 +91,34 @@ export const NetworkProvider: React.FC<{
     return () => {};
   }, []);
 
+  // Submit bingo claim
+  const submitBingoClaim = useCallback((ticket: any, playerCode: string, sessionId: string) => {
+    if (!ticket || !playerCode || !sessionId) {
+      logWithTimestamp('[NetworkProvider] Cannot submit claim: Missing ticket, player code, or session ID', 'error');
+      return false;
+    }
+    
+    logWithTimestamp(`[NetworkProvider] Submitting bingo claim for session: ${sessionId}`, 'info');
+    return connection.submitBingoClaim(ticket, playerCode, sessionId);
+  }, [connection]);
+
+  // Update player presence
+  const updatePlayerPresence = useCallback(async (presenceData: any) => {
+    if (!presenceData) {
+      logWithTimestamp('[NetworkProvider] Cannot update presence: No presence data', 'error');
+      return false;
+    }
+    
+    try {
+      logWithTimestamp('[NetworkProvider] Updating player presence', 'info');
+      // Placeholder for now - will implement actual presence
+      return true;
+    } catch (error) {
+      logWithTimestamp(`[NetworkProvider] Error updating player presence: ${error}`, 'error');
+      return false;
+    }
+  }, []);
+
   const value: NetworkContextValue = {
     isConnected,
     connectionState,
@@ -81,6 +126,9 @@ export const NetworkProvider: React.FC<{
     addNumberCalledListener,
     addGameStateUpdateListener,
     addPresenceListener,
+    connect,
+    submitBingoClaim,
+    updatePlayerPresence
   };
 
   return (

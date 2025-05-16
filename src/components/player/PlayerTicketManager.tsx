@@ -1,10 +1,10 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { usePlayerContext } from '@/contexts/PlayerContext';
 import { useSessionContext } from '@/contexts/SessionProvider';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { usePlayerTickets } from '@/hooks/usePlayerTickets';
+import { useWebSocket } from '@/hooks/useWebSocket';
 import PlayerTicketView from './PlayerTicketView';
 import { useToast } from '@/hooks/use-toast';
 import { Spinner } from '@/components/ui/spinner';
@@ -26,6 +26,12 @@ export function PlayerTicketManager({ autoMarking, onClaimBingo }: PlayerTicketM
   const [isLoadingGameState, setIsLoadingGameState] = useState(true);
   const sessionId = player?.sessionId || currentSession?.id;
   
+  // Use the WebSocket hook for standardized connection management
+  const { isConnected, connectionState, listenForEvent, EVENTS } = useWebSocket(sessionId);
+  
+  // Generate a unique ID for this component instance for better debug logging
+  const instanceId = useRef(`PTM-${Math.random().toString(36).substring(2, 9)}`).current;
+  
   // Use the usePlayerTickets hook to fetch tickets
   const {
     playerTickets,
@@ -38,14 +44,14 @@ export function PlayerTicketManager({ autoMarking, onClaimBingo }: PlayerTicketM
 
   // Create a logger for this component
   const log = (message: string, level: 'info' | 'warn' | 'error' = 'info') => {
-    const prefix = `PlayerTicketManager (${player?.id || 'unknown'})`;
+    const prefix = `PlayerTicketManager (${instanceId})`;
     logWithTimestamp(`${prefix}: ${message}`, level);
   };
 
   // Fetch game state (called numbers, current win pattern)
   useEffect(() => {
     if (!sessionId) {
-      log('No session ID available', 'warn');
+      log('No session ID available, skipping game state fetch', 'warn');
       return;
     }
 
@@ -90,43 +96,68 @@ export function PlayerTicketManager({ autoMarking, onClaimBingo }: PlayerTicketM
     };
 
     fetchGameState();
-    
-    // Set up real-time listener for game state updates
-    const channel = supabase
-      .channel('game-state-updates')
-      .on('postgres_changes', 
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'sessions_progress',
-          filter: `session_id=eq.${sessionId}`
-        }, 
-        payload => {
-          log(`Received game state update from realtime`, 'info');
-          
-          if (payload.new.called_numbers) {
-            setCalledNumbers(payload.new.called_numbers);
-            if (payload.new.called_numbers.length > 0) {
-              setLastCalledNumber(payload.new.called_numbers[payload.new.called_numbers.length - 1]);
-            }
-          }
-          
-          if (payload.new.current_win_pattern) {
-            setCurrentWinPattern(payload.new.current_win_pattern);
-          }
-          
-          // Update winning status of tickets with new called numbers
-          if (payload.new.called_numbers && payload.new.current_win_pattern) {
-            updateWinningStatus(payload.new.called_numbers, payload.new.current_win_pattern);
-          }
-        }
-      )
-      .subscribe();
-      
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, [sessionId, toast, updateWinningStatus]);
+
+  // Set up real-time listener for game state updates
+  useEffect(() => {
+    if (!sessionId) {
+      log('No session ID available, skipping real-time listener setup', 'warn');
+      return;
+    }
+    
+    // Check connection state before setting up listeners
+    if (!isConnected || (connectionState !== 'SUBSCRIBED' && connectionState !== 'connected')) {
+      log(`WebSocket not ready (state: ${connectionState}), deferring game state listener setup`, 'warn');
+      return;
+    }
+    
+    log(`Setting up game state update listeners for session ${sessionId}`, 'info');
+    
+    // Listen for number called updates
+    const numberCleanup = listenForEvent(EVENTS.NUMBER_CALLED, (data: any) => {
+      log(`Received number called update: ${data.number}`, 'info');
+      
+      if (data.calledNumbers && Array.isArray(data.calledNumbers)) {
+        setCalledNumbers(data.calledNumbers);
+        
+        if (data.calledNumbers.length > 0) {
+          setLastCalledNumber(data.calledNumbers[data.calledNumbers.length - 1]);
+        }
+        
+        // Update winning status of tickets with new called numbers
+        if (currentWinPattern) {
+          updateWinningStatus(data.calledNumbers, currentWinPattern);
+        }
+      }
+    });
+    
+    // Listen for game state updates
+    const stateCleanup = listenForEvent(EVENTS.GAME_STATE_UPDATE, (data: any) => {
+      log(`Received game state update`, 'info');
+      
+      if (data.currentWinPattern) {
+        setCurrentWinPattern(data.currentWinPattern);
+        log(`Win pattern updated to: ${data.currentWinPattern}`, 'info');
+      }
+      
+      if (data.calledNumbers && Array.isArray(data.calledNumbers)) {
+        setCalledNumbers(data.calledNumbers);
+        
+        if (data.calledNumbers.length > 0) {
+          setLastCalledNumber(data.calledNumbers[data.calledNumbers.length - 1]);
+        }
+        
+        // Update winning status of tickets with new called numbers and possibly new pattern
+        updateWinningStatus(data.calledNumbers, data.currentWinPattern || currentWinPattern);
+      }
+    });
+    
+    return () => {
+      log('Cleaning up game state update listeners', 'info');
+      numberCleanup();
+      stateCleanup();
+    };
+  }, [sessionId, isConnected, connectionState, currentWinPattern, updateWinningStatus, listenForEvent, EVENTS]);
 
   // Handle ticket claim
   const handleClaimTicket = (ticket: any) => {

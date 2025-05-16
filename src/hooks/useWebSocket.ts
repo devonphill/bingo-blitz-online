@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { WebSocketConnectionStatus } from '@/types/websocket';
@@ -9,13 +9,13 @@ import { WebSocketConnectionStatus } from '@/types/websocket';
  * @param sessionId Session ID to connect to
  * @returns WebSocket utilities 
  */
-export function useWebSocket(sessionId: string | null) {
+export function useWebSocket(sessionId: string | null | undefined) {
   const [isConnected, setIsConnected] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<WebSocketConnectionStatus>('disconnected');
   
   // Instance ID for logging
-  const instanceId = `wsHook-${Math.random().toString(36).substring(2, 9)}`;
+  const instanceId = useRef(`wsHook-${Math.random().toString(36).substring(2, 9)}`).current;
   
   // Get singleton connection
   const connection = getSingleSourceConnection();
@@ -31,6 +31,13 @@ export function useWebSocket(sessionId: string | null) {
     }
     
     try {
+      // Check if connection service is initialized
+      if (!connection.isServiceInitialized()) {
+        logWithTimestamp(`[${instanceId}] WebSocket service not initialized yet`, 'warn');
+        setConnectionState('connecting');
+        return () => {};
+      }
+      
       // Connect to session
       connection.connect(sessionId);
       
@@ -77,6 +84,12 @@ export function useWebSocket(sessionId: string | null) {
       return () => {};
     }
     
+    // Check if connection service is initialized
+    if (!connection.isServiceInitialized()) {
+      logWithTimestamp(`[${instanceId}] Cannot add listener: WebSocket service not initialized yet`, 'warn');
+      return () => {};
+    }
+    
     try {
       logWithTimestamp(`[${instanceId}] Setting up listener for event: ${eventType}`, 'info');
       
@@ -101,7 +114,10 @@ export function useWebSocket(sessionId: string | null) {
   
   // Auto-connect when sessionId changes
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      logWithTimestamp(`[${instanceId}] No session ID provided, skipping auto-connect`, 'warn');
+      return;
+    }
     
     logWithTimestamp(`[${instanceId}] Auto-connecting to session ${sessionId}`, 'info');
     const cleanup = connect();

@@ -19,21 +19,33 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) 
   const { currentSession } = useSessionContext();
   
   // Create unique instance ID for this hook
-  const instanceId = useRef(`WSNum-${Math.random().toString(36).substring(2, 9)}`);
+  const instanceId = useRef(`WSNum-${Math.random().toString(36).substring(2, 9)}`).current;
   
   // Use the consolidated WebSocket hook
-  const { listenForEvent, EVENTS, isConnected: wsConnected, connectionState: wsConnectionState } = useWebSocket(sessionId);
+  const { 
+    listenForEvent, 
+    EVENTS, 
+    isConnected: wsConnected, 
+    connectionState: wsConnectionState 
+  } = useWebSocket(sessionId);
   
   // Custom log helper
   const log = useCallback((message: string, level: 'info' | 'warn' | 'error' | 'debug' = 'info') => {
-    logWithTimestamp(`[${instanceId.current}] ${message}`, level);
-  }, []);
+    logWithTimestamp(`[${instanceId}] ${message}`, level);
+  }, [instanceId]);
   
   // Set up event listeners for number updates
   useEffect(() => {
     if (!sessionId) {
       log('No session ID provided, skipping setup', 'warn');
       setConnectionState('disconnected');
+      return;
+    }
+    
+    // Ensure WebSocket is connected before setting up listeners
+    if (!wsConnected || (wsConnectionState !== 'SUBSCRIBED' && wsConnectionState !== 'connected')) {
+      log(`WebSocket not ready (state: ${wsConnectionState}), deferring number listener setup`, 'warn');
+      setConnectionState('connecting');
       return;
     }
     
@@ -88,7 +100,6 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) 
       log('Cleaning up number update listeners', 'info');
       numberCleanup();
       resetCleanup();
-      // We do NOT call any global disconnect here
     };
   }, [sessionId, log, listenForEvent, EVENTS, wsConnected, wsConnectionState]);
   

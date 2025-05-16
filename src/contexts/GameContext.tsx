@@ -23,11 +23,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const sessionId = player?.sessionId || null;
   
   // Only set up WebSocket when we have a valid session ID
-  const { listenForEvent, EVENTS, isConnected } = useWebSocket(sessionId);
+  const { listenForEvent, EVENTS, isConnected, connectionState } = useWebSocket(sessionId);
   
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
   const [currentWinPattern, setCurrentWinPattern] = useState<string | null>(null);
+  
+  // Create a unique ID for this component instance
+  const instanceId = React.useRef(`GameContext-${Math.random().toString(36).substring(2, 7)}`).current;
   
   // Use the PlayerTickets hook to fetch and manage tickets
   const { 
@@ -39,17 +42,23 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   
   // Listen for number called updates
   useEffect(() => {
-    // Only set up listeners if we have a valid session ID
+    // Only set up listeners if we have a valid session ID and connection
     if (!sessionId) {
-      logWithTimestamp('GameContext: No session ID available, skipping listener setup', 'warn');
+      logWithTimestamp(`[${instanceId}] No session ID available, skipping number listener setup`, 'warn');
       return;
     }
     
-    logWithTimestamp('GameContext: Setting up number called listener', 'info');
+    // Check connection state before setting up listeners
+    if (connectionState !== 'SUBSCRIBED' && connectionState !== 'connected') {
+      logWithTimestamp(`[${instanceId}] Connection not ready (state: ${connectionState}), deferring number listener setup`, 'warn');
+      return;
+    }
+    
+    logWithTimestamp(`[${instanceId}] Setting up number called listener for session ${sessionId}`, 'info');
     const removeNumberListener = listenForEvent(
       EVENTS.NUMBER_CALLED, 
       (data: any) => {
-        logWithTimestamp('GameContext: Number called update', { number: data.number, count: data.calledNumbers?.length });
+        logWithTimestamp(`[${instanceId}] Number called update`, { number: data.number, count: data.calledNumbers?.length });
         
         if (data.number !== null) {
           setLastCalledNumber(data.number);
@@ -66,27 +75,33 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     );
     
-    // Clean up when unmounting or session changes - only remove this specific listener
+    // Clean up when unmounting or session/connection state changes
     return () => {
-      logWithTimestamp('GameContext: Cleaning up number called listener', 'info');
+      logWithTimestamp(`[${instanceId}] Cleaning up number called listener`, 'info');
       removeNumberListener();
     };
-  }, [sessionId, currentWinPattern, listenForEvent, EVENTS, updateWinningStatus]);
+  }, [sessionId, currentWinPattern, listenForEvent, EVENTS, updateWinningStatus, connectionState, instanceId]);
   
   // Listen for game state updates
   useEffect(() => {
-    // Only set up listeners if we have a valid session ID
+    // Only set up listeners if we have a valid session ID and connection
     if (!sessionId) {
-      logWithTimestamp('GameContext: No session ID available, skipping game state listener setup', 'warn');
+      logWithTimestamp(`[${instanceId}] No session ID available, skipping game state listener setup`, 'warn');
       return;
     }
     
-    logWithTimestamp('GameContext: Setting up game state listener', 'info');
+    // Check connection state before setting up listeners
+    if (connectionState !== 'SUBSCRIBED' && connectionState !== 'connected') {
+      logWithTimestamp(`[${instanceId}] Connection not ready (state: ${connectionState}), deferring game state listener setup`, 'warn');
+      return;
+    }
+    
+    logWithTimestamp(`[${instanceId}] Setting up game state listener for session ${sessionId}`, 'info');
     const removeStateListener = listenForEvent(
       EVENTS.GAME_STATE_UPDATE,
       (gameState: any) => {
         if (gameState?.currentWinPattern) {
-          logWithTimestamp('GameContext: Win pattern update', gameState.currentWinPattern);
+          logWithTimestamp(`[${instanceId}] Win pattern update`, gameState.currentWinPattern);
           setCurrentWinPattern(gameState.currentWinPattern);
           
           // Update winning status when pattern changes
@@ -106,12 +121,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     );
     
-    // Clean up when unmounting or session changes - only remove this specific listener
+    // Clean up when unmounting or session/connection state changes
     return () => {
-      logWithTimestamp('GameContext: Cleaning up game state listener', 'info');
+      logWithTimestamp(`[${instanceId}] Cleaning up game state listener`, 'info');
       removeStateListener();
     };
-  }, [sessionId, calledNumbers, listenForEvent, EVENTS, updateWinningStatus]);
+  }, [sessionId, calledNumbers, listenForEvent, EVENTS, updateWinningStatus, connectionState, instanceId]);
   
   const value = {
     calledNumbers,
