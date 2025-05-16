@@ -1,29 +1,26 @@
-
-import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { BellRing, RefreshCw } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { NetworkDebugging, PlayerClaimCheckingNotification } from '@/components/game';
-import { Spinner } from "@/components/ui/spinner";
-import { PlayerTicketManager } from '@/components/player/PlayerTicketManager';
-import { usePlayerContext } from '@/contexts/PlayerContext';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Card } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
+import { useToast } from "@/hooks/use-toast"
 import { useGameContext } from '@/contexts/GameContext';
+import { usePlayerTickets } from '@/hooks/playerTickets/usePlayerTickets';
+import { usePlayerWebSocketNumbers } from '@/hooks/playerWebSocket/usePlayerWebSocketNumbers';
+import { TicketGrid } from '@/components/tickets/TicketGrid';
+import { BingoButton } from '@/components/tickets/BingoButton';
+import { AutoMarkToggle } from '@/components/tickets/AutoMarkToggle';
+import { ConnectionStatus } from '@/components/game/ConnectionStatus';
+import { NetworkDebugging } from '@/components/game/NetworkDebugging';
 
 interface PlayerGameContentProps {
-  tickets?: any[];
-  currentSession: any;
+  currentSession: { id: string; name: string };
   autoMarking: boolean;
-  setAutoMarking: (value: boolean) => void;
+  setAutoMarking: React.Dispatch<React.SetStateAction<boolean>>;
   playerCode: string;
-  playerName?: string;
-  playerId?: string;
-  onRefreshTickets?: () => void;
-  onReconnect?: () => void;
-  sessionId?: string;
-  onClaimBingo?: (ticket: any) => void;
+  playerName: string;
+  playerId: string;
+  onReconnect: () => void;
+  sessionId: string;
+  onClaimBingo: (ticket: any) => void;
 }
 
 export function PlayerGameContent({
@@ -32,164 +29,151 @@ export function PlayerGameContent({
   setAutoMarking,
   playerCode,
   playerName,
+  playerId,
   onReconnect,
   sessionId,
   onClaimBingo
 }: PlayerGameContentProps) {
   const { toast } = useToast();
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const { player } = usePlayerContext();
-  const gameContext = useGameContext();
-  
-  // Handle saving auto-marking preference to localStorage
-  const handleAutoMarkingChange = (checked: boolean) => {
-    setAutoMarking(checked);
-    localStorage.setItem('autoMarking', checked.toString());
-    toast({
-      title: checked ? "Auto-marking enabled" : "Auto-marking disabled",
-      description: checked 
-        ? "Numbers will be automatically marked on your tickets." 
-        : "You'll need to mark numbers manually.",
-    });
-  };
-  
-  const handleClaimBingo = () => {
-    if (onClaimBingo) {
-      console.log('CLAIM DEBUG - Initiating claim from PlayerGameContent');
-      
-      // Get the first winning ticket from the game context if available
-      const winningTickets = gameContext?.winningTickets || [];
-      
-      if (winningTickets.length > 0) {
-        // Use the first winning ticket if available
-        const ticketToUse = winningTickets[0];
-        console.log('CLAIM DEBUG - Using winning ticket for claim:', {
-          id: ticketToUse.id,
-          serial: ticketToUse.serial,
-          perm: ticketToUse.perm
-        });
-        onClaimBingo(ticketToUse);
-      } else {
-        // If no winning tickets, try to get any assigned ticket
-        console.log('CLAIM DEBUG - No winning ticket found, using player tickets');
-        
-        // We'll still try to claim, but let the backend handle validation
-        // This ensures we're passing a ticket object with a proper structure, not an empty object
-        onClaimBingo({
-          // Pass minimal required fields instead of empty object
-          serial: `manual-claim-${Date.now()}`,
-          perm: 0,
-          position: 0,
-          layout_mask: 0,
-          numbers: []
-        });
-      }
-      
-      toast({
-        title: "Bingo Claim Submitted",
-        description: "Your claim has been submitted and is awaiting verification.",
+  const { tickets, isLoading: isLoadingTickets } = usePlayerTickets(playerCode, playerId, sessionId);
+  const { calledNumbers, lastCalledNumber, isConnected, connectionState, lastUpdateTime, reconnect } = usePlayerWebSocketNumbers(sessionId);
+  const { markNumber, isBingo, resetBingo, selectedTicket, setSelectedTicket } = useGameContext();
+  const [isClaiming, setIsClaiming] = useState(false);
+
+  // Auto marking effect
+  useEffect(() => {
+    if (autoMarking && lastCalledNumber !== null) {
+      tickets?.forEach(ticket => {
+        if (ticket && ticket.numbers) {
+          ticket.numbers.forEach((row, rowIndex) => {
+            row.forEach((number, colIndex) => {
+              if (number === lastCalledNumber) {
+                markNumber(ticket.id, rowIndex, colIndex, number);
+              }
+            });
+          });
+        }
       });
-    } else {
+    }
+  }, [autoMarking, lastCalledNumber, markNumber, tickets]);
+
+  // Load auto marking from local storage
+  useEffect(() => {
+    const storedAutoMarking = localStorage.getItem('autoMarking');
+    if (storedAutoMarking !== null) {
+      setAutoMarking(storedAutoMarking === 'true');
+    }
+  }, [setAutoMarking]);
+
+  // Save auto marking to local storage
+  useEffect(() => {
+    localStorage.setItem('autoMarking', String(autoMarking));
+  }, [autoMarking]);
+
+  // Handle bingo claim
+  const handleBingo = useCallback(() => {
+    if (!selectedTicket) {
       toast({
-        title: "Claim Not Available",
-        description: "The claim function is not available at this time.",
+        title: "No Ticket Selected",
+        description: "Please select a ticket to claim Bingo.",
         variant: "destructive",
       });
+      return;
     }
-  };
-  
-  const handleRefreshClick = () => {
-    if (onReconnect) {
-      setIsRefreshing(true);
-      onReconnect();
-      setTimeout(() => setIsRefreshing(false), 1000);
-    }
-  };
-  
+
+    setIsClaiming(true);
+    onClaimBingo(selectedTicket);
+  }, [onClaimBingo, selectedTicket, toast]);
+
   return (
-    <div className="space-y-6">
-      {/* Add the PlayerClaimCheckingNotification component at the top level */}
-      {sessionId && playerCode && (
-        <PlayerClaimCheckingNotification 
-          sessionId={sessionId} 
-          playerCode={playerCode} 
-        />
-      )}
-      
-      {/* Game Header */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle>
-            {currentSession?.name || "Game Session"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div>
-              <p className="text-sm text-gray-500">
-                Playing as: <span className="font-semibold">{playerName || playerCode}</span>
-              </p>
-              <p className="text-sm text-gray-500">
-                Game Type: <span className="font-semibold">{currentSession?.gameType || "Standard"}</span>
-              </p>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex items-center space-x-2">
-                <Switch 
-                  id="auto-marking" 
-                  checked={autoMarking} 
-                  onCheckedChange={handleAutoMarkingChange} 
-                />
-                <Label htmlFor="auto-marking">Auto-marking</Label>
-              </div>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="flex items-center gap-2" 
-                onClick={handleRefreshClick}
-                disabled={isRefreshing}
-              >
-                {isRefreshing ? (
-                  <>
-                    <Spinner size="sm" />
-                    <span>Reconnecting...</span>
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="h-3 w-3" />
-                    <span>Reconnect</span>
-                  </>
-                )}
-              </Button>
-              <Button 
-                variant="secondary" 
-                size="sm"
-                className="flex items-center gap-2"
-                onClick={handleClaimBingo}
-              >
-                <BellRing className="h-4 w-4" />
-                <span>Claim Bingo</span>
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      
-      {/* Tickets Display */}
-      <PlayerTicketManager 
-        autoMarking={autoMarking}
-        onClaimBingo={onClaimBingo}
-      />
-      
-      {/* Network Debugging (for development only) */}
-      <div className="mt-8 border-t pt-4">
-        <details className="text-sm">
-          <summary className="cursor-pointer text-gray-500 hover:text-gray-700">Debug Information</summary>
-          <div className="mt-2 p-4 bg-gray-50 rounded-md">
-            <NetworkDebugging />
-          </div>
-        </details>
+    <div className="space-y-4">
+      {/* Status Bar */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-2">
+          <h2 className="text-lg font-semibold">{currentSession.name}</h2>
+          <span className="text-sm text-gray-500">Session ID: {currentSession.id}</span>
+        </div>
+
+        {/* Game Info */}
+        <div className="text-right">
+          <p className="text-sm">
+            Last Called:{" "}
+            <span className="font-medium">{lastCalledNumber !== null ? lastCalledNumber : "N/A"}</span>
+          </p>
+          <p className="text-sm text-gray-500">
+            Last Update: {new Date(lastUpdateTime).toLocaleTimeString()}
+          </p>
+        </div>
       </div>
+
+      {/* Auto Mark Toggle */}
+      <AutoMarkToggle autoMarking={autoMarking} setAutoMarking={setAutoMarking} />
+      
+      {/* Network status and debugging components */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+        <ConnectionStatus 
+          sessionId={sessionId} 
+          onReconnect={onReconnect}
+        />
+        {sessionId && <NetworkDebugging sessionId={sessionId} />}
+      </div>
+
+      {/* Players info and tickets */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Players Info */}
+        <Card>
+          <Card.Header>
+            <Card.Title>Player Info</Card.Title>
+          </Card.Header>
+          <Card.Content className="space-y-1">
+            <p>Name: {playerName}</p>
+            <p>Code: {playerCode}</p>
+            <p>ID: {playerId}</p>
+          </Card.Content>
+        </Card>
+
+        {/* Tickets */}
+        <Card>
+          <Card.Header>
+            <Card.Title>Your Tickets</Card.Title>
+          </Card.Header>
+          <Card.Content className="space-y-4">
+            {isLoadingTickets ? (
+              <div className="grid grid-cols-2 gap-2">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="space-y-2">
+                    <Skeleton className="h-4 w-[80px]" />
+                    <Skeleton className="h-32 w-full" />
+                    <Skeleton className="h-4 w-[120px]" />
+                  </div>
+                ))}
+              </div>
+            ) : tickets && tickets.length > 0 ? (
+              <div className="grid grid-cols-2 gap-4">
+                {tickets.map((ticket, index) => (
+                  <div key={ticket.id} className="space-y-2">
+                    <button
+                      onClick={() => setSelectedTicket(ticket)}
+                      className={`w-full text-sm font-medium rounded-md border-2 transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-accent data-[state=checked]:text-accent-foreground ${selectedTicket?.id === ticket.id
+                        ? 'bg-secondary text-secondary-foreground'
+                        : 'bg-muted text-muted-foreground'
+                        }`}
+                    >
+                      Ticket #{index + 1}
+                    </button>
+                    <TicketGrid ticket={ticket} calledNumbers={calledNumbers} markNumber={markNumber} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p>No tickets available.</p>
+            )}
+          </Card.Content>
+        </Card>
+      </div>
+
+      {/* Bingo Claim Button */}
+      <BingoButton isBingo={isBingo} handleBingo={handleBingo} isClaiming={isClaiming} />
     </div>
   );
 }

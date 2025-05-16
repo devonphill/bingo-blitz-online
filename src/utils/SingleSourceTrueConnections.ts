@@ -236,6 +236,14 @@ export class SingleSourceTrueConnections {
   }
   
   /**
+   * Get the current session ID
+   * @returns The current session ID
+   */
+  public getCurrentSessionId(): string | null {
+    return this.currentSessionIdInternal;
+  }
+  
+  /**
    * Check if the service is initialized
    * @returns true if the service is initialized
    */
@@ -662,7 +670,7 @@ export class SingleSourceTrueConnections {
   public onNumberCalled(
     callback: (number: number | null, calledNumbers: number[]) => void
   ): () => void {
-    if (!this.currentSessionId) {
+    if (!this.currentSessionIdInternal) {
       logWithTimestamp('[SSTC] Cannot listen for number called events: No session ID set', 'warn');
       return () => {};
     }
@@ -671,7 +679,7 @@ export class SingleSourceTrueConnections {
       CHANNEL_NAMES.GAME_UPDATES,
       EVENT_TYPES.NUMBER_CALLED,
       (data: any) => {
-        if (data && (data.sessionId === this.currentSessionId)) {
+        if (data && (data.sessionId === this.currentSessionIdInternal)) {
           callback(data.number, data.calledNumbers || []);
         }
       }
