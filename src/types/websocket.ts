@@ -1,20 +1,21 @@
-
 /**
  * WebSocket communication types
  */
 
-// WebSocket connection status
+// WebSocketConnectionStatus - modified to match CONNECTION_STATES values
 export type WebSocketConnectionStatus = 
+  | 'connected'
+  | 'connecting'
+  | 'disconnected'
+  | 'error'
+  | 'unknown'
   | 'SUBSCRIBED'
   | 'TIMED_OUT'
   | 'CLOSED'
   | 'CHANNEL_ERROR'
   | 'CONNECTING'
   | 'JOINED'
-  | 'JOINING'
-  | 'disconnected'
-  | 'error'
-  | 'unknown';
+  | 'JOINING';
 
 // WebSocket event payload
 export interface WebSocketEventPayload<T = any> {
@@ -39,4 +40,3 @@ export interface ClaimSubmittedPayload {
   sessionId: string;
   timestamp: number;
 }
-
