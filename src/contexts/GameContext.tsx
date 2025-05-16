@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { usePlayerTickets, PlayerTicket } from '@/hooks/usePlayerTickets'; 
 import { usePlayerContext } from './PlayerContext';
 import { useSessionContext } from './SessionProvider';
-import { useNetwork } from './network';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface GameContextData {
   calledNumbers: number[];
@@ -19,7 +19,10 @@ const GameContext = createContext<GameContextData | undefined>(undefined);
 export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { player } = usePlayerContext();
   const { currentSession } = useSessionContext();
-  const { addNumberCalledListener, addGameStateUpdateListener } = useNetwork();
+  const sessionId = player?.sessionId || null;
+  
+  // Only set up WebSocket when we have a valid session ID
+  const { listenForEvent, EVENTS } = useWebSocket(sessionId);
   
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
@@ -31,61 +34,81 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isLoadingTickets,
     updateWinningStatus,
     currentWinningTickets
-  } = usePlayerTickets(player?.sessionId);
+  } = usePlayerTickets(sessionId);
   
   // Listen for number called updates
   useEffect(() => {
-    if (!player?.sessionId) return;
+    // Only set up listeners if we have a valid session ID
+    if (!sessionId) {
+      console.log('GameContext: No session ID available, skipping listener setup');
+      return;
+    }
     
     console.log('GameContext: Setting up number called listener');
-    const removeListener = addNumberCalledListener((number, allNumbers) => {
-      console.log('GameContext: Number called update', { number, count: allNumbers?.length });
-      
-      if (number !== null) {
-        setLastCalledNumber(number);
-      }
-      
-      if (allNumbers && Array.isArray(allNumbers)) {
-        setCalledNumbers(allNumbers);
+    const removeNumberListener = listenForEvent(
+      EVENTS.NUMBER_CALLED, 
+      (data: any) => {
+        console.log('GameContext: Number called update', { number: data.number, count: data.calledNumbers?.length });
         
-        // Update winning status when new numbers are called
-        if (currentWinPattern) {
-          updateWinningStatus(allNumbers, currentWinPattern);
+        if (data.number !== null) {
+          setLastCalledNumber(data.number);
+        }
+        
+        if (data.calledNumbers && Array.isArray(data.calledNumbers)) {
+          setCalledNumbers(data.calledNumbers);
+          
+          // Update winning status when new numbers are called
+          if (currentWinPattern) {
+            updateWinningStatus(data.calledNumbers, currentWinPattern);
+          }
         }
       }
-    });
+    );
     
-    return removeListener;
-  }, [player?.sessionId, currentWinPattern, addNumberCalledListener, updateWinningStatus]);
+    // Clean up when unmounting or session changes
+    return () => {
+      removeNumberListener();
+    };
+  }, [sessionId, currentWinPattern, listenForEvent, EVENTS, updateWinningStatus]);
   
   // Listen for game state updates
   useEffect(() => {
-    if (!player?.sessionId) return;
+    // Only set up listeners if we have a valid session ID
+    if (!sessionId) {
+      console.log('GameContext: No session ID available, skipping game state listener setup');
+      return;
+    }
     
     console.log('GameContext: Setting up game state listener');
-    const removeListener = addGameStateUpdateListener((gameState) => {
-      if (gameState?.currentWinPattern) {
-        console.log('GameContext: Win pattern update', gameState.currentWinPattern);
-        setCurrentWinPattern(gameState.currentWinPattern);
+    const removeStateListener = listenForEvent(
+      EVENTS.GAME_STATE_UPDATE,
+      (gameState: any) => {
+        if (gameState?.currentWinPattern) {
+          console.log('GameContext: Win pattern update', gameState.currentWinPattern);
+          setCurrentWinPattern(gameState.currentWinPattern);
+          
+          // Update winning status when pattern changes
+          if (calledNumbers.length > 0) {
+            updateWinningStatus(calledNumbers, gameState.currentWinPattern);
+          }
+        }
         
-        // Update winning status when pattern changes
-        if (calledNumbers.length > 0) {
-          updateWinningStatus(calledNumbers, gameState.currentWinPattern);
+        // Update called numbers from game state if available
+        if (gameState?.calledNumbers && Array.isArray(gameState.calledNumbers)) {
+          setCalledNumbers(gameState.calledNumbers);
+          
+          if (gameState.calledNumbers.length > 0) {
+            setLastCalledNumber(gameState.calledNumbers[gameState.calledNumbers.length - 1]);
+          }
         }
       }
-      
-      // Update called numbers from game state if available
-      if (gameState?.calledNumbers && Array.isArray(gameState.calledNumbers)) {
-        setCalledNumbers(gameState.calledNumbers);
-        
-        if (gameState.calledNumbers.length > 0) {
-          setLastCalledNumber(gameState.calledNumbers[gameState.calledNumbers.length - 1]);
-        }
-      }
-    });
+    );
     
-    return removeListener;
-  }, [player?.sessionId, calledNumbers, addGameStateUpdateListener, updateWinningStatus]);
+    // Clean up when unmounting or session changes
+    return () => {
+      removeStateListener();
+    };
+  }, [sessionId, calledNumbers, listenForEvent, EVENTS, updateWinningStatus]);
   
   const value = {
     calledNumbers,

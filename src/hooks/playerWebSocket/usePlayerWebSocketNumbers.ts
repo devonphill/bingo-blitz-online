@@ -1,9 +1,9 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { setupNumberUpdateListeners } from './webSocketManager';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { useSessionContext } from '@/contexts/SessionProvider';
 import { NumberCalledPayload } from '@/types/websocket';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 /**
  * Hook for listening to number updates via WebSocket
@@ -21,8 +21,8 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) 
   // Create unique instance ID for this hook
   const instanceId = useRef(`WSNum-${Math.random().toString(36).substring(2, 9)}`);
   
-  // Generate a unique reference for this component instance to track listeners
-  const listenersRef = useRef<(() => void)[]>([]);
+  // Use the consolidated WebSocket hook
+  const { listenForEvent, EVENTS, isConnected: wsConnected, connectionState: wsConnectionState } = useWebSocket(sessionId);
   
   // Custom log helper
   const log = useCallback((message: string, level: 'info' | 'warn' | 'error' | 'debug' = 'info') => {
@@ -41,9 +41,17 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) 
     setConnectionState('connecting');
     
     // Handle new number broadcasts
-    const handleNumberUpdate = (number: number, calledNumbers: number[]) => {
-      log(`Received number update: ${number}, total numbers: ${calledNumbers.length}`, 'info');
-      setNumbers(calledNumbers);
+    const handleNumberUpdate = (data: NumberCalledPayload) => {
+      const { number, calledNumbers } = data;
+      log(`Received number update: ${number}, total numbers: ${calledNumbers?.length || 0}`, 'info');
+      
+      if (calledNumbers && Array.isArray(calledNumbers)) {
+        setNumbers(calledNumbers);
+      } else {
+        // If we only got the new number, append it
+        setNumbers(prev => [...prev, number]);
+      }
+      
       setLastCalledNumber(number);
       setConnectionState('connected');
       setIsConnected(true);
@@ -56,25 +64,32 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) 
       setLastCalledNumber(null);
     };
     
-    // Set up the listener via SingleSourceTrueConnections
-    const removeListener = setupNumberUpdateListeners(
-      sessionId,
-      handleNumberUpdate,
-      handleGameReset,
-      instanceId.current
+    // Set up listeners using the useWebSocket hook
+    const numberCleanup = listenForEvent(
+      EVENTS.NUMBER_CALLED,
+      handleNumberUpdate
     );
     
-    // Store the cleanup function
-    listenersRef.current.push(removeListener);
+    const resetCleanup = listenForEvent(
+      EVENTS.GAME_RESET,
+      handleGameReset
+    );
+    
+    // Update connection state based on WebSocket connection
+    setIsConnected(wsConnected);
+    setConnectionState(
+      wsConnectionState === 'SUBSCRIBED' ? 'connected' :
+      wsConnectionState === 'CONNECTING' || wsConnectionState === 'JOINING' ? 'connecting' :
+      wsConnectionState === 'error' ? 'error' : 'disconnected'
+    );
     
     // Clean up on unmount/change
     return () => {
       log('Cleaning up number update listeners', 'info');
-      listenersRef.current.forEach(removeListener => removeListener());
-      listenersRef.current = [];
-      setConnectionState('disconnected');
+      numberCleanup();
+      resetCleanup();
     };
-  }, [sessionId, log]);
+  }, [sessionId, log, listenForEvent, EVENTS, wsConnected, wsConnectionState]);
   
   // Reset connection if session changes significantly
   useEffect(() => {
@@ -82,10 +97,6 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) 
     if (sessionId && currentSession && currentSession.id !== sessionId) {
       log(`Session changed from ${sessionId} to ${currentSession.id}, resetting`, 'info');
       setConnectionState('disconnected');
-      
-      // Clean up existing listeners
-      listenersRef.current.forEach(removeListener => removeListener());
-      listenersRef.current = [];
       
       // Reset state
       setNumbers([]);

@@ -61,13 +61,6 @@ export function useWebSocket(sessionId: string | null) {
     }
   }, [sessionId, instanceId, connection]);
   
-  // Disconnect from WebSocket
-  const disconnect = useCallback(() => {
-    setIsConnected(false);
-    setConnectionState('disconnected');
-    logWithTimestamp(`[${instanceId}] Disconnected from WebSocket`, 'info');
-  }, [instanceId]);
-  
   // Listen for a specific event
   const listenForEvent = useCallback(<T>(
     eventType: string, 
@@ -99,18 +92,24 @@ export function useWebSocket(sessionId: string | null) {
   
   // Auto-connect when sessionId changes
   useEffect(() => {
+    if (!sessionId) return;
+    
+    logWithTimestamp(`[${instanceId}] Auto-connecting to session ${sessionId}`, 'info');
     const cleanup = connect();
+    
+    // Only disconnect specific listeners, not the channel itself
     return () => {
+      logWithTimestamp(`[${instanceId}] Cleaning up listeners for session ${sessionId}`, 'info');
       cleanup();
+      // We don't call disconnect() here anymore to prevent aggressive channel cleanup
     };
-  }, [sessionId, connect, disconnect]);
+  }, [sessionId, connect, instanceId]);
   
   return {
     isConnected,
     connectionState,
     lastError,
     connect,
-    disconnect,
     listenForEvent,
     EVENTS  // Expose the event types
   };

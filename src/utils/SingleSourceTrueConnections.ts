@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { getWebSocketService, initializeWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 import { logWithTimestamp } from './logUtils';
@@ -24,6 +23,8 @@ export class SingleSourceTrueConnections {
   private activeChannels: Map<string, any> = new Map();
   // Track channel statuses
   private channelStatuses: Map<string, string> = new Map();
+  // Track reference counts for channels
+  private channelRefCounts: Map<string, number> = new Map();
   
   // Import constants from websocket service to ensure consistency
   private WEBSOCKET_STATUS = {
@@ -130,7 +131,10 @@ export class SingleSourceTrueConnections {
           status === this.WEBSOCKET_STATUS.JOINED || 
           status === this.WEBSOCKET_STATUS.JOINING || 
           status === this.WEBSOCKET_STATUS.CONNECTING) {
-        logWithTimestamp(`Reusing existing ${channelName} channel with status: ${status}`, 'info');
+        // Increment reference count
+        const currentCount = this.channelRefCounts.get(channelName) || 0;
+        this.channelRefCounts.set(channelName, currentCount + 1);
+        logWithTimestamp(`[SSTC] Reusing active channel: ${channelName}. Incrementing ref count to ${currentCount + 1}`, 'info');
         return channel;
       }
       
@@ -140,8 +144,28 @@ export class SingleSourceTrueConnections {
     }
     
     // Create a new channel
-    logWithTimestamp(`Creating new ${channelName} channel`, 'info');
+    logWithTimestamp(`[SSTC] Creating new channel: ${channelName}. Setting ref count to 1.`, 'info');
+    this.channelRefCounts.set(channelName, 1);
     return this.createAndSetupNewChannel(channelName);
+  }
+  
+  /**
+   * Decrement reference count for a channel and clean up if no more references
+   * @param channelName The channel name to decrement references for
+   */
+  private decrementChannelRefCount(channelName: string): void {
+    if (this.channelRefCounts.has(channelName)) {
+      const count = this.channelRefCounts.get(channelName)! - 1;
+      
+      if (count <= 0) {
+        logWithTimestamp(`[SSTC] Channel ${channelName} ref count is 0. Cleaning up.`, 'info');
+        this.cleanupChannel(channelName);
+        this.channelRefCounts.delete(channelName);
+      } else {
+        this.channelRefCounts.set(channelName, count);
+        logWithTimestamp(`[SSTC] Channel ${channelName} ref count decremented to ${count}`, 'info');
+      }
+    }
   }
   
   /**
@@ -271,8 +295,8 @@ export class SingleSourceTrueConnections {
     }
     
     try {
-      // Get or create channel
-      this.getOrCreateChannel(channelName);
+      // Get or create channel (with reference counting)
+      const channel = this.getOrCreateChannel(channelName);
       
       // Add listener using WebSocketService
       const webSocketService = getWebSocketService();
@@ -292,7 +316,14 @@ export class SingleSourceTrueConnections {
         }
       );
       
-      return cleanup;
+      // Return a combined cleanup function that decrements the ref count
+      return () => {
+        // Remove the specific listener
+        cleanup();
+        
+        // Decrement ref count for the channel
+        this.decrementChannelRefCount(channelName);
+      };
     } catch (error) {
       logWithTimestamp(`Error adding listener for event ${eventType} on channel ${channelName}: ${error}`, 'error');
       return () => {};
@@ -460,6 +491,8 @@ export class SingleSourceTrueConnections {
     // Clear all channel maps
     this.activeChannels.clear();
     this.channelStatuses.clear();
+    // Also clear the reference counts
+    this.channelRefCounts.clear();
   }
   
   /**
@@ -590,4 +623,3 @@ export const getSingleSourceConnection = () => SingleSourceTrueConnections.getIn
 export { CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 export type { ConnectionState } from '@/constants/connectionConstants';
 export type { NumberCalledListener, SessionProgressListener, ConnectionStatusListener } from './connection/connectionTypes';
-
