@@ -4,7 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Spinner } from "@/components/ui/spinner";
 import { MainLayout, PlayerLayout } from '@/components/layout';
 import LoginForm from '@/components/auth/LoginForm';
-import { PlayerContextProvider } from '@/contexts/PlayerContext';
+import { PlayerProvider } from '@/contexts/PlayerContext';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { AuthContextProvider } from '@/contexts/AuthContext'; 
 import { GameManagerProvider } from '@/contexts/GameManager';
@@ -62,7 +62,7 @@ const GameManagement = () => <div className="p-8"><h1 className="text-2xl">Game 
 const PlayerRoutes = () => {
   logWithTimestamp('Initializing PlayerRoutes component with PlayerContextProvider', 'info');
   return (
-    <PlayerContextProvider>
+    <PlayerProvider>
       <PlayerLayout>
         <Suspense fallback={<LoadingSpinner size="lg" />}>
           <Routes>
@@ -71,7 +71,7 @@ const PlayerRoutes = () => {
           </Routes>
         </Suspense>
       </PlayerLayout>
-    </PlayerContextProvider>
+    </PlayerProvider>
   );
 };
 

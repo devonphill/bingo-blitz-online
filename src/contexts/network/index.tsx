@@ -4,3 +4,6 @@ export { NetworkProvider, useNetworkContext, NetworkContext } from './NetworkPro
 
 // Re-export type definitions
 export type { NetworkContextType, NetworkProviderProps } from './types';
+
+// Re-export useNetwork from NetworkStatusContext for backward compatibility
+export { useNetwork } from '../NetworkStatusContext';

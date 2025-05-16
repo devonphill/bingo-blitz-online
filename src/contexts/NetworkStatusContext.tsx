@@ -90,5 +90,5 @@ export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({
 
 export const useNetworkStatus = () => useContext(NetworkStatusContext);
 
-// Also provide the previous useNetwork for backward compatibility
+// Also provide the useNetwork hook for backward compatibility
 export const useNetwork = useNetworkStatus;
