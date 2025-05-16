@@ -102,7 +102,6 @@ export function useWebSocket(sessionId: string | null) {
     const cleanup = connect();
     return () => {
       cleanup();
-      disconnect();
     };
   }, [sessionId, connect, disconnect]);
   
