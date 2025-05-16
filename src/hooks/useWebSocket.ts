@@ -13,6 +13,7 @@ export type WebSocketConnectionStatus = ConnectionState | 'SUBSCRIBED' | 'CLOSED
  */
 export function useWebSocket(sessionId: string | null | undefined) {
   const [isConnected, setIsConnected] = useState(false);
+  const [isWsReady, setIsWsReady] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<WebSocketConnectionStatus>('disconnected');
   
@@ -26,7 +27,7 @@ export function useWebSocket(sessionId: string | null | undefined) {
     GAME_STATE_UPDATE: 'game-state-changed',
     GAME_RESET: 'game-reset',
     CLAIM_SUBMITTED: 'claim-submitted',
-    CLAIM_VALIDATED: 'claim-validated'
+    CLAIM_VALIDATION: 'claim-validation'
   };
 
   // Connect to WebSocket
@@ -35,12 +36,16 @@ export function useWebSocket(sessionId: string | null | undefined) {
       logWithTimestamp(`[${instanceId}] Cannot connect: No session ID`, 'warn');
       setLastError('No session ID provided');
       setConnectionState('disconnected');
+      setIsWsReady(false);
       return () => {};
     }
     
     try {
       // Check if connection service is initialized
-      if (!connection.isServiceInitialized()) {
+      const isInitialized = connection.isServiceInitialized();
+      setIsWsReady(isInitialized);
+      
+      if (!isInitialized) {
         logWithTimestamp(`[${instanceId}] WebSocket service not initialized yet`, 'warn');
         setConnectionState('connecting');
         return () => {};
@@ -54,6 +59,8 @@ export function useWebSocket(sessionId: string | null | undefined) {
         setIsConnected(connected);
         // Update the connection state based on the connection status
         setConnectionState(connected ? 'connected' : 'disconnected');
+        setIsWsReady(connected);
+        
         if (connected) {
           setLastError(null);
         }
@@ -62,8 +69,10 @@ export function useWebSocket(sessionId: string | null | undefined) {
       setIsConnected(connection.isConnected());
       // Set initial connection state
       setConnectionState(connection.isConnected() ? 'connected' : 'disconnected');
+      setIsWsReady(connection.isServiceInitialized());
       setLastError(null);
-      logWithTimestamp(`[${instanceId}] Connected to WebSocket for session ${sessionId}`, 'info');
+      
+      logWithTimestamp(`[${instanceId}] Connected to WebSocket for session ${sessionId}. Service ready: ${isInitialized}`, 'info');
       
       return cleanup;
     } catch (error) {
@@ -72,6 +81,7 @@ export function useWebSocket(sessionId: string | null | undefined) {
       setLastError(`Connection error: ${errorMsg}`);
       setIsConnected(false);
       setConnectionState('error');
+      setIsWsReady(false);
       return () => {};
     }
   }, [sessionId, instanceId, connection]);
@@ -81,6 +91,7 @@ export function useWebSocket(sessionId: string | null | undefined) {
     logWithTimestamp(`[${instanceId}] Manually disconnecting WebSocket`, 'info');
     setIsConnected(false);
     setConnectionState('disconnected');
+    setIsWsReady(false);
     return () => {};
   }, [instanceId]);
   
@@ -89,6 +100,7 @@ export function useWebSocket(sessionId: string | null | undefined) {
     eventType: string, 
     handler: (data: T) => void
   ) => {
+    // Skip if no session ID
     if (!sessionId) {
       logWithTimestamp(`[${instanceId}] Cannot listen for event: No session ID`, 'warn');
       return () => {};
@@ -111,7 +123,8 @@ export function useWebSocket(sessionId: string | null | undefined) {
       
       // Use the singleton connection to listen for events
       // This will increment the reference count for the channel
-      const cleanup = connection.listenForEvent<T>(eventType, (payload) => {
+      const channelName = eventType.includes('claim') ? 'claim-updates' : 'game-updates';
+      const cleanup = connection.listenForEvent<T>(channelName, eventType, (payload) => {
         logWithTimestamp(`[${instanceId}] Received event: ${eventType}`, 'info');
         console.log(`Full payload for ${eventType}:`, payload);
         handler(payload);
@@ -132,11 +145,27 @@ export function useWebSocket(sessionId: string | null | undefined) {
   useEffect(() => {
     if (!sessionId) {
       logWithTimestamp(`[${instanceId}] No session ID provided, skipping auto-connect`, 'warn');
+      setIsWsReady(false);
       return;
     }
     
     logWithTimestamp(`[${instanceId}] Auto-connecting to session ${sessionId}`, 'info');
     const cleanup = connect();
+    
+    // Set up a separate effect to monitor service initialization status
+    const checkServiceInitialized = () => {
+      const isInitialized = connection.isServiceInitialized();
+      setIsWsReady(isInitialized);
+      if (!isInitialized) {
+        // Check again in 1 second
+        setTimeout(checkServiceInitialized, 1000);
+      }
+    };
+    
+    // Start checking if not ready
+    if (!connection.isServiceInitialized()) {
+      checkServiceInitialized();
+    }
     
     // Only call the specific listener cleanup function
     return () => {
@@ -144,10 +173,11 @@ export function useWebSocket(sessionId: string | null | undefined) {
       cleanup();
       // We explicitly do NOT call any global disconnect here to preserve shared channels
     };
-  }, [sessionId, connect, instanceId]);
+  }, [sessionId, connect, instanceId, connection]);
   
   return {
     isConnected,
+    isWsReady,
     connectionState,
     lastError,
     connect,

@@ -20,6 +20,13 @@ export function setupNumberUpdateListeners(
   
   // Use SingleSourceTrueConnections to set up listeners
   const singleSource = getSingleSourceConnection();
+  
+  // Check if WebSocket service is initialized
+  if (!singleSource.isServiceInitialized()) {
+    logWithTimestamp(`[${instanceId}] WebSocket service not initialized, deferring setup`, 'warn');
+    return () => {};
+  }
+  
   return singleSource.setupNumberUpdateListeners(
     sessionId,
     onNumberUpdate,

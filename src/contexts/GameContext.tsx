@@ -5,6 +5,7 @@ import { usePlayerContext } from './PlayerContext';
 import { useSessionContext } from './SessionProvider';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { CHANNEL_NAMES } from '@/constants/websocketConstants';
 
 interface GameContextData {
   calledNumbers: number[];
@@ -23,7 +24,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const sessionId = player?.sessionId || null;
   
   // Only set up WebSocket when we have a valid session ID
-  const { listenForEvent, EVENTS, isConnected, connectionState } = useWebSocket(sessionId);
+  const { listenForEvent, EVENTS, isConnected, connectionState, isWsReady } = useWebSocket(sessionId);
   
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
@@ -42,23 +43,35 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   
   // Listen for number called updates
   useEffect(() => {
-    // Only set up listeners if we have a valid session ID and connection
+    // Only set up listeners if we have a valid session ID and WebSocket is ready
     if (!sessionId) {
       logWithTimestamp(`[${instanceId}] No session ID available, skipping number listener setup`, 'warn');
-      return;
+      return () => {};
     }
     
-    // Check connection state before setting up listeners
-    if (connectionState !== 'SUBSCRIBED' && connectionState !== 'connected') {
-      logWithTimestamp(`[${instanceId}] Connection not ready (state: ${connectionState}), deferring number listener setup`, 'warn');
-      return;
+    // Check WebSocket readiness before setting up listeners
+    if (!isWsReady) {
+      logWithTimestamp(`[${instanceId}] WebSocket not ready, deferring number listener setup`, 'warn');
+      return () => {};
+    }
+    
+    // Verify that we have a valid event type
+    if (!EVENTS || !EVENTS.NUMBER_CALLED) {
+      logWithTimestamp(`[${instanceId}] No valid event type for NUMBER_CALLED, skipping listener setup`, 'error');
+      return () => {};
     }
     
     logWithTimestamp(`[${instanceId}] Setting up number called listener for session ${sessionId}`, 'info');
     const removeNumberListener = listenForEvent(
       EVENTS.NUMBER_CALLED, 
       (data: any) => {
-        logWithTimestamp(`[${instanceId}] Number called update: ${JSON.stringify(data)}`);
+        // Verify the data is for our session
+        if (data?.sessionId !== sessionId) {
+          logWithTimestamp(`[${instanceId}] Ignoring number called for different session: ${data?.sessionId}`, 'debug');
+          return;
+        }
+        
+        logWithTimestamp(`[${instanceId}] Number called update: ${JSON.stringify(data)}`, 'info');
         
         if (data.number !== undefined) {
           setLastCalledNumber(data.number);
@@ -80,28 +93,40 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       logWithTimestamp(`[${instanceId}] Cleaning up number called listener`, 'info');
       removeNumberListener();
     };
-  }, [sessionId, currentWinPattern, listenForEvent, EVENTS, updateWinningStatus, connectionState, instanceId]);
+  }, [sessionId, currentWinPattern, listenForEvent, EVENTS, updateWinningStatus, isWsReady, instanceId]);
   
   // Listen for game state updates
   useEffect(() => {
-    // Only set up listeners if we have a valid session ID and connection
+    // Only set up listeners if we have a valid session ID and WebSocket is ready
     if (!sessionId) {
       logWithTimestamp(`[${instanceId}] No session ID available, skipping game state listener setup`, 'warn');
-      return;
+      return () => {};
     }
     
-    // Check connection state before setting up listeners
-    if (connectionState !== 'SUBSCRIBED' && connectionState !== 'connected') {
-      logWithTimestamp(`[${instanceId}] Connection not ready (state: ${connectionState}), deferring game state listener setup`, 'warn');
-      return;
+    // Check WebSocket readiness before setting up listeners
+    if (!isWsReady) {
+      logWithTimestamp(`[${instanceId}] WebSocket not ready, deferring game state listener setup`, 'warn');
+      return () => {};
+    }
+    
+    // Verify that we have a valid event type
+    if (!EVENTS || !EVENTS.GAME_STATE_UPDATE) {
+      logWithTimestamp(`[${instanceId}] No valid event type for GAME_STATE_UPDATE, skipping listener setup`, 'error');
+      return () => {};
     }
     
     logWithTimestamp(`[${instanceId}] Setting up game state listener for session ${sessionId}`, 'info');
     const removeStateListener = listenForEvent(
       EVENTS.GAME_STATE_UPDATE,
       (gameState: any) => {
+        // Verify the data is for our session
+        if (gameState?.sessionId !== sessionId) {
+          logWithTimestamp(`[${instanceId}] Ignoring game state update for different session: ${gameState?.sessionId}`, 'debug');
+          return;
+        }
+        
         if (gameState?.currentWinPattern) {
-          logWithTimestamp(`[${instanceId}] Win pattern update`, gameState.currentWinPattern);
+          logWithTimestamp(`[${instanceId}] Win pattern update: ${gameState.currentWinPattern}`, 'info');
           setCurrentWinPattern(gameState.currentWinPattern);
           
           // Update winning status when pattern changes
@@ -126,7 +151,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       logWithTimestamp(`[${instanceId}] Cleaning up game state listener`, 'info');
       removeStateListener();
     };
-  }, [sessionId, calledNumbers, listenForEvent, EVENTS, updateWinningStatus, connectionState, instanceId]);
+  }, [sessionId, calledNumbers, listenForEvent, EVENTS, updateWinningStatus, isWsReady, instanceId]);
   
   const value = {
     calledNumbers,

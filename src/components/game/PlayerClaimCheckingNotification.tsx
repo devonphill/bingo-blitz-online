@@ -7,6 +7,7 @@ import { logWithTimestamp } from '@/utils/logUtils';
 import CallerTicketDisplay from './CallerTicketDisplay';
 import { ClaimData } from '@/types/claim';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { CHANNEL_NAMES } from '@/constants/websocketConstants';
 
 interface PlayerClaimCheckingNotificationProps {
   sessionId: string;
@@ -26,20 +27,26 @@ export default function PlayerClaimCheckingNotification({
   const instanceId = useRef(`claimNotify-${Math.random().toString(36).substring(2, 7)}`).current;
   
   // Use the WebSocket hook
-  const { listenForEvent, EVENTS, isConnected, connectionState } = useWebSocket(sessionId);
+  const { listenForEvent, EVENTS, isConnected, connectionState, isWsReady } = useWebSocket(sessionId);
 
   // Listen for claim checking broadcasts
   useEffect(() => {
     // Validate we have the required session ID
     if (!sessionId) {
       logWithTimestamp(`[${instanceId}] Cannot setup claim notification listener: No session ID`, 'warn');
-      return;
+      return () => {};
     }
 
-    // Check connection state before setting up listeners
-    if (connectionState !== 'SUBSCRIBED' && connectionState !== 'connected') {
-      logWithTimestamp(`[${instanceId}] Connection not ready (state: ${connectionState}), deferring claim listener setup`, 'warn');
-      return;
+    // Check if WebSocket service is ready before setting up listeners
+    if (!isWsReady) {
+      logWithTimestamp(`[${instanceId}] WebSocket service not ready, deferring claim listener setup`, 'warn');
+      return () => {};
+    }
+    
+    // Verify that we have valid event types
+    if (!EVENTS || !EVENTS.CLAIM_VALIDATING_TKT || !EVENTS.CLAIM_RESULT || !EVENTS.CLAIM_RESOLUTION) {
+      logWithTimestamp(`[${instanceId}] Missing event types for claim notifications`, 'error');
+      return () => {};
     }
 
     logWithTimestamp(`[${instanceId}] Setting up claim validation listener for session ${sessionId}`, 'info');
@@ -155,7 +162,9 @@ export default function PlayerClaimCheckingNotification({
     };
 
     // Set up listeners only when we have a valid connection
-    if (isConnected) {
+    if (isWsReady) {
+      logWithTimestamp(`[${instanceId}] WebSocket ready, setting up claim listeners`, 'info');
+      
       // Use listenForEvent from the WebSocket hook to listen for claim validating events
       const cleanupValidating = listenForEvent(
         EVENTS.CLAIM_VALIDATING_TKT,
@@ -186,9 +195,9 @@ export default function PlayerClaimCheckingNotification({
       };
     } else {
       logWithTimestamp(`[${instanceId}] Not connected to WebSocket, skipping claim listener setup`, 'warn');
-      return;
+      return () => {};
     }
-  }, [sessionId, playerCode, instanceId, listenForEvent, EVENTS, isConnected, connectionState, isOpen, claimBeingChecked]);
+  }, [sessionId, playerCode, instanceId, listenForEvent, EVENTS, isWsReady, claimBeingChecked, isOpen]);
 
   // Also listen to custom browser events that might be dispatched by other components
   useEffect(() => {
