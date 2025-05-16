@@ -138,12 +138,153 @@ export class SingleSourceTrueConnections {
       });
     }
   }
-  
-  // Stub methods to satisfy interface requirements
-  // These will be properly implemented in later steps
+
+  /**
+   * Get or create a channel by name with reference counting
+   * @param channelName The name of the channel to get or create
+   * @returns The RealtimeChannel instance
+   */
+  private getOrCreateChannel(channelName: string): RealtimeChannel | null {
+    if (this.channels.has(channelName)) {
+      const existingChannel = this.channels.get(channelName)!;
+      console.log(`[SSTC DEBUG] getOrCreateChannel: Found existing channel '${channelName}' with state: ${existingChannel.state}`);
+      
+      if (existingChannel.state === 'joined') {
+        logWithTimestamp(`[SSTC DEBUG] getOrCreateChannel: Reusing ALREADY JOINED channel '${channelName}'.`, 'info');
+        return existingChannel;
+      } else {
+        logWithTimestamp(`[SSTC DEBUG] Existing channel '${channelName}' is not 'joined' (state: ${existingChannel.state}). Will remove and recreate.`, 'warn');
+        try {
+          this.webSocketService.leaveChannel(channelName);
+        } catch (e) {
+          logWithTimestamp(`[SSTC] Error removing channel ${channelName}: ${e}`, 'error');
+        }
+        this.channels.delete(channelName);
+        this.channelRefCounts.delete(channelName);
+        // Continue to create a new channel
+      }
+    }
+
+    try {
+      logWithTimestamp(`[SSTC DEBUG] Creating NEW channel instance for: ${channelName}`, 'info');
+      const newChannel = this.webSocketService.createChannel(channelName);
+      this.channels.set(channelName, newChannel);
+      this.channelRefCounts.set(channelName, 0); // Initialize ref count
+      return newChannel;
+    } catch (error) {
+      logWithTimestamp(`[SSTC] Error creating channel ${channelName}: ${error}`, 'error');
+      return null;
+    }
+  }
+
+  /**
+   * Listen for an event on a channel with reference counting
+   * @param channelName The name of the channel to listen on
+   * @param eventName The name of the event to listen for
+   * @param callback The callback to call when the event is triggered
+   * @returns A cleanup function to remove the listener
+   */
+  public listenForEvent<T = any>(
+    channelName: string, 
+    eventName: string, 
+    callback: (payload: T) => void
+  ): () => void {
+    if (!eventName) {
+      logWithTimestamp(`[SSTC] listenForEvent: eventName is undefined for channel ${channelName}`, 'error');
+      return () => {};
+    }
+
+    // Get or create the channel
+    const channel = this.getOrCreateChannel(channelName);
+    if (!channel) {
+      logWithTimestamp(`[SSTC] listenForEvent: Could not get/create channel ${channelName}`, 'error');
+      return () => {};
+    }
+
+    // Increment reference count
+    const currentRefCount = (this.channelRefCounts.get(channelName) || 0) + 1;
+    this.channelRefCounts.set(channelName, currentRefCount);
+    logWithTimestamp(`[SSTC] listenForEvent: Ref count for ${channelName} is now ${currentRefCount}.`, 'info');
+
+    // If this is the first listener and the channel is not already joined or joining, subscribe
+    if (currentRefCount === 1 && channel.state !== 'joined' && channel.state !== 'joining') {
+      logWithTimestamp(`[SSTC] listenForEvent: First listener for ${channelName}, state is ${channel.state}. Subscribing channel.`, 'info');
+      
+      channel.subscribe((status, err) => {
+        if (err) {
+          logWithTimestamp(`[SSTC] Channel ${channelName} error: ${err.message}`, 'error');
+        } else {
+          logWithTimestamp(`[SSTC] Channel ${channelName} status: ${status}`, 'info');
+          if (status === 'SUBSCRIBED') {
+            logWithTimestamp(`[SSTC] Channel ${channelName} successfully SUBSCRIBED.`, 'info');
+          }
+        }
+      });
+    }
+
+    // Attach the event listener
+    channel.on('broadcast', { event: eventName }, (payload) => {
+      try {
+        callback(payload.payload as T);
+      } catch (error) {
+        logWithTimestamp(`[SSTC] Error in event callback for ${eventName} on ${channelName}: ${error}`, 'error');
+      }
+    });
+
+    logWithTimestamp(`[SSTC] Listener added for event '${eventName}' on channel '${channelName}'.`, 'info');
+
+    // Return cleanup function
+    return () => {
+      logWithTimestamp(`[SSTC] Cleaning up listener for event '${eventName}' on channel '${channelName}'.`, 'info');
+      try {
+        if (channel && typeof channel.off === 'function') {
+          channel.off('broadcast', { event: eventName });
+        }
+      } catch (e) {
+        logWithTimestamp(`[SSTC] Error in channel.off for ${eventName} on ${channelName}: ${e}`, 'error');
+      }
+      this.decrementChannelRefCount(channelName);
+    };
+  }
+
+  /**
+   * Decrement the reference count for a channel and clean up if no more listeners
+   * @param channelName The name of the channel to decrement the reference count for
+   */
+  private decrementChannelRefCount(channelName: string): void {
+    const currentRefCount = this.channelRefCounts.get(channelName) || 0;
+    
+    if (currentRefCount <= 1) {
+      // This was the last reference, clean up the channel
+      logWithTimestamp(`[SSTC] decrementChannelRefCount: Removing last reference to channel ${channelName}`, 'info');
+      
+      const channel = this.channels.get(channelName);
+      if (channel) {
+        try {
+          logWithTimestamp(`[SSTC] Leaving channel ${channelName} due to zero references`, 'info');
+          this.webSocketService.leaveChannel(channelName);
+        } catch (error) {
+          logWithTimestamp(`[SSTC] Error leaving channel ${channelName}: ${error}`, 'error');
+        }
+      }
+      
+      this.channels.delete(channelName);
+      this.channelRefCounts.delete(channelName);
+    } else {
+      // Decrement the reference count
+      this.channelRefCounts.set(channelName, currentRefCount - 1);
+      logWithTimestamp(`[SSTC] decrementChannelRefCount: Ref count for ${channelName} is now ${currentRefCount - 1}`, 'info');
+    }
+  }
   
   public connect(sessionId: string): void {
-    logWithTimestamp(`[SSTC] Stub: Connect to session ${sessionId}`, 'info');
+    if (this.currentSessionIdInternal === sessionId) {
+      logWithTimestamp(`[SSTC] Already connected to session ${sessionId}`, 'info');
+      return;
+    }
+    
+    this.currentSessionIdInternal = sessionId;
+    logWithTimestamp(`[SSTC] Connected to session ${sessionId}`, 'info');
   }
   
   public isConnected(): boolean {
@@ -167,49 +308,8 @@ export class SingleSourceTrueConnections {
     return () => {};
   }
   
-  public listenForEvent<T>(eventType: string, handler: (data: T) => void): () => void {
-    logWithTimestamp(`[SSTC] Stub: Listen for event ${eventType}`, 'info');
-    return () => {};
-  }
-  
-  public onNumberCalled(handler: (number: number | null, allNumbers: number[]) => void): () => void {
-    logWithTimestamp('[SSTC] Stub: onNumberCalled listener added', 'info');
-    return () => {};
-  }
-  
-  public onSessionProgressUpdate(handler: (update: any) => void): () => void {
-    logWithTimestamp('[SSTC] Stub: onSessionProgressUpdate listener added', 'info');
-    return () => {};
-  }
-  
-  public broadcastNumberCalled(sessionId: string, number: number, allNumbers: number[]): Promise<boolean> {
-    logWithTimestamp(`[SSTC] Stub: Broadcast number ${number} called for session ${sessionId}`, 'info');
-    return Promise.resolve(true);
-  }
-  
-  public broadcastWithRetry(channelName: string, eventName: string, payload: any): Promise<boolean> {
-    logWithTimestamp(`[SSTC] Stub: Broadcast with retry on channel ${channelName}, event ${eventName}`, 'info');
-    return Promise.resolve(true);
-  }
-  
-  public callNumber(number: number, sessionId?: string): Promise<boolean> {
-    logWithTimestamp(`[SSTC] Stub: Call number ${number} ${sessionId ? `for session ${sessionId}` : ''}`, 'info');
-    return Promise.resolve(true);
-  }
-  
-  public submitBingoClaim(ticket: any, playerCode: string, sessionId: string): boolean {
-    logWithTimestamp(`[SSTC] Stub: Submit bingo claim for session ${sessionId}`, 'info');
-    return true;
-  }
-  
-  public setupNumberUpdateListeners(
-    sessionId: string,
-    onNumberUpdate: (number: number, numbers: number[]) => void,
-    onGameReset: () => void,
-    instanceId: string
-  ): () => void {
-    logWithTimestamp(`[SSTC] Stub: Setup number update listeners for session ${sessionId}`, 'info');
-    return () => {};
+  public static get EVENT_TYPES() {
+    return EVENT_TYPES;
   }
 }
 
