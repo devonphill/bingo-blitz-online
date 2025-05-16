@@ -106,7 +106,7 @@ export default function ClaimVerificationSheet({
       // Use the broadcast service to send the claim checking broadcast
       const success = await claimBroadcastService.broadcastClaimChecking(
         claimWithNumbers,
-        `Claim being verified by caller for ${claim.playerName || claim.playerId}`
+        sessionId
       );
       
       if (success) {
@@ -251,8 +251,7 @@ export default function ClaimVerificationSheet({
     getActivePatterns,
     progressToNextGame,
     onGameProgress,
-    broadcastClaimChecking,
-    currentCalledNumbers
+    broadcastClaimChecking
   ]);
   
   // Handle rejecting a claim
