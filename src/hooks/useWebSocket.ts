@@ -2,7 +2,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { WebSocketConnectionStatus } from '@/types/websocket';
+import { ConnectionState } from '@/constants/connectionConstants';
+
+export type WebSocketConnectionStatus = ConnectionState | 'SUBSCRIBED' | 'CLOSED' | 'CHANNEL_ERROR' | 'TIMED_OUT' | 'CONNECTING' | 'JOINING' | 'JOINED' | 'unknown';
 
 /**
  * A React hook to interact with the WebSocket service
@@ -19,7 +21,13 @@ export function useWebSocket(sessionId: string | null | undefined) {
   
   // Get singleton connection
   const connection = getSingleSourceConnection();
-  const EVENTS = connection.constructor['EVENT_TYPES'];
+  const EVENTS = connection.constructor['EVENT_TYPES'] || {
+    NUMBER_CALLED: 'number-called',
+    GAME_STATE_UPDATE: 'game-state-changed',
+    GAME_RESET: 'game-reset',
+    CLAIM_SUBMITTED: 'claim-submitted',
+    CLAIM_VALIDATED: 'claim-validated'
+  };
 
   // Connect to WebSocket
   const connect = useCallback(() => {
@@ -45,7 +53,7 @@ export function useWebSocket(sessionId: string | null | undefined) {
       const cleanup = connection.addConnectionListener((connected) => {
         setIsConnected(connected);
         // Update the connection state based on the connection status
-        setConnectionState(connected ? 'SUBSCRIBED' : 'CLOSED');
+        setConnectionState(connected ? 'connected' : 'disconnected');
         if (connected) {
           setLastError(null);
         }
@@ -53,7 +61,7 @@ export function useWebSocket(sessionId: string | null | undefined) {
       
       setIsConnected(connection.isConnected());
       // Set initial connection state
-      setConnectionState(connection.isConnected() ? 'SUBSCRIBED' : 'CLOSED');
+      setConnectionState(connection.isConnected() ? 'connected' : 'disconnected');
       setLastError(null);
       logWithTimestamp(`[${instanceId}] Connected to WebSocket for session ${sessionId}`, 'info');
       
@@ -67,6 +75,14 @@ export function useWebSocket(sessionId: string | null | undefined) {
       return () => {};
     }
   }, [sessionId, instanceId, connection]);
+  
+  // Disconnect function
+  const disconnect = useCallback(() => {
+    logWithTimestamp(`[${instanceId}] Manually disconnecting WebSocket`, 'info');
+    setIsConnected(false);
+    setConnectionState('disconnected');
+    return () => {};
+  }, [instanceId]);
   
   // Listen for a specific event
   const listenForEvent = useCallback(<T>(
@@ -135,6 +151,7 @@ export function useWebSocket(sessionId: string | null | undefined) {
     connectionState,
     lastError,
     connect,
+    disconnect,
     listenForEvent,
     EVENTS  // Expose the event types
   };

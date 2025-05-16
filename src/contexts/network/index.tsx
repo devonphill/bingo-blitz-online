@@ -3,22 +3,28 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { logWithTimestamp } from '@/utils/logUtils';
 
+// Export type to fix TS1205 error
 export type ConnectionState = 'connected' | 'connecting' | 'disconnected' | 'error';
 
 interface NetworkContextValue {
   isConnected: boolean;
   connectionState: ConnectionState;
   connectionTimestamp: number | null;
+  sessionId: string | null; // Add sessionId property
   // Number called handlers
   addNumberCalledListener: (handler: (number: number, allNumbers: number[]) => void) => () => void;
   // Game state handlers
   addGameStateUpdateListener: (handler: (gameState: any) => void) => () => void;
+  // Connection status listener
+  addConnectionStatusListener: (handler: (isConnected: boolean) => void) => () => void; // Add this method
   // Presence events
   addPresenceListener: (handler: (action: 'join' | 'leave' | 'update', userId: string, data: any) => void) => () => void;
   // Connection management
   connect: (sessionId: string) => void;
   // Claim management
   submitBingoClaim: (ticket: any, playerCode: string, sessionId: string) => boolean;
+  // Number calling
+  callNumber: (number: number, sessionId?: string) => Promise<boolean>; // Add callNumber method
   // Player presence tracking
   updatePlayerPresence: (presenceData: any) => Promise<boolean>;
 }
@@ -32,6 +38,7 @@ export const NetworkProvider: React.FC<{
   const [isConnected, setIsConnected] = useState(false);
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [connectionTimestamp, setConnectionTimestamp] = useState<number | null>(null);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
   // Get the singleton connection
   const connection = getSingleSourceConnection();
@@ -45,6 +52,7 @@ export const NetworkProvider: React.FC<{
 
     logWithTimestamp(`[NetworkProvider] Explicitly connecting to session: ${sid}`, 'info');
     connection.connect(sid);
+    setCurrentSessionId(sid);
   }, [connection]);
 
   // Connect to the session if provided in props
@@ -56,6 +64,7 @@ export const NetworkProvider: React.FC<{
 
     logWithTimestamp(`[NetworkProvider] Auto-connecting to session: ${sessionId}`, 'info');
     connection.connect(sessionId);
+    setCurrentSessionId(sessionId);
 
     // Set up connection status listener
     const cleanup = connection.addConnectionListener((connected) => {
@@ -85,6 +94,11 @@ export const NetworkProvider: React.FC<{
     return connection.listenForEvent('GAME_STATE_UPDATE', handler);
   }, [connection]);
 
+  // Add connection status listener
+  const addConnectionStatusListener = useCallback((handler: (isConnected: boolean) => void) => {
+    return connection.addConnectionListener(handler);
+  }, [connection]);
+
   // Add presence listener
   const addPresenceListener = useCallback((handler: (action: 'join' | 'leave' | 'update', userId: string, data: any) => void) => {
     // This is a placeholder for now - we'll need to implement presence functionality
@@ -100,6 +114,11 @@ export const NetworkProvider: React.FC<{
     
     logWithTimestamp(`[NetworkProvider] Submitting bingo claim for session: ${sessionId}`, 'info');
     return connection.submitBingoClaim(ticket, playerCode, sessionId);
+  }, [connection]);
+
+  // Call number 
+  const callNumber = useCallback(async (number: number, sessionId?: string): Promise<boolean> => {
+    return connection.callNumber(number, sessionId);
   }, [connection]);
 
   // Update player presence
@@ -123,11 +142,14 @@ export const NetworkProvider: React.FC<{
     isConnected,
     connectionState,
     connectionTimestamp,
+    sessionId: currentSessionId,
     addNumberCalledListener,
     addGameStateUpdateListener,
+    addConnectionStatusListener, 
     addPresenceListener,
     connect,
     submitBingoClaim,
+    callNumber,
     updatePlayerPresence
   };
 
@@ -146,4 +168,5 @@ export const useNetwork = () => {
   return context;
 };
 
-export { ConnectionState };
+// Use export type to avoid conflicts
+export { NetworkContext };

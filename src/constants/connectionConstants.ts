@@ -1,14 +1,35 @@
 
-/**
- * Connection management constants
- */
+// Define standard connection states
+export type ConnectionState = 'connected' | 'connecting' | 'disconnected' | 'error' | 'SUBSCRIBED' | 'CLOSED' | 'CHANNEL_ERROR' | 'TIMED_OUT' | 'CONNECTING' | 'JOINED' | 'JOINING';
 
-// Time constants
-export const CONNECTION_TIMEOUT = 10000; // 10 seconds
-export const HEARTBEAT_INTERVAL = 30000; // 30 seconds
-export const RECONNECT_BASE_DELAY = 1000; // 1 second base delay
-export const MAX_RECONNECT_ATTEMPTS = 10;
-export const MAX_RECONNECT_DELAY = 10000; // 10 seconds
+// WebSocket-specific status
+export const WEBSOCKET_STATUS = {
+  CONNECTED: 'connected',
+  CONNECTING: 'connecting',
+  DISCONNECTED: 'disconnected',
+  ERROR: 'error',
+  SUBSCRIBED: 'SUBSCRIBED',
+  CLOSED: 'CLOSED',
+  CHANNEL_ERROR: 'CHANNEL_ERROR',
+  TIMED_OUT: 'TIMED_OUT'
+} as const;
 
-// Connection state types
-export type ConnectionState = 'connected' | 'connecting' | 'disconnected' | 'error' | 'unknown';
+// Make all status values available in a single list for type checking
+export const ALL_CONNECTION_STATES: ConnectionState[] = [
+  'connected',
+  'connecting',
+  'disconnected',
+  'error',
+  'SUBSCRIBED',
+  'CLOSED',
+  'CHANNEL_ERROR',
+  'TIMED_OUT',
+  'CONNECTING',
+  'JOINED',
+  'JOINING'
+];
+
+// Helper function to check if a connection state represents being connected
+export const isConnectedState = (state: ConnectionState): boolean => {
+  return state === 'connected' || state === 'SUBSCRIBED';
+};

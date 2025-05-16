@@ -6,7 +6,6 @@ import { logWithTimestamp } from '@/utils/logUtils';
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { useToast } from '@/hooks/use-toast';
 import { useWebSocket } from '@/hooks/useWebSocket';
-import { WebSocketConnectionStatus } from '@/types/websocket';
 
 interface ConnectionStatusProps {
   showFull?: boolean;
@@ -27,7 +26,7 @@ export default function ConnectionStatus({
   const { toast } = useToast();
   
   // Use the WebSocket hook to get connection status
-  const { isConnected, connectionState, lastError, connect, disconnect } = useWebSocket(sessionId);
+  const { isConnected, connectionState, lastError, connect } = useWebSocket(sessionId);
   
   // Get reference to the SingleSourceConnection for advanced operations
   const singleSource = useRef(getSingleSourceConnection());

@@ -14,7 +14,8 @@ export default function NetworkDebugging() {
   
   // Use the network context
   const network = useNetwork();
-  const { connectionState, isConnected, sessionId } = network;
+  const { connectionState, isConnected } = network;
+  const sessionId = network.sessionId || null;
   
   // Access SingleSourceTrueConnections directly
   const singleSource = getSingleSourceConnection();

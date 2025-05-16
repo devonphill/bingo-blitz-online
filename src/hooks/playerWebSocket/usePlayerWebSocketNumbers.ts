@@ -2,10 +2,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { useSessionContext } from '@/contexts/SessionProvider';
-import { NumberCalledPayload } from '@/types/websocket';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { loadStoredNumbers, saveNumbersToStorage } from './storageUtils';
 import { fetchCalledNumbers } from './databaseUtils';
+
+// Interface for number called payload
+interface NumberCalledPayload {
+  number: number;
+  calledNumbers?: number[]; // Make this optional
+  sessionId?: string;
+  timestamp?: number;
+}
 
 /**
  * Hook for listening to number updates via WebSocket
@@ -74,7 +81,7 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) 
     }
     
     // Ensure WebSocket is connected before setting up listeners
-    if (!isConnected || (connectionState !== 'SUBSCRIBED' && connectionState !== 'connected')) {
+    if (!isConnected) {
       log(`WebSocket not ready (state: ${connectionState}), deferring number listener setup`, 'warn');
       return;
     }
@@ -83,15 +90,17 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) 
     
     // Handle new number broadcasts
     const handleNumberUpdate = (data: NumberCalledPayload) => {
-      const { number, calledNumbers } = data;
-      log(`Received number update: ${number}, total numbers: ${calledNumbers?.length || 0}`, 'info');
+      const { number } = data;
+      const receivedNumbersList = data.calledNumbers || [];
+      
+      log(`Received number update: ${number}, total numbers: ${receivedNumbersList.length || 0}`, 'info');
       
       const timestamp = Date.now();
       
-      if (calledNumbers && Array.isArray(calledNumbers)) {
-        setNumbers(calledNumbers);
+      if (receivedNumbersList && Array.isArray(receivedNumbersList) && receivedNumbersList.length > 0) {
+        setNumbers(receivedNumbersList);
         // Save to local storage
-        saveNumbersToStorage(sessionId, calledNumbers, number, timestamp);
+        saveNumbersToStorage(sessionId, receivedNumbersList, number, timestamp);
       } else {
         // If we only got the new number, append it
         const updatedNumbers = [...numbers, number];
@@ -138,7 +147,7 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) 
   const reconnect = useCallback(() => {
     if (sessionId) {
       log(`Manually reconnecting to session ${sessionId}`, 'info');
-      connect(sessionId);
+      connect();
       
       // Re-fetch data from database
       fetchCalledNumbers(sessionId).then(dbNumbers => {
