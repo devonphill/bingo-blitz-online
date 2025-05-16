@@ -22,7 +22,6 @@ export const EVENT_TYPES = {
   GAME_STATUS_UPDATED: 'game-status-updated',
   CLAIM_RESULT: 'claim-result',
   CLAIM_RESOLUTION: 'claim-resolution', // Event for the claim resolution workflow
-  CLAIM_VALIDATED: 'claim-validated',    // Added the missing event type
   
   // Player -> Caller events
   CLAIM_SUBMITTED: 'claim-submitted',

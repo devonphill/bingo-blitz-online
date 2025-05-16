@@ -2,9 +2,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useToast } from '@/components/ui/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { getWebSocketService, CHANNEL_NAMES, EVENT_TYPES } from '@/services/websocket';
 import { v4 as uuidv4 } from 'uuid';
 import { toast as sonnerToast } from 'sonner';
+import { useWebSocket } from '@/hooks/useWebSocket';
+import { CHANNEL_NAMES } from '@/constants/websocketConstants';
 
 /**
  * Hook for managing player claim submissions without client-side validation
@@ -22,9 +23,11 @@ export function usePlayerClaimManagement(
   const [hasActiveClaims, setHasActiveClaims] = useState(false);
   const [lastClaimResult, setLastClaimResult] = useState<{id: string, status: string} | null>(null);
   const { toast } = useToast();
-  const webSocketService = useRef(getWebSocketService());
   const instanceId = useRef(`claim-${Math.random().toString(36).substring(2, 7)}`);
   const activeClaimIds = useRef<Set<string>>(new Set());
+  
+  // Use the WebSocket hook
+  const { listenForEvent, EVENTS, isConnected } = useWebSocket(sessionId);
 
   // Reset claim status
   const resetClaimStatus = useCallback(() => {
@@ -38,9 +41,7 @@ export function usePlayerClaimManagement(
     
     logWithTimestamp(`PlayerClaimManagement[${instanceId.current}]: Setting up claim validation listener for ${playerCode}`, 'info');
     
-    const handleClaimValidation = (event: any) => {
-      const data = event.payload?.data;
-      
+    const handleClaimValidation = (data: any) => {
       if (!data) {
         console.warn('Received claim validation event with no data');
         return;
@@ -87,17 +88,16 @@ export function usePlayerClaimManagement(
       }
     };
     
-    // Subscribe to claim validation events
-    const unsubscribe = webSocketService.current.subscribe(
-      CHANNEL_NAMES.CLAIM_UPDATES,
-      EVENT_TYPES.CLAIM_VALIDATED,
+    // Subscribe to claim validation events using the useWebSocket hook
+    const cleanup = listenForEvent(
+      EVENTS.CLAIM_RESOLUTION,
       handleClaimValidation
     );
     
     return () => {
-      unsubscribe();
+      cleanup();
     };
-  }, [playerCode, playerId, sessionId]);
+  }, [playerCode, playerId, sessionId, listenForEvent, EVENTS]);
 
   // Submit a claim without local validation
   const submitClaim = useCallback(async (ticket: any) => {
@@ -114,6 +114,15 @@ export function usePlayerClaimManagement(
       toast({
         title: "Cannot Submit Claim",
         description: "No active win pattern",
+        variant: "destructive"
+      });
+      return false;
+    }
+
+    if (!isConnected) {
+      toast({
+        title: "Connection Error",
+        description: "No active WebSocket connection. Try refreshing the page.",
         variant: "destructive"
       });
       return false;
@@ -148,24 +157,24 @@ export function usePlayerClaimManagement(
       activeClaimIds.current.add(claimId);
       setHasActiveClaims(true);
 
-      // Broadcast claim using WebSocket
-      const success = await webSocketService.current.broadcastWithRetry(
-        CHANNEL_NAMES.GAME_UPDATES,
-        EVENT_TYPES.CLAIM_SUBMITTED,
-        claimData
-      );
-
-      if (success) {
-        logWithTimestamp(`PlayerClaimManagement[${instanceId.current}]: Claim broadcast sent successfully`, 'info');
-        
-        toast({
-          title: "Claim Submitted",
-          description: "Your claim has been submitted for verification",
-        });
-        return true;
-      } else {
-        throw new Error("Failed to broadcast claim");
-      }
+      // Use the broadcast event from a custom event to send the claim
+      // This is a temporary solution while we transition to using useWebSocket
+      const submitEvent = new CustomEvent('submitPlayerClaim', {
+        detail: { 
+          claimData,
+          channelName: CHANNEL_NAMES.GAME_UPDATES, 
+          eventType: EVENTS.CLAIM_SUBMITTED
+        }
+      });
+      window.dispatchEvent(submitEvent);
+      
+      logWithTimestamp(`PlayerClaimManagement[${instanceId.current}]: Claim broadcast sent via custom event`, 'info');
+      
+      toast({
+        title: "Claim Submitted",
+        description: "Your claim has been submitted for verification",
+      });
+      return true;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logWithTimestamp(`PlayerClaimManagement[${instanceId.current}]: Error submitting claim: ${errorMessage}`, 'error');
@@ -182,7 +191,7 @@ export function usePlayerClaimManagement(
     } finally {
       setIsSubmittingClaim(false);
     }
-  }, [playerCode, playerId, sessionId, playerName, gameType, winPattern, toast]);
+  }, [playerCode, playerId, sessionId, playerName, gameType, winPattern, toast, isConnected, EVENTS]);
 
   return {
     claimStatus,
