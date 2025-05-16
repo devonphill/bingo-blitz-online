@@ -1,6 +1,8 @@
 
-import React, { createContext, useContext } from 'react';
-import { useNetworkContext, ConnectionState } from './network';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useNetworkContext } from './network';
+import { ConnectionState } from '@/constants/connectionConstants';
+import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 
 interface NetworkStatusContextType {
   isConnected: boolean;
@@ -19,7 +21,22 @@ const NetworkStatusContext = createContext<NetworkStatusContextType>({
 export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
   children 
 }) => {
-  const { isConnected, sessionId, connect } = useNetworkContext();
+  const { isConnected: networkIsConnected, sessionId, connect } = useNetworkContext();
+  const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
+  
+  // Use direct connection to SingleSourceTrueConnections
+  useEffect(() => {
+    const connection = getSingleSourceConnection();
+    
+    const cleanup = connection.addConnectionListener((connected, state) => {
+      setConnectionState(state as ConnectionState);
+    });
+    
+    // Call once to set initial state
+    setConnectionState(connection.getConnectionStatus() as ConnectionState);
+    
+    return cleanup;
+  }, []);
   
   const reconnect = React.useCallback(() => {
     if (sessionId) {
@@ -28,8 +45,8 @@ export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [connect, sessionId]);
   
   const value = {
-    isConnected,
-    connectionState: isConnected ? 'connected' : 'disconnected',
+    isConnected: networkIsConnected,
+    connectionState,
     reconnect,
     sessionId
   };
@@ -42,3 +59,6 @@ export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({
 };
 
 export const useNetworkStatus = () => useContext(NetworkStatusContext);
+
+// Also provide the previous useNetwork for backward compatibility
+export const useNetwork = useNetworkStatus;

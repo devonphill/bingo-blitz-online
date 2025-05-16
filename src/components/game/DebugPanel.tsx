@@ -51,7 +51,8 @@ export default function DebugPanel({ sessionId }: DebugPanelProps) {
           </div>
           <div className="flex justify-between">
             <span>Status:</span>
-            <Badge variant={connectionStatus === 'connected' ? 'success' : 'default'}>
+            <Badge variant={connectionStatus === 'connected' ? 'default' : 'outline'} 
+                   className={connectionStatus === 'connected' ? "bg-green-500 hover:bg-green-600" : ""}>
               {connectionStatus}
             </Badge>
           </div>

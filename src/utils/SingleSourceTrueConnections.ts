@@ -2,7 +2,7 @@
 import { logWithTimestamp } from '@/utils/logUtils';
 import { ConnectionState } from '@/constants/connectionConstants';
 import { supabase } from '@/integrations/supabase/client';
-import { CHANNEL_NAMES, EVENT_TYPES } from '@/constants/websocketConstants';
+import { CHANNEL_NAMES, EVENT_TYPES, CONNECTION_STATES } from '@/constants/websocketConstants';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
 // Define WebSocketConnectionStatus type here since it's not exported from connectionConstants
@@ -23,14 +23,14 @@ export class SingleSourceTrueConnections {
   private lastPingTime: Date | null = null;
   
   // Session tracking
-  private currentSessionId: string | null = null;
+  private currentSessionIdInternal: string | null = null;
   
   // Channel management
   private channels: Map<string, RealtimeChannel> = new Map();
   private channelRefCounts: Map<string, number> = new Map();
   
   // Listeners
-  private connectionListeners: Set<(connected: boolean) => void> = new Set();
+  private connectionListeners: Array<(isConnected: boolean, connectionState: WebSocketConnectionStatus) => void> = [];
   private statusListeners: Set<(status: WebSocketConnectionStatus, isServiceInitialized: boolean) => void> = new Set();
   
   // Static event type constants (to avoid circular dependencies)
@@ -70,18 +70,18 @@ export class SingleSourceTrueConnections {
         logWithTimestamp('[SSTC] Browser offline event detected', 'info');
         this.connectionStatusInternal = 'disconnected';
         this.isServiceInitializedInternal = false;
-        this.notifyStatusListeners();
+        this.notifyConnectionListeners();
       });
       
       window.addEventListener('online', () => {
         logWithTimestamp('[SSTC] Browser online event detected', 'info');
         this.connectionStatusInternal = 'connecting';
         // Don't set service initialized here, let the service initialization check handle it
-        this.notifyStatusListeners();
+        this.notifyConnectionListeners();
         
         // Attempt reconnection if we have a session ID
-        if (this.currentSessionId) {
-          this.connect(this.currentSessionId);
+        if (this.currentSessionIdInternal) {
+          this.connect(this.currentSessionIdInternal);
         }
       });
       
@@ -90,7 +90,7 @@ export class SingleSourceTrueConnections {
         logWithTimestamp('[SSTC] Browser reports offline status on initialization', 'warn');
         this.connectionStatusInternal = 'disconnected';
         this.isServiceInitializedInternal = false;
-        this.notifyStatusListeners();
+        this.notifyConnectionListeners();
       }
     }
     
@@ -146,7 +146,7 @@ export class SingleSourceTrueConnections {
             this.isServiceInitializedInternal = newServiceReadyState;
             
             // Notify listeners of change
-            this.notifyStatusListeners();
+            this.notifyConnectionListeners();
           }
         } catch (error) {
           console.error('[SSTC] Error processing storage event:', error);
@@ -162,20 +162,77 @@ export class SingleSourceTrueConnections {
    */
   public connect(sessionId: string): boolean {
     if (!sessionId) {
-      logWithTimestamp('[SSTC] Cannot connect: No session ID provided', 'error');
+      logWithTimestamp('[SSTC] connect: No sessionId provided.', 'error');
       return false;
     }
     
-    logWithTimestamp(`[SSTC] Connecting to session ${sessionId}`, 'info');
+    logWithTimestamp(`[SSTC] connect: Attempting to connect to session: ${sessionId}`, 'info');
     
-    // Store the session ID
-    this.currentSessionId = sessionId;
+    // Check if already connected to this session
+    if (this.currentSessionIdInternal === sessionId && 
+       (this.connectionStatusInternal === CONNECTION_STATES.CONNECTED || 
+        this.connectionStatusInternal === CONNECTION_STATES.CONNECTING)) {
+      logWithTimestamp(`[SSTC] connect: Already connected or connecting to session ${sessionId}.`, 'info');
+      return true;
+    }
     
-    // Connect to the session by setting up default game-updates channel
-    // but don't subscribe yet (we'll wait for listeners)
-    this.getOrCreateChannel('game-updates');
+    // If connected to a different session, disconnect first
+    if (this.currentSessionIdInternal !== null && this.currentSessionIdInternal !== sessionId) {
+      this.disconnect();
+    }
+    
+    // Set the new session ID
+    this.currentSessionIdInternal = sessionId;
+    
+    // Update connection status to connecting
+    this.connectionStatusInternal = CONNECTION_STATES.CONNECTING;
+    
+    // Notify listeners about the status change
+    this.notifyConnectionListeners();
+    
+    // If the service is initialized, we can consider ourselves connected
+    if (this.isServiceInitializedInternal) {
+      this.connectionStatusInternal = CONNECTION_STATES.CONNECTED;
+      logWithTimestamp(`[SSTC] connect: Session ${sessionId} context established. Base WebSocket service was already initialized. State: ${this.connectionStatusInternal}.`, 'info');
+    } else {
+      logWithTimestamp(`[SSTC] connect: Session ${sessionId} context set. Base WebSocket service is not yet initialized. Current state: ${this.connectionStatusInternal}. Waiting for WebSocketService to open.`, 'info');
+    }
+    
+    // Notify listeners again after potential state change
+    this.notifyConnectionListeners();
     
     return true;
+  }
+  
+  /**
+   * Disconnect from the current session
+   */
+  public disconnect(): void {
+    logWithTimestamp(`[SSTC] disconnect: Called for session: ${this.currentSessionIdInternal}`, 'info');
+    
+    // Clean up all session channels
+    this.cleanupAllSessionChannels();
+    
+    // Clear the session ID
+    this.currentSessionIdInternal = null;
+    
+    // Update connection status
+    this.connectionStatusInternal = CONNECTION_STATES.DISCONNECTED;
+    
+    // Notify listeners
+    this.notifyConnectionListeners();
+  }
+  
+  /**
+   * Clean up all session channels
+   * This is a helper method for disconnect()
+   */
+  private cleanupAllSessionChannels(): void {
+    logWithTimestamp('[SSTC] cleanupAllSessionChannels: Clearing local channel and ref count maps. Full channel removal will be tied to ref counting.', 'info');
+    this.channels.clear();
+    this.channelRefCounts.clear();
+    // Note: This does NOT yet call removeChannel on the webSocketService for each channel.
+    // That will be part of the reference counting logic when a channel's ref count hits 0.
   }
   
   /**
@@ -191,7 +248,7 @@ export class SingleSourceTrueConnections {
    * @returns true if connected
    */
   public isConnected(): boolean {
-    return this.connectionStatusInternal === 'connected';
+    return this.connectionStatusInternal === CONNECTION_STATES.CONNECTED && this.isServiceInitializedInternal === true;
   }
   
   /**
@@ -199,6 +256,14 @@ export class SingleSourceTrueConnections {
    * @returns current connection status
    */
   public getConnectionStatus(): WebSocketConnectionStatus {
+    return this.connectionStatusInternal;
+  }
+  
+  /**
+   * Get the current connection state
+   * @returns current connection state
+   */
+  public getCurrentConnectionState(): WebSocketConnectionStatus {
     return this.connectionStatusInternal;
   }
   
@@ -300,7 +365,7 @@ export class SingleSourceTrueConnections {
             if (channelName === 'game-updates') {
               this.connectionStatusInternal = 'connected';
               this.isServiceInitializedInternal = true;
-              this.notifyStatusListeners();
+              this.notifyConnectionListeners();
             }
           }
         }
@@ -358,18 +423,23 @@ export class SingleSourceTrueConnections {
    * @param listener Connection listener
    * @returns Cleanup function
    */
-  public addConnectionListener(listener: (connected: boolean) => void): () => void {
-    this.connectionListeners.add(listener);
+  public addConnectionListener(listener: (isConnected: boolean, connectionState: WebSocketConnectionStatus) => void): () => void {
+    logWithTimestamp('[SSTC] Adding connection listener', 'info');
+    this.connectionListeners.push(listener);
     
     // Call listener immediately with current state
     try {
-      listener(this.isConnected());
+      listener(this.isConnected(), this.connectionStatusInternal);
     } catch (e) {
       console.error('[SSTC] Error in connection listener:', e);
     }
     
     return () => {
-      this.connectionListeners.delete(listener);
+      logWithTimestamp('[SSTC] Removing connection listener', 'info');
+      const index = this.connectionListeners.indexOf(listener);
+      if (index >= 0) {
+        this.connectionListeners.splice(index, 1);
+      }
     };
   }
   
@@ -413,10 +483,11 @@ export class SingleSourceTrueConnections {
    * Notify all connection listeners of a connection change
    */
   private notifyConnectionListeners(): void {
-    const isConnected = this.isConnected();
+    logWithTimestamp(`[SSTC] Notifying ${this.connectionListeners.length} connection listeners. Status: ${this.connectionStatusInternal}, Connected: ${this.isConnected()}`, 'info');
+    
     this.connectionListeners.forEach(listener => {
       try {
-        listener(isConnected);
+        listener(this.isConnected(), this.connectionStatusInternal);
       } catch (e) {
         console.error('[SSTC] Error notifying connection listener:', e);
       }

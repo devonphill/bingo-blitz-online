@@ -17,6 +17,7 @@ export default function ConnectionStatus({
   className = ""
 }: ConnectionStatusProps) {
   const [isConnected, setIsConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState<string>('disconnected');
   const [lastPingTime, setLastPingTime] = useState<Date | null>(null);
   const [pingAge, setPingAge] = useState<string>('N/A');
   
@@ -51,7 +52,10 @@ export default function ConnectionStatus({
   useEffect(() => {
     const connection = getSingleSourceConnection();
     
-    const cleanup = connection.addConnectionListener(setIsConnected);
+    const cleanup = connection.addConnectionListener((connected, state) => {
+      setIsConnected(connected);
+      setConnectionState(state);
+    });
     
     return cleanup;
   }, []);
@@ -80,7 +84,7 @@ export default function ConnectionStatus({
       ) : (
         <>
           <WifiOff className="h-4 w-4 text-red-500" />
-          <span className="text-xs text-red-600">Disconnected</span>
+          <span className="text-xs text-red-600">Disconnected ({connectionState})</span>
           <Button
             variant="ghost"
             size="sm"

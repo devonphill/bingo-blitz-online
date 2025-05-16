@@ -27,7 +27,8 @@ export default function NetworkDebugging({ sessionId }: NetworkDebuggingProps) {
       <CardContent className="space-y-2 text-xs">
         <div className="flex items-center justify-between">
           <span>Connection:</span>
-          <Badge variant={network.isConnected ? "success" : "destructive"}>
+          <Badge variant={network.isConnected ? "default" : "destructive"} 
+                 className={network.isConnected ? "bg-green-500 hover:bg-green-600" : ""}>
             {network.isConnected ? 'Connected' : 'Disconnected'}
           </Badge>
         </div>
