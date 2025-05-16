@@ -1,52 +1,54 @@
 
-import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { CONNECTION_STATES } from '@/constants/connectionConstants';
+import { WebSocketConnectionStatus } from '@/constants/connectionConstants';
+import { supabase } from '@/integrations/supabase/client';
+import { CHANNEL_NAMES, EVENT_TYPES } from '@/constants/websocketConstants';
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { WebSocketService } from '@/services/websocket/WebSocketService';
-import { 
-  CHANNEL_NAMES,
-  EVENT_TYPES,
-  CONNECTION_STATES
-} from '@/constants/websocketConstants';
-import { WebSocketConnectionStatus } from '@/types/websocket';
-import { ConnectionState } from '@/constants/connectionConstants';
-import { NumberCalledPayload } from '@/types/websocket';
 
 /**
- * SingleSourceTrueConnections - A robust singleton manager for WebSocket connections
- * with reference counting to properly manage channel lifecycle
+ * Single Source of Truth for WebSocket connections
+ * This class manages all WebSocket connections and channels
+ * to ensure there's only one connection per session
  */
 export class SingleSourceTrueConnections {
-  // Singleton instance
-  private static instance: SingleSourceTrueConnections | null = null;
+  private static instance: SingleSourceTrueConnections;
   
   // WebSocket service
-  private webSocketService: WebSocketService;
+  private webSocketService: any;
+  private isServiceInitializedInternal: boolean = false;
+  private connectionStatusInternal: WebSocketConnectionStatus = CONNECTION_STATES.DISCONNECTED;
+  
+  // Session tracking
+  private currentSessionId: string | null = null;
   
   // Channel management
   private channels: Map<string, RealtimeChannel> = new Map();
-  private channelListeners: Map<string, Map<string, Map<string, Function>>> = new Map(); // channelName -> eventName -> listenerId -> callback
   private channelRefCounts: Map<string, number> = new Map();
   
-  // Session and connection state
-  private currentSessionIdInternal: string | null = null;
-  private connectionStatusInternal: WebSocketConnectionStatus = CONNECTION_STATES.DISCONNECTED;
-  private isServiceInitializedInternal: boolean = false;
-  private listenerIdCounter: number = 0; // For generating unique listener IDs
-  private connectionListeners: Set<(isConnected: boolean) => void> = new Set();
-  private numberCalledListeners: Set<(number: number, allNumbers: number[]) => void> = new Set();
+  // Listeners
+  private connectionListeners: Set<(connected: boolean) => void> = new Set();
+  private statusListeners: Set<(status: WebSocketConnectionStatus, isServiceInitialized: boolean) => void> = new Set();
   
-  /**
-   * Private constructor to enforce singleton pattern
-   */
+  // Static event type constants (to avoid circular dependencies)
+  static readonly EVENT_TYPES = {
+    NUMBER_CALLED: 'number-called',
+    GAME_STATE_UPDATE: 'game-state-changed',
+    GAME_RESET: 'game-reset',
+    CLAIM_SUBMITTED: 'claim-submitted',
+    CLAIM_VALIDATION: 'claim-validation',
+    CLAIM_VALIDATING_TKT: 'claim-validating-ticket',
+    CLAIM_RESULT: 'claim-result',
+    CLAIM_RESOLUTION: 'claim-resolution',
+  };
+  
   private constructor() {
-    this.webSocketService = WebSocketService.getInstance(supabase);
+    logWithTimestamp('[SSTC] SingleSourceTrueConnections created', 'info');
     this.initializeBaseWebServiceListeners();
-    logWithTimestamp('[SSTC] Singleton instance created and WebSocketService instantiated.', 'info');
   }
   
   /**
-   * Get the singleton instance
+   * Get the singleton instance of SingleSourceTrueConnections
    */
   public static getInstance(): SingleSourceTrueConnections {
     if (!SingleSourceTrueConnections.instance) {
@@ -56,456 +58,361 @@ export class SingleSourceTrueConnections {
   }
   
   /**
-   * Check if service is initialized
+   * Listen for browser online/offline events and initialize base listeners
+   */
+  private initializeBaseWebServiceListeners(): void {
+    if (typeof window !== 'undefined') {
+      // Listen for browser online/offline events
+      window.addEventListener('offline', () => {
+        logWithTimestamp('[SSTC] Browser offline event detected', 'info');
+        this.connectionStatusInternal = CONNECTION_STATES.DISCONNECTED;
+        this.isServiceInitializedInternal = false;
+        this.notifyStatusListeners();
+      });
+      
+      window.addEventListener('online', () => {
+        logWithTimestamp('[SSTC] Browser online event detected', 'info');
+        this.connectionStatusInternal = CONNECTION_STATES.CONNECTING;
+        // Don't set service initialized here, let the service initialization check handle it
+        this.notifyStatusListeners();
+        
+        // Attempt reconnection if we have a session ID
+        if (this.currentSessionId) {
+          this.connect(this.currentSessionId);
+        }
+      });
+      
+      // Check if window is already offline
+      if (!window.navigator.onLine) {
+        logWithTimestamp('[SSTC] Browser reports offline status on initialization', 'warn');
+        this.connectionStatusInternal = CONNECTION_STATES.DISCONNECTED;
+        this.isServiceInitializedInternal = false;
+        this.notifyStatusListeners();
+      }
+    }
+    
+    // Initialize WebSocket service on demand (lazy initialization)
+    this.webSocketService = supabase.channel;
+    this.isServiceInitializedInternal = !!this.webSocketService;
+    
+    logWithTimestamp(`[SSTC] WebSocket service initialized: ${this.isServiceInitializedInternal}`, 'info');
+    
+    window.addEventListener('storage', (event) => {
+      if (event.key === 'websocket-connection-status') {
+        try {
+          const data = JSON.parse(event.newValue || '{}');
+          if (data.status) {
+            logWithTimestamp(`[SSTC] Storage event: WebSocket status changed to ${data.status}`, 'info');
+            
+            // Map external status to our internal states
+            let newInternalStatus: WebSocketConnectionStatus;
+            let newServiceReadyState = false;
+            
+            switch (data.status) {
+              case 'SUBSCRIBED':
+                newInternalStatus = CONNECTION_STATES.CONNECTED;
+                newServiceReadyState = true;
+                break;
+              case 'TIMED_OUT':
+                newInternalStatus = CONNECTION_STATES.ERROR;
+                newServiceReadyState = false;
+                break;
+              case 'CHANNEL_ERROR':
+                newInternalStatus = CONNECTION_STATES.ERROR;
+                newServiceReadyState = false;
+                break;
+              case 'CLOSED':
+                newInternalStatus = CONNECTION_STATES.DISCONNECTED;
+                newServiceReadyState = false;
+                break;
+              case 'JOINING':
+                newInternalStatus = CONNECTION_STATES.CONNECTING;
+                newServiceReadyState = false;
+                break;
+              case 'JOINED':
+                newInternalStatus = CONNECTION_STATES.CONNECTED;
+                newServiceReadyState = true;
+                break;
+              default:
+                newInternalStatus = CONNECTION_STATES.UNKNOWN;
+                newServiceReadyState = false;
+            }
+            
+            // Update internal state
+            this.connectionStatusInternal = newInternalStatus;
+            this.isServiceInitializedInternal = newServiceReadyState;
+            
+            // Notify listeners of change
+            this.notifyStatusListeners();
+          }
+        } catch (error) {
+          console.error('[SSTC] Error processing storage event:', error);
+        }
+      }
+    });
+  }
+  
+  /**
+   * Connect to a session
+   * @param sessionId Session ID to connect to
+   * @returns true if successfully initiated connection
+   */
+  public connect(sessionId: string): boolean {
+    if (!sessionId) {
+      logWithTimestamp('[SSTC] Cannot connect: No session ID provided', 'error');
+      return false;
+    }
+    
+    logWithTimestamp(`[SSTC] Connecting to session ${sessionId}`, 'info');
+    
+    // Store the session ID
+    this.currentSessionId = sessionId;
+    
+    // Connect to the session by setting up default game-updates channel
+    // but don't subscribe yet (we'll wait for listeners)
+    this.getOrCreateChannel('game-updates');
+    
+    return true;
+  }
+  
+  /**
+   * Check if the service is initialized
+   * @returns true if the service is initialized
    */
   public isServiceInitialized(): boolean {
     return this.isServiceInitializedInternal;
   }
   
   /**
-   * Initialize base listeners for WebSocket service
-   */
-  private initializeBaseWebServiceListeners(): void {
-    logWithTimestamp('[SSTC] Setting up base WebSocket service listeners.', 'info');
-    
-    // Since WebSocketService doesn't expose direct onOpen, onClose, onError methods,
-    // we need to create a system channel for monitoring connection status
-    const systemChannelName = 'system-connection-monitor';
-    
-    // Create a connection monitoring channel
-    const channel = this.webSocketService.createChannel(systemChannelName);
-    
-    // Subscribe with a callback that handles different connection states
-    this.webSocketService.subscribeWithReconnect(systemChannelName, (supabaseStatus) => {
-      // Map Supabase status to our internal WebSocketConnectionStatus
-      let newInternalStatus: WebSocketConnectionStatus = CONNECTION_STATES.UNKNOWN; // Default to unknown
-      let newServiceReadyState = false;
-      
-      // Map Supabase status strings to our internal connection states
-      switch (supabaseStatus) {
-        case 'SUBSCRIBED':
-          newInternalStatus = CONNECTION_STATES.CONNECTED;
-          newServiceReadyState = true;
-          logWithTimestamp(`[SSTC] WebSocket connection opened. Service initialized. State: ${newInternalStatus}`, 'info');
-          break;
-          
-        case 'CLOSED':
-          newInternalStatus = CONNECTION_STATES.DISCONNECTED;
-          newServiceReadyState = false;
-          logWithTimestamp(`[SSTC] WebSocket connection closed. Service not initialized. State: ${newInternalStatus}`, 'warn');
-          break;
-          
-        case 'CHANNEL_ERROR':
-        case 'TIMED_OUT':
-          newInternalStatus = CONNECTION_STATES.ERROR;
-          newServiceReadyState = false;
-          logWithTimestamp(`[SSTC] WebSocket connection error. State: ${newInternalStatus}. Status: ${supabaseStatus}`, 'error');
-          break;
-          
-        case 'JOINING':
-        case 'CONNECTING':
-          newInternalStatus = CONNECTION_STATES.CONNECTING;
-          newServiceReadyState = false;
-          logWithTimestamp(`[SSTC] WebSocket connection in progress. State: ${newInternalStatus}. Status: ${supabaseStatus}`, 'info');
-          break;
-          
-        default:
-          // For any other unhandled statuses
-          newInternalStatus = CONNECTION_STATES.UNKNOWN;
-          newServiceReadyState = false;
-          logWithTimestamp(`[SSTC] Unhandled WebSocket status: ${supabaseStatus}`, 'info');
-          break;
-      }
-      
-      // Update internal state with the mapped values
-      this.connectionStatusInternal = newInternalStatus;
-      this.isServiceInitializedInternal = newServiceReadyState;
-      
-      // Notify all connection listeners
-      this.notifyConnectionListeners(newServiceReadyState, newInternalStatus);
-    });
-    
-    // Register for window online/offline events to handle network disconnections
-    if (typeof window !== 'undefined') {
-      window.addEventListener('online', () => {
-        // When browser comes online, set state to connecting as reconnection might be attempted
-        this.connectionStatusInternal = CONNECTION_STATES.CONNECTING;
-        logWithTimestamp('[SSTC] Browser online. Connection state set to: ' + this.connectionStatusInternal + 
-          '. Attempting to reconnect if session was active.', 'info');
-        this.reconnect();
-      });
-      
-      window.addEventListener('offline', () => {
-        this.isServiceInitializedInternal = false;
-        this.connectionStatusInternal = CONNECTION_STATES.DISCONNECTED;
-        logWithTimestamp('[SSTC] Browser offline. Connection state: ' + this.connectionStatusInternal, 'warn');
-        this.notifyConnectionListeners(false, this.connectionStatusInternal);
-      });
-    }
-  }
-
-  /**
-   * Notify all connection listeners
-   */
-  private notifyConnectionListeners(isConnected: boolean, connectionState: WebSocketConnectionStatus): void {
-    logWithTimestamp(`[SSTC] Notifying ${this.connectionListeners.size} connection listeners: connected=${isConnected}`, 'debug');
-    
-    // Notify all registered connection listeners
-    this.connectionListeners.forEach(listener => {
-      try {
-        listener(isConnected);
-      } catch (error) {
-        logWithTimestamp(`[SSTC] Error in connection listener: ${error}`, 'error');
-      }
-    });
-  }
-
-  /**
-   * Get or create a channel by name with reference counting
-   * @param channelName The name of the channel to get or create
-   * @returns The RealtimeChannel instance or null if creation failed
-   */
-  private getOrCreateChannel(channelName: string): RealtimeChannel | null {
-    if (this.channels.has(channelName)) {
-      const existingChannel = this.channels.get(channelName)!;
-      console.log(`[SSTC DEBUG] getOrCreateChannel: Found existing channel '${channelName}' with state: ${existingChannel.state}`);
-      
-      if (existingChannel.state === 'joined') {
-        logWithTimestamp(`[SSTC DEBUG] getOrCreateChannel: Reusing ALREADY JOINED channel '${channelName}'.`, 'info');
-        return existingChannel;
-      } else {
-        logWithTimestamp(`[SSTC DEBUG] Existing channel '${channelName}' is not 'joined' (state: ${existingChannel.state}). Will remove and recreate.`, 'warn');
-        try {
-          this.webSocketService.leaveChannel(channelName);
-        } catch (e) {
-          logWithTimestamp(`[SSTC] Error removing channel ${channelName}: ${e}`, 'error');
-        }
-        this.channels.delete(channelName);
-        this.channelRefCounts.delete(channelName);
-        // Continue to create a new channel
-      }
-    }
-
-    try {
-      logWithTimestamp(`[SSTC DEBUG] Creating NEW channel instance for: ${channelName}`, 'info');
-      const newChannel = this.webSocketService.createChannel(channelName);
-      this.channels.set(channelName, newChannel);
-      this.channelRefCounts.set(channelName, 0); // Initialize ref count
-      return newChannel;
-    } catch (error) {
-      logWithTimestamp(`[SSTC] Error creating channel ${channelName}: ${error}`, 'error');
-      return null;
-    }
-  }
-
-  /**
-   * Listen for an event on a channel with reference counting
-   * @param channelName The name of the channel to listen on
-   * @param eventName The name of the event to listen for
-   * @param callback The callback to call when the event is triggered
-   * @returns A cleanup function to remove the listener
-   */
-  public listenForEvent<T = any>(
-    channelName: string, 
-    eventName: string, 
-    callback: (payload: T) => void
-  ): () => void {
-    if (!eventName) {
-      logWithTimestamp(`[SSTC] listenForEvent: eventName is undefined for channel ${channelName}`, 'error');
-      return () => {};
-    }
-
-    // Get or create the channel
-    const channel = this.getOrCreateChannel(channelName);
-    if (!channel) {
-      logWithTimestamp(`[SSTC] listenForEvent: Could not get/create channel ${channelName}`, 'error');
-      return () => {};
-    }
-
-    // Increment reference count
-    const currentRefCount = (this.channelRefCounts.get(channelName) || 0) + 1;
-    this.channelRefCounts.set(channelName, currentRefCount);
-    logWithTimestamp(`[SSTC] listenForEvent: Ref count for ${channelName} is now ${currentRefCount}.`, 'info');
-
-    // If this is the first listener and the channel is not already joined or joining, subscribe
-    if (currentRefCount === 1 && channel.state !== 'joined' && channel.state !== 'joining') {
-      logWithTimestamp(`[SSTC] listenForEvent: First listener for ${channelName}, state is ${channel.state}. Subscribing channel.`, 'info');
-      
-      channel.subscribe((status, err) => {
-        if (err) {
-          logWithTimestamp(`[SSTC] Channel ${channelName} error: ${err.message}`, 'error');
-        } else {
-          logWithTimestamp(`[SSTC] Channel ${channelName} status: ${status}`, 'info');
-          if (status === 'SUBSCRIBED') {
-            logWithTimestamp(`[SSTC] Channel ${channelName} successfully SUBSCRIBED.`, 'info');
-          }
-        }
-      });
-    }
-
-    // Attach the event listener
-    channel.on('broadcast', { event: eventName }, (payload) => {
-      try {
-        callback(payload.payload as T);
-      } catch (error) {
-        logWithTimestamp(`[SSTC] Error in event callback for ${eventName} on ${channelName}: ${error}`, 'error');
-      }
-    });
-
-    logWithTimestamp(`[SSTC] Listener added for event '${eventName}' on channel '${channelName}'.`, 'info');
-
-    // Return cleanup function
-    return () => {
-      logWithTimestamp(`[SSTC] Cleaning up listener for event '${eventName}' on channel '${channelName}'.`, 'info');
-      try {
-        if (channel && channel.state !== 'closed') {
-          channel.unsubscribe(`broadcast:${eventName}`);
-        }
-      } catch (e) {
-        logWithTimestamp(`[SSTC] Error in channel unsubscribe for ${eventName} on ${channelName}: ${e}`, 'error');
-      }
-      this.decrementChannelRefCount(channelName);
-    };
-  }
-
-  /**
-   * Decrement the reference count for a channel and clean up if no more listeners
-   * @param channelName The name of the channel to decrement the reference count for
-   */
-  private decrementChannelRefCount(channelName: string): void {
-    const currentRefCount = this.channelRefCounts.get(channelName) || 0;
-    
-    if (currentRefCount <= 1) {
-      // This was the last reference, clean up the channel
-      logWithTimestamp(`[SSTC] decrementChannelRefCount: Removing last reference to channel ${channelName}`, 'info');
-      
-      const channel = this.channels.get(channelName);
-      if (channel) {
-        try {
-          logWithTimestamp(`[SSTC] Leaving channel ${channelName} due to zero references`, 'info');
-          this.webSocketService.leaveChannel(channelName);
-        } catch (error) {
-          logWithTimestamp(`[SSTC] Error leaving channel ${channelName}: ${error}`, 'error');
-        }
-      }
-      
-      this.channels.delete(channelName);
-      this.channelRefCounts.delete(channelName);
-    } else {
-      // Decrement the reference count
-      this.channelRefCounts.set(channelName, currentRefCount - 1);
-      logWithTimestamp(`[SSTC] decrementChannelRefCount: Ref count for ${channelName} is now ${currentRefCount - 1}`, 'info');
-    }
-  }
-  
-  /**
-   * Connect to a session
-   * @param sessionId The session ID to connect to
-   */
-  public connect(sessionId: string): void {
-    if (this.currentSessionIdInternal === sessionId) {
-      logWithTimestamp(`[SSTC] Already connected to session ${sessionId}`, 'info');
-      return;
-    }
-    
-    this.currentSessionIdInternal = sessionId;
-    logWithTimestamp(`[SSTC] Connected to session ${sessionId}`, 'info');
-  }
-  
-  /**
    * Check if connected
-   * @returns True if connected, false otherwise
+   * @returns true if connected
    */
   public isConnected(): boolean {
     return this.connectionStatusInternal === CONNECTION_STATES.CONNECTED;
   }
   
   /**
-   * Get the connection state
-   * @returns The connection state
+   * Get connection status
+   * @returns current connection status
    */
-  public getConnectionState(): ConnectionState {
-    return this.connectionStatusInternal as ConnectionState;
+  public getConnectionStatus(): WebSocketConnectionStatus {
+    return this.connectionStatusInternal;
   }
   
   /**
-   * Get the last ping time
-   * @returns The last ping time or null if none
+   * Get or create a channel
+   * @param channelName Channel name
+   * @returns The channel
    */
-  public getLastPing(): number | null {
-    return Date.now(); // Placeholder for actual implementation
-  }
-  
-  /**
-   * Attempt to reconnect
-   */
-  public reconnect(): void {
-    logWithTimestamp('[SSTC] Attempting to reconnect WebSocket connections', 'info');
-    
-    // Verify that we have an active session ID
-    if (!this.currentSessionIdInternal) {
-      logWithTimestamp('[SSTC] Cannot reconnect: No session ID', 'warn');
-      return;
+  private getOrCreateChannel(channelName: string): RealtimeChannel | null {
+    if (!this.webSocketService) {
+      logWithTimestamp('[SSTC] Cannot create channel: WebSocket service not initialized', 'error');
+      return null;
     }
     
-    // Signal that we're in connecting state
-    this.connectionStatusInternal = CONNECTION_STATES.CONNECTING;
-    this.notifyConnectionListeners(false, CONNECTION_STATES.CONNECTING);
-    
-    // Iterate through all active channels and attempt to reconnect
-    for (const [channelName, channel] of this.channels.entries()) {
-      try {
-        if (channel.state !== 'joined' && channel.state !== 'joining') {
-          logWithTimestamp(`[SSTC] Reconnecting channel: ${channelName}`, 'info');
-          
-          // Re-subscribe to the channel
-          channel.subscribe((status, err) => {
-            if (err) {
-              logWithTimestamp(`[SSTC] Reconnection error for channel ${channelName}: ${err.message}`, 'error');
-            } else {
-              logWithTimestamp(`[SSTC] Reconnection status for channel ${channelName}: ${status}`, 'info');
-            }
-          });
+    if (this.channels.has(channelName)) {
+      const existingChannel = this.channels.get(channelName)!;
+      console.log(`[SSTC DEBUG] getOrCreateChannel: Found existing channel '${channelName}' with state: ${existingChannel.state}`);
+      
+      if (existingChannel.state === 'joined') {
+        console.log(`[SSTC DEBUG] getOrCreateChannel: Reusing ALREADY JOINED channel '${channelName}'.`);
+        return existingChannel;
+      } else {
+        console.log(`[SSTC DEBUG] Existing channel '${channelName}' is not 'joined' (state: ${existingChannel.state}). Will remove and recreate.`);
+        try {
+          this.webSocketService.removeChannel(existingChannel);
+        } catch (e) {
+          console.error('[SSTC] Error removing channel:', e);
         }
-      } catch (error) {
-        logWithTimestamp(`[SSTC] Error reconnecting channel ${channelName}: ${error}`, 'error');
+        this.channels.delete(channelName);
+        this.channelRefCounts.delete(channelName);
       }
+    }
+    
+    console.log(`[SSTC DEBUG] Creating NEW channel instance for: ${channelName}`);
+    try {
+      const newChannel = this.webSocketService(channelName);
+      this.channels.set(channelName, newChannel);
+      this.channelRefCounts.set(channelName, 0); // Initialize ref count
+      return newChannel;
+    } catch (e) {
+      console.error('[SSTC] Error creating channel:', e);
+      return null;
+    }
+  }
+  
+  /**
+   * Listen for an event
+   * @param channelName Channel name
+   * @param eventType Event type
+   * @param handler Event handler
+   * @returns Cleanup function
+   */
+  public listenForEvent<T = any>(channelName: string, eventType: string, callback: (payload: T) => void): () => void {
+    if (!eventType) {
+      logWithTimestamp(`[SSTC] listenForEvent: eventType is undefined for channel ${channelName}`, 'error');
+      return () => {};
+    }
+    
+    const channel = this.getOrCreateChannel(channelName);
+    if (!channel) {
+      logWithTimestamp(`[SSTC] listenForEvent: Could not get/create channel ${channelName}`, 'error');
+      return () => {};
+    }
+    
+    // Increment reference count
+    const currentRefCount = (this.channelRefCounts.get(channelName) || 0) + 1;
+    this.channelRefCounts.set(channelName, currentRefCount);
+    logWithTimestamp(`[SSTC] listenForEvent: Ref count for ${channelName} is now ${currentRefCount}.`, 'info');
+    
+    if (currentRefCount === 1 && channel.state !== 'joined' && channel.state !== 'joining') {
+      logWithTimestamp(`[SSTC] listenForEvent: First listener for ${channelName}, state is ${channel.state}. Subscribing channel.`, 'info');
+      
+      // Subscribe to the channel
+      channel.subscribe((status: string, err: any) => {
+        if (err) {
+          logWithTimestamp(`[SSTC] Error subscribing to channel ${channelName}: ${JSON.stringify(err)}`, 'error');
+        } else {
+          logWithTimestamp(`[SSTC] Channel ${channelName} status: ${status}`, 'info');
+          
+          if (status === 'SUBSCRIBED') {
+            logWithTimestamp(`[SSTC] Channel ${channelName} successfully SUBSCRIBED.`, 'info');
+            
+            // Update connection status if this is a primary channel
+            if (channelName === 'game-updates') {
+              this.connectionStatusInternal = CONNECTION_STATES.CONNECTED;
+              this.isServiceInitializedInternal = true;
+              this.notifyStatusListeners();
+            }
+          }
+        }
+      });
+    }
+    
+    // Set up the listener
+    logWithTimestamp(`[SSTC] Adding listener for event '${eventType}' on channel '${channelName}'.`, 'info');
+    channel.on('broadcast', { event: eventType }, callback);
+    
+    // Return cleanup function
+    return () => {
+      logWithTimestamp(`[SSTC] Cleaning up listener for event '${eventType}' on channel '${channelName}'.`, 'info');
+      try {
+        if (channel && typeof channel.off === 'function') {
+          channel.off('broadcast', { event: eventType }, callback);
+        }
+      } catch (e) {
+        logWithTimestamp(`[SSTC] Error in channel.off for ${eventType} on ${channelName}: ${e}`, 'error');
+      }
+      this.decrementChannelRefCount(channelName);
+    };
+  }
+  
+  /**
+   * Decrement channel reference count
+   * @param channelName Channel name
+   */
+  private decrementChannelRefCount(channelName: string): void {
+    const currentRefCount = this.channelRefCounts.get(channelName) || 0;
+    const newRefCount = Math.max(0, currentRefCount - 1);
+    
+    logWithTimestamp(`[SSTC] decrementChannelRefCount: ${channelName} ref count: ${currentRefCount} -> ${newRefCount}`, 'info');
+    
+    if (newRefCount === 0) {
+      // No more listeners for this channel, clean up
+      const channel = this.channels.get(channelName);
+      if (channel) {
+        logWithTimestamp(`[SSTC] No more listeners for channel ${channelName}, removing channel`, 'info');
+        try {
+          this.webSocketService.removeChannel(channel);
+        } catch (e) {
+          console.error('[SSTC] Error removing channel:', e);
+        }
+        this.channels.delete(channelName);
+        this.channelRefCounts.delete(channelName);
+      }
+    } else {
+      // Update ref count
+      this.channelRefCounts.set(channelName, newRefCount);
     }
   }
   
   /**
    * Add a connection listener
-   * @param listener The listener to add
-   * @returns A function to remove the listener
+   * @param listener Connection listener
+   * @returns Cleanup function
    */
-  public addConnectionListener(listener: (isConnected: boolean) => void): () => void {
+  public addConnectionListener(listener: (connected: boolean) => void): () => void {
     this.connectionListeners.add(listener);
     
-    // Immediately call with current state
+    // Call listener immediately with current state
     try {
       listener(this.isConnected());
-    } catch (error) {
-      logWithTimestamp(`[SSTC] Error in connection listener: ${error}`, 'error');
+    } catch (e) {
+      console.error('[SSTC] Error in connection listener:', e);
     }
     
     return () => {
       this.connectionListeners.delete(listener);
     };
   }
-
+  
   /**
-   * Add a number called listener
-   * @param handler The handler to call when a number is called
-   * @returns A function to remove the listener
+   * Add a status listener
+   * @param listener Status listener
+   * @returns Cleanup function
    */
-  public onNumberCalled(handler: (number: number, allNumbers: number[]) => void): () => void {
-    this.numberCalledListeners.add(handler);
+  public addStatusListener(listener: (status: WebSocketConnectionStatus, isServiceInitialized: boolean) => void): () => void {
+    this.statusListeners.add(listener);
+    
+    // Call listener immediately with current state
+    try {
+      listener(this.connectionStatusInternal, this.isServiceInitializedInternal);
+    } catch (e) {
+      console.error('[SSTC] Error in status listener:', e);
+    }
+    
     return () => {
-      this.numberCalledListeners.delete(handler);
+      this.statusListeners.delete(listener);
     };
   }
-
+  
   /**
-   * Call a number for a session
-   * @param number The number to call
-   * @param sessionId The session ID to call the number for
-   * @returns A promise that resolves to true if the number was called successfully
+   * Notify all status listeners of a status change
    */
-  public async callNumber(number: number, sessionId?: string): Promise<boolean> {
-    try {
-      const sid = sessionId || this.currentSessionIdInternal;
-      
-      if (!sid) {
-        logWithTimestamp('[SSTC] Cannot call number: No session ID', 'error');
-        return false;
+  private notifyStatusListeners(): void {
+    this.statusListeners.forEach(listener => {
+      try {
+        listener(this.connectionStatusInternal, this.isServiceInitializedInternal);
+      } catch (e) {
+        console.error('[SSTC] Error notifying status listener:', e);
       }
-      
-      // Here you would typically send a request to the server to call the number
-      // For now we'll just broadcast the event directly
-      return this.broadcastNumberCalled(number, sid);
-    } catch (error) {
-      logWithTimestamp(`[SSTC] Error calling number: ${error}`, 'error');
-      return false;
-    }
-  }
-
-  /**
-   * Broadcast a number called event
-   * @param number The number that was called
-   * @param sessionId The session ID the number was called for
-   * @returns True if the broadcast was successful
-   */
-  public broadcastNumberCalled(number: number, sessionId: string): boolean {
-    try {
-      const payload: NumberCalledPayload = {
-        number,
-        sessionId,
-        timestamp: Date.now(),
-        broadcastId: `num-${number}-${Date.now()}`
-      };
-      
-      // Use the broadcast service to send the number
-      return this.broadcastWithRetry(CHANNEL_NAMES.GAME_UPDATES, EVENT_TYPES.NUMBER_CALLED, payload);
-    } catch (error) {
-      logWithTimestamp(`[SSTC] Error broadcasting number called: ${error}`, 'error');
-      return false;
-    }
+    });
+    
+    // Also notify connection listeners
+    this.notifyConnectionListeners();
   }
   
   /**
-   * Broadcast an event with retry
-   * @param channel The channel to broadcast on
-   * @param eventType The event type to broadcast
-   * @param payload The payload to broadcast
-   * @returns True if the broadcast was successful
+   * Notify all connection listeners of a connection change
    */
-  public broadcastWithRetry(channel: string, eventType: string, payload: any): boolean {
-    try {
-      // Use the WebSocket service to broadcast the event
-      return this.webSocketService.broadcast(channel, eventType, payload);
-    } catch (error) {
-      logWithTimestamp(`[SSTC] Error broadcasting event: ${error}`, 'error');
-      return false;
-    }
-  }
-
-  /**
-   * Submit a bingo claim
-   * @param ticket The ticket to claim
-   * @param playerCode The player code
-   * @param sessionId The session ID
-   * @returns True if the claim was submitted successfully
-   */
-  public submitBingoClaim(ticket: any, playerCode: string, sessionId: string): boolean {
-    try {
-      if (!ticket || !playerCode || !sessionId) {
-        logWithTimestamp('[SSTC] Cannot submit claim: Missing ticket, player code, or session ID', 'error');
-        return false;
+  private notifyConnectionListeners(): void {
+    const isConnected = this.isConnected();
+    this.connectionListeners.forEach(listener => {
+      try {
+        listener(isConnected);
+      } catch (e) {
+        console.error('[SSTC] Error notifying connection listener:', e);
       }
-      
-      const payload = {
-        ticket,
-        playerCode,
-        sessionId,
-        timestamp: Date.now(),
-        claimId: `claim-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-      };
-      
-      // Broadcast the claim
-      return this.broadcastWithRetry(CHANNEL_NAMES.CLAIM_UPDATES, EVENT_TYPES.CLAIM_SUBMITTED, payload);
-    } catch (error) {
-      logWithTimestamp(`[SSTC] Error submitting bingo claim: ${error}`, 'error');
-      return false;
-    }
+    });
   }
   
   /**
-   * Set up number update listeners
-   * @param sessionId The session ID to listen for
-   * @param onNumberUpdate The callback to call when a number is updated
-   * @param onGameReset The callback to call when the game is reset
-   * @param instanceId The instance ID for logging
-   * @returns A cleanup function
+   * Setup number update listeners
+   * @param sessionId Session ID
+   * @param onNumberUpdate Called when a number is updated
+   * @param onGameReset Called when the game is reset
+   * @param instanceId Instance ID for logging
+   * @returns Cleanup function
    */
   public setupNumberUpdateListeners(
     sessionId: string,
@@ -513,61 +420,110 @@ export class SingleSourceTrueConnections {
     onGameReset: () => void,
     instanceId: string
   ): () => void {
-    if (!sessionId) {
-      logWithTimestamp(`[${instanceId}] Cannot setup listeners: No session ID`, 'warn');
-      return () => {};
-    }
-    
-    const handlers: Array<() => void> = [];
+    logWithTimestamp(`[${instanceId}] Setting up number update listeners for session ${sessionId}`, 'info');
     
     // Listen for number called events
-    const numberHandler = this.listenForEvent(
-      CHANNEL_NAMES.GAME_UPDATES, 
-      EVENT_TYPES.NUMBER_CALLED,
+    const numberCleanup = this.listenForEvent(
+      'game-updates',
+      SingleSourceTrueConnections.EVENT_TYPES.NUMBER_CALLED,
       (data: any) => {
-        if (data?.sessionId === sessionId && data?.number !== undefined) {
-          const number = parseInt(data.number);
-          const numbers = Array.isArray(data.calledNumbers) ? data.calledNumbers : [];
-          onNumberUpdate(number, numbers);
+        // Check if the data is for our session
+        if (data?.sessionId === sessionId) {
+          logWithTimestamp(`[${instanceId}] Received number update for session ${sessionId}: ${data.number}`, 'info');
+          onNumberUpdate(data.number, data.calledNumbers || []);
         }
       }
     );
-    handlers.push(numberHandler);
     
     // Listen for game reset events
-    const resetHandler = this.listenForEvent(
-      CHANNEL_NAMES.GAME_UPDATES,
-      EVENT_TYPES.GAME_RESET,
+    const resetCleanup = this.listenForEvent(
+      'game-updates',
+      SingleSourceTrueConnections.EVENT_TYPES.GAME_RESET,
       (data: any) => {
+        // Check if the data is for our session
         if (data?.sessionId === sessionId) {
+          logWithTimestamp(`[${instanceId}] Received game reset for session ${sessionId}`, 'info');
           onGameReset();
         }
       }
     );
-    handlers.push(resetHandler);
     
-    // Return a combined cleanup function
+    // Return combined cleanup function
     return () => {
-      handlers.forEach(handler => handler());
+      numberCleanup();
+      resetCleanup();
     };
   }
-
+  
   /**
-   * Set event types for access from outside
+   * Broadcast a message to a channel
+   * @param channelName Channel name
+   * @param eventType Event type
+   * @param data Data to send
+   * @returns Promise that resolves when the message is sent
    */
-  public static get EVENT_TYPES() {
-    return EVENT_TYPES;
+  public async broadcast(channelName: string, eventType: string, data: any): Promise<boolean> {
+    if (!this.webSocketService) {
+      logWithTimestamp('[SSTC] Cannot broadcast: WebSocket service not initialized', 'error');
+      return false;
+    }
+    
+    if (!eventType) {
+      logWithTimestamp('[SSTC] Cannot broadcast: No event type specified', 'error');
+      return false;
+    }
+    
+    try {
+      logWithTimestamp(`[SSTC] Broadcasting event '${eventType}' on channel '${channelName}'`, 'info');
+      
+      const channel = this.getOrCreateChannel(channelName);
+      if (!channel) {
+        logWithTimestamp(`[SSTC] Cannot broadcast: Failed to get channel ${channelName}`, 'error');
+        return false;
+      }
+      
+      // Ensure channel is subscribed
+      if (channel.state !== 'joined') {
+        logWithTimestamp(`[SSTC] Channel ${channelName} not joined, subscribing before broadcast`, 'info');
+        
+        // Subscribe to the channel and wait for it to be ready
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error(`Timed out waiting for channel ${channelName} to subscribe`));
+          }, 5000);
+          
+          channel.subscribe((status: string, err: any) => {
+            if (err) {
+              clearTimeout(timeout);
+              reject(new Error(`Error subscribing to channel ${channelName}: ${JSON.stringify(err)}`));
+            } else if (status === 'SUBSCRIBED') {
+              clearTimeout(timeout);
+              resolve();
+            }
+          });
+        });
+      }
+      
+      // Send the message
+      const result = await channel.send({
+        type: 'broadcast',
+        event: eventType,
+        payload: data
+      });
+      
+      logWithTimestamp(`[SSTC] Broadcast result for '${eventType}': ${JSON.stringify(result)}`, 'info');
+      return true;
+    } catch (error) {
+      logWithTimestamp(`[SSTC] Error broadcasting event '${eventType}': ${error}`, 'error');
+      return false;
+    }
   }
 }
 
 /**
- * Helper function to get the singleton instance
+ * Get the singleton instance of SingleSourceTrueConnections
+ * @returns Singleton instance
  */
-export const getSingleSourceConnection = (): SingleSourceTrueConnections => {
+export function getSingleSourceConnection(): SingleSourceTrueConnections {
   return SingleSourceTrueConnections.getInstance();
-};
-
-// Export isServiceInitialized for backward compatibility
-export function isServiceInitialized() {
-  return getSingleSourceConnection().isServiceInitialized();
 }

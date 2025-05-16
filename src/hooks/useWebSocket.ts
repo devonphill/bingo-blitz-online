@@ -27,7 +27,10 @@ export function useWebSocket(sessionId: string | null | undefined) {
     GAME_STATE_UPDATE: 'game-state-changed',
     GAME_RESET: 'game-reset',
     CLAIM_SUBMITTED: 'claim-submitted',
-    CLAIM_VALIDATION: 'claim-validation'
+    CLAIM_VALIDATION: 'claim-validation',
+    CLAIM_VALIDATING_TKT: 'claim-validating-ticket',
+    CLAIM_RESULT: 'claim-result',
+    CLAIM_RESOLUTION: 'claim-resolution'
   };
 
   // Connect to WebSocket
@@ -66,6 +69,12 @@ export function useWebSocket(sessionId: string | null | undefined) {
         }
       });
       
+      // Also set up status listener to get real-time service initialization updates
+      const statusCleanup = connection.addStatusListener((status, isServiceInitialized) => {
+        setIsWsReady(isServiceInitialized);
+        setConnectionState(status);
+      });
+      
       setIsConnected(connection.isConnected());
       // Set initial connection state
       setConnectionState(connection.isConnected() ? 'connected' : 'disconnected');
@@ -74,7 +83,10 @@ export function useWebSocket(sessionId: string | null | undefined) {
       
       logWithTimestamp(`[${instanceId}] Connected to WebSocket for session ${sessionId}. Service ready: ${isInitialized}`, 'info');
       
-      return cleanup;
+      return () => {
+        cleanup();
+        statusCleanup();
+      };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logWithTimestamp(`[${instanceId}] WebSocket connection error: ${errorMsg}`, 'error');
@@ -106,7 +118,7 @@ export function useWebSocket(sessionId: string | null | undefined) {
       return () => {};
     }
     
-    // Validate event type
+    // Validate event type - critical fix
     if (!eventType) {
       logWithTimestamp(`[${instanceId}] Cannot listen for undefined event type`, 'error');
       return () => {};

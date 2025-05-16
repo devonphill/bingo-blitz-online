@@ -8,7 +8,6 @@ import { claimBroadcastService } from '@/services/ClaimBroadcastService';
 import { useToast } from '@/hooks/use-toast';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { toast as sonnerToast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
 
 interface ClaimItemProps {
   claim: ClaimData;

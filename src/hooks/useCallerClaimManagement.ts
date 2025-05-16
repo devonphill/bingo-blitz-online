@@ -63,10 +63,24 @@ export function useCallerClaimManagement(sessionId: string | null) {
     try {
       log(`Initial fetch of claims for session ${sessionId}`, 'info');
       
-      // Query claims table for pending claims with all necessary fields
+      // Query claims table for pending claims with all necessary fields - EXPLICITLY select all needed fields
       const { data, error } = await supabase
         .from('claims')
-        .select('*')
+        .select(`
+          id,
+          player_id,
+          player_name,
+          player_code,
+          session_id,
+          ticket_serial,
+          ticket_details,
+          pattern_claimed,
+          called_numbers_snapshot,
+          claimed_at,
+          verified_at,
+          verified_by_user_id,
+          verification_notes
+        `)
         .eq('session_id', sessionId)
         .order('claimed_at', { ascending: false });
       
@@ -109,6 +123,10 @@ export function useCallerClaimManagement(sessionId: string | null) {
               ('gameNumber' in ticketDetails ? 
                 Number(ticketDetails.gameNumber) : 1);
           }
+          
+          // Log for debug
+          console.log('[useCallerClaimManagement] Processing claim with ticket_details:', ticketDetails, 'Game Number:', gameNumber);
+          console.log('[useCallerClaimManagement] claimed_at:', claim.claimed_at);
           
           allClaimsMap.set(claimId, {
             ...claim,

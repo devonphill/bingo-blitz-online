@@ -1,4 +1,3 @@
-
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { supabase } from '@/integrations/supabase/client';
@@ -115,4 +114,31 @@ export const numberCallingService = {
       return false;
     }
   }
+};
+
+export const setupNumberCallingService = (sessionId: string) => {
+  const singleSource = getSingleSourceConnection();
+  
+  // Make sure we're passing the right number of arguments
+  const listenForNumberUpdate = (callback: (payload: any) => void) => {
+    return singleSource.listenForEvent(
+      'game-updates', // channel name
+      'number-update', // event name
+      callback        // callback function
+    );
+  };
+  
+  // Fix other listenForEvent calls to use the right parameter count
+  const listenForGameReset = (callback: (payload: any) => void) => {
+    return singleSource.listenForEvent(
+      'game-updates', // channel name
+      'game-reset',   // event name
+      callback        // callback function
+    );
+  };
+  
+  return {
+    listenForNumberUpdate,
+    listenForGameReset
+  };
 };

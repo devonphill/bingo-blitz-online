@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -27,7 +26,7 @@ export default function PlayerClaimCheckingNotification({
   const instanceId = useRef(`claimNotify-${Math.random().toString(36).substring(2, 7)}`).current;
   
   // Use the WebSocket hook
-  const { listenForEvent, EVENTS, isConnected, connectionState, isWsReady } = useWebSocket(sessionId);
+  const { listenForEvent, EVENTS, isWsReady } = useWebSocket(sessionId);
 
   // Listen for claim checking broadcasts
   useEffect(() => {
@@ -44,7 +43,7 @@ export default function PlayerClaimCheckingNotification({
     }
     
     // Verify that we have valid event types
-    if (!EVENTS || !EVENTS.CLAIM_VALIDATING_TKT || !EVENTS.CLAIM_RESULT || !EVENTS.CLAIM_RESOLUTION) {
+    if (!EVENTS || !EVENTS.CLAIM_VALIDATING_TKT || !EVENTS.CLAIM_RESOLUTION) {
       logWithTimestamp(`[${instanceId}] Missing event types for claim notifications`, 'error');
       return () => {};
     }
@@ -102,7 +101,7 @@ export default function PlayerClaimCheckingNotification({
       }
     };
 
-    // Function to handle claim result event
+    // Function to handle claim resolution event
     const handleClaimResultEvent = (payload: any) => {
       try {
         logWithTimestamp(`[${instanceId}] Received claim result event:`, 'info');
@@ -114,6 +113,7 @@ export default function PlayerClaimCheckingNotification({
           payload.playerCode === playerCode
         );
 
+        // Global broadcast or for current player
         if (!isForCurrentPlayer && !payload.isGlobalBroadcast) {
           logWithTimestamp(`[${instanceId}] Ignoring claim result for different player (${payload.playerId} != ${playerCode})`, 'info');
           return;
@@ -161,42 +161,27 @@ export default function PlayerClaimCheckingNotification({
       }
     };
 
-    // Set up listeners only when we have a valid connection
-    if (isWsReady) {
-      logWithTimestamp(`[${instanceId}] WebSocket ready, setting up claim listeners`, 'info');
-      
-      // Use listenForEvent from the WebSocket hook to listen for claim validating events
-      const cleanupValidating = listenForEvent(
-        EVENTS.CLAIM_VALIDATING_TKT,
-        handleClaimValidatingEvent
-      );
-      
-      // Listen for claim result events
-      const cleanupResult = listenForEvent(
-        EVENTS.CLAIM_RESULT,
-        handleClaimResultEvent
-      );
-      
-      // Listen for the new claim resolution event
-      const cleanupResolution = listenForEvent(
-        EVENTS.CLAIM_RESOLUTION,
-        handleClaimResultEvent  // Reuse the same handler as it will process the same type of data
-      );
-      
-      // Log that we've set up the listeners
-      logWithTimestamp(`[${instanceId}] Subscribed to claim validating events for session ${sessionId}`, 'info');
-      
-      // Clean up all listeners on unmount or dependency change
-      return () => {
-        cleanupValidating();
-        cleanupResult();
-        cleanupResolution();
-        logWithTimestamp(`[${instanceId}] Cleaned up claim validating events listener`, 'info');
-      };
-    } else {
-      logWithTimestamp(`[${instanceId}] Not connected to WebSocket, skipping claim listener setup`, 'warn');
-      return () => {};
-    }
+    // Set up listeners when WebSocket is ready
+    logWithTimestamp(`[${instanceId}] WebSocket ready, setting up claim listeners`, 'info');
+    
+    // Listen for claim validating ticket events on claim-updates channel
+    const cleanupValidating = listenForEvent(
+      EVENTS.CLAIM_VALIDATING_TKT, 
+      handleClaimValidatingEvent
+    );
+    
+    // Listen for claim resolution events
+    const cleanupResolution = listenForEvent(
+      EVENTS.CLAIM_RESOLUTION,
+      handleClaimResultEvent
+    );
+    
+    // Clean up all listeners on unmount or dependency change
+    return () => {
+      cleanupValidating();
+      cleanupResolution();
+      logWithTimestamp(`[${instanceId}] Cleaned up claim notification listeners`, 'info');
+    };
   }, [sessionId, playerCode, instanceId, listenForEvent, EVENTS, isWsReady, claimBeingChecked, isOpen]);
 
   // Also listen to custom browser events that might be dispatched by other components

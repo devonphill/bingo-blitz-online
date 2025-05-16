@@ -27,7 +27,7 @@ export function usePlayerClaimManagement(
   const activeClaimIds = useRef<Set<string>>(new Set());
   
   // Use the WebSocket hook
-  const { listenForEvent, EVENTS, isConnected } = useWebSocket(sessionId);
+  const { listenForEvent, EVENTS, isConnected, isWsReady } = useWebSocket(sessionId);
 
   // Reset claim status
   const resetClaimStatus = useCallback(() => {
@@ -37,7 +37,13 @@ export function usePlayerClaimManagement(
 
   // Listen for claim validation events
   useEffect(() => {
-    if (!playerCode || !sessionId) return;
+    if (!playerCode || !sessionId || !isWsReady) return;
+    
+    // Need valid event types
+    if (!EVENTS || !EVENTS.CLAIM_RESOLUTION) {
+      logWithTimestamp(`[${instanceId.current}] Missing CLAIM_RESOLUTION event type, skipping listener setup`, 'error');
+      return;
+    }
     
     logWithTimestamp(`PlayerClaimManagement[${instanceId.current}]: Setting up claim validation listener for ${playerCode}`, 'info');
     
@@ -97,7 +103,7 @@ export function usePlayerClaimManagement(
     return () => {
       cleanup();
     };
-  }, [playerCode, playerId, sessionId, listenForEvent, EVENTS]);
+  }, [playerCode, playerId, sessionId, listenForEvent, EVENTS, isWsReady]);
 
   // Submit a claim without local validation
   const submitClaim = useCallback(async (ticket: any) => {
@@ -158,7 +164,6 @@ export function usePlayerClaimManagement(
       setHasActiveClaims(true);
 
       // Use the broadcast event from a custom event to send the claim
-      // This is a temporary solution while we transition to using useWebSocket
       const submitEvent = new CustomEvent('submitPlayerClaim', {
         detail: { 
           claimData,
