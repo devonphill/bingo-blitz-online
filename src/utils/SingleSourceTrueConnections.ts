@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { RealtimeChannel } from '@supabase/supabase-js';
@@ -73,54 +72,68 @@ export class SingleSourceTrueConnections {
     const channel = this.webSocketService.createChannel(systemChannelName);
     
     // Subscribe with a callback that handles different connection states
-    this.webSocketService.subscribeWithReconnect(systemChannelName, (status) => {
-      // Handle different connection states
-      switch (status) {
+    this.webSocketService.subscribeWithReconnect(systemChannelName, (supabaseStatus) => {
+      // Map Supabase status to our internal WebSocketConnectionStatus
+      let newInternalStatus: WebSocketConnectionStatus = CONNECTION_STATES.UNKNOWN; // Default to unknown
+      let newServiceReadyState = false;
+      
+      // Map Supabase status strings to our internal connection states
+      switch (supabaseStatus) {
         case 'SUBSCRIBED':
-          this.isServiceInitializedInternal = true;
-          this.connectionStatusInternal = CONNECTION_STATES.CONNECTED;
-          logWithTimestamp('[SSTC] WebSocket connection opened. Service initialized. State: ' + this.connectionStatusInternal, 'info');
-          // TODO: this.notifyConnectionListeners(true, this.connectionStatusInternal);
+          newInternalStatus = CONNECTION_STATES.CONNECTED;
+          newServiceReadyState = true;
+          logWithTimestamp(`[SSTC] WebSocket connection opened. Service initialized. State: ${newInternalStatus}`, 'info');
           break;
           
         case 'CLOSED':
-          this.isServiceInitializedInternal = false;
-          this.connectionStatusInternal = CONNECTION_STATES.DISCONNECTED;
-          logWithTimestamp('[SSTC] WebSocket connection closed. Service not initialized. State: ' + this.connectionStatusInternal, 'warn');
-          // TODO: this.notifyConnectionListeners(false, this.connectionStatusInternal);
+          newInternalStatus = CONNECTION_STATES.DISCONNECTED;
+          newServiceReadyState = false;
+          logWithTimestamp(`[SSTC] WebSocket connection closed. Service not initialized. State: ${newInternalStatus}`, 'warn');
           break;
           
         case 'CHANNEL_ERROR':
         case 'TIMED_OUT':
-          this.isServiceInitializedInternal = false;
-          this.connectionStatusInternal = CONNECTION_STATES.ERROR;
-          logWithTimestamp('[SSTC] WebSocket connection error. State: ' + this.connectionStatusInternal + '. Status: ' + status, 'error');
-          // TODO: this.notifyConnectionListeners(false, this.connectionStatusInternal);
+          newInternalStatus = CONNECTION_STATES.ERROR;
+          newServiceReadyState = false;
+          logWithTimestamp(`[SSTC] WebSocket connection error. State: ${newInternalStatus}. Status: ${supabaseStatus}`, 'error');
+          break;
+          
+        case 'JOINING':
+        case 'CONNECTING':
+          newInternalStatus = CONNECTION_STATES.CONNECTING;
+          newServiceReadyState = false;
+          logWithTimestamp(`[SSTC] WebSocket connection in progress. State: ${newInternalStatus}. Status: ${supabaseStatus}`, 'info');
           break;
           
         default:
-          // For other states like JOINING, set appropriate intermediate states
-          if (status === 'JOINING' || status === 'CONNECTING') {
-            this.connectionStatusInternal = CONNECTION_STATES.CONNECTING;
-            logWithTimestamp('[SSTC] WebSocket connection in progress. State: ' + this.connectionStatusInternal + '. Status: ' + status, 'info');
-          } else {
-            logWithTimestamp('[SSTC] WebSocket status change: ' + status, 'info');
-          }
+          // For any other unhandled statuses
+          newInternalStatus = CONNECTION_STATES.UNKNOWN;
+          newServiceReadyState = false;
+          logWithTimestamp(`[SSTC] Unhandled WebSocket status: ${supabaseStatus}`, 'info');
           break;
       }
+      
+      // Update internal state with the mapped values
+      this.connectionStatusInternal = newInternalStatus;
+      this.isServiceInitializedInternal = newServiceReadyState;
+      
+      // TODO: this.notifyConnectionListeners(newServiceReadyState, newInternalStatus);
     });
     
     // Register for window online/offline events to handle network disconnections
     if (typeof window !== 'undefined') {
       window.addEventListener('online', () => {
-        logWithTimestamp('[SSTC] Network came online. Attempting to reconnect WebSocket.', 'info');
+        // When browser comes online, set state to connecting as reconnection might be attempted
+        this.connectionStatusInternal = CONNECTION_STATES.CONNECTING;
+        logWithTimestamp('[SSTC] Browser online. Connection state set to: ' + this.connectionStatusInternal + 
+          '. Attempting to reconnect if session was active.', 'info');
         // Will implement reconnection logic in a future step
       });
       
       window.addEventListener('offline', () => {
         this.isServiceInitializedInternal = false;
         this.connectionStatusInternal = CONNECTION_STATES.DISCONNECTED;
-        logWithTimestamp('[SSTC] Network went offline. WebSocket disconnected.', 'warn');
+        logWithTimestamp('[SSTC] Browser offline. Connection state: ' + this.connectionStatusInternal, 'warn');
         // TODO: this.notifyConnectionListeners(false, this.connectionStatusInternal);
       });
     }
