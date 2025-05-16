@@ -1,87 +1,160 @@
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { createContext, useState, useContext, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
-interface PlayerContextType {
-  player: Player | null;
-  setPlayer: (player: Player | null) => void;
-  logout: () => void;
-  isLoading: boolean;
-}
-
-interface Player {
+export interface Player {
   id: string;
   name: string;
   code: string;
-  sessionId?: string;
+  sessionId: string;
+  email?: string;
+  tickets?: number;
 }
 
-const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
+interface PlayerContextType {
+  player: Player | null;
+  setPlayer: React.Dispatch<React.SetStateAction<Player | null>>;
+  isPlayerLoading: boolean;
+  loadPlayerById: (id: string) => Promise<Player | null>;
+  loadPlayerByCode: (code: string) => Promise<Player | null>;
+}
 
-export function PlayerContextProvider({ children }: { children: React.ReactNode }) {
+const PlayerContext = createContext<PlayerContextType>({
+  player: null,
+  setPlayer: () => {},
+  isPlayerLoading: true,
+  loadPlayerById: async () => null,
+  loadPlayerByCode: async () => null
+});
+
+export const PlayerProvider: React.FC<{
+  children: React.ReactNode;
+}> = ({ children }) => {
   const [player, setPlayer] = useState<Player | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const navigate = useNavigate();
+  const [isPlayerLoading, setIsPlayerLoading] = useState(true);
 
-  // Load player from localStorage on mount
+  // Load player data from storage on mount
   useEffect(() => {
-    logWithTimestamp('PlayerContext: Initializing from localStorage', 'info');
-    const storedPlayerCode = localStorage.getItem('playerCode');
-    const storedPlayerId = localStorage.getItem('playerId');
-    const storedPlayerName = localStorage.getItem('playerName') || 'Player';
-    const storedSessionId = localStorage.getItem('playerSessionId');
-    
-    if (storedPlayerCode && storedPlayerId) {
-      logWithTimestamp(`PlayerContext: Found stored player with code: ${storedPlayerCode}, id: ${storedPlayerId}`, 'info');
-      setPlayer({
-        id: storedPlayerId,
-        name: storedPlayerName,
-        code: storedPlayerCode,
-        sessionId: storedSessionId || undefined
-      });
-    } else {
-      logWithTimestamp('PlayerContext: No valid player data in localStorage', 'info');
-    }
-    
-    setIsLoading(false);
+    const loadStoredPlayerData = () => {
+      try {
+        const storedPlayer = localStorage.getItem('bingo_player');
+        if (storedPlayer) {
+          const parsedPlayer = JSON.parse(storedPlayer);
+          setPlayer(parsedPlayer);
+          logWithTimestamp(`Loaded player from storage: ${parsedPlayer.name} (${parsedPlayer.id})`, 'info');
+        }
+      } catch (error) {
+        logWithTimestamp(`Error loading stored player: ${error}`, 'error');
+      } finally {
+        setIsPlayerLoading(false);
+      }
+    };
+
+    loadStoredPlayerData();
   }, []);
 
-  // Update localStorage when player changes
+  // Save player data to storage when it changes
   useEffect(() => {
     if (player) {
-      logWithTimestamp(`PlayerContext: Updating localStorage with player data, code: ${player.code}`, 'info');
-      localStorage.setItem('playerCode', player.code);
-      localStorage.setItem('playerName', player.name);
-      localStorage.setItem('playerId', player.id);
-      if (player.sessionId) {
-        localStorage.setItem('playerSessionId', player.sessionId);
+      try {
+        localStorage.setItem('bingo_player', JSON.stringify(player));
+        logWithTimestamp(`Saved player to storage: ${player.name} (${player.id})`, 'info');
+      } catch (error) {
+        logWithTimestamp(`Error saving player to storage: ${error}`, 'error');
       }
     }
   }, [player]);
 
-  // Logout function
-  const logout = () => {
-    logWithTimestamp('PlayerContext: Logging out player', 'info');
-    localStorage.removeItem('playerCode');
-    localStorage.removeItem('playerName');
-    localStorage.removeItem('playerId');
-    localStorage.removeItem('playerSessionId');
-    setPlayer(null);
-    navigate('/player/join');
+  // Load player by ID
+  const loadPlayerById = async (id: string): Promise<Player | null> => {
+    try {
+      setIsPlayerLoading(true);
+      
+      const { data, error } = await supabase
+        .from('players')
+        .select('*')
+        .eq('id', id)
+        .single();
+        
+      if (error) {
+        throw error;
+      }
+      
+      if (data) {
+        const loadedPlayer = {
+          id: data.id,
+          name: data.nickname,
+          code: data.player_code,
+          sessionId: data.session_id,
+          email: data.email || '',
+          tickets: data.tickets || 1
+        };
+        
+        setPlayer(loadedPlayer);
+        return loadedPlayer;
+      }
+      
+      return null;
+    } catch (error) {
+      logWithTimestamp(`Error loading player by ID: ${error}`, 'error');
+      return null;
+    } finally {
+      setIsPlayerLoading(false);
+    }
+  };
+  
+  // Load player by code
+  const loadPlayerByCode = async (code: string): Promise<Player | null> => {
+    try {
+      setIsPlayerLoading(true);
+      
+      const { data, error } = await supabase
+        .from('players')
+        .select('*')
+        .eq('player_code', code)
+        .single();
+        
+      if (error) {
+        throw error;
+      }
+      
+      if (data) {
+        const loadedPlayer = {
+          id: data.id,
+          name: data.nickname,
+          code: data.player_code,
+          sessionId: data.session_id,
+          email: data.email || '',
+          tickets: data.tickets || 1
+        };
+        
+        setPlayer(loadedPlayer);
+        return loadedPlayer;
+      }
+      
+      return null;
+    } catch (error) {
+      logWithTimestamp(`Error loading player by code: ${error}`, 'error');
+      return null;
+    } finally {
+      setIsPlayerLoading(false);
+    }
   };
 
   return (
-    <PlayerContext.Provider value={{ player, setPlayer, logout, isLoading }}>
+    <PlayerContext.Provider 
+      value={{ 
+        player, 
+        setPlayer, 
+        isPlayerLoading,
+        loadPlayerById,
+        loadPlayerByCode
+      }}
+    >
       {children}
     </PlayerContext.Provider>
   );
-}
+};
 
-export function usePlayerContext() {
-  const context = useContext(PlayerContext);
-  if (context === undefined) {
-    throw new Error('usePlayerContext must be used within a PlayerContextProvider');
-  }
-  return context;
-}
+export const usePlayerContext = () => useContext(PlayerContext);

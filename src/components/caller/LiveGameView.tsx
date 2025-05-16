@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { GameType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +15,7 @@ import { useCallerClaimManagement } from '@/hooks/useCallerClaimManagement';
 import ClaimNotifications from './ClaimNotifications';
 import { useSessionPatternManager } from '@/hooks/useSessionPatternManager';
 import { useSessionProgress } from '@/hooks/useSessionProgress';
+import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 
 interface WinPattern {
   id: string;
@@ -115,17 +115,18 @@ export function LiveGameView({
     }
     
     // Initialize network connection with session ID
-    network.connect(sessionId);
+    const connection = getSingleSourceConnection();
+    connection.connect(sessionId);
     
     // When the component mounts, reconnect to make sure we're in sync
     setTimeout(() => {
-      network.connect(sessionId);
+      connection.connect(sessionId);
       
       // Initialize the session pattern if it doesn't have one yet
       initializeSessionPattern();
     }, 500);
     
-  }, [sessionId, network, initializeSessionPattern]);
+  }, [sessionId, initializeSessionPattern]);
   
   // Refresh claims periodically
   useEffect(() => {
@@ -214,6 +215,11 @@ export function LiveGameView({
   // Direct call number through network context
   const handleCallNumber = (number: number) => {
     console.log(`Calling number: ${number}`);
+    
+    if (!sessionId) {
+      console.error("Cannot call number: No session ID");
+      return;
+    }
     
     // Call through network context
     network.callNumber(number, sessionId)

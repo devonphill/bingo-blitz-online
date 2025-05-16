@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from "@/components/ui/card";
 import { CardHeader } from "@/components/ui/card";
@@ -39,7 +38,7 @@ export function PlayerGameContent({
   onClaimBingo
 }: PlayerGameContentProps) {
   const { toast } = useToast();
-  const { tickets, isLoading: isLoadingTickets } = usePlayerTickets(sessionId, playerId, playerCode);
+  const { tickets: playerTicketsData, isLoading: isLoadingTickets, error } = usePlayerTickets(sessionId, playerId, playerCode);
   const { calledNumbers, lastCalledNumber, isConnected, connectionState, lastUpdateTime, reconnect } = usePlayerWebSocketNumbers(sessionId);
   const { 
     playerTickets,
@@ -65,7 +64,7 @@ export function PlayerGameContent({
   // Auto marking effect
   useEffect(() => {
     if (autoMarking && lastCalledNumber !== null) {
-      tickets?.forEach(ticket => {
+      playerTicketsData?.forEach(ticket => {
         if (ticket && ticket.numbers) {
           ticket.numbers.forEach((row, rowIndex) => {
             row.forEach((number, colIndex) => {
@@ -77,7 +76,7 @@ export function PlayerGameContent({
         }
       });
     }
-  }, [autoMarking, lastCalledNumber, markNumber, tickets]);
+  }, [autoMarking, lastCalledNumber, markNumber, playerTicketsData]);
 
   // Load auto marking from local storage
   useEffect(() => {
@@ -170,9 +169,9 @@ export function PlayerGameContent({
                   </div>
                 ))}
               </div>
-            ) : tickets && tickets.length > 0 ? (
+            ) : playerTicketsData && playerTicketsData.length > 0 ? (
               <div className="grid grid-cols-2 gap-4">
-                {tickets.map((ticket, index) => (
+                {playerTicketsData.map((ticket, index) => (
                   <div key={ticket.id} className="space-y-2">
                     <button
                       onClick={() => setSelectedTicket(ticket)}

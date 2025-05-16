@@ -8,14 +8,18 @@ interface NetworkStatusContextType {
   isConnected: boolean;
   connectionState: ConnectionState;
   reconnect: () => void;
+  connect: (sessionId: string) => void;
   sessionId: string | null;
+  callNumber: (number: number, sessionId?: string) => Promise<boolean>;
 }
 
 const NetworkStatusContext = createContext<NetworkStatusContextType>({
   isConnected: false,
   connectionState: 'disconnected',
   reconnect: () => {},
-  sessionId: null
+  connect: () => {},
+  sessionId: null,
+  callNumber: async () => false
 });
 
 export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
@@ -38,6 +42,15 @@ export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({
     return cleanup;
   }, []);
   
+  // Connect to a session
+  const connect = useCallback((sessionId: string) => {
+    if (sessionId) {
+      const connection = getSingleSourceConnection();
+      connection.connect(sessionId);
+    }
+  }, []);
+  
+  // Reconnect to the current session
   const reconnect = useCallback(() => {
     if (sessionId) {
       const connection = getSingleSourceConnection();
@@ -45,11 +58,27 @@ export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [sessionId]);
   
+  // Call a number for the current session
+  const callNumber = useCallback(async (number: number, specificSessionId?: string) => {
+    const targetSessionId = specificSessionId || sessionId;
+    if (!targetSessionId) return false;
+    
+    try {
+      const connection = getSingleSourceConnection();
+      return await connection.broadcastNumberCalled(targetSessionId, number);
+    } catch (error) {
+      console.error('Error calling number:', error);
+      return false;
+    }
+  }, [sessionId]);
+  
   const value = {
     isConnected: networkIsConnected,
     connectionState,
     reconnect,
-    sessionId
+    connect,
+    sessionId,
+    callNumber
   };
   
   return (

@@ -132,6 +132,7 @@ export default function CallerControls({
         const payload = {
           number,
           sessionId,
+          calledNumbers: updatedCalledNumbers, // Include the full array of called numbers
           timestamp: Date.now(),
           broadcastId
         };

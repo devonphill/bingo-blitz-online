@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
 
@@ -8,171 +8,137 @@ export interface PlayerTicket {
   serial: string;
   perm: number;
   position: number;
-  layout_mask: number | null;
-  layoutMask?: number;
+  layout_mask: number;
   numbers: number[][];
-  markedPositions?: { row: number; col: number; number: number }[];
-  isWinning?: boolean;
+  marked?: boolean[][];
 }
 
-interface UsePlayerTicketsResult {
-  playerTickets: PlayerTicket[];
-  isLoadingTickets: boolean;
-  updateWinningStatus: (calledNumbers: number[], winPattern: string) => void;
-  currentWinningTickets: PlayerTicket[];
+export interface UsePlayerTicketsResult {
+  tickets: PlayerTicket[];
+  isLoading: boolean;
+  error: Error | null;
+  refreshTickets: () => Promise<void>;
 }
 
-export const usePlayerTickets = (
-  sessionId: string | null,
-  playerId?: string,
-  playerCode?: string
-): UsePlayerTicketsResult => {
-  const [playerTickets, setPlayerTickets] = useState<PlayerTicket[]>([]);
-  const [isLoadingTickets, setIsLoadingTickets] = useState(true);
-  const [currentWinningTickets, setCurrentWinningTickets] = useState<PlayerTicket[]>([]);
-  
-  // Fetch tickets
-  useEffect(() => {
+/**
+ * Hook to fetch and manage player tickets
+ */
+export function usePlayerTickets(
+  sessionId: string | null | undefined,
+  playerId: string | null | undefined,
+  playerCode?: string | null
+): UsePlayerTicketsResult {
+  const [tickets, setTickets] = useState<PlayerTicket[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  // Function to fetch tickets
+  const fetchTickets = async () => {
     if (!sessionId || (!playerId && !playerCode)) {
-      setIsLoadingTickets(false);
+      setIsLoading(false);
       return;
     }
-    
-    const fetchTickets = async () => {
-      setIsLoadingTickets(true);
-      try {
-        // Check localStorage first for faster loading
-        const storedTicketsKey = `player_tickets_${sessionId}_${playerId || playerCode}`;
-        const storedTickets = localStorage.getItem(storedTicketsKey);
-        
-        if (storedTickets) {
-          const parsedTickets = JSON.parse(storedTickets);
-          setPlayerTickets(parsedTickets);
-          setIsLoadingTickets(false);
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Build the query based on available parameters
+      let query = supabase
+        .from('assigned_tickets')
+        .select('*');
+
+      if (playerId) {
+        query = query.eq('player_id', playerId);
+      } else if (playerCode) {
+        // If we have playerCode but not playerId, first get the player id
+        const { data: playerData, error: playerError } = await supabase
+          .from('players')
+          .select('id')
+          .eq('player_code', playerCode)
+          .single();
+
+        if (playerError || !playerData) {
+          throw new Error(`Could not find player with code ${playerCode}`);
         }
-        
-        // Query by player_id if available, otherwise by player_code
-        let query = supabase
-          .from('assigned_tickets')
-          .select('*')
-          .eq('session_id', sessionId);
-        
-        if (playerId) {
-          query = query.eq('player_id', playerId);
-        } else if (playerCode) {
-          // Getting tickets by player code requires a join
-          const { data: player } = await supabase
-            .from('players')
-            .select('id')
-            .eq('code', playerCode)
-            .single();
-            
-          if (player) {
-            query = supabase
-              .from('assigned_tickets')
-              .select('*')
-              .eq('session_id', sessionId)
-              .eq('player_id', player.id);
-          } else {
-            setIsLoadingTickets(false);
-            return;
-          }
-        }
-        
-        const { data, error } = await query;
-        
-        if (error) {
-          console.error('Error fetching tickets:', error);
-          setIsLoadingTickets(false);
-          return;
-        }
-        
-        if (data && data.length > 0) {
-          // Process data to ensure correct format
-          const processedTickets = data.map((ticket: any) => ({
-            ...ticket,
-            id: ticket.id || ticket.serial,
-            layoutMask: ticket.layout_mask || ticket.layoutMask || 0,
-            markedPositions: ticket.markedPositions || [],
-            isWinning: false
-          }));
-          
-          setPlayerTickets(processedTickets);
-          
-          // Save to localStorage for faster loading next time
-          localStorage.setItem(storedTicketsKey, JSON.stringify(processedTickets));
-        }
-      } catch (error) {
-        console.error('Error fetching player tickets:', error);
-      } finally {
-        setIsLoadingTickets(false);
+
+        query = query.eq('player_id', playerData.id);
       }
-    };
-    
+
+      // Add session filter and execute query
+      const { data, error: ticketsError } = await query
+        .eq('session_id', sessionId)
+        .order('position', { ascending: true });
+
+      if (ticketsError) throw ticketsError;
+
+      if (data && data.length > 0) {
+        // Transform data if needed
+        const formattedTickets = data.map((ticket) => {
+          // Convert flat numbers array to 2D array for display
+          let numbers: number[][];
+          
+          if (Array.isArray(ticket.numbers) && !Array.isArray(ticket.numbers[0])) {
+            // If numbers is a flat array, convert to 2D based on game type
+            // For 90-ball bingo (9x3 grid)
+            const rows = 3;
+            const cols = 9;
+            numbers = [];
+            
+            for (let i = 0; i < rows; i++) {
+              const row = [];
+              for (let j = 0; j < cols; j++) {
+                const index = i * cols + j;
+                row.push(index < ticket.numbers.length ? ticket.numbers[index] : 0);
+              }
+              numbers.push(row);
+            }
+          } else {
+            // Already in 2D format
+            numbers = ticket.numbers;
+          }
+          
+          // Initialize marked array if needed
+          const marked = Array(numbers.length)
+            .fill(null)
+            .map(() => Array(numbers[0].length).fill(false));
+            
+          return {
+            id: ticket.id,
+            serial: ticket.serial,
+            perm: ticket.perm,
+            position: ticket.position,
+            layout_mask: ticket.layout_mask,
+            numbers,
+            marked
+          };
+        });
+
+        logWithTimestamp(`Loaded ${formattedTickets.length} tickets for player`, 'info');
+        setTickets(formattedTickets);
+      } else {
+        logWithTimestamp('No tickets found for player', 'info');
+        setTickets([]);
+      }
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logWithTimestamp(`Error fetching tickets: ${errorMessage}`, 'error');
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch tickets on mount and when dependencies change
+  useEffect(() => {
     fetchTickets();
   }, [sessionId, playerId, playerCode]);
-  
-  // Check if a ticket is winning based on the pattern
-  const checkTicketWinning = useCallback((ticket: PlayerTicket, calledNumbers: number[], winPattern: string) => {
-    // Implement pattern checking logic based on winPattern (one-line, two-line, full-house, etc.)
-    // For now, a simplified check
-    if (!ticket.numbers) return false;
-    
-    let winningTicket = false;
-    
-    switch (winPattern) {
-      case 'one-line':
-        // Check if any row has all numbers called
-        winningTicket = ticket.numbers.some(row => 
-          row.every(num => num === 0 || calledNumbers.includes(num))
-        );
-        break;
-      case 'two-line':
-        // Check if at least two rows have all numbers called
-        let completedRows = 0;
-        for (const row of ticket.numbers) {
-          if (row.every(num => num === 0 || calledNumbers.includes(num))) {
-            completedRows++;
-          }
-        }
-        winningTicket = completedRows >= 2;
-        break;
-      case 'full-house':
-        // Check if all numbers are called
-        winningTicket = ticket.numbers.flat().every(num => 
-          num === 0 || calledNumbers.includes(num)
-        );
-        break;
-      default:
-        winningTicket = false;
-    }
-    
-    return winningTicket;
-  }, []);
-  
-  // Update winning status of tickets
-  const updateWinningStatus = useCallback((calledNumbers: number[], winPattern: string) => {
-    if (!playerTickets.length || !winPattern) return;
-    
-    const updatedTickets = playerTickets.map(ticket => ({
-      ...ticket,
-      isWinning: checkTicketWinning(ticket, calledNumbers, winPattern)
-    }));
-    
-    const winningTickets = updatedTickets.filter(t => t.isWinning);
-    
-    setPlayerTickets(updatedTickets);
-    setCurrentWinningTickets(winningTickets);
-    
-    if (winningTickets.length > 0) {
-      logWithTimestamp(`Found ${winningTickets.length} potential winning tickets`, 'info');
-    }
-  }, [playerTickets, checkTicketWinning]);
-  
+
   return {
-    playerTickets,
-    isLoadingTickets,
-    updateWinningStatus,
-    currentWinningTickets
+    tickets,
+    isLoading,
+    error,
+    refreshTickets: fetchTickets
   };
-};
+}

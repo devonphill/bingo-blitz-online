@@ -1,4 +1,3 @@
-
 import { logWithTimestamp } from '@/utils/logUtils';
 import { ConnectionState } from '@/constants/connectionConstants';
 import { supabase } from '@/integrations/supabase/client';
@@ -625,17 +624,74 @@ export class SingleSourceTrueConnections {
   public async broadcastNumberCalled(
     sessionId: string, 
     number: number, 
-    calledNumbers: number[]
+    calledNumbers: number[] = []
   ): Promise<boolean> {
-    return this.broadcast(
-      CHANNEL_NAMES.GAME_UPDATES,
-      EVENT_TYPES.NUMBER_CALLED,
-      { 
-        sessionId, 
-        number,
-        calledNumbers
+    if (!sessionId || !number) {
+      logWithTimestamp('[SSTC] broadcastNumberCalled: Missing sessionId or number', 'error');
+      return false;
+    }
+
+    try {
+      logWithTimestamp(`[SSTC] broadcastNumberCalled: Broadcasting number ${number} for session ${sessionId}`, 'info');
+      
+      // Get or create the game updates channel
+      const channel = this.getOrCreateChannel(CHANNEL_NAMES.GAME_UPDATES);
+      if (!channel) {
+        logWithTimestamp('[SSTC] broadcastNumberCalled: Failed to get or create channel', 'error');
+        return false;
       }
-    );
+
+      // Fetch the current called numbers if not provided
+      let broadcastCalledNumbers = calledNumbers;
+      if (!broadcastCalledNumbers || !broadcastCalledNumbers.length) {
+        try {
+          const fetchedNumbers = await fetchCalledNumbers(sessionId);
+          if (fetchedNumbers) {
+            // If the number isn't in the fetched list yet, add it
+            if (!fetchedNumbers.includes(number)) {
+              broadcastCalledNumbers = [...fetchedNumbers, number];
+            } else {
+              broadcastCalledNumbers = fetchedNumbers;
+            }
+            logWithTimestamp(`[SSTC] broadcastNumberCalled: Successfully fetched ${broadcastCalledNumbers.length} called numbers`, 'info');
+          } else {
+            // If we couldn't fetch, initialize with just this number
+            broadcastCalledNumbers = [number];
+          }
+        } catch (fetchError) {
+          logWithTimestamp(`[SSTC] broadcastNumberCalled: Error fetching called numbers: ${fetchError}`, 'error');
+          broadcastCalledNumbers = [number]; // Fallback to just the current number
+        }
+      }
+
+      // Build the payload
+      const payload: NumberCalledPayload = {
+        number,
+        calledNumbers: broadcastCalledNumbers, // Include ALL called numbers
+        sessionId,
+        timestamp: Date.now(),
+      };
+
+      // Track broadcasting status
+      let broadcastSucceeded = false;
+
+      // Send the broadcast
+      await channel.send({
+        type: 'broadcast',
+        event: EVENT_TYPES.NUMBER_CALLED,
+        payload
+      }).then(() => {
+        logWithTimestamp(`[SSTC] broadcastNumberCalled: Successfully broadcast number ${number} for session ${sessionId}`, 'info');
+        broadcastSucceeded = true;
+      }).catch(error => {
+        logWithTimestamp(`[SSTC] broadcastNumberCalled: Error broadcasting number: ${error}`, 'error');
+      });
+
+      return broadcastSucceeded;
+    } catch (error) {
+      logWithTimestamp(`[SSTC] broadcastNumberCalled: Exception: ${error}`, 'error');
+      return false;
+    }
   }
   
   /**

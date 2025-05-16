@@ -1,48 +1,73 @@
 
 import { logWithTimestamp } from '@/utils/logUtils';
-
-interface StoredNumbersData {
-  calledNumbers: number[];
-  lastCalledNumber: number | null;
-  timestamp: number;
-}
-
-/**
- * Load called numbers from local storage
- */
-export function loadStoredNumbers(sessionId: string): StoredNumbersData | null {
-  try {
-    const storedData = localStorage.getItem(`called_numbers_${sessionId}`);
-    if (!storedData) return null;
-    
-    const parsedData = JSON.parse(storedData) as StoredNumbersData;
-    logWithTimestamp(`Loaded ${parsedData.calledNumbers.length} called numbers from storage for session ${sessionId}`, 'info');
-    return parsedData;
-  } catch (error) {
-    logWithTimestamp(`Error loading called numbers from storage: ${error}`, 'error');
-    return null;
-  }
-}
+import { CalledNumbersState } from './types';
 
 /**
  * Save called numbers to local storage
  */
-export function saveNumbersToStorage(
-  sessionId: string,
+export const saveNumbersToStorage = (
+  sessionId: string, 
   calledNumbers: number[],
   lastCalledNumber: number | null,
   timestamp: number
-): void {
+): void => {
+  if (!sessionId) {
+    logWithTimestamp('Cannot save numbers: No session ID', 'warn');
+    return;
+  }
+  
   try {
-    const data: StoredNumbersData = {
+    const storageKey = `bingo_numbers_${sessionId}`;
+    const data: CalledNumbersState = {
       calledNumbers,
       lastCalledNumber,
-      timestamp
+      lastUpdateTime: timestamp
     };
     
-    localStorage.setItem(`called_numbers_${sessionId}`, JSON.stringify(data));
-    logWithTimestamp(`Saved ${calledNumbers.length} called numbers to storage for session ${sessionId}`, 'info');
+    localStorage.setItem(storageKey, JSON.stringify(data));
+    logWithTimestamp(`Saved ${calledNumbers.length} numbers to storage for session ${sessionId}`, 'info');
   } catch (error) {
-    logWithTimestamp(`Error saving called numbers to storage: ${error}`, 'error');
+    logWithTimestamp(`Error saving numbers to storage: ${error}`, 'error');
   }
-}
+};
+
+/**
+ * Load called numbers from local storage
+ */
+export const loadStoredNumbers = (sessionId: string): CalledNumbersState | null => {
+  if (!sessionId) {
+    logWithTimestamp('Cannot load numbers: No session ID', 'warn');
+    return null;
+  }
+  
+  try {
+    const storageKey = `bingo_numbers_${sessionId}`;
+    const storedData = localStorage.getItem(storageKey);
+    
+    if (!storedData) {
+      return null;
+    }
+    
+    const data: CalledNumbersState = JSON.parse(storedData);
+    logWithTimestamp(`Loaded ${data.calledNumbers.length} numbers from storage for session ${sessionId}`, 'info');
+    return data;
+  } catch (error) {
+    logWithTimestamp(`Error loading numbers from storage: ${error}`, 'error');
+    return null;
+  }
+};
+
+/**
+ * Clear called numbers from local storage
+ */
+export const clearStoredNumbers = (sessionId: string): void => {
+  if (!sessionId) return;
+  
+  try {
+    const storageKey = `bingo_numbers_${sessionId}`;
+    localStorage.removeItem(storageKey);
+    logWithTimestamp(`Cleared stored numbers for session ${sessionId}`, 'info');
+  } catch (error) {
+    logWithTimestamp(`Error clearing stored numbers: ${error}`, 'error');
+  }
+};

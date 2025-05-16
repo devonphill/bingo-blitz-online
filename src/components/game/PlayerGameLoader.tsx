@@ -4,6 +4,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Spinner } from '@/components/ui/spinner';
 import { useNetworkContext } from '@/contexts/network';
 import { usePlayerContext } from '@/contexts/PlayerContext';
+import { supabase } from '@/integrations/supabase/client';
+import { logWithTimestamp } from '@/utils/logUtils';
 
 interface PlayerGameLoaderProps {
   children: React.ReactNode;
@@ -12,13 +14,55 @@ interface PlayerGameLoaderProps {
 export default function PlayerGameLoader({ children }: PlayerGameLoaderProps) {
   const { playerCode } = useParams<{ playerCode: string }>();
   const navigate = useNavigate();
-  const { player, loadPlayer } = usePlayerContext();
+  const { player, setPlayer } = usePlayerContext();
   const { connect } = useNetworkContext();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
   // Load player data and connect to session
   useEffect(() => {
+    const loadPlayer = async (code: string) => {
+      try {
+        // Get player from database using code
+        const { data, error } = await supabase
+          .from('players')
+          .select('*')
+          .eq('player_code', code)
+          .single();
+          
+        if (error) {
+          throw new Error(`Error fetching player: ${error.message}`);
+        }
+          
+        if (!data) {
+          throw new Error('Player not found');
+        }
+        
+        // Save to context
+        setPlayer({
+          id: data.id,
+          name: data.nickname,
+          code: data.player_code,
+          sessionId: data.session_id,
+          email: data.email || '',
+          tickets: data.tickets || 1
+        });
+        
+        logWithTimestamp(`Player loaded: ${data.nickname} (${data.id}) for session ${data.session_id}`, 'info');
+        
+        // Connect to session
+        if (data.session_id) {
+          connect(data.session_id);
+        }
+        
+        return data;
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        logWithTimestamp(`Error loading player: ${errorMessage}`, 'error');
+        throw err;
+      }
+    };
+
     const initializePlayer = async () => {
       if (!playerCode) {
         setError('No player code provided');
@@ -31,17 +75,7 @@ export default function PlayerGameLoader({ children }: PlayerGameLoaderProps) {
         setError(null);
         
         // Load player data
-        const playerData = await loadPlayer(playerCode);
-        
-        if (!playerData || !playerData.sessionId) {
-          setError('Player data not found or invalid');
-          setIsLoading(false);
-          return;
-        }
-        
-        // Connect to game session
-        connect(playerData.sessionId);
-        
+        await loadPlayer(playerCode);
         setIsLoading(false);
       } catch (error) {
         setError('Failed to load player data');
@@ -50,7 +84,7 @@ export default function PlayerGameLoader({ children }: PlayerGameLoaderProps) {
     };
     
     initializePlayer();
-  }, [playerCode, loadPlayer, connect]);
+  }, [playerCode, setPlayer, connect]);
   
   // Handle errors
   if (error) {

@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useNetworkContext } from '@/contexts/network';
 import { useToast } from "@/hooks/use-toast";
@@ -10,13 +10,14 @@ import { PlayerGameContent } from '@/components/game';
 import { Spinner } from "@/components/ui/spinner";
 import { logWithTimestamp } from '@/utils/logUtils';
 import { GameProvider } from '@/contexts/GameContext';
+import { submitBingoClaim } from '@/utils/claimUtils';
 
 const PlayerGame = () => {
   const { playerCode } = useParams<{ playerCode?: string }>();
   const navigate = useNavigate();
-  const { player } = usePlayerContext();
+  const { player, loadPlayerByCode } = usePlayerContext();
   const { currentSession } = useSessionContext();
-  const { connect, submitBingoClaim } = useNetworkContext();
+  const { connect } = useNetworkContext();
   const [autoMarking, setAutoMarking] = useState<boolean>(() => {
     // Get from localStorage with default of true
     const stored = localStorage.getItem('autoMarking');
@@ -34,26 +35,36 @@ const PlayerGame = () => {
     logWithTimestamp(`${instanceId.current}: ${message}`, level);
   };
 
-  // Check if we have the required data
-  React.useEffect(() => {
-    if (!player) {
-      log('No player data found in context, redirecting to join page', 'warn');
-      navigate('/player/join');
-      return;
+  // Load player data if needed
+  useEffect(() => {
+    if (!player && playerCode) {
+      setIsLoading(true);
+      loadPlayerByCode(playerCode)
+        .then((loadedPlayer) => {
+          if (!loadedPlayer) {
+            log('Failed to load player by code', 'error');
+            navigate('/player/join');
+          } else {
+            log(`Loaded player: ${loadedPlayer.name} (${loadedPlayer.id})`, 'info');
+          }
+        })
+        .catch((error) => {
+          log(`Error loading player: ${error}`, 'error');
+          navigate('/player/join');
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
     }
-    
-    if (!player.sessionId) {
-      log('Player has no sessionId, redirecting to join page', 'warn');
-      navigate('/player/join');
-      return;
+  }, [player, playerCode, loadPlayerByCode, navigate]);
+
+  // Connect to session when player data is available
+  useEffect(() => {
+    if (player?.sessionId) {
+      log(`Connecting player ${player.id} to session ${player.sessionId}`, 'info');
+      connect(player.sessionId);
     }
-    
-    log(`Player data loaded: ${player.id} in session ${player.sessionId}`, 'info');
-    
-    // Connect to game session
-    connect(player.sessionId);
-    
-  }, [player, connect, navigate]);
+  }, [player, connect]);
 
   // Function to handle reconnection
   const handleReconnect = useCallback(() => {
@@ -75,7 +86,7 @@ const PlayerGame = () => {
     });
   }, [player?.sessionId, connect, toast]);
 
-  // Handle bingo claim
+  // Handle bingo claim using the new utility function
   const handleClaimBingo = useCallback((ticket: any) => {
     if (!player?.sessionId || !playerCode) {
       log('Cannot submit claim: Missing session ID or player code', 'warn');
@@ -105,35 +116,35 @@ const PlayerGame = () => {
     log(`Submitting bingo claim for ticket in session ${player.sessionId}`, 'info');
     setClaimStatus("pending");
     
-    // Prepare the ticket with required fields
-    // Fix here to ensure we have a valid ticket with serial
-    const claimTicket = {
-      serial: ticket.serial || ticket.id, // Use ID as fallback for serial
-      perm: ticket.perm || 0,
-      position: ticket.position || 0,
-      layout_mask: ticket.layout_mask || ticket.layoutMask || 0,
-      numbers: ticket.numbers || []
-    };
-    
-    console.log('CLAIM DEBUG - Claim ticket prepared:', claimTicket);
-    
-    const success = submitBingoClaim(claimTicket, playerCode, player.sessionId);
-    if (success) {
-      log('Claim submitted successfully', 'info');
-      toast({
-        title: "Claim Submitted",
-        description: "Your claim has been submitted and is awaiting validation.",
+    // Use the utility function for claim submission
+    submitBingoClaim(ticket, playerCode, player.sessionId, player.name)
+      .then((success) => {
+        if (success) {
+          log('Claim submitted successfully', 'info');
+          toast({
+            title: "Claim Submitted",
+            description: "Your claim has been submitted and is awaiting validation.",
+          });
+        } else {
+          log('Failed to submit claim', 'error');
+          toast({
+            title: "Claim Submission Failed",
+            description: "Failed to submit your claim. Please try again.",
+            variant: "destructive"
+          });
+          setClaimStatus("none");
+        }
+      })
+      .catch((error) => {
+        log(`Error submitting claim: ${error}`, 'error');
+        toast({
+          title: "Claim Error",
+          description: "An unexpected error occurred. Please try again.",
+          variant: "destructive"
+        });
+        setClaimStatus("none");
       });
-    } else {
-      log('Failed to submit claim', 'error');
-      toast({
-        title: "Claim Submission Failed",
-        description: "Failed to submit your claim. Please try again.",
-        variant: "destructive"
-      });
-      setClaimStatus("none");
-    }
-  }, [player?.sessionId, playerCode, submitBingoClaim, toast]);
+  }, [player, playerCode, toast]);
 
   // Display loading state when we're checking session
   if (isLoading) {
