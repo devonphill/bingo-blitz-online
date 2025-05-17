@@ -6,10 +6,12 @@ import { usePlayerTickets } from '@/hooks/playerTickets/usePlayerTickets';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import BingoTicketDisplay from './BingoTicketDisplay';
+import { useGameContext } from '@/contexts/GameContext';
 
 export default function PlayerGameContent() {
   const { player } = usePlayerContext();
   const { currentSession } = useSessionContext();
+  const { calledNumbers } = useGameContext();
   const sessionId = player?.sessionId || currentSession?.id;
 
   // Use the correct properties from usePlayerTickets
@@ -66,7 +68,7 @@ export default function PlayerGameContent() {
             <BingoTicketDisplay
               numbers={ticket.raw_numbers || ticket.numbers_grid || []}
               layoutMask={ticket.layout_mask}
-              calledNumbers={[]}
+              calledNumbers={calledNumbers}
               serial={ticket.serial_number}
               perm={ticket.perm_number}
               position={ticket.position || 0}

@@ -97,7 +97,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       (data: any) => {
         // Verify the data is for our session
         if (data?.sessionId !== sessionId) {
-          log(`Ignoring number called for different session: ${data?.sessionId}`, 'debug');
+          log(`Ignoring number called for different session: ${data?.sessionId}`, 'info');
           return;
         }
         
@@ -151,7 +151,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       (gameState: any) => {
         // Verify the data is for our session
         if (gameState?.sessionId !== sessionId) {
-          log(`Ignoring game state update for different session: ${gameState?.sessionId}`, 'debug');
+          log(`Ignoring game state update for different session: ${gameState?.sessionId}`, 'info');
           return;
         }
         

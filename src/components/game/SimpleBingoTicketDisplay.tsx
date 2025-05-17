@@ -1,114 +1,98 @@
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 
 interface SimpleBingoTicketDisplayProps {
-  numbers: number[] | number[][];  // Allow either format
-  layoutMask: number;
+  numbers: (number | null)[];
+  layoutMask?: number;
   calledNumbers: number[];
-  serial: string;
-  perm: number;
-  position?: number;
+  serial?: string;
+  perm?: number;
   autoMarking?: boolean;
-  currentWinPattern?: string | null;
-  showProgress?: boolean;
+  onNumberClick?: (number: number) => void;
+  showHeader?: boolean;
 }
 
-/**
- * Display a bingo ticket with the given properties
- */
-export default function SimpleBingoTicketDisplay({
+// Helper function to convert flat array to grid format
+function convertToGrid(numbers: (number | null)[], cols = 9, rows = 3): (number | null)[][] {
+  const grid: (number | null)[][] = [];
+  
+  for (let r = 0; r < rows; r++) {
+    grid[r] = [];
+    for (let c = 0; c < cols; c++) {
+      const index = r * cols + c;
+      grid[r][c] = index < numbers.length ? numbers[index] : null;
+    }
+  }
+  
+  return grid;
+}
+
+const SimpleBingoTicketDisplay: React.FC<SimpleBingoTicketDisplayProps> = ({
   numbers,
   layoutMask,
-  calledNumbers,
-  serial,
-  perm,
-  position = 0,
+  calledNumbers = [],
+  serial = '',
+  perm = 0,
   autoMarking = true,
-  currentWinPattern = null,
-  showProgress = false
-}: SimpleBingoTicketDisplayProps) {
+  onNumberClick,
+  showHeader = true
+}) => {
+  const [grid, setGrid] = useState<(number | null)[][]>([]);
   
-  // Log incoming data for debugging
-  console.log(`SimpleBingoTicketDisplay - Rendering ticket ${serial}, perm: ${perm}, pos: ${position}`);
-  console.log(`Numbers type: ${Array.isArray(numbers) ? 
-    (Array.isArray(numbers[0]) ? '2D array' : '1D array') : 'not array'}, length: ${Array.isArray(numbers) ? numbers.length : 0}`);
-  console.log(`Called numbers: ${calledNumbers.length}`);
-  
-  // Format the ticket data into a 2D grid
-  const numbersGrid = useMemo(() => {
-    // If already a 2D array, use it directly
-    if (Array.isArray(numbers) && Array.isArray(numbers[0])) {
-      return numbers as number[][];
-    }
-    
-    // If it's a flat array, convert to 2D grid based on layout mask
+  // Convert flat array to grid on mount or when numbers change
+  useEffect(() => {
+    // Check if numbers is an array
     if (Array.isArray(numbers)) {
-      // For 90-ball bingo, default to 3 rows, 9 columns
-      const rows = 3;
-      const cols = 9;
-      
-      // Create the grid and fill with zeros (for empty cells)
-      const grid: number[][] = Array(rows).fill(0).map(() => Array(cols).fill(0));
-      
-      // Populate grid from the flat array based on position
-      let flatIndex = 0;
-      for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < cols; col++) {
-          // Check if this position should have a number based on layout mask
-          // This is a simplification and might need adjustment
-          const shouldHaveNumber = true; // In a real implementation, check the layout mask
-          
-          if (shouldHaveNumber && flatIndex < numbers.length) {
-            grid[row][col] = numbers[flatIndex];
-            flatIndex++;
-          }
-        }
-      }
-      
-      return grid;
+      setGrid(convertToGrid(numbers));
     }
-    
-    // Fallback to empty grid
-    return [[0]]; 
-  }, [numbers, layoutMask]);
+  }, [numbers]);
   
-  // Determine if a cell should be marked
-  const isCalled = (number: number) => {
-    return number > 0 && calledNumbers.includes(number);
-  };
+  if (!grid.length) return <div>Loading ticket...</div>;
   
-  // Render the ticket
   return (
-    <div className="bg-white rounded-lg shadow p-2 max-w-md mx-auto">
-      <div className="text-xs text-gray-600 flex justify-between mb-2">
-        <span>Serial: {serial}</span>
-        <span>Perm: {perm}</span>
-        {position !== undefined && <span>Pos: {position}</span>}
-      </div>
-      
-      <div className="grid grid-cols-9 gap-1">
-        {numbersGrid.map((row, rowIndex) => (
-          row.map((num, colIndex) => (
-            <div 
-              key={`${rowIndex}-${colIndex}`}
-              className={`
-                aspect-square flex items-center justify-center text-sm font-medium rounded
-                ${num === 0 ? 'bg-gray-100' : 'bg-white border border-gray-300'} 
-                ${isCalled(num) ? 'bg-green-100 border-green-500' : ''}
-              `}
-            >
-              {num > 0 ? num : ''}
-            </div>
-          ))
-        ))}
-      </div>
-      
-      {showProgress && currentWinPattern && (
-        <div className="mt-2 text-xs text-center text-gray-600">
-          {/* Progress indicators would go here */}
-          Pattern: {currentWinPattern}
+    <div className="w-full max-w-md mx-auto">
+      {showHeader && (
+        <div className="flex justify-between text-xs text-gray-600 mb-1">
+          <div>Serial: {serial}</div>
+          <div>Perm: {perm}</div>
         </div>
       )}
+      
+      <div className="border border-gray-300 rounded-sm overflow-hidden">
+        <table className="w-full border-collapse">
+          <tbody>
+            {grid.map((row, rowIndex) => (
+              <tr key={rowIndex} className="border-b border-gray-200 last:border-b-0">
+                {row.map((num, colIndex) => {
+                  const cellNumber: number = typeof num === 'number' ? num : 0;
+                  const isEmpty = num === null || num === 0;
+                  const isCalled = !isEmpty && calledNumbers.includes(cellNumber);
+                  
+                  return (
+                    <td 
+                      key={colIndex}
+                      className={`
+                        border-r border-gray-200 last:border-r-0
+                        text-center p-1 text-sm aspect-square
+                        ${isEmpty ? 'bg-gray-100' : ''}
+                        ${isCalled ? 'bg-green-100 font-bold' : ''}
+                        ${autoMarking && isCalled ? 'bg-green-200' : ''}
+                      `}
+                      onClick={() => {
+                        if (!isEmpty && onNumberClick) onNumberClick(cellNumber);
+                      }}
+                    >
+                      {!isEmpty ? num : ''}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
-}
+};
+
+export default SimpleBingoTicketDisplay;

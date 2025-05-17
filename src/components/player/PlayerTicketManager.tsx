@@ -124,7 +124,7 @@ export function PlayerTicketManager({ autoMarking, onClaimBingo }: PlayerTicketM
     const numberCleanup = listenForEvent(EVENTS.NUMBER_CALLED, (data: any) => {
       // Verify the data is for our session
       if (data?.sessionId !== sessionId) {
-        log(`Ignoring number called for different session: ${data?.sessionId}`, 'debug');
+        log(`Ignoring number called for different session: ${data?.sessionId}`, 'info');
         return;
       }
       
@@ -148,7 +148,7 @@ export function PlayerTicketManager({ autoMarking, onClaimBingo }: PlayerTicketM
     const stateCleanup = listenForEvent(EVENTS.GAME_STATE_UPDATE, (data: any) => {
       // Verify the data is for our session
       if (data?.sessionId !== sessionId) {
-        log(`Ignoring game state update for different session: ${data?.sessionId}`, 'debug');
+        log(`Ignoring game state update for different session: ${data?.sessionId}`, 'info');
         return;
       }
       

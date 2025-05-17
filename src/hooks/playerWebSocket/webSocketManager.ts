@@ -1,6 +1,7 @@
 
 import { logWithTimestamp } from "@/utils/logUtils";
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
+import { EVENT_TYPES } from '@/constants/websocketConstants';
 
 /**
  * Registers listeners for WebSocket number updates using SingleSourceTrueConnections
@@ -32,8 +33,7 @@ export function setupNumberUpdateListeners(
     singleSource.connect(sessionId);
   }
 
-  // Get event type constants from SingleSourceTrueConnections
-  const EVENT_TYPES = singleSource.constructor.EVENT_TYPES;
+  // Use the direct constants instead of trying to access them through the constructor
   if (!EVENT_TYPES || !EVENT_TYPES.NUMBER_CALLED || !EVENT_TYPES.GAME_RESET) {
     logWithTimestamp(`[${instanceId}] Missing required event types, skipping listener setup`, 'error');
     return () => {};
