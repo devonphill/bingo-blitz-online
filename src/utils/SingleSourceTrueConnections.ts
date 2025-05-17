@@ -4,6 +4,11 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 import { logWithTimestamp } from './logUtils';
 import { ConnectionState } from '@/constants/connectionConstants';
 import { EVENT_TYPES, CHANNEL_NAMES } from '@/constants/websocketConstants';
+import { supabase } from '@/integrations/supabase/client';
+import { 
+  isNumberAlreadyCalled, 
+  fetchCalledNumbersFromDb 
+} from '@/utils/numberDebugUtils';
 
 /**
  * Manages a single WebSocket connection across the entire application.
@@ -20,6 +25,7 @@ class SingleSourceTrueConnections {
   private statusListeners: ((status: ConnectionState, isServiceInitialized: boolean) => void)[] = [];
   private channels: Map<string, RealtimeChannel> = new Map();
   private channelRefCounts: Map<string, number> = new Map();
+  private lastPing: Date | null = null;
 
   /**
    * Private constructor to enforce singleton pattern.
@@ -546,9 +552,367 @@ class SingleSourceTrueConnections {
   }
   
   /**
-   * Track last ping time for heartbeat
+   * Call a number for a session
+   * This method updates the database and broadcasts the number to all clients
    */
-  private lastPing: Date | null = null;
+  public async callNumber(number: number, sessionId: string, calledNumbers: number[] = []): Promise<boolean> {
+    if (!number || !sessionId) {
+      logWithTimestamp(`[SSTC] Cannot call number: Missing number (${number}) or sessionId (${sessionId})`, 'error');
+      return false;
+    }
+
+    try {
+      // First check if the number has already been called
+      const isAlreadyCalled = await isNumberAlreadyCalled(number, sessionId);
+      if (isAlreadyCalled) {
+        logWithTimestamp(`[SSTC] Number ${number} has already been called for session ${sessionId}`, 'warn');
+        return false;
+      }
+
+      // Update connection last ping time
+      this.updateLastPing();
+      
+      // First update the database
+      try {
+        // Get current called numbers
+        const { data, error: fetchError } = await supabase
+          .from('sessions_progress')
+          .select('called_numbers')
+          .eq('session_id', sessionId)
+          .single();
+          
+        if (fetchError) {
+          throw new Error(`Database fetch error: ${fetchError.message}`);
+        }
+        
+        // Create updatedCalledNumbers to ensure we don't add duplicates
+        let updatedCalledNumbers: number[];
+        if (data && Array.isArray(data.called_numbers)) {
+          // Only add the number if it's not already in the array
+          if (data.called_numbers.includes(number)) {
+            logWithTimestamp(`[SSTC] Number ${number} already exists in database, will not add duplicate`, 'warn');
+            updatedCalledNumbers = [...data.called_numbers];
+          } else {
+            updatedCalledNumbers = [...data.called_numbers, number];
+          }
+        } else {
+          updatedCalledNumbers = [number];
+        }
+        
+        // Update the database with the new array
+        const { error } = await supabase
+          .from('sessions_progress')
+          .update({
+            called_numbers: updatedCalledNumbers,
+            updated_at: new Date().toISOString()
+          })
+          .eq('session_id', sessionId);
+
+        if (error) {
+          throw new Error(`Database update error: ${error.message}`);
+        }
+        
+        // Use the updated array for the broadcast
+        calledNumbers = updatedCalledNumbers;
+      } catch (dbError) {
+        logWithTimestamp(`[SSTC] Error updating database with called number: ${dbError}`, 'error');
+        // We continue with the broadcast even if DB update fails
+      }
+      
+      // Then broadcast the number
+      logWithTimestamp(`[SSTC] Calling number ${number} for session ${sessionId}`, 'info');
+      const result = await this.broadcastNumberCalled(
+        sessionId, 
+        number,
+        calledNumbers
+      );
+      
+      return result;
+    } catch (error) {
+      logWithTimestamp(`[SSTC] Error calling number: ${error}`, 'error');
+      return false;
+    }
+  }
+
+  /**
+   * Reset a game for a specific session
+   */
+  public async resetGame(sessionId: string): Promise<boolean> {
+    if (!sessionId) {
+      logWithTimestamp('[SSTC] Cannot reset game: No session ID provided', 'error');
+      return false;
+    }
+
+    try {
+      // Update connection last ping time
+      this.updateLastPing();
+      
+      // First update the database
+      try {
+        const { error } = await supabase
+          .from('sessions_progress')
+          .update({
+            called_numbers: [],
+            updated_at: new Date().toISOString()
+          })
+          .eq('session_id', sessionId);
+
+        if (error) {
+          throw new Error(`Database error resetting called numbers: ${error.message}`);
+        }
+      } catch (dbError) {
+        logWithTimestamp(`[SSTC] Error resetting called numbers in database: ${dbError}`, 'error');
+        // Continue with broadcast even if DB update fails
+      }
+      
+      // Broadcast the reset event
+      logWithTimestamp(`[SSTC] Resetting game for session ${sessionId}`, 'info');
+      const result = await this.broadcast(
+        CHANNEL_NAMES.GAME_UPDATES,
+        EVENT_TYPES.GAME_RESET,
+        { 
+          sessionId,
+          timestamp: new Date().toISOString() 
+        }
+      );
+      
+      return result;
+    } catch (error) {
+      logWithTimestamp(`[SSTC] Error resetting game: ${error}`, 'error');
+      return false;
+    }
+  }
+
+  /**
+   * Submit a bingo claim for validation
+   */
+  public async submitBingoClaim(
+    ticket: any,
+    playerCode: string,
+    sessionId: string
+  ): Promise<boolean> {
+    if (!ticket || !playerCode || !sessionId) {
+      logWithTimestamp('[SSTC] Cannot submit claim: Missing required parameters', 'error');
+      return false;
+    }
+
+    try {
+      // Update last ping time
+      this.updateLastPing();
+
+      const claimId = `claim_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      
+      // Create the payload
+      const claimPayload = {
+        claimId,
+        playerCode,
+        sessionId,
+        ticket: {
+          ...ticket,
+          // Make sure we have consistent naming
+          serial: ticket.serial || ticket.id,
+          layout_mask: ticket.layout_mask || ticket.layoutMask || 0
+        },
+        timestamp: new Date().toISOString()
+      };
+      
+      // Get current called numbers for this claim
+      const calledNumbers = await fetchCalledNumbersFromDb(sessionId);
+      
+      // Insert into claims table first
+      try {
+        const { error } = await supabase
+          .from('claims')
+          .insert({
+            id: claimId,
+            session_id: sessionId,
+            player_code: playerCode,
+            ticket_serial: ticket.serial || ticket.id,
+            ticket_details: ticket,
+            called_numbers_snapshot: calledNumbers,
+            claimed_at: new Date().toISOString(),
+            pattern_claimed: ticket.winPattern || 'unknown'
+          });
+        
+        if (error) {
+          logWithTimestamp(`[SSTC] Error inserting claim into database: ${error.message}`, 'error');
+          // Continue with broadcast even if DB update fails
+        }
+      } catch (dbError) {
+        logWithTimestamp(`[SSTC] Exception inserting claim into database: ${dbError}`, 'error');
+        // Continue with broadcast even if DB update fails
+      }
+      
+      // Broadcast the claim
+      logWithTimestamp(`[SSTC] Broadcasting claim for player ${playerCode} in session ${sessionId}`, 'info');
+      const result = await this.broadcast(
+        CHANNEL_NAMES.CLAIM_UPDATES,
+        EVENT_TYPES.CLAIM_SUBMITTED,
+        claimPayload
+      );
+      
+      return result;
+    } catch (error) {
+      logWithTimestamp(`[SSTC] Error submitting claim: ${error}`, 'error');
+      return false;
+    }
+  }
+
+  /**
+   * Send a claim validation result
+   */
+  public async sendClaimValidation(
+    claimId: string,
+    isValid: boolean,
+    sessionId: string,
+    additionalData: any = {}
+  ): Promise<boolean> {
+    if (!claimId || !sessionId) {
+      logWithTimestamp('[SSTC] Cannot send claim validation: Missing required parameters', 'error');
+      return false;
+    }
+
+    try {
+      // Update last ping time
+      this.updateLastPing();
+      
+      // Update claim in database if valid
+      if (isValid) {
+        try {
+          const { error } = await supabase
+            .from('claims')
+            .update({
+              verified_at: new Date().toISOString(),
+              verification_notes: additionalData.notes || 'Verified by caller'
+            })
+            .eq('id', claimId);
+          
+          if (error) {
+            logWithTimestamp(`[SSTC] Error updating claim verification in database: ${error.message}`, 'error');
+          }
+        } catch (dbError) {
+          logWithTimestamp(`[SSTC] Exception updating claim verification in database: ${dbError}`, 'error');
+        }
+      }
+      
+      // Broadcast validation result
+      logWithTimestamp(`[SSTC] Sending claim validation for claim ${claimId} in session ${sessionId}: ${isValid ? 'VALID' : 'INVALID'}`, 'info');
+      const result = await this.broadcast(
+        CHANNEL_NAMES.CLAIM_UPDATES,
+        EVENT_TYPES.CLAIM_VALIDATION,
+        {
+          claimId,
+          isValid,
+          sessionId,
+          ...additionalData,
+          timestamp: new Date().toISOString()
+        }
+      );
+      
+      return result;
+    } catch (error) {
+      logWithTimestamp(`[SSTC] Error sending claim validation: ${error}`, 'error');
+      return false;
+    }
+  }
+
+  /**
+   * Update a player's presence status
+   */
+  public async updatePlayerPresence(
+    sessionId: string,
+    playerData: any
+  ): Promise<boolean> {
+    if (!sessionId || !playerData) {
+      logWithTimestamp('[SSTC] Cannot update player presence: Missing required parameters', 'error');
+      return false;
+    }
+
+    try {
+      // Update last ping time
+      this.updateLastPing();
+      
+      // Update player presence in database
+      try {
+        const { error } = await supabase
+          .from('player_presence')
+          .upsert({
+            session_id: sessionId,
+            player_code: playerData.code,
+            last_seen: new Date().toISOString(),
+            status: playerData.status || 'online',
+            metadata: playerData
+          })
+          .select();
+        
+        if (error) {
+          throw new Error(`Database error updating player presence: ${error.message}`);
+        }
+      } catch (dbError) {
+        logWithTimestamp(`[SSTC] Error updating player presence in database: ${dbError}`, 'error');
+        // Continue with broadcast even if DB update fails
+      }
+      
+      // Broadcast player presence update
+      logWithTimestamp(`[SSTC] Broadcasting player presence update for player ${playerData.code} in session ${sessionId}`, 'info');
+      const result = await this.broadcast(
+        'presence-updates',
+        'player-presence-update',
+        {
+          sessionId,
+          playerCode: playerData.code,
+          timestamp: new Date().toISOString(),
+          ...playerData
+        }
+      );
+      
+      return result;
+    } catch (error) {
+      logWithTimestamp(`[SSTC] Error updating player presence: ${error}`, 'error');
+      return false;
+    }
+  }
+  
+  /**
+   * Sync called numbers for a session
+   * This is useful for debugging or when a client reconnects
+   */
+  public async syncCalledNumbers(sessionId: string): Promise<boolean> {
+    if (!sessionId) {
+      logWithTimestamp('[SSTC] Cannot sync called numbers: No session ID provided', 'error');
+      return false;
+    }
+
+    try {
+      // Update last ping time
+      this.updateLastPing();
+      
+      // Fetch current called numbers from database
+      const calledNumbers = await fetchCalledNumbersFromDb(sessionId);
+      
+      if (!calledNumbers || calledNumbers.length === 0) {
+        logWithTimestamp('[SSTC] No called numbers found to sync', 'info');
+        return false;
+      }
+      
+      // Broadcast current called numbers to all clients
+      if (calledNumbers.length > 0) {
+        // If we have numbers, broadcast the last one with the full list
+        const lastNumber = calledNumbers[calledNumbers.length - 1];
+        return await this.broadcastNumberCalled(
+          sessionId,
+          lastNumber,
+          calledNumbers
+        );
+      }
+      
+      logWithTimestamp(`[SSTC] Synced ${calledNumbers.length} called numbers for session ${sessionId}`, 'info');
+      return true;
+    } catch (error) {
+      logWithTimestamp(`[SSTC] Error syncing called numbers: ${error}`, 'error');
+      return false;
+    }
+  }
   
   /**
    * Update last ping time

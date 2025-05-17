@@ -52,9 +52,9 @@ export function useWebSocket(sessionId: string | null | undefined) {
       connection.connect(sessionId);
       
       // Setup connection status listener
-      const cleanup = connection.addConnectionListener((connected, connectionStatus) => {
+      const cleanup = connection.addConnectionListener((connected) => {
         setIsConnected(connected);
-        setConnectionState(connectionStatus);
+        setConnectionState(connection.getCurrentConnectionState());
         setIsWsReady(connected);
         
         if (connected) {
