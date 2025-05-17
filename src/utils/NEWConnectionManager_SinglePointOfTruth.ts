@@ -1,3 +1,4 @@
+
 import { SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import { CONNECTION_STATES, WebSocketConnectionStatus, EVENT_TYPES } from '@/constants/websocketConstants';
 import { logDebug, logInfo, logWarn, logError } from '@/utils/logUtils';
@@ -102,6 +103,87 @@ export class NEWConnectionManager_SinglePointOfTruth {
   }
 
   /**
+   * Check if the service is initialized
+   */
+  public isServiceInitialized(): boolean {
+    return this.isSupabaseClientInitialized;
+  }
+
+  /**
+   * Get the current overall connection status
+   */
+  public getCurrentConnectionState(): WebSocketConnectionStatus {
+    return this.serviceStatusInternal;
+  }
+
+  /**
+   * Get the current overall status (alias to maintain compatibility)
+   */
+  public getCurrentOverallStatus(): WebSocketConnectionStatus {
+    return this.serviceStatusInternal;
+  }
+
+  /**
+   * Check if the service is connected
+   */
+  public isConnected(): boolean {
+    return this.serviceStatusInternal === CONNECTION_STATES.CONNECTED && this.isSupabaseClientInitialized;
+  }
+
+  /**
+   * Check if the service is connected overall (alias for isConnected)
+   */
+  public isOverallConnected(): boolean {
+    return this.serviceStatusInternal === CONNECTION_STATES.CONNECTED && this.isSupabaseClientInitialized;
+  }
+
+  /**
+   * Add a listener for overall status changes
+   * Returns a function to remove the listener
+   */
+  public addOverallStatusListener(
+    listener: (status: WebSocketConnectionStatus, isServiceReady: boolean) => void
+  ): () => void {
+    this.overallStatusListeners.push(listener);
+
+    // Call the listener immediately with current status
+    listener(this.serviceStatusInternal, this.isServiceInitialized());
+
+    // Return a cleanup function
+    return () => {
+      const index = this.overallStatusListeners.indexOf(listener);
+      if (index !== -1) {
+        this.overallStatusListeners.splice(index, 1);
+      }
+    };
+  }
+
+  /**
+   * Add a status listener (alias for addOverallStatusListener for compatibility)
+   */
+  public addStatusListener(
+    listener: (status: WebSocketConnectionStatus, isServiceReady: boolean) => void
+  ): () => void {
+    return this.addOverallStatusListener(listener);
+  }
+
+  /**
+   * Notify all overall status listeners of a status change
+   */
+  private notifyOverallStatusListeners(): void {
+    const status = this.serviceStatusInternal;
+    const isReady = this.isServiceInitialized();
+
+    this.overallStatusListeners.forEach(listener => {
+      try {
+        listener(status, isReady);
+      } catch (error) {
+        logError(`[NCM_SPOT] Error in status listener: ${error}`);
+      }
+    });
+  }
+
+  /**
    * Helper methods for channel names
    */
   private getGameDetailsChannelName(sessionId: string): string {
@@ -133,6 +215,105 @@ export class NEWConnectionManager_SinglePointOfTruth {
 
   // Track which channels have broadcast handlers attached
   private channelBroadcastHandlerAttached: Map<string, boolean> = new Map();
+
+  /**
+   * Connect to a session by creating channels for the specified session ID
+   */
+  public connectToSession(sessionId: string): void {
+    // Check for sessionId and initialized client
+    if (!sessionId) {
+      logError('[NCM_SPOT] Cannot connect to session: No session ID provided.');
+      return;
+    }
+
+    if (!this.isSupabaseClientInitialized) {
+      logError('[NCM_SPOT] Cannot connect to session: Supabase client not initialized.');
+      return;
+    }
+
+    // Handle already connected case
+    if (this.currentSessionIdInternal === sessionId && this.serviceStatusInternal === CONNECTION_STATES.CONNECTED) {
+      logInfo(`[NCM_SPOT] Already connected to session: ${sessionId}`);
+      return;
+    }
+
+    // Handle switching sessions
+    if (this.currentSessionIdInternal && this.currentSessionIdInternal !== sessionId) {
+      this.disconnectCurrentSessionChannels();
+    }
+
+    // Set current session ID and status
+    this.currentSessionIdInternal = sessionId;
+    this.serviceStatusInternal = CONNECTION_STATES.CONNECTING;
+    this.notifyOverallStatusListeners();
+
+    logInfo(`[NCM_SPOT] Connecting to session: ${sessionId}`);
+
+    // Proactively join essential channels
+    try {
+      // Set up presence listener
+      const presenceChannelName = this.getParticipantChannelName(sessionId);
+      this.listenForEvent(
+        presenceChannelName, 
+        'presence', 
+        this.handlePresenceEvent.bind(this)
+      );
+
+      // Set up game updates listener
+      const gameUpdatesChannelName = this.getGameUpdatesChannelName(sessionId);
+      this.listenForEvent(
+        gameUpdatesChannelName, 
+        ADDITIONAL_EVENT_TYPES.CHANGES_DETECTED, 
+        this.handleGameUpdatesEvent.bind(this)
+      );
+
+      // Update status to connected if successful
+      this.serviceStatusInternal = CONNECTION_STATES.CONNECTED;
+      logInfo(`[NCM_SPOT] Successfully connected to session: ${sessionId}`);
+    } catch (error) {
+      this.serviceStatusInternal = CONNECTION_STATES.ERROR;
+      logError(`[NCM_SPOT] Failed to connect to session: ${sessionId}, error: ${error}`);
+    }
+
+    this.notifyOverallStatusListeners();
+  }
+
+  /**
+   * Connect to a session (alias for connectToSession)
+   */
+  public connect(sessionId: string): void {
+    this.connectToSession(sessionId);
+  }
+
+  /**
+   * Add connection listener (alias for addOverallStatusListener for backward compatibility)
+   */
+  public addConnectionListener(
+    listener: (isConnected: boolean) => void
+  ): () => void {
+    // Convert the simple boolean listener to work with our more comprehensive status listener
+    return this.addOverallStatusListener((status, isReady) => {
+      // Call the original listener with just the connected status
+      listener(status === CONNECTION_STATES.CONNECTED && isReady);
+    });
+  }
+
+  /**
+   * Handle presence events
+   */
+  private handlePresenceEvent(event: any): void {
+    logDebug(`[NCM_SPOT] Presence event received: ${JSON.stringify(event)}`);
+    // This is a stub method that will be called by the connectToSession method
+    // The actual presence handling is done by the listenForPresenceEvents method
+  }
+
+  /**
+   * Handle game updates events (stub for now)
+   */
+  private handleGameUpdatesEvent(event: any): void {
+    logDebug(`[NCM_SPOT] Game updates event received: ${JSON.stringify(event)}`);
+    // Actual implementation will be added later
+  }
 
   /**
    * Get or create a channel with reference counting
@@ -362,68 +543,6 @@ export class NEWConnectionManager_SinglePointOfTruth {
   }
 
   /**
-   * Connect to a session by creating channels for the specified session ID
-   */
-  public connectToSession(sessionId: string): void {
-    // Check for sessionId and initialized client
-    if (!sessionId) {
-      logError('[NCM_SPOT] Cannot connect to session: No session ID provided.');
-      return;
-    }
-
-    if (!this.isSupabaseClientInitialized) {
-      logError('[NCM_SPOT] Cannot connect to session: Supabase client not initialized.');
-      return;
-    }
-
-    // Handle already connected case
-    if (this.currentSessionIdInternal === sessionId && this.serviceStatusInternal === CONNECTION_STATES.CONNECTED) {
-      logInfo(`[NCM_SPOT] Already connected to session: ${sessionId}`);
-      return;
-    }
-
-    // Handle switching sessions
-    if (this.currentSessionIdInternal && this.currentSessionIdInternal !== sessionId) {
-      this.disconnectCurrentSessionChannels();
-    }
-
-    // Set current session ID and status
-    this.currentSessionIdInternal = sessionId;
-    this.serviceStatusInternal = CONNECTION_STATES.CONNECTING;
-    this.notifyOverallStatusListeners();
-
-    logInfo(`[NCM_SPOT] Connecting to session: ${sessionId}`);
-
-    // Proactively join essential channels
-    try {
-      // Set up presence listener - FIX: Add proper channelName as first argument
-      const presenceChannelName = this.getParticipantChannelName(sessionId);
-      this.listenForEvent(
-        presenceChannelName, 
-        'presence', 
-        this.handlePresenceEvent.bind(this)
-      );
-
-      // Set up game updates listener - FIX: Add proper channelName as first argument
-      const gameUpdatesChannelName = this.getGameUpdatesChannelName(sessionId);
-      this.listenForEvent(
-        gameUpdatesChannelName, 
-        ADDITIONAL_EVENT_TYPES.CHANGES_DETECTED, 
-        this.handleGameUpdatesEvent.bind(this)
-      );
-
-      // Update status to connected if successful
-      this.serviceStatusInternal = CONNECTION_STATES.CONNECTED;
-      logInfo(`[NCM_SPOT] Successfully connected to session: ${sessionId}`);
-    } catch (error) {
-      this.serviceStatusInternal = CONNECTION_STATES.ERROR;
-      logError(`[NCM_SPOT] Failed to connect to session: ${sessionId}, error: ${error}`);
-    }
-
-    this.notifyOverallStatusListeners();
-  }
-
-  /**
    * Disconnect from the current session by unsubscribing from all channels
    */
   public disconnectCurrentSessionChannels(): void {
@@ -484,15 +603,6 @@ export class NEWConnectionManager_SinglePointOfTruth {
     } catch (error) {
       logError(`[NCM_SPOT] Error broadcasting on ${channelName}: ${error}`);
     }
-  }
-
-  /**
-   * Handle presence events
-   */
-  private handlePresenceEvent(event: any): void {
-    logDebug(`[NCM_SPOT] Presence event received: ${JSON.stringify(event)}`);
-    // This is a stub method that will be called by the connectToSession method
-    // The actual presence handling is done by the listenForPresenceEvents method
   }
 
   /**
@@ -614,14 +724,6 @@ export class NEWConnectionManager_SinglePointOfTruth {
   }
 
   /**
-   * Handle game updates events (stub for now)
-   */
-  private handleGameUpdatesEvent(event: any): void {
-    logDebug(`[NCM_SPOT] Game updates event received: ${JSON.stringify(event)}`);
-    // Actual implementation will be added later
-  }
-
-  /**
    * Add an event listener to a specific channel and event
    * Returns a function to remove the listener
    * 
@@ -735,8 +837,7 @@ export class NEWConnectionManager_SinglePointOfTruth {
 
     logInfo(`[NCM_SPOT] Disconnecting from session: ${sessionId}`);
 
-    // Instead of calling unsubscribeFromChannel with non-existent properties,
-    // use the correct channel name getters and removeChannelAndListeners method
+    // Use the correct channel name getters and removeChannelAndListeners method
     this.removeChannelAndListeners(this.getGameDetailsChannelName(sessionId));
     this.removeChannelAndListeners(this.getClaimSenderChannelName(sessionId));
     this.removeChannelAndListeners(this.getGameUpdatesChannelName(sessionId));
@@ -750,64 +851,6 @@ export class NEWConnectionManager_SinglePointOfTruth {
     }
 
     logInfo(`[NCM_SPOT] Successfully disconnected from session: ${sessionId}`);
-  }
-
-  /**
-   * Check if the service is initialized
-   */
-  public isServiceInitialized(): boolean {
-    return this.isSupabaseClientInitialized;
-  }
-
-  /**
-   * Get the current overall connection status
-   */
-  public getCurrentConnectionState(): WebSocketConnectionStatus {
-    return this.serviceStatusInternal;
-  }
-
-  /**
-   * Check if the service is connected
-   */
-  public isConnected(): boolean {
-    return this.serviceStatusInternal === CONNECTION_STATES.CONNECTED && this.isSupabaseClientInitialized;
-  }
-
-  /**
-   * Add a listener for overall status changes
-   * Returns a function to remove the listener
-   */
-  public addOverallStatusListener(
-    listener: (status: WebSocketConnectionStatus, isServiceReady: boolean) => void
-  ): () => void {
-    this.overallStatusListeners.push(listener);
-
-    // Call the listener immediately with current status
-    listener(this.serviceStatusInternal, this.isServiceInitialized());
-
-    // Return a cleanup function
-    return () => {
-      const index = this.overallStatusListeners.indexOf(listener);
-      if (index !== -1) {
-        this.overallStatusListeners.splice(index, 1);
-      }
-    };
-  }
-
-  /**
-   * Notify all overall status listeners of a status change
-   */
-  private notifyOverallStatusListeners(): void {
-    const status = this.serviceStatusInternal;
-    const isReady = this.isServiceInitialized();
-
-    this.overallStatusListeners.forEach(listener => {
-      try {
-        listener(status, isReady);
-      } catch (error) {
-        logError(`[NCM_SPOT] Error in status listener: ${error}`);
-      }
-    });
   }
 
   /**
@@ -918,26 +961,6 @@ export class NEWConnectionManager_SinglePointOfTruth {
     payload: any
   ): void {
     this.sendMessage(CHANNEL_NAMES.PARTICIPANTS_BASE, sessionId, eventName, payload);
-  }
-
-  /**
-   * Connect to a session (alias for connectToSession)
-   */
-  public connect(sessionId: string): void {
-    this.connectToSession(sessionId);
-  }
-
-  /**
-   * Add connection listener (alias for addOverallStatusListener for backward compatibility)
-   */
-  public addConnectionListener(
-    listener: (isConnected: boolean) => void
-  ): () => void {
-    // Convert the simple boolean listener to work with our more comprehensive status listener
-    return this.addOverallStatusListener((status, isReady) => {
-      // Call the original listener with just the connected status
-      listener(status === CONNECTION_STATES.CONNECTED && isReady);
-    });
   }
 
   /**
