@@ -3,11 +3,43 @@ import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { supabase } from '@/integrations/supabase/client';
 import { CHANNEL_NAMES, EVENT_TYPES } from '@/constants/websocketConstants';
+import { numberCallingService as classBasedService } from './NumberCallingService';
 
 /**
- * Service for handling number calling and listening operations
+ * Unified service for handling number calling and listening operations
+ * This combines functionality from both implementations to provide a single interface
  */
 export const numberCallingService = {
+  /**
+   * Set the active session ID
+   */
+  setSessionId: classBasedService.setSessionId.bind(classBasedService),
+
+  /**
+   * Get all called numbers
+   */
+  getCalledNumbers: classBasedService.getCalledNumbers.bind(classBasedService),
+
+  /**
+   * Check if a number has been called
+   */
+  isNumberCalled: classBasedService.isNumberCalled.bind(classBasedService),
+
+  /**
+   * Get the count of called numbers
+   */
+  getCalledNumberCount: classBasedService.getCalledNumberCount.bind(classBasedService),
+
+  /**
+   * Call a new bingo number and broadcast it
+   */
+  callNumber: classBasedService.callNumber.bind(classBasedService),
+
+  /**
+   * Reset all called numbers for a session
+   */
+  resetCalledNumbers: classBasedService.resetCalledNumbers.bind(classBasedService),
+
   /**
    * Subscribe to number updates for a session
    * @param sessionId Session ID to subscribe to
@@ -19,15 +51,18 @@ export const numberCallingService = {
       logWithTimestamp('Cannot subscribe: No session ID', 'warn');
       return () => {};
     }
-    
+
     logWithTimestamp(`Subscribing to number updates for session ${sessionId}`, 'info');
-    
+
     // Use SingleSourceTrueConnections for subscription
     const singleSource = getSingleSourceConnection();
-    
+
     // Connect to session if not already connected
     singleSource.connect(sessionId);
-    
+
+    // Set the session ID in the class-based service as well
+    classBasedService.setSessionId(sessionId);
+
     // Listen for number called events
     return singleSource.listenForEvent(
       CHANNEL_NAMES.GAME_UPDATES,
@@ -39,65 +74,7 @@ export const numberCallingService = {
       }
     );
   },
-  
-  /**
-   * Notify listeners of number updates
-   * @param sessionId Session ID
-   * @param number Number called
-   * @param calledNumbers All called numbers
-   */
-  notifyListeners: async (sessionId: string, number: number | null, calledNumbers: number[]) => {
-    const singleSource = getSingleSourceConnection();
-    
-    // Broadcast number called event
-    await singleSource.broadcast(
-      CHANNEL_NAMES.GAME_UPDATES,
-      EVENT_TYPES.NUMBER_CALLED,
-      {
-        sessionId,
-        number, 
-        calledNumbers
-      }
-    );
-  },
-  
-  /**
-   * Reset numbers for a session
-   * @param sessionId Session ID
-   * @returns Promise resolving to whether the reset was successful
-   */
-  resetNumbers: async (sessionId: string): Promise<boolean> => {
-    try {
-      logWithTimestamp(`Resetting numbers for session ${sessionId}`, 'info');
-      
-      // Update database
-      const { error } = await supabase
-        .from('sessions_progress')
-        .update({ called_numbers: [] })
-        .eq('session_id', sessionId);
-      
-      if (error) {
-        logWithTimestamp(`Error resetting numbers in database: ${error.message}`, 'error');
-        return false;
-      }
-      
-      // Broadcast reset event
-      const singleSource = getSingleSourceConnection();
-      
-      // Use broadcast method
-      await singleSource.broadcast(
-        CHANNEL_NAMES.GAME_UPDATES,
-        EVENT_TYPES.GAME_RESET,
-        { sessionId }
-      );
-      
-      return true;
-    } catch (error) {
-      logWithTimestamp(`Error resetting numbers: ${error}`, 'error');
-      return false;
-    }
-  },
-  
+
   /**
    * Update called numbers for a session
    * @param sessionId Session ID
@@ -107,24 +84,28 @@ export const numberCallingService = {
   updateCalledNumbers: async (sessionId: string, numbers: number[]): Promise<boolean> => {
     try {
       logWithTimestamp(`Updating called numbers for session ${sessionId}`, 'info');
-      
+
       // Update database
       const { error } = await supabase
         .from('sessions_progress')
         .update({ called_numbers: numbers })
         .eq('session_id', sessionId);
-      
+
       if (error) {
         logWithTimestamp(`Error updating called numbers in database: ${error.message}`, 'error');
         return false;
       }
-      
+
+      // Set the session ID in the class-based service
+      classBasedService.setSessionId(sessionId);
+
       // Broadcast last number if available
       if (numbers.length > 0) {
         const lastNumber = numbers[numbers.length - 1];
-        await numberCallingService.notifyListeners(sessionId, lastNumber, numbers);
+        // Use the WebSocketService through the class-based service
+        await classBasedService.callNumber(lastNumber);
       }
-      
+
       return true;
     } catch (error) {
       logWithTimestamp(`Error updating called numbers: ${error}`, 'error');
@@ -133,9 +114,16 @@ export const numberCallingService = {
   }
 };
 
+/**
+ * Set up listeners for number updates and game reset
+ * @param sessionId Session ID
+ */
 export const setupNumberCallingService = (sessionId: string) => {
   const singleSource = getSingleSourceConnection();
-  
+
+  // Set the session ID in the class-based service
+  classBasedService.setSessionId(sessionId);
+
   // Set up listeners for number updates and game reset
   const listenForNumberUpdate = (callback: (payload: any) => void) => {
     return singleSource.listenForEvent(
@@ -144,7 +132,7 @@ export const setupNumberCallingService = (sessionId: string) => {
       callback
     );
   };
-  
+
   // Listen for game reset events
   const listenForGameReset = (callback: (payload: any) => void) => {
     return singleSource.listenForEvent(
@@ -153,7 +141,7 @@ export const setupNumberCallingService = (sessionId: string) => {
       callback
     );
   };
-  
+
   return {
     listenForNumberUpdate,
     listenForGameReset
