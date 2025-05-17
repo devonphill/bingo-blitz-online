@@ -4,7 +4,7 @@ import TicketErrorBoundary from './TicketErrorBoundary';
 import SimpleBingoTicketDisplay from './SimpleBingoTicketDisplay';
 
 interface SafeBingoTicketDisplayProps {
-  numbers: number[];
+  numbers: number[] | number[][];  // Allow either format
   layoutMask: number;
   calledNumbers: number[];
   serial: string;

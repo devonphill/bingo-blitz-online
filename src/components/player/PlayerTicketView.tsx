@@ -3,7 +3,7 @@ import React from 'react';
 import BingoTicketDisplay from '@/components/game/BingoTicketDisplay';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PlayerTicket } from '@/hooks/usePlayerTickets';
+import { PlayerTicket } from '@/hooks/playerTickets/usePlayerTickets';
 import { Button } from "@/components/ui/button";
 import { Bell } from "lucide-react";
 
@@ -24,7 +24,15 @@ export default function PlayerTicketView({
 }: PlayerTicketViewProps) {
   // Debug log to see ticket data
   console.log('CLAIM DEBUG - Available tickets in PlayerTicketView:', 
-    tickets.map(t => ({ id: t.id, serial: t.serial, perm: t.perm, position: t.position, is_winning: t.is_winning }))
+    tickets.map(t => ({ 
+      id: t.id, 
+      serial: t.serial, 
+      perm: t.perm, 
+      position: t.position, 
+      is_winning: t.is_winning,
+      numbersType: Array.isArray(t.numbers) ? 
+        (Array.isArray(t.numbers[0]) ? '2D array' : '1D array') : 'not array'
+    }))
   );
   
   if (!tickets || tickets.length === 0) {
@@ -80,6 +88,7 @@ export default function PlayerTicketView({
                 calledNumbers={calledNumbers}
                 serial={ticket.serial || `T${index}`}
                 perm={ticket.perm}
+                position={ticket.position}
                 autoMarking={true}
                 currentWinPattern={currentWinPattern}
                 showProgress={true}

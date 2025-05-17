@@ -9,7 +9,7 @@ export interface PlayerTicket {
   perm: number;
   position: number;
   layout_mask: number;
-  numbers: number[][];
+  numbers: number[][];  // Changed from number[] to number[][] to match the expected type
   marked?: boolean[][];
   markedPositions?: { row: number; col: number }[];
 }
@@ -80,9 +80,12 @@ export function usePlayerTickets(
           let numbers: number[][] = [];
           
           if (Array.isArray(ticket.numbers)) {
-            if (!Array.isArray(ticket.numbers[0])) {
-              // If numbers is a flat array, convert to 2D based on game type
-              // For 90-ball bingo (9x3 grid)
+            // Check if numbers is already a 2D array
+            if (Array.isArray(ticket.numbers[0])) {
+              // Already in 2D format
+              numbers = ticket.numbers;
+            } else {
+              // For 90-ball bingo (9x3 grid) - convert flat array to 2D
               const rows = 3;
               const cols = 9;
               
@@ -94,9 +97,6 @@ export function usePlayerTickets(
                 }
                 numbers.push(row);
               }
-            } else {
-              // Already in 2D format
-              numbers = ticket.numbers;
             }
           }
           

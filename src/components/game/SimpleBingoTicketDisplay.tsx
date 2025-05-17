@@ -7,7 +7,7 @@ import TicketProgressDisplay from './TicketProgressDisplay';
 import { logWithTimestamp } from '@/utils/logUtils';
 
 interface SimpleBingoTicketDisplayProps {
-  numbers: number[];
+  numbers: number[] | number[][];
   layoutMask: number;
   calledNumbers: number[];
   serial: string;
@@ -32,6 +32,11 @@ export default function SimpleBingoTicketDisplay({
   currentWinPattern = "oneLine",
   showProgress = true
 }: SimpleBingoTicketDisplayProps) {
+  // Handle both flat array and 2D array formats for numbers
+  const processedNumbers = Array.isArray(numbers[0]) 
+    ? numbers as number[][] 
+    : null; // Will be processed by useTicketProcessor if null
+  
   // Use the ticket processor hook to handle all ticket logic
   const {
     grid,
@@ -41,13 +46,17 @@ export default function SimpleBingoTicketDisplay({
     progress,
     toggleMark
   } = useTicketProcessor({
-    numbers,
+    numbers: numbers as any, // Allow either number[] or number[][] to be passed
     layoutMask,
     calledNumbers,
     serial,
     autoMarking,
     currentWinPattern
   });
+
+  // For debugging
+  console.log('SimpleBingoTicketDisplay - Ticket serial:', serial, 'perm:', perm);
+  console.log('SimpleBingoTicketDisplay - Progress:', progress);
 
   // If there's an issue with the grid, show a valid empty grid
   if (!grid || grid.length !== 3) {

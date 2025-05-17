@@ -7,7 +7,7 @@ import SafeBingoTicketDisplay from './SafeBingoTicketDisplay';
  * Created to maintain backward compatibility with existing code
  */
 interface BingoTicketDisplayProps {
-  numbers: number[];
+  numbers: number[] | number[][];  // Allow either format
   layoutMask: number;
   calledNumbers: number[];
   serial: string;
@@ -19,5 +19,11 @@ interface BingoTicketDisplayProps {
 }
 
 export default function BingoTicketDisplay(props: BingoTicketDisplayProps) {
+  // Log incoming data for debugging
+  console.log(`BingoTicketDisplay - Rendering ticket ${props.serial}, numbers type: ${
+    Array.isArray(props.numbers) ? 
+      (Array.isArray(props.numbers[0]) ? '2D array' : '1D array') : 'not array'
+  }`);
+  
   return <SafeBingoTicketDisplay {...props} />;
 }
