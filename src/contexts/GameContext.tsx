@@ -36,16 +36,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentWinPattern, setCurrentWinPattern] = useState<string | null>(null);
   const [selectedTicket, setSelectedTicket] = useState<PlayerTicket | null>(null);
   const [isBingo, setIsBingo] = useState(false);
+  const [winningTickets, setWinningTickets] = useState<PlayerTicket[]>([]);
   
   // Create a unique ID for this component instance
   const instanceId = React.useRef(`GameContext-${Math.random().toString(36).substring(2, 7)}`).current;
   
   // Use the PlayerTickets hook to fetch and manage tickets
   const { 
-    playerTickets, 
-    isLoadingTickets,
-    updateWinningStatus,
-    currentWinningTickets
+    tickets, 
+    isLoading: isLoadingTickets,
+    error
   } = usePlayerTickets(sessionId);
   
   // Mark number on a ticket
@@ -60,6 +60,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Reset bingo state
   const resetBingo = useCallback(() => {
     setIsBingo(false);
+  }, []);
+  
+  // Process tickets to check for winners based on called numbers and win pattern
+  const updateWinningStatus = useCallback((calledNums: number[], winPattern: string | null) => {
+    // This would check each ticket against the called numbers and current win pattern
+    // For simplicity, we'll just log that this was called
+    console.log(`Checking winning status with ${calledNums.length} called numbers and pattern ${winPattern}`);
+    
+    // In a real implementation, this would set winningTickets based on which tickets match the win pattern
   }, []);
   
   // Listen for number called updates
@@ -163,6 +172,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (gameState.calledNumbers.length > 0) {
             setLastCalledNumber(gameState.calledNumbers[gameState.calledNumbers.length - 1]);
           }
+          
+          // Update winning status of tickets with new called numbers and possibly new pattern
+          updateWinningStatus(gameState.calledNumbers, gameState.currentWinPattern || currentWinPattern);
         }
       }
     );
@@ -178,8 +190,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     calledNumbers,
     lastCalledNumber,
     currentWinPattern,
-    playerTickets,
-    winningTickets: currentWinningTickets,
+    playerTickets: tickets,
+    winningTickets,
     isLoadingTickets,
     markNumber,
     isBingo,

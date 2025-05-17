@@ -21,4 +21,5 @@ export interface PlayerTicketState {
   layout_mask: number;
   numbers: number[][];
   marked: boolean[][];
+  markedPositions?: { row: number; col: number }[]; // Added markedPositions property
 }

@@ -1,185 +1,155 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from './logUtils';
-import { getSingleSourceConnection } from './SingleSourceTrueConnections';
-import { CHANNEL_NAMES, EVENT_TYPES } from '@/constants/websocketConstants';
 
 /**
- * Submit a bingo claim and persist it to the database
+ * Interface for claim data
  */
-export async function submitBingoClaim(
-  ticket: any, 
-  playerCode: string, 
-  sessionId: string, 
-  playerName?: string,
-  pattern?: string
-): Promise<boolean> {
-  if (!ticket || !playerCode || !sessionId) {
-    logWithTimestamp('Cannot submit claim: Missing required parameters', 'error');
-    return false;
-  }
+export interface ClaimData {
+  id?: string;
+  session_id: string;
+  player_id: string;
+  player_name: string;
+  ticket_id?: string;
+  ticket_serial?: string;
+  win_pattern: string;
+  status: 'pending' | 'verified' | 'rejected';
+  created_at?: string;
+  updated_at?: string;
+}
 
+/**
+ * Submit a bingo claim
+ */
+export const submitClaim = async (
+  sessionId: string,
+  playerId: string,
+  playerName: string,
+  ticketId: string | undefined,
+  ticketSerial: string | undefined,
+  winPattern: string
+): Promise<{ success: boolean; claimId?: string; error?: string }> => {
   try {
-    // First get current game state
-    const { data: progressData, error: progressError } = await supabase
-      .from('sessions_progress')
-      .select('called_numbers, current_win_pattern')
+    if (!sessionId) {
+      return { success: false, error: 'No session ID provided' };
+    }
+
+    if (!playerId) {
+      return { success: false, error: 'No player ID provided' };
+    }
+
+    if (!winPattern) {
+      return { success: false, error: 'No win pattern provided' };
+    }
+
+    // Log the claim attempt
+    logWithTimestamp(
+      `Player ${playerName} (${playerId}) submitting claim for ${winPattern} in session ${sessionId}`,
+      'info'
+    );
+
+    // Check if player already has a pending claim for this session and pattern
+    const { data: existingClaims, error: checkError } = await supabase
+      .from('claims')
+      .select('*')
       .eq('session_id', sessionId)
-      .single();
+      .eq('player_id', playerId)
+      .eq('win_pattern', winPattern)
+      .eq('status', 'pending');
 
-    if (progressError) {
-      logWithTimestamp(`Error fetching session progress: ${progressError.message}`, 'error');
-      return false;
+    if (checkError) {
+      logWithTimestamp(`Error checking existing claims: ${checkError.message}`, 'error');
+      return { success: false, error: `Error checking existing claims: ${checkError.message}` };
     }
 
-    // Get player data if player name not provided
-    if (!playerName) {
-      const { data: playerData, error: playerError } = await supabase
-        .from('players')
-        .select('nickname, id')
-        .eq('player_code', playerCode)
-        .single();
-
-      if (playerError) {
-        logWithTimestamp(`Error fetching player: ${playerError.message}`, 'error');
-        return false;
-      }
-
-      playerName = playerData.nickname;
+    if (existingClaims && existingClaims.length > 0) {
+      logWithTimestamp(`Player already has a pending claim for this pattern`, 'warn');
+      return {
+        success: false,
+        error: 'You already have a pending claim for this pattern',
+        claimId: existingClaims[0].id
+      };
     }
 
-    // Create the claim record in the database
-    const claimData = {
+    // Create the claim
+    const claim: ClaimData = {
       session_id: sessionId,
-      player_code: playerCode,
+      player_id: playerId,
       player_name: playerName,
-      ticket_serial: ticket.serial || ticket.id,
-      ticket_details: {
-        id: ticket.id,
-        serial: ticket.serial,
-        perm: ticket.perm,
-        position: ticket.position,
-        layout_mask: ticket.layout_mask,
-        numbers: ticket.numbers
-      },
-      called_numbers_snapshot: progressData.called_numbers,
-      pattern_claimed: pattern || progressData.current_win_pattern || 'Not specified'
+      ticket_id: ticketId,
+      ticket_serial: ticketSerial,
+      win_pattern: winPattern,
+      status: 'pending'
     };
 
-    // Insert into claims table
     const { data, error } = await supabase
       .from('claims')
-      .insert(claimData)
-      .select()
+      .insert([claim])
+      .select();
+
+    if (error) {
+      logWithTimestamp(`Error submitting claim: ${error.message}`, 'error');
+      return { success: false, error: `Error submitting claim: ${error.message}` };
+    }
+
+    if (!data || data.length === 0) {
+      return { success: false, error: 'No data returned from claim submission' };
+    }
+
+    logWithTimestamp(`Claim submitted successfully: ${data[0].id}`, 'info');
+    return { success: true, claimId: data[0].id };
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    logWithTimestamp(`Exception submitting claim: ${errorMessage}`, 'error');
+    return { success: false, error: `Exception submitting claim: ${errorMessage}` };
+  }
+};
+
+/**
+ * Get claim status
+ */
+export const getClaimStatus = async (
+  claimId: string
+): Promise<{ status: string; error?: string }> => {
+  try {
+    const { data, error } = await supabase
+      .from('claims')
+      .select('status')
+      .eq('id', claimId)
       .single();
 
     if (error) {
-      logWithTimestamp(`Error inserting claim: ${error.message}`, 'error');
-      return false;
+      return { status: 'error', error: error.message };
     }
 
-    // Send real-time notification
-    try {
-      const connection = getSingleSourceConnection();
-      const success = await connection.broadcast(
-        CHANNEL_NAMES.CLAIM_UPDATES,
-        EVENT_TYPES.CLAIM_SUBMITTED,
-        {
-          claimId: data.id,
-          playerName: playerName,
-          playerCode: playerCode,
-          sessionId: sessionId,
-          timestamp: Date.now(),
-          pattern: pattern || progressData.current_win_pattern
-        }
-      );
-
-      if (!success) {
-        logWithTimestamp('Failed to broadcast claim notification', 'error');
-      }
-    } catch (broadcastError) {
-      logWithTimestamp(`Error broadcasting claim: ${broadcastError}`, 'error');
-      // Non-fatal, the claim is still saved in the database
-    }
-
-    logWithTimestamp(`Claim submitted successfully: ID ${data.id}`, 'info');
-    return true;
-  } catch (error) {
-    logWithTimestamp(`Exception submitting claim: ${error}`, 'error');
-    return false;
+    return { status: data?.status || 'unknown' };
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    return { status: 'error', error: errorMessage };
   }
-}
+};
 
 /**
- * Verify if a ticket is a winner based on called numbers and pattern
+ * Verify a claim
  */
-export function verifyTicket(
-  ticket: any,
-  calledNumbers: number[],
-  pattern: string = 'line'
-): { isWinner: boolean; markedCount: number; unmarkedCount: number; matchedNumbers: number[] } {
-  if (!ticket?.numbers || !Array.isArray(ticket.numbers)) {
-    return { isWinner: false, markedCount: 0, unmarkedCount: 0, matchedNumbers: [] };
-  }
+export const verifyClaim = async (
+  claimId: string,
+  isValid: boolean
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const status = isValid ? 'verified' : 'rejected';
+    
+    const { error } = await supabase
+      .from('claims')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', claimId);
 
-  // Simple pattern checking logic - can be expanded
-  const matchedNumbers: number[] = [];
-  let markedCount = 0;
-  let unmarkedCount = 0;
-  
-  // Examine the ticket grid
-  if (pattern === 'line' || pattern === 'one-line' || pattern.toLowerCase().includes('line')) {
-    // Check each row for a full line
-    for (let rowIndex = 0; rowIndex < ticket.numbers.length; rowIndex++) {
-      const row = ticket.numbers[rowIndex];
-      let rowComplete = true;
-      
-      for (let colIndex = 0; colIndex < row.length; colIndex++) {
-        const number = row[colIndex];
-        if (number === 0) continue; // Skip empty cells (0 represents empty in many bingo systems)
-        
-        if (calledNumbers.includes(number)) {
-          markedCount++;
-          matchedNumbers.push(number);
-        } else {
-          rowComplete = false;
-          unmarkedCount++;
-        }
-      }
-      
-      if (rowComplete && markedCount > 0) {
-        return { isWinner: true, markedCount, unmarkedCount, matchedNumbers };
-      }
+    if (error) {
+      return { success: false, error: error.message };
     }
-  } else if (pattern === 'full-house' || pattern === 'fullhouse' || pattern.toLowerCase().includes('full')) {
-    // Check entire card
-    let allMarked = true;
-    
-    for (let rowIndex = 0; rowIndex < ticket.numbers.length; rowIndex++) {
-      const row = ticket.numbers[rowIndex];
-      
-      for (let colIndex = 0; colIndex < row.length; colIndex++) {
-        const number = row[colIndex];
-        if (number === 0) continue; // Skip empty cells
-        
-        if (calledNumbers.includes(number)) {
-          markedCount++;
-          matchedNumbers.push(number);
-        } else {
-          allMarked = false;
-          unmarkedCount++;
-        }
-      }
-    }
-    
-    return { 
-      isWinner: allMarked && markedCount > 0, 
-      markedCount, 
-      unmarkedCount, 
-      matchedNumbers 
-    };
+
+    return { success: true };
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    return { success: false, error: errorMessage };
   }
-  
-  // Default: not a winner
-  return { isWinner: false, markedCount, unmarkedCount, matchedNumbers };
-}
+};

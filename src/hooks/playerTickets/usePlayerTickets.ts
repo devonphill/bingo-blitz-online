@@ -11,6 +11,7 @@ export interface PlayerTicket {
   layout_mask: number;
   numbers: number[][];
   marked?: boolean[][];
+  markedPositions?: { row: number; col: number }[];
 }
 
 export interface UsePlayerTicketsResult {
@@ -110,7 +111,8 @@ export function usePlayerTickets(
             position: ticket.position,
             layout_mask: ticket.layout_mask,
             numbers,
-            marked
+            marked,
+            markedPositions: [] // Initialize empty markedPositions array
           };
         });
 
