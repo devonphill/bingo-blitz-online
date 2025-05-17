@@ -8,6 +8,7 @@ import { TempPlayer, GameSession, Player } from '@/types';
 interface SessionContextLegacyProps {
   sessions: GameSession[];
   currentSession: GameSession | null;
+  sessionId?: string | null; // Added sessionId
   fetchSessions: () => Promise<boolean>;
   updateSession: (sessionId: string, updates: Partial<GameSession>) => Promise<boolean>;
   setCurrentSession: (sessionId: string | null) => void;
@@ -63,6 +64,7 @@ export const SessionLegacyProvider: React.FC<{ children: React.ReactNode }> = ({
       value={{
         sessions,
         currentSession,
+        sessionId: currentSession?.id || null, // Added sessionId
         fetchSessions,
         updateSession,
         setCurrentSession,

@@ -51,7 +51,6 @@ export default function PlayerGameLayout({ children, sessionId, gameId, gameStat
       try {
         // Fetch initial game data
         log(`Fetching initial game data for session ${sessionId}`, 'info');
-        // Pass sessionId to useGameData, it will now correctly accept this parameter
         const initialData = await useGameData(sessionId);
 
         if (initialData) {
@@ -112,7 +111,7 @@ export default function PlayerGameLayout({ children, sessionId, gameId, gameStat
     
     // Listen for game status updates
     const statusListener = listenForEvent<{status: GameStatus}>(
-      EVENTS.GAME_STATUS_UPDATED,
+      EVENTS.GAME_STATE_UPDATE, // Fixed: using GAME_STATE_UPDATE instead of GAME_STATUS_UPDATED
       (data) => {
         log(`Game status updated: ${data.status}`, 'info');
         setIsGameActive(data.status === 'active');

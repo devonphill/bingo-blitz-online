@@ -1,405 +1,180 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
-import { AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
-import { logWithTimestamp } from '@/utils/logUtils';
-import CallerTicketDisplay from './CallerTicketDisplay';
-import { ClaimData } from '@/types/claim';
+
+import React, { useState, useEffect, useCallback } from 'react';
 import { useWebSocket } from '@/hooks/useWebSocket';
-import { CHANNEL_NAMES } from '@/constants/websocketConstants';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { logWithTimestamp } from '@/utils/logUtils';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { EVENT_TYPES } from '@/constants/websocketConstants';
 
 interface PlayerClaimCheckingNotificationProps {
   sessionId: string;
-  playerCode?: string;
+  playerCode: string;
 }
 
-export default function PlayerClaimCheckingNotification({ 
+export default function PlayerClaimCheckingNotification({
   sessionId,
-  playerCode 
+  playerCode
 }: PlayerClaimCheckingNotificationProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [claimBeingChecked, setClaimBeingChecked] = useState<ClaimData | null>(null);
-  const [isMyClaimBeingChecked, setIsMyClaimBeingChecked] = useState(false);
-  const [claimResult, setClaimResult] = useState<'valid' | 'rejected' | null>(null);
-  
-  // Create a unique instance ID for better logging
-  const instanceId = useRef(`claimNotify-${Math.random().toString(36).substring(2, 7)}`).current;
-  
-  // Use the WebSocket hook
-  const { listenForEvent, EVENTS, isWsReady, connectionState } = useWebSocket(sessionId);
+  const { toast } = useToast();
+  const [claimStatus, setClaimStatus] = useState<'none' | 'checking' | 'valid' | 'invalid'>('none');
+  const [claimDetails, setClaimDetails] = useState<any>(null);
+  const [instanceId] = useState(`PCN-${Math.random().toString(36).substring(2, 5)}`);
 
-  // Listen for claim checking broadcasts
+  // Use websocket hook to listen for claim status updates
+  const { listenForEvent, isConnected, EVENTS } = useWebSocket(sessionId);
+
+  // Custom logging function
+  const log = useCallback((message: string, level: 'info' | 'warn' | 'error' = 'info') => {
+    logWithTimestamp(`[${instanceId}] ${message}`, level);
+  }, [instanceId]);
+
+  // Check for any active claims for this player on mount
   useEffect(() => {
-    // STRICT PREREQUISITE CHECK: Validate we have the required session ID
-    if (!sessionId) {
-      logWithTimestamp(`[${instanceId}] Cannot setup claim notification listener: No session ID`, 'warn');
-      return () => {};
-    }
+    if (!sessionId || !playerCode) return;
 
-    // STRICT PREREQUISITE CHECK: Check if WebSocket service is ready before setting up listeners
-    if (!isWsReady) {
-      logWithTimestamp(`[${instanceId}] WebSocket service not ready (state: ${connectionState}), deferring claim listener setup`, 'warn');
-      return () => {};
-    }
-    
-    // STRICT PREREQUISITE CHECK: Verify that we have valid event types
-    if (!EVENTS || !EVENTS.CLAIM_VALIDATING_TKT || !EVENTS.CLAIM_RESOLUTION) {
-      logWithTimestamp(`[${instanceId}] Missing event types for claim notifications`, 'error');
-      return () => {};
-    }
-
-    logWithTimestamp(`[${instanceId}] Setting up claim validation listener for session ${sessionId}`, 'info');
-
-    // Function to handle claim validating event
-    const handleClaimValidatingEvent = (payloadWrapper: any) => {
+    const checkActiveClaims = async () => {
       try {
-        console.log(`%c[${instanceId}] <<<< EVENT RECEIVED >>>> Event Name: CLAIM_VALIDATING_TKT`, 'color: lime; font-weight: bold;');
-        console.log(`[${instanceId}] Full PayloadWrapper:`, JSON.stringify(payloadWrapper, null, 2));
+        log(`Checking for active claims for player code ${playerCode} in session ${sessionId}`);
         
-        // Extract the payload from the wrapper if needed
-        const payload = payloadWrapper?.payload || payloadWrapper;
-        console.log(`[${instanceId}] Extracted actual event payload:`, JSON.stringify(payload, null, 2));
-        
-        if (!payload) {
-          console.error(`[${instanceId}] Payload is missing or undefined in received event.`);
+        // Query for claims in validation for this player
+        const { data, error } = await supabase
+          .from('bingo_claims')
+          .select('*')
+          .eq('session_id', sessionId)
+          .eq('player_code', playerCode)
+          .eq('status', 'validating')
+          .order('created_at', { ascending: false })
+          .limit(1);
+          
+        if (error) {
+          log(`Error fetching active claims: ${error.message}`, 'error');
           return;
         }
         
-        // Log critical fields needed for the panel
-        console.log(`[${instanceId}] Event sessionId: ${payload.sessionId}, My sessionId: ${sessionId}`);
-        console.log(`[${instanceId}] Event playerId: ${payload.playerId}, My playerCode: ${playerCode}`);
-        console.log(`[${instanceId}] Event claimId: ${payload.claimId || payload.id || 'unknown'}`);
-
-        // Check if this is for our session
-        if (payload?.sessionId !== sessionId) {
-          logWithTimestamp(`[${instanceId}] Ignoring claim validation for different session (${payload?.sessionId} != ${sessionId})`, 'info');
-          return;
+        // Set active claim if found
+        if (data && data.length > 0) {
+          log(`Found active claim for player: ${data[0].id}`);
+          setClaimStatus('checking');
+          setClaimDetails(data[0]);
+          
+          // Show toast notification
+          toast({
+            title: "Claim Being Verified",
+            description: "The host is currently verifying your bingo claim.",
+          });
         }
-
-        // Set the claim data
-        setClaimBeingChecked({
-          id: payload.claimId || payload.id || 'unknown',
-          playerId: payload.playerId || 'unknown',
-          playerName: payload.playerName || payload.player_name || 'Unknown Player',
-          sessionId: payload.sessionId || payload.session_id,
-          ticket: payload.ticket || payload.ticket_details,
-          calledNumbers: payload.calledNumbers || payload.called_numbers_snapshot || [],
-          winPattern: payload.winPattern || payload.pattern_claimed || 'unknown',
-          gameType: payload.gameType || 'mainstage',
-          timestamp: payload.timestamp || payload.claimed_at || new Date().toISOString(),
-          status: 'pending'
-        });
-
-        // Reset any previous claim result
-        setClaimResult(null);
-
-        // Check if this is my claim (based on playerCode, if available)
-        const isMyClaimChecking = playerCode && (
-          payload.playerCode === playerCode || 
-          payload.player_code === playerCode ||
-          payload.playerId === playerCode
-        );
-        
-        setIsMyClaimBeingChecked(isMyClaimChecking);
-        
-        // Open the sheet
-        setIsOpen(true);
-        
-        // Play sound for notification
-        playNotificationSound();
-        
-        // Log the notification
-        logWithTimestamp(`[${instanceId}] Claim check notification opened for ${payload.playerName || payload.player_name}`, 'info');
-      } catch (error) {
-        console.error(`[${instanceId}] Error processing claim validating event:`, error);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        log(`Unexpected error checking claims: ${errorMessage}`, 'error');
       }
     };
-
-    // Function to handle claim resolution event
-    const handleClaimResultEvent = (payloadWrapper: any) => {
-      try {
-        console.log(`%c[${instanceId}] <<<< EVENT RECEIVED >>>> Event Name: CLAIM_RESOLUTION`, 'color: lime; font-weight: bold;');
-        console.log(`[${instanceId}] Full PayloadWrapper:`, JSON.stringify(payloadWrapper, null, 2));
-        
-        // Extract the payload
-        const payload = payloadWrapper?.payload || payloadWrapper;
-        console.log(`[${instanceId}] Extracted actual event payload:`, JSON.stringify(payload, null, 2));
-
-        // Check if this claim result is for the current player
-        const isForCurrentPlayer = playerCode && (
-          payload.playerId === playerCode || 
-          payload.playerCode === playerCode
-        );
-
-        // Global broadcast or for current player
-        if (!isForCurrentPlayer && !payload.isGlobalBroadcast) {
-          logWithTimestamp(`[${instanceId}] Ignoring claim result for different player (${payload.playerId} != ${playerCode})`, 'info');
-          return;
-        }
-
-        // If we don't have a claim being checked, but this is for our player code, open the sheet
-        if (!claimBeingChecked && isForCurrentPlayer) {
-          // Set minimal claim data from the result
-          setClaimBeingChecked({
-            id: payload.claimId || 'unknown',
-            playerId: payload.playerId || 'unknown',
-            playerName: payload.playerName || 'Unknown Player',
-            sessionId: sessionId,
-            ticket: payload.ticket || {},
-            calledNumbers: [],
-            winPattern: payload.patternClaimed || payload.winPattern || 'unknown',
-            gameType: 'mainstage',
-            timestamp: payload.timestamp || new Date().toISOString(),
-            status: payload.result || 'pending'
+    
+    checkActiveClaims();
+  }, [sessionId, playerCode, toast, log]);
+  
+  // Set up listeners for claim status updates
+  useEffect(() => {
+    if (!sessionId || !playerCode || !isConnected) return;
+    
+    log(`Setting up claim update listeners for session ${sessionId} and player ${playerCode}`);
+    
+    // Listen for claim being validated
+    const validatingCleanup = listenForEvent(
+      EVENTS.CLAIM_VALIDATING_TKT,
+      (data: any) => {
+        // Check if this claim belongs to current player
+        if (data?.playerCode === playerCode) {
+          log(`Received claim validating notification for ticket: ${data.ticketId || 'unknown'}`);
+          setClaimStatus('checking');
+          setClaimDetails({
+            ticket_id: data.ticketId,
+            pattern: data.pattern,
+            claim_id: data.claimId
           });
           
-          setIsMyClaimBeingChecked(isForCurrentPlayer);
-          setIsOpen(true);
+          // Show toast
+          toast({
+            title: "Claim Being Verified",
+            description: "The host is currently verifying your bingo claim.",
+          });
         }
-
-        // Set the claim result
-        setClaimResult(payload.result === 'valid' || payload.validationStatus === 'VALID' ? 'valid' : 'rejected');
-        
-        // Play notification sound for result
-        playNotificationSound();
-
-        // Log the result
-        logWithTimestamp(`[${instanceId}] Claim result received: ${payload.result || payload.validationStatus}`, 'info');
-        
-        // If the sheet is open, keep it open for 3 seconds and then close it
-        if (isOpen || isForCurrentPlayer) {
+      }
+    );
+    
+    // Listen for claim resolution
+    const resolutionCleanup = listenForEvent(
+      EVENTS.CLAIM_RESOLUTION, 
+      (data: any) => {
+        // Check if this claim belongs to current player
+        if (data?.playerCode === playerCode || data?.player_code === playerCode) {
+          log(`Received claim resolution: ${data.isValid ? 'VALID' : 'INVALID'}`);
+          
+          setClaimStatus(data.isValid ? 'valid' : 'invalid');
+          
+          // Show toast
+          toast({
+            title: data.isValid ? "Claim Approved!" : "Claim Rejected",
+            description: data.isValid 
+              ? "Your bingo claim has been verified and approved." 
+              : "Your bingo claim was not approved. Please continue playing.",
+            variant: data.isValid ? "default" : "destructive",
+          });
+          
+          // Reset after 5 seconds
           setTimeout(() => {
-            setIsOpen(false);
-            setClaimBeingChecked(null);
-            setClaimResult(null);
-          }, 3000);
+            setClaimStatus('none');
+            setClaimDetails(null);
+          }, 5000);
         }
-      } catch (error) {
-        console.error(`[${instanceId}] Error processing claim result event:`, error);
       }
-    };
-
-    // Set up listeners when WebSocket is ready
-    logWithTimestamp(`[${instanceId}] WebSocket ready, setting up claim listeners`, 'info');
-    
-    // Listen for claim validating ticket events on claim-updates channel
-    const cleanupValidating = listenForEvent(
-      EVENTS.CLAIM_VALIDATING_TKT, 
-      handleClaimValidatingEvent
     );
     
-    // Listen for claim resolution events
-    const cleanupResolution = listenForEvent(
-      EVENTS.CLAIM_RESOLUTION,
-      handleClaimResultEvent
-    );
-    
-    // Clean up all listeners on unmount or dependency change
+    // Cleanup function
     return () => {
-      cleanupValidating();
-      cleanupResolution();
-      logWithTimestamp(`[${instanceId}] Cleaned up claim notification listeners`, 'info');
+      log('Cleaning up claim update listeners');
+      validatingCleanup();
+      resolutionCleanup();
     };
-  }, [sessionId, playerCode, instanceId, listenForEvent, EVENTS, isWsReady, connectionState, claimBeingChecked, isOpen]);
+  }, [sessionId, playerCode, isConnected, listenForEvent, EVENTS, toast, log]);
 
-  // Also listen to custom browser events that might be dispatched by other components
-  useEffect(() => {
-    const handleCustomEvent = (event: CustomEvent) => {
-      logWithTimestamp(`[${instanceId}] Received custom claimBroadcast event`, 'info');
-      console.log('Custom event details:', event.detail);
-      
-      if (event.detail?.claim && event.detail?.type === 'checking') {
-        // Reuse the same validation logic as WebSocket events
-        const payload = event.detail.claim;
-        
-        // Set minimal claim data from the event
-        setClaimBeingChecked({
-          id: payload.claimId || payload.id || 'unknown',
-          playerId: payload.playerId || 'unknown',
-          playerName: payload.playerName || payload.player_name || 'Unknown Player',
-          sessionId: sessionId,
-          ticket: payload.ticket || payload.ticket_details || {},
-          calledNumbers: payload.calledNumbers || payload.called_numbers_snapshot || [],
-          winPattern: payload.winPattern || payload.pattern_claimed || 'unknown',
-          gameType: payload.gameType || 'mainstage',
-          timestamp: payload.timestamp || payload.claimed_at || new Date().toISOString(),
-          status: 'pending'
-        });
-        
-        // Check if this is my claim
-        const isMyClaimChecking = playerCode && (
-          payload.playerCode === playerCode || 
-          payload.player_code === playerCode ||
-          payload.playerId === playerCode
-        );
-        
-        setIsMyClaimBeingChecked(isMyClaimChecking);
-        setClaimResult(null);
-        setIsOpen(true);
-        playNotificationSound();
-      } else if (event.detail?.claim && (event.detail?.type === 'result' || event.detail?.type === 'resolution')) {
-        // Set claim result
-        const payload = event.detail.claim;
-        setClaimResult(payload.result === 'valid' || payload.validationStatus === 'VALID' ? 'valid' : 'rejected');
-        playNotificationSound();
-        
-        // Auto-close after a short delay
-        setTimeout(() => {
-          setIsOpen(false);
-          setClaimBeingChecked(null);
-          setClaimResult(null);
-        }, 3000);
-      }
-    };
-    
-    // Listen for forceOpenClaimDrawer events
-    const handleForceOpenEvent = (event: CustomEvent) => {
-      logWithTimestamp(`[${instanceId}] Received forceOpenClaimDrawer event`, 'info');
-      console.log('Force open event details:', event.detail);
-      
-      if (event.detail?.data) {
-        const payload = event.detail.data;
-        // Set claim data similar to WebSocket events
-        setClaimBeingChecked({
-          id: payload.claimId || payload.id || 'unknown',
-          playerId: payload.playerId || 'unknown',
-          playerName: payload.playerName || payload.player_name || 'Unknown Player',
-          sessionId: sessionId,
-          ticket: payload.ticket || payload.ticket_details || {},
-          calledNumbers: payload.calledNumbers || payload.called_numbers_snapshot || [],
-          winPattern: payload.winPattern || payload.pattern_claimed || 'unknown',
-          gameType: payload.gameType || 'mainstage',
-          timestamp: payload.timestamp || payload.claimed_at || new Date().toISOString(),
-          status: 'pending'
-        });
-        
-        setClaimResult(null);
-        setIsOpen(true);
-        playNotificationSound();
-      }
-    };
-    
-    window.addEventListener('claimBroadcast', handleCustomEvent as EventListener);
-    window.addEventListener('forceOpenClaimDrawer', handleForceOpenEvent as EventListener);
-    
-    return () => {
-      window.removeEventListener('claimBroadcast', handleCustomEvent as EventListener);
-      window.removeEventListener('forceOpenClaimDrawer', handleForceOpenEvent as EventListener);
-    };
-  }, [instanceId, playerCode, sessionId]);
+  // Don't render anything if no active claim
+  if (claimStatus === 'none') {
+    return null;
+  }
 
-  // Function to play notification sound
-  const playNotificationSound = () => {
-    try {
-      const audio = new Audio('/notification-sound.mp3');
-      audio.volume = 0.5;
-      audio.play().catch((err) => {
-        // Ignore autoplay errors - browsers often block without user interaction
-        console.log('Audio play was prevented:', err);
-      });
-    } catch (error) {
-      console.warn('Could not play notification sound:', error);
-    }
-  };
-
-  if (!claimBeingChecked) return null;
-
+  // Render notification based on status
   return (
-    <Sheet open={isOpen} onOpenChange={setIsOpen}>
-      <SheetContent className="sm:max-w-lg" side="right">
-        <SheetHeader>
-          <SheetTitle className="flex items-center">
-            <AlertTriangle className="h-5 w-5 text-amber-500 mr-2" />
-            {claimResult ? (
-              claimResult === 'valid' ? 'Claim Validated!' : 'Claim Rejected'
-            ) : (
-              'Claim Being Checked'
-            )}
-          </SheetTitle>
-          <SheetDescription>
-            {claimResult ? (
-              claimResult === 'valid' ? 
-                'Your claim has been validated by the caller!' : 
-                'The caller has rejected this claim.'
-            ) : (
-              'The caller is currently checking a claim.'
-            )}
-            {isMyClaimBeingChecked && !claimResult && (
-              <div className="mt-1 font-semibold text-blue-600">
-                This is your claim!
-              </div>
-            )}
-          </SheetDescription>
-        </SheetHeader>
-        
-        {/* Show claim result overlay if available */}
-        {claimResult && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-50">
-            <div className="bg-white rounded-full p-8 shadow-lg">
-              {claimResult === 'valid' ? (
-                <CheckCircle className="h-20 w-20 text-green-500" />
-              ) : (
-                <XCircle className="h-20 w-20 text-red-500" />
-              )}
-            </div>
-          </div>
-        )}
-        
-        <div className="mt-6 space-y-4">
-          <div className="bg-amber-50 border border-amber-200 rounded-md p-4">
-            <h3 className="text-sm font-medium text-amber-800 mb-2">Claim Information</h3>
-            <div className="grid gap-1 text-sm">
-              <div>
-                <span className="font-medium">Player: </span>
-                {claimBeingChecked.playerName}
-              </div>
-              <div>
-                <span className="font-medium">Pattern: </span>
-                {claimBeingChecked.winPattern}
-              </div>
-              <div>
-                <span className="font-medium">Claimed at: </span>
-                {new Date(claimBeingChecked.timestamp).toLocaleString()}
-              </div>
-            </div>
-          </div>
-          
-          {/* Display the ticket being checked */}
-          {claimBeingChecked.ticket && (
-            <div className="mt-4 border-t pt-4">
-              <h3 className="text-sm font-medium mb-2">Claimed Ticket:</h3>
-              <CallerTicketDisplay
-                ticket={{
-                  numbers: claimBeingChecked.ticket?.numbers,
-                  layoutMask: claimBeingChecked.ticket?.layoutMask || claimBeingChecked.ticket?.layout_mask,
-                  serial: claimBeingChecked.ticket?.serial,
-                  perm: claimBeingChecked.ticket?.perm,
-                  position: claimBeingChecked.ticket?.position
-                }}
-                calledNumbers={claimBeingChecked.calledNumbers || []}
-                lastCalledNumber={null}
-                gameType={claimBeingChecked.gameType || 'mainstage'}
-                winPattern={claimBeingChecked.winPattern || 'oneLine'}
-              />
-            </div>
-          )}
-          
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-500 mb-2">
-              {claimResult ? 
-                'This notification will close automatically.' : 
-                'The caller is verifying this claim. This notification will close automatically when the verification is complete.'}
-            </p>
-            <Button 
-              variant="outline"
-              onClick={() => setIsOpen(false)}
-              className="w-full mt-2"
-            >
-              Close
-            </Button>
-          </div>
-        </div>
-      </SheetContent>
-    </Sheet>
+    <div className="fixed bottom-4 left-0 right-0 mx-auto max-w-md z-50 px-4">
+      <Alert
+        className={`shadow-lg border-l-4 ${
+          claimStatus === 'checking' ? 'border-l-blue-500 bg-blue-50' : 
+          claimStatus === 'valid' ? 'border-l-green-500 bg-green-50' : 
+          'border-l-red-500 bg-red-50'
+        }`}
+      >
+        <AlertTitle className={`${
+          claimStatus === 'checking' ? 'text-blue-800' : 
+          claimStatus === 'valid' ? 'text-green-800' : 
+          'text-red-800'
+        } font-bold`}>
+          {claimStatus === 'checking' ? 'Verifying Claim' :
+           claimStatus === 'valid' ? 'Claim Approved!' :
+           'Claim Rejected'}
+        </AlertTitle>
+        <AlertDescription className={`${
+          claimStatus === 'checking' ? 'text-blue-700' : 
+          claimStatus === 'valid' ? 'text-green-700' : 
+          'text-red-700'
+        }`}>
+          {claimStatus === 'checking' 
+            ? 'The host is currently verifying your bingo claim. Please wait...'
+            : claimStatus === 'valid' 
+              ? 'Congratulations! Your bingo claim has been verified and approved.'
+              : 'Your bingo claim was not approved. Please continue playing.'
+          }
+        </AlertDescription>
+      </Alert>
+    </div>
   );
 }

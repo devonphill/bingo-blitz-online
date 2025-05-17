@@ -3,20 +3,19 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { EVENT_TYPES, WebSocketConnectionStatus, CONNECTION_STATES, CHANNEL_NAMES } from '@/constants/websocketConstants';
-import { useSessionContext } from '@/contexts/SessionContext';
 
 /**
  * A React hook to interact with the centralized WebSocket service (SingleSourceTrueConnections).
  */
 export function useWebSocket(externalSessionId?: string | null) {
   const sstc = getSingleSourceConnection();
-  const sessionContext = useSessionContext();
   
-  // Use provided external sessionId or sessionContext.currentSession?.id
-  const sessionId = externalSessionId || sessionContext?.currentSession?.id;
+  // Use provided external sessionId directly - no context dependency
+  const sessionId = externalSessionId;
 
   const [isServiceReady, setIsServiceReady] = useState(sstc.isServiceInitialized() && sstc.isConnected());
   const [connectionState, setConnectionState] = useState<WebSocketConnectionStatus>(sstc.getCurrentConnectionState());
+  const [lastError, setLastError] = useState<string | null>(null);
   
   // Unique ID for logging instances of this hook
   const instanceId = useRef(`wsHook-${Math.random().toString(36).substring(2, 9)}`).current;
@@ -71,8 +70,15 @@ export function useWebSocket(externalSessionId?: string | null) {
       // Determine the channel name based on event type
       const channelNameKey = eventName.includes('claim') ? 'CLAIM_UPDATES_BASE' : 'GAME_UPDATES_BASE';
       
-      // SSTC will construct the full channel name using sessionId
-      return sstc.listenForEvent<T>(channelNameKey, eventName, callback, sessionId);
+      try {
+        // SSTC will construct the full channel name using sessionId
+        return sstc.listenForEvent<T>(channelNameKey, eventName, callback, sessionId);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        setLastError(errorMessage);
+        logWithTimestamp(`[${instanceId}] Error setting up listener: ${errorMessage}`, 'error');
+        return () => {};
+      }
     },
     [sessionId, sstc, isServiceReady, connectionState, instanceId]
   );
@@ -93,6 +99,7 @@ export function useWebSocket(externalSessionId?: string | null) {
     listenForEvent,
     connect,
     EVENTS: EVENT_TYPES, // For convenience
-    sessionId
+    sessionId,
+    lastError
   };
 }

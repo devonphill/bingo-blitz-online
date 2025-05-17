@@ -26,7 +26,7 @@ export default function DebugPanel({ sessionId }: DebugPanelProps) {
     const interval = setInterval(() => {
       const pingTime = connection.getLastPing();
       
-      // Only update if pingTime is a valid Date
+      // Handle different types of pingTime
       if (pingTime instanceof Date) {
         setLastPingTime(pingTime);
         setPingTimeDisplay(pingTime.toLocaleTimeString());
@@ -35,6 +35,9 @@ export default function DebugPanel({ sessionId }: DebugPanelProps) {
         const pingDate = new Date(pingTime);
         setLastPingTime(pingDate);
         setPingTimeDisplay(pingDate.toLocaleString());
+      } else if (pingTime) {
+        // Handle any other non-null value
+        setPingTimeDisplay(String(pingTime));
       }
     }, 1000);
     

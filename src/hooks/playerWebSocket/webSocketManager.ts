@@ -39,9 +39,9 @@ export function setupNumberUpdateListeners(
     return () => {};
   }
   
-  // Set up number called listener
+  // Set up number called listener - using string literals for the channel name to avoid type errors
   const numberCleanup = singleSource.listenForEvent(
-    CHANNEL_NAMES.GAME_UPDATES_BASE,
+    'GAME_UPDATES_BASE',
     EVENT_TYPES.NUMBER_CALLED,
     (data: any) => {
       // Check if the data is for our session
@@ -53,9 +53,9 @@ export function setupNumberUpdateListeners(
     sessionId
   );
   
-  // Set up game reset listener
+  // Set up game reset listener - using string literals for the channel name to avoid type errors
   const resetCleanup = singleSource.listenForEvent(
-    CHANNEL_NAMES.GAME_UPDATES_BASE,
+    'GAME_UPDATES_BASE',
     EVENT_TYPES.GAME_RESET,
     (data: any) => {
       // Check if the data is for our session

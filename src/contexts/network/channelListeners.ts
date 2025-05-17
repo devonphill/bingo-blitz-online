@@ -29,7 +29,7 @@ export const setupChannelListeners = (
   
   // Listen for claim validation events
   const validationCleanup = connection.listenForEvent(
-    CHANNEL_NAMES.CLAIM_UPDATES_BASE,
+    'CLAIM_UPDATES_BASE',
     EVENT_TYPES.CLAIM_VALIDATING_TKT,
     (payload: any) => {
       // Only process updates for our session
@@ -43,7 +43,7 @@ export const setupChannelListeners = (
   
   // Listen for claim result events
   const resultCleanup = connection.listenForEvent(
-    CHANNEL_NAMES.CLAIM_UPDATES_BASE,
+    'CLAIM_UPDATES_BASE',
     EVENT_TYPES.CLAIM_RESOLUTION,
     (payload: any) => {
       // Only process updates for our session

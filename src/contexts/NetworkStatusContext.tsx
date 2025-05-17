@@ -46,11 +46,14 @@ export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({
     
     const cleanup = connection.addStatusListener((status) => {
       // Convert WebSocketConnectionStatus to ConnectionState
-      setConnectionState(mapConnectionState(status));
+      const mappedState = mapConnectionState(status);
+      setConnectionState(mappedState);
     });
     
     // Call once to set initial state
-    setConnectionState(mapConnectionState(connection.getCurrentConnectionState()));
+    const currentState = connection.getCurrentConnectionState();
+    const mappedState = mapConnectionState(currentState);
+    setConnectionState(mappedState);
     
     return cleanup;
   }, []);
@@ -80,7 +83,7 @@ export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({
       const connection = getSingleSourceConnection();
       const result = await connection.broadcastNumberCalled(targetSessionId, number);
       // Convert any response to boolean
-      return result !== false;
+      return Boolean(result);
     } catch (error) {
       console.error('Error calling number:', error);
       return false;
