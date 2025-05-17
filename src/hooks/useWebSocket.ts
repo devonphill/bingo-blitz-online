@@ -1,178 +1,90 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
+import { getSingleSourceConnection, SingleSourceTrueConnections } from '@/utils/SingleSourceTrueConnections';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { ConnectionState } from '@/constants/connectionConstants';
-import { EVENT_TYPES } from '@/constants/websocketConstants';
-
-export type WebSocketConnectionStatus = ConnectionState | 'SUBSCRIBED' | 'CLOSED' | 'CHANNEL_ERROR' | 'TIMED_OUT' | 'CONNECTING' | 'JOINING' | 'JOINED' | 'unknown';
+import { EVENT_TYPES, WebSocketConnectionStatus, CONNECTION_STATES, CHANNEL_NAMES } from '@/constants/websocketConstants';
+import { useSessionContext } from '@/contexts/SessionContext'; // To get sessionId
 
 /**
- * A React hook to interact with the WebSocket service
- * @param sessionId Session ID to connect to
- * @returns WebSocket utilities 
+ * A React hook to interact with the centralized WebSocket service (SingleSourceTrueConnections).
  */
-export function useWebSocket(sessionId: string | null | undefined) {
-  const [isConnected, setIsConnected] = useState(false);
-  const [isWsReady, setIsWsReady] = useState(false);
-  const [lastError, setLastError] = useState<string | null>(null);
-  const [connectionState, setConnectionState] = useState<WebSocketConnectionStatus>('disconnected');
+export function useWebSocket() {
+  const sstc = getSingleSourceConnection();
+  const { sessionId } = useSessionContext(); // Get current sessionId from SessionContext
+
+  const [isServiceReady, setIsServiceReady] = useState(sstc.isServiceInitialized() && sstc.isConnected());
+  const [connectionState, setConnectionState] = useState<WebSocketConnectionStatus>(sstc.getCurrentConnectionState());
   
-  // Instance ID for logging
+  // Unique ID for logging instances of this hook
   const instanceId = useRef(`wsHook-${Math.random().toString(36).substring(2, 9)}`).current;
-  
-  // Get singleton connection
-  const connection = getSingleSourceConnection();
 
-  // Expose event types from constants
-  const EVENTS = EVENT_TYPES;
+  useEffect(() => {
+    logWithTimestamp(`[${instanceId}] Hook mounted/updated. SessionId: ${sessionId}, Current SSTC State: ${sstc.getCurrentConnectionState()}, Service Initialized: ${sstc.isServiceInitialized()}`, 'debug');
 
-  // Connect to WebSocket
-  const connect = useCallback(() => {
-    if (!sessionId) {
-      logWithTimestamp(`[${instanceId}] Cannot connect: No session ID`, 'warn');
-      setLastError('No session ID provided');
-      setConnectionState('disconnected');
-      setIsWsReady(false);
-      return () => {};
-    }
+    // Listener for overall SSTC status changes
+    const handleSSTCStatusChange = (status: WebSocketConnectionStatus, serviceIsInitialized: boolean) => {
+      logWithTimestamp(`[${instanceId}] SSTC Status Listener: status=${status}, serviceReady=${serviceIsInitialized}`, 'debug');
+      setConnectionState(status);
+      setIsServiceReady(serviceIsInitialized && status === CONNECTION_STATES.CONNECTED);
+    };
+
+    const cleanupStatusListener = sstc.addStatusListener(handleSSTCStatusChange);
     
-    try {
-      // Check if connection service is initialized
-      const isInitialized = connection.isServiceInitialized();
-      setIsWsReady(isInitialized);
-      
-      if (!isInitialized) {
-        logWithTimestamp(`[${instanceId}] WebSocket service not initialized yet`, 'warn');
-        setConnectionState('connecting');
+    // Initial connect attempt if sessionId is present and service is initialized by SSTC
+    // SSTC's initialize method should be called once at app startup.
+    // SSTC's connect method makes it "session-aware".
+    if (sessionId && sstc.isServiceInitialized()) {
+      logWithTimestamp(`[${instanceId}] SessionId available, calling SSTC connect for session: ${sessionId}`, 'info');
+      sstc.connect(sessionId); // Make SSTC aware of the current session
+    } else if (!sstc.isServiceInitialized()){
+      logWithTimestamp(`[${instanceId}] Deferring SSTC connect: Service not initialized. SessionId: ${sessionId}`, 'warn');
+    } else if (!sessionId) {
+      logWithTimestamp(`[${instanceId}] Deferring SSTC connect: No session ID.`, 'warn');
+    }
+
+    return () => {
+      logWithTimestamp(`[${instanceId}] Cleaning up useWebSocket hook. SessionId: ${sessionId}`, 'debug');
+      cleanupStatusListener();
+      // Listeners added via listenForEvent below will be cleaned up by their own returned functions
+      // No global disconnect here, SSTC handles channel lifecycle via reference counting.
+    };
+  }, [sessionId, sstc, instanceId]); // sstc is stable, instanceId is stable
+
+  const listenForEvent = useCallback(
+    <T = any>(
+      baseChannelNameKey: keyof typeof CHANNEL_NAMES,
+      eventName: string,
+      callback: (payload: T) => void
+    ): (() => void) => {
+      if (!sessionId) {
+        logWithTimestamp(`[${instanceId}] listenForEvent: No sessionId, cannot add listener for ${eventName} on ${baseChannelNameKey}.`, 'warn');
         return () => {};
       }
-      
-      // Connect to session
-      connection.connect(sessionId);
-      
-      // Setup connection status listener
-      const cleanup = connection.addConnectionListener((connected) => {
-        setIsConnected(connected);
-        setConnectionState(connection.getCurrentConnectionState());
-        setIsWsReady(connected);
-        
-        if (connected) {
-          setLastError(null);
-        }
-      });
-      
-      setIsConnected(connection.isConnected());
-      setConnectionState(connection.getCurrentConnectionState());
-      setIsWsReady(connection.isServiceInitialized() && connection.isConnected());
-      setLastError(null);
-      
-      logWithTimestamp(`[${instanceId}] Connected to WebSocket for session ${sessionId}. Service ready: ${isInitialized}`, 'info');
-      
-      // Return cleanup function that only removes the status listener
-      // This will NOT disconnect, since multiple components may use this session
-      return cleanup;
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      logWithTimestamp(`[${instanceId}] WebSocket connection error: ${errorMsg}`, 'error');
-      setLastError(`Connection error: ${errorMsg}`);
-      setIsConnected(false);
-      setConnectionState('error');
-      setIsWsReady(false);
-      return () => {};
-    }
-  }, [sessionId, instanceId, connection]);
-  
-  // Listen for a specific event with added validation
-  const listenForEvent = useCallback(<T>(
-    eventType: string, 
-    handler: (data: T) => void
-  ) => {
-    // CRITICAL FIX: Validate event type
-    if (!eventType) {
-      logWithTimestamp(`[${instanceId}] Cannot listen for undefined event type`, 'error');
-      return () => {};
-    }
-    
-    // Skip if no session ID
-    if (!sessionId) {
-      logWithTimestamp(`[${instanceId}] Cannot listen for event: No session ID`, 'warn');
-      return () => {};
-    }
-    
-    // Check if connection service is initialized AND connected
-    if (!connection.isServiceInitialized() || !connection.isConnected()) {
-      logWithTimestamp(`[${instanceId}] Cannot add listener: WebSocket service not initialized/connected yet`, 'warn');
-      return () => {};
-    }
-    
-    try {
-      logWithTimestamp(`[${instanceId}] Setting up listener for event: ${eventType}`, 'info');
-      
-      // Determine the appropriate channel name based on event type
-      const channelName = eventType.includes('claim') ? 'claim-updates' : 'game-updates';
-      
-      // Use the singleton connection to listen for events
-      const cleanup = connection.listenForEvent<T>(channelName, eventType, (payload) => {
-        logWithTimestamp(`[${instanceId}] Received event: ${eventType}`, 'info');
-        console.log(`Full payload for ${eventType}:`, payload);
-        handler(payload);
-      });
-      
-      logWithTimestamp(`[${instanceId}] Listening for event ${eventType} on session ${sessionId}`, 'info');
-      
-      // Return cleanup function
-      return cleanup;
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      logWithTimestamp(`[${instanceId}] Error setting up event listener: ${errorMsg}`, 'error');
-      return () => {}; // Return empty cleanup function on error
-    }
-  }, [sessionId, instanceId, connection]);
-  
-  // Auto-connect when sessionId changes
-  useEffect(() => {
-    if (!sessionId) {
-      logWithTimestamp(`[${instanceId}] No session ID provided, skipping auto-connect`, 'warn');
-      setIsWsReady(false);
-      return;
-    }
-    
-    logWithTimestamp(`[${instanceId}] Auto-connecting to session ${sessionId}`, 'info');
-    const cleanup = connect();
-    
-    // Set up a separate effect to monitor service initialization status
-    const checkServiceInitialized = () => {
-      const isInitialized = connection.isServiceInitialized();
-      const isConnectedState = connection.isConnected();
-      setIsWsReady(isInitialized && isConnectedState);
-      
-      if (!isInitialized || !isConnectedState) {
-        // Check again in 1 second
-        setTimeout(checkServiceInitialized, 1000);
+      if (!isServiceReady) {
+        logWithTimestamp(`[${instanceId}] listenForEvent: WebSocket not ready (state: ${connectionState}), deferring listener for ${eventName} on ${baseChannelNameKey}.`, 'warn');
+        return () => {};
       }
-    };
-    
-    // Start checking if not ready
-    if (!connection.isServiceInitialized() || !connection.isConnected()) {
-      checkServiceInitialized();
-    }
-    
-    // Only call the specific listener cleanup function
-    return () => {
-      logWithTimestamp(`[${instanceId}] Cleaning up connection listener for session ${sessionId}`, 'info');
-      cleanup();
-      // We explicitly do NOT call any global disconnect here to preserve shared channels
-    };
-  }, [sessionId, connect, instanceId, connection]);
+      if (!eventName || typeof eventName !== 'string') {
+        logWithTimestamp(`[${instanceId}] listenForEvent: Invalid eventName '${eventName}' for ${baseChannelNameKey}. Listener not added.`, 'error');
+        return () => {};
+      }
+
+      // SSTC will construct the full channel name using sessionId
+      return sstc.listenForEvent<T>(baseChannelNameKey, eventName, callback, sessionId);
+    },
+    [sessionId, sstc, isServiceReady, connectionState, instanceId]
+  );
   
+  // Expose specific broadcast methods if needed, or let components get SSTC instance for broadcasting
+  // For now, focusing on listening.
+
   return {
-    isConnected,
-    isWsReady,
+    isConnected: connectionState === CONNECTION_STATES.CONNECTED && isServiceReady,
+    isWsReady, // True if SSTC is initialized and its overall status is 'connected'
     connectionState,
-    lastError,
-    connect,
     listenForEvent,
-    EVENTS  // Expose the event types
+    EVENTS: EVENT_TYPES, // For convenience
+    // Expose connect/disconnect from SSTC if components need to trigger them via the hook
+    // connectToSession: sstc.connect, (already called by useEffect based on sessionId)
+    // disconnectSession: sstc.disconnect,
   };
 }
