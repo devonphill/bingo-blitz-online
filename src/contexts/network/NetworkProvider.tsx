@@ -1,11 +1,10 @@
+
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { getNCMInstance } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { performClaimBroadcast } from './claimHandlers';
-import { setupChannelListeners } from './channelListeners';
 import { NetworkProviderProps, NetworkContextType } from './types';
-import { updatePlayerPresence } from './playerPresence';
 import { CONNECTION_STATES } from '@/constants/websocketConstants';
+import { EVENT_TYPES } from '@/constants/websocketConstants';
 
 // Create Context
 export const NetworkContext = createContext<NetworkContextType>({
@@ -26,7 +25,7 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
   const [claimStatus, setClaimStatus] = useState<any>(null);
-  const [lastPingTime, setLastPingTime] = useState<number>(0);
+  const [connectionTimestamp, setConnectionTimestamp] = useState<number>(0);
 
   // Get the singleton connection
   const ncmSpot = getNCMInstance();
@@ -55,7 +54,7 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({
     const cleanup = ncmSpot.addOverallStatusListener((status, isServiceReady) => {
       setIsConnected(status === CONNECTION_STATES.CONNECTED && isServiceReady);
       if (status === CONNECTION_STATES.CONNECTED && isServiceReady) {
-        setLastPingTime(Date.now());
+        setConnectionTimestamp(Date.now());
       }
     });
 
@@ -72,8 +71,22 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({
       return false;
     }
 
-    // Use the claim broadcast utility
-    return performClaimBroadcast(ticket, playerCode, gameSessionId);
+    try {
+      // Use NCM_SPOT to broadcast the claim
+      const channelName = `claim_sender-${gameSessionId}`;
+      const payload = {
+        ticket,
+        playerCode,
+        sessionId: gameSessionId,
+        timestamp: new Date().toISOString()
+      };
+      
+      ncmSpot.broadcast(channelName, EVENT_TYPES.CLAIM_SUBMITTED, payload);
+      return true;
+    } catch (error) {
+      logWithTimestamp(`Error submitting claim: ${error}`, 'error');
+      return false;
+    }
   }, [isConnected]);
 
   // Claim validation
@@ -84,23 +97,16 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({
     }
 
     try {
-      // Broadcast validation result
-      // Import EVENT_TYPES
-      const { EVENT_TYPES } = await import('@/constants/websocketConstants');
-
       // Use NCM_SPOT to send the message on the claims validation channel
-      ncmSpot.sendMessage(
-        'claims_validation', 
-        sessionId, 
-        'claim-validation',
-        {
-          claimId,
-          isValid,
-          sessionId,
-          timestamp: new Date().toISOString()
-        }
-      );
-
+      const channelName = `claims_validation-${sessionId}`;
+      const payload = {
+        claimId,
+        isValid,
+        sessionId,
+        timestamp: new Date().toISOString()
+      };
+      
+      await ncmSpot.broadcast(channelName, EVENT_TYPES.CLAIM_RESOLUTION, payload);
       logWithTimestamp(`Claim validation ${claimId} sent`, 'info');
       return true;
     } catch (error) {
@@ -111,21 +117,42 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({
 
   // Player presence
   const updatePlayerPresence = useCallback(async (sessionId: string, playerData: any) => {
-    return updatePlayerPresence(sessionId, playerData);
+    if (!sessionId || !playerData) {
+      logWithTimestamp('Cannot update player presence: Missing data', 'error');
+      return false;
+    }
+    
+    try {
+      ncmSpot.trackPlayerPresence(sessionId, {
+        username: playerData.name || playerData.username || 'Unknown Player',
+        playerCode: playerData.playerCode || 'unknown',
+        status: 'online'
+      });
+      return true;
+    } catch (error) {
+      logWithTimestamp(`Error updating player presence: ${error}`, 'error');
+      return false;
+    }
   }, []);
 
-  // Set up channel listeners
+  // Set up channel listeners for claims
   useEffect(() => {
     if (!sessionId || !isConnected) return;
 
-    const cleanupListeners = setupChannelListeners(
-      sessionId,
+    // Listen for claims on the claim sender channel
+    const claimChannelName = `claim_sender-${sessionId}`;
+    const claimCleanup = ncmSpot.listenForEvent(
+      claimChannelName,
+      EVENT_TYPES.CLAIM_SUBMITTED,
       (claimData: any) => {
+        logWithTimestamp(`Received claim: ${JSON.stringify(claimData)}`, 'info');
         setClaimStatus(claimData);
       }
     );
 
-    return cleanupListeners;
+    return () => {
+      claimCleanup();
+    };
   }, [sessionId, isConnected]);
 
   // Context value

@@ -1075,6 +1075,13 @@ export class NEWConnectionManager_SinglePointOfTruth {
     // For now, we'll just return the current time
     return new Date().toISOString();
   }
+
+  /**
+   * Get current session ID
+   */
+  public getCurrentSessionId(): string | null {
+    return this.currentSessionIdInternal;
+  }
 }
 
 /**
