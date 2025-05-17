@@ -21,7 +21,8 @@ export const saveNumbersToStorage = (
     const data: CalledNumbersState = {
       calledNumbers,
       lastCalledNumber,
-      lastUpdateTime: timestamp
+      lastUpdateTime: timestamp,
+      timestamp: timestamp // Add the timestamp property
     };
     
     localStorage.setItem(storageKey, JSON.stringify(data));

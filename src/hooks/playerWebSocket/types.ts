@@ -3,6 +3,7 @@ export interface CalledNumbersState {
   calledNumbers: number[];
   lastCalledNumber: number | null;
   lastUpdateTime: number;
+  timestamp: number; // Added timestamp property
 }
 
 export interface NumberCalledPayload {

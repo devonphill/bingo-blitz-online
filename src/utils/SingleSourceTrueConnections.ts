@@ -3,6 +3,8 @@ import { ConnectionState } from '@/constants/connectionConstants';
 import { supabase } from '@/integrations/supabase/client';
 import { CHANNEL_NAMES, EVENT_TYPES, CONNECTION_STATES } from '@/constants/websocketConstants';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { NumberCalledPayload } from '@/types/websocket';
+import { fetchCalledNumbers } from '@/hooks/playerWebSocket/databaseUtils';
 
 // Define WebSocketConnectionStatus type here since it's not exported from connectionConstants
 export type WebSocketConnectionStatus = ConnectionState | 'SUBSCRIBED' | 'CLOSED' | 'CHANNEL_ERROR' | 'TIMED_OUT' | 'CONNECTING' | 'JOINING' | 'JOINED' | 'unknown';

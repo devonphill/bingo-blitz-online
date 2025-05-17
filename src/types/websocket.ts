@@ -23,6 +23,7 @@ export interface NumberCalledPayload {
   number: number;
   sessionId: string;
   timestamp: number;
+  calledNumbers?: number[];
   broadcastId?: string;
 }
 

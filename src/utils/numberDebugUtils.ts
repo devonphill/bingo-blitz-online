@@ -111,7 +111,8 @@ export const setupNumberCallPrevention = () => {
   
   // Override the update method to check for duplicate numbers
   (supabase.from as any) = function(table: string) {
-    const originalFromResult = originalUpdate.call(this, table);
+    // Fix this line to use a valid table name instead of empty string
+    const originalFromResult = table ? originalUpdate.call(this, table) : null;
     
     // Only modify behavior for sessions_progress table
     if (table === 'sessions_progress') {

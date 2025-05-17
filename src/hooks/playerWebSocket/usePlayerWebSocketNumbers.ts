@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { useSessionContext } from '@/contexts/SessionProvider';
@@ -56,7 +55,7 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) 
       log(`Loaded ${storedData.calledNumbers.length} numbers from storage`, 'info');
       setNumbers(storedData.calledNumbers);
       setLastCalledNumber(storedData.lastCalledNumber);
-      setLastUpdateTime(storedData.timestamp);
+      setLastUpdateTime(storedData.lastUpdateTime);
     }
 
     // Then fetch from database to ensure we have latest data
