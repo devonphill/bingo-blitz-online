@@ -1,6 +1,5 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
+import { getNCMInstance } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { EVENT_TYPES, WebSocketConnectionStatus, CONNECTION_STATES, CHANNEL_NAMES } from '@/constants/websocketConstants';
 
@@ -8,7 +7,7 @@ import { EVENT_TYPES, WebSocketConnectionStatus, CONNECTION_STATES, CHANNEL_NAME
  * A React hook to interact with the centralized WebSocket service (SingleSourceTrueConnections).
  */
 export function useWebSocket(externalSessionId?: string | null) {
-  const sstc = getSingleSourceConnection();
+  const sstc = getNCMInstance();
   
   // Use provided external sessionId directly - no context dependency
   const sessionId = externalSessionId;

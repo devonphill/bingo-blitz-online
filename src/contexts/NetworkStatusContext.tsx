@@ -1,9 +1,8 @@
-
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useNetworkContext } from './network';
 import { ConnectionState } from '@/constants/connectionConstants';
 import { WebSocketConnectionStatus } from '@/constants/websocketConstants';
-import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
+import { getNCMInstance } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
 
 interface NetworkStatusContextType {
   isConnected: boolean;
@@ -42,7 +41,7 @@ export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({
   
   // Use direct connection to SingleSourceTrueConnections
   useEffect(() => {
-    const connection = getSingleSourceConnection();
+    const connection = getNCMInstance();
     
     const cleanup = connection.addStatusListener((status) => {
       // Convert WebSocketConnectionStatus to ConnectionState
@@ -61,7 +60,7 @@ export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({
   // Connect to a session
   const connect = useCallback((sessionId: string) => {
     if (sessionId) {
-      const connection = getSingleSourceConnection();
+      const connection = getNCMInstance();
       connection.connect(sessionId);
     }
   }, []);
@@ -69,7 +68,7 @@ export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({
   // Reconnect to the current session
   const reconnect = useCallback(() => {
     if (sessionId) {
-      const connection = getSingleSourceConnection();
+      const connection = getNCMInstance();
       connection.connect(sessionId);
     }
   }, [sessionId]);
@@ -80,7 +79,7 @@ export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({
     if (!targetSessionId) return false;
     
     try {
-      const connection = getSingleSourceConnection();
+      const connection = getNCMInstance();
       const result = await connection.broadcastNumberCalled(targetSessionId, number);
       // Convert any response to boolean
       return Boolean(result);

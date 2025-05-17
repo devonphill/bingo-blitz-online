@@ -1,9 +1,8 @@
-
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { usePlayerTickets, PlayerTicket } from '@/hooks/playerTickets/usePlayerTickets'; 
 import { usePlayerContext } from './PlayerContext';
 import { useSessionContext } from './SessionProvider';
-import { getSingleSourceConnection } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
+import { getNCMInstance } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { EVENT_TYPES, CHANNEL_NAMES } from '@/constants/websocketConstants';
 
@@ -29,7 +28,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const sessionId = player?.sessionId || currentSession?.id || null;
 
   // Get the NCM_SPOT instance
-  const ncmSpot = getSingleSourceConnection();
+  const ncmSpot = getNCMInstance();
 
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);

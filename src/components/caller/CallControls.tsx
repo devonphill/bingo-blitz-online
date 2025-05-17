@@ -9,7 +9,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useCallerHub } from '@/hooks/useCallerHub';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { GoLiveButton } from '@/components/ui/go-live-button';
-import { getSingleSourceConnection } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
+import { getNCMInstance } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
 import { CHANNEL_NAMES, EVENT_TYPES } from '@/constants/websocketConstants';
 
 interface CallerControlsProps {
@@ -110,7 +110,7 @@ export default function CallControls({
       }
 
       // Also use the connection manager for database persistence
-      const connection = getSingleSourceConnection();
+      const connection = getNCMInstance();
       if (connection) {
         // Get the called numbers
         const calledNumbers = getCalledNumbersFromRemaining(number, remainingNumbers);

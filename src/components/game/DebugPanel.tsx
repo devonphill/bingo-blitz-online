@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
+import { getNCMInstance } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
 
 interface DebugPanelProps {
   sessionId: string;
@@ -15,7 +14,7 @@ export default function DebugPanel({ sessionId }: DebugPanelProps) {
   
   // Update connection status and ping time
   useEffect(() => {
-    const connection = getSingleSourceConnection();
+    const connection = getNCMInstance();
     
     // Set up status listener
     const cleanup = connection.addStatusListener((status) => {

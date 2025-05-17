@@ -1,5 +1,4 @@
-
-import { getSingleSourceConnection } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
+import { getNCMInstance } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { supabase } from '@/integrations/supabase/client';
 import { CHANNEL_NAMES, EVENT_TYPES } from '@/constants/websocketConstants';
@@ -55,7 +54,7 @@ export const numberCallingService = {
     logWithTimestamp(`Subscribing to number updates for session ${sessionId}`, 'info');
 
     // Use SingleSourceTrueConnections for subscription
-    const singleSource = getSingleSourceConnection();
+    const singleSource = getNCMInstance();
 
     // Connect to session if not already connected
     singleSource.connect(sessionId);
@@ -79,7 +78,7 @@ export const numberCallingService = {
 // These are incomplete function declarations to fix TypeScript errors
 // The file seems to be cut off in the original
 export const addNumberCalledListener = (sessionId: string, callback: (number: number, allCalled: number[]) => void) => {
-  return getSingleSourceConnection().listenForEvent(
+  return getNCMInstance().listenForEvent(
     'GAME_UPDATES_BASE',
     EVENT_TYPES.NUMBER_CALLED,
     (data: any) => {
@@ -91,7 +90,7 @@ export const addNumberCalledListener = (sessionId: string, callback: (number: nu
 };
 
 export const addGameResetListener = (sessionId: string, callback: () => void) => {
-  return getSingleSourceConnection().listenForEvent(
+  return getNCMInstance().listenForEvent(
     'GAME_UPDATES_BASE',
     EVENT_TYPES.GAME_RESET,
     (data: any) => {
@@ -103,7 +102,7 @@ export const addGameResetListener = (sessionId: string, callback: () => void) =>
 };
 
 export const addNumberCalledListenerWithSessionId = (sessionId: string, callback: (number: number, allCalled: number[], sessionId: string) => void) => {
-  return getSingleSourceConnection().listenForEvent(
+  return getNCMInstance().listenForEvent(
     'GAME_UPDATES_BASE',
     EVENT_TYPES.NUMBER_CALLED,
     (data: any) => {

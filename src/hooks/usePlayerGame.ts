@@ -1,8 +1,7 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { useNetworkStatus } from '@/contexts/NetworkStatusContext';
 import { useNetworkContext } from '@/contexts/network';
-import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
+import { getNCMInstance } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
 import { logWithTimestamp } from '@/utils/logUtils';
 
 export function usePlayerGame(sessionId: string | null, playerCode: string | null) {
@@ -15,7 +14,7 @@ export function usePlayerGame(sessionId: string | null, playerCode: string | nul
   const [playerData, setPlayerData] = useState<any>(null);
   
   // Get direct reference to connection
-  const connection = getSingleSourceConnection();
+  const connection = getNCMInstance();
   
   // Update presence periodically
   useEffect(() => {

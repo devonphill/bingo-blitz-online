@@ -1,8 +1,7 @@
-
 import { useState, useCallback, useEffect } from 'react';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { callNumberForSession } from '@/contexts/network/networkOperations';
-import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
+import { getNCMInstance } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
 import { EVENT_TYPES } from '@/constants/websocketConstants';
 
 export interface UseCallerNumbersProps {
@@ -16,7 +15,7 @@ export function useCallerNumbers({ sessionId }: UseCallerNumbersProps) {
   const [connectionState, setConnectionState] = useState<string>('disconnected');
   
   // Get reference to singleton connection
-  const connection = getSingleSourceConnection();
+  const connection = getNCMInstance();
   
   // Connect to WebSocket
   useEffect(() => {

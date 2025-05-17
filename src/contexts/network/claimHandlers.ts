@@ -1,6 +1,5 @@
-
 import { logWithTimestamp } from '@/utils/logUtils';
-import { getSingleSourceConnection } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
+import { getNCMInstance } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
 import { EVENT_TYPES } from '@/constants/websocketConstants';
 
 /**
@@ -22,7 +21,7 @@ export const performClaimBroadcast = (
       return false;
     }
 
-    const ncmSpot = getSingleSourceConnection();
+    const ncmSpot = getNCMInstance();
     if (!ncmSpot.isOverallConnected()) {
       logWithTimestamp('Cannot broadcast claim: Connection not available', 'error');
       return false;

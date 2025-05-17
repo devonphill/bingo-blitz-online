@@ -1,6 +1,5 @@
-
 import { logWithTimestamp } from '@/utils/logUtils';
-import { getSingleSourceConnection } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
+import { getNCMInstance } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
 import { CHANNEL_NAMES, EVENT_TYPES } from '@/constants/websocketConstants';
 import { supabase } from '@/integrations/supabase/client';
 import { 
@@ -31,7 +30,7 @@ export const callNumberForSession = async (
     // Track the call for debugging
     logNumberCall(number, sessionId, 'callNumberForSession');
     
-    const connection = getSingleSourceConnection();
+    const connection = getNCMInstance();
     if (!connection) {
       logWithTimestamp('Cannot call number: WebSocket service not available', 'error');
       return false;
@@ -121,7 +120,7 @@ export const resetGameForSession = async (
   }
 
   try {
-    const connection = getSingleSourceConnection();
+    const connection = getNCMInstance();
     if (!connection) {
       logWithTimestamp('Cannot reset game: WebSocket service not available', 'error'); 
       return false;
@@ -172,7 +171,7 @@ export const broadcastEvent = async (
   data: any
 ): Promise<boolean> => {
   try {
-    const connection = getSingleSourceConnection();
+    const connection = getNCMInstance();
     if (!connection) {
       logWithTimestamp('Cannot broadcast event: WebSocket service not available', 'error');
       return false;
@@ -226,7 +225,7 @@ export const syncCalledNumbers = async (
     }
     
     // Broadcast current called numbers to all clients
-    const connection = getSingleSourceConnection();
+    const connection = getNCMInstance();
     
     if (data.called_numbers.length > 0) {
       // Fix: Use broadcastEvent for syncing numbers

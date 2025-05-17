@@ -1,6 +1,5 @@
-
 import { logWithTimestamp } from '@/utils/logUtils';
-import { getSingleSourceConnection } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
+import { getNCMInstance } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
 import { EVENT_TYPES } from '@/constants/websocketConstants';
 
 /**
@@ -19,7 +18,7 @@ export const setupChannelListeners = (
     return () => {};
   }
 
-  const ncmSpot = getSingleSourceConnection();
+  const ncmSpot = getNCMInstance();
   if (!ncmSpot.isServiceInitialized()) {
     logWithTimestamp('Cannot set up channel listeners: Connection not available', 'error');
     return () => {};

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { getSingleSourceConnection } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
+import { getNCMInstance } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { performClaimBroadcast } from './claimHandlers';
 import { setupChannelListeners } from './channelListeners';
@@ -29,7 +29,7 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({
   const [lastPingTime, setLastPingTime] = useState<number>(0);
 
   // Get the singleton connection
-  const ncmSpot = getSingleSourceConnection();
+  const ncmSpot = getNCMInstance();
 
   // Connect to a session
   const connect = useCallback((newSessionId: string) => {

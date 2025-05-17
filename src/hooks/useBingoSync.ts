@@ -1,8 +1,7 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { useNetworkStatus } from '@/contexts/NetworkStatusContext';
 import { useNetworkContext } from '@/contexts/network';
-import { getSingleSourceConnection } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
+import { getNCMInstance } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { CHANNEL_NAMES, EVENT_TYPES } from '@/constants/websocketConstants';
 
@@ -16,7 +15,7 @@ export function useBingoSync(sessionId: string | null) {
   const [gameState, setGameState] = useState<any>(null);
   
   // Get direct reference to connection
-  const connection = getSingleSourceConnection();
+  const connection = getNCMInstance();
   
   // Update presence periodically
   useEffect(() => {
