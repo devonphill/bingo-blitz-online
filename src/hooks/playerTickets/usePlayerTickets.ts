@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -94,7 +93,7 @@ export function usePlayerTickets(
               numbers.push(row);
             }
           } else {
-            // Already in 2D format
+            // Already in 2D format - safely cast the type
             numbers = ticket.numbers as number[][];
           }
           
