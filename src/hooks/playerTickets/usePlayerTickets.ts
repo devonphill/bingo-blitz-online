@@ -77,14 +77,13 @@ export function usePlayerTickets(
         // Transform data if needed
         const formattedTickets = data.map((ticket) => {
           // Convert flat numbers array to 2D array for display
-          let numbers: number[][];
+          let numbers: number[][] = [];
           
           if (Array.isArray(ticket.numbers) && !Array.isArray(ticket.numbers[0])) {
             // If numbers is a flat array, convert to 2D based on game type
             // For 90-ball bingo (9x3 grid)
             const rows = 3;
             const cols = 9;
-            numbers = [];
             
             for (let i = 0; i < rows; i++) {
               const row: number[] = [];

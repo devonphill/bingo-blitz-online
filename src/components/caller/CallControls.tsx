@@ -9,7 +9,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useCallerHub } from '@/hooks/useCallerHub';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { GoLiveButton } from '@/components/ui/go-live-button';
-import { getSingleSourceConnection } from '@/utils/connectionManager';
+import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -111,7 +111,7 @@ export default function CallControls({
       // Also use the connection manager for database persistence
       const connection = getSingleSourceConnection();
       if (connection) {
-        connection.callNumberForSession(number, sessionId, getCalledNumbersFromRemaining(number, remainingNumbers))
+        connection.broadcastNumberCalled(number, sessionId, getCalledNumbersFromRemaining(number, remainingNumbers))
           .then(success => {
             if (!success) {
               console.error("Failed to call number through connection manager");
