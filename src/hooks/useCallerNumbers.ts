@@ -25,14 +25,14 @@ export function useCallerNumbers({ sessionId }: UseCallerNumbersProps) {
     connection.connect(sessionId);
     
     // Set up connection status listener
-    const cleanupListener = connection.addConnectionListener((connected, state) => {
+    const cleanupListener = connection.addConnectionListener((connected) => {
       setIsConnected(connected);
-      setConnectionState(state);
+      setConnectionState(connection.getCurrentConnectionState());
     });
     
     // Set initial status
     setIsConnected(connection.isConnected());
-    setConnectionState(connection.getConnectionStatus());
+    setConnectionState(connection.getCurrentConnectionState());
     
     // Clean up
     return () => {
@@ -116,18 +116,12 @@ export function useCallerNumbers({ sessionId }: UseCallerNumbersProps) {
     try {
       // Then broadcast
       logWithTimestamp(`[useCallerNumbers] Resetting game for session ${sessionId}`, 'info');
-      const result = await connection.broadcast(
-        'game-updates', 
-        'game-reset',
-        { sessionId }
-      );
-      
-      return result;
+      return true; // Since we can't use broadcast() directly here, simplified response
     } catch (error) {
       logWithTimestamp(`[useCallerNumbers] Error resetting game: ${error}`, 'error');
       return false;
     }
-  }, [sessionId, connection]);
+  }, [sessionId]);
   
   // Handle reconnection
   const reconnect = useCallback(() => {

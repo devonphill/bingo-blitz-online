@@ -8,8 +8,8 @@ import GameHeader from './GameHeader';
 import GameLobby from './GameLobby';
 import GameTypeSelector from './GameTypeSelector';
 import PlayerGameContent from './PlayerGameContent';
-import WinPatternSelector from './WinPatternSelector';
-import WinPatternStatusDisplay from './WinPatternStatusDisplay';
+import { WinPatternSelector } from './WinPatternSelector';
+import { WinPatternStatusDisplay } from './WinPatternStatusDisplay';
 
 export {
   BingoCard,

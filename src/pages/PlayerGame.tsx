@@ -6,11 +6,11 @@ import { useToast } from "@/hooks/use-toast";
 import { usePlayerContext } from '@/contexts/PlayerContext';
 import { useSessionContext } from '@/contexts/SessionProvider';
 import { MainLayout } from '@/components/layout';
-import { PlayerGameContent } from '@/components/game';
 import { Spinner } from "@/components/ui/spinner";
 import { logWithTimestamp } from '@/utils/logUtils';
 import { GameProvider } from '@/contexts/GameContext';
 import { submitClaim } from '@/utils/claimUtils';
+import { PlayerTicketManager } from '@/components/player/PlayerTicketManager';
 
 const PlayerGame = () => {
   const { playerCode } = useParams<{ playerCode?: string }>();
@@ -191,16 +191,42 @@ const PlayerGame = () => {
     <GameProvider>
       <MainLayout>
         <div className="container mx-auto py-8">
-          <PlayerGameContent
-            currentSession={currentSession || { id: player.sessionId, name: "Game Session" }}
-            autoMarking={autoMarking}
-            setAutoMarking={setAutoMarking}
-            playerCode={playerCode || player.code}
-            playerName={player.name}
-            playerId={player.id}
-            onReconnect={handleReconnect}
-            sessionId={player.sessionId}
-            onClaimBingo={handleClaimBingo}
+          <h1 className="text-2xl font-bold mb-4">
+            {currentSession?.name || "Game Session"}
+          </h1>
+          <p className="mb-6 text-gray-600">
+            Player: {player.name}
+          </p>
+          
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold mb-2">Game Controls</h2>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center">
+                <input
+                  id="auto-marking"
+                  type="checkbox"
+                  checked={autoMarking}
+                  onChange={(e) => {
+                    setAutoMarking(e.target.checked);
+                    localStorage.setItem('autoMarking', e.target.checked.toString());
+                  }}
+                  className="mr-2"
+                />
+                <label htmlFor="auto-marking">Auto Marking</label>
+              </div>
+              
+              <button
+                onClick={handleReconnect}
+                className="px-3 py-1 bg-blue-600 text-white rounded text-sm"
+              >
+                Reconnect
+              </button>
+            </div>
+          </div>
+          
+          <PlayerTicketManager 
+            autoMarking={autoMarking} 
+            onClaimBingo={handleClaimBingo} 
           />
         </div>
       </MainLayout>

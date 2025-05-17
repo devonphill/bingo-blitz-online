@@ -1,8 +1,7 @@
-
 import React, { useEffect, useState } from 'react';
 
 interface SimpleBingoTicketDisplayProps {
-  numbers: (number | null)[];
+  numbers: (number | null)[] | (number | null)[][];
   layoutMask?: number;
   calledNumbers: number[];
   serial?: string;
@@ -13,14 +12,21 @@ interface SimpleBingoTicketDisplayProps {
 }
 
 // Helper function to convert flat array to grid format
-function convertToGrid(numbers: (number | null)[], cols = 9, rows = 3): (number | null)[][] {
+function convertToGrid(numbers: (number | null)[] | (number | null)[][], cols = 9, rows = 3): (number | null)[][] {
+  // If numbers is already a 2D array, return it
+  if (Array.isArray(numbers) && numbers.length > 0 && Array.isArray(numbers[0])) {
+    return numbers as (number | null)[][];
+  }
+  
+  // Otherwise convert from flat array
+  const flatNumbers = numbers as (number | null)[];
   const grid: (number | null)[][] = [];
   
   for (let r = 0; r < rows; r++) {
     grid[r] = [];
     for (let c = 0; c < cols; c++) {
       const index = r * cols + c;
-      grid[r][c] = index < numbers.length ? numbers[index] : null;
+      grid[r][c] = index < flatNumbers.length ? flatNumbers[index] : null;
     }
   }
   

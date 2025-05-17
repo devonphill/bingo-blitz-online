@@ -32,12 +32,12 @@ export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     const connection = getSingleSourceConnection();
     
-    const cleanup = connection.addConnectionListener((connected, state) => {
-      setConnectionState(state as ConnectionState);
+    const cleanup = connection.addConnectionListener((isConnected) => {
+      setConnectionState(connection.getCurrentConnectionState());
     });
     
     // Call once to set initial state
-    setConnectionState(connection.getConnectionStatus() as ConnectionState);
+    setConnectionState(connection.getCurrentConnectionState());
     
     return cleanup;
   }, []);
