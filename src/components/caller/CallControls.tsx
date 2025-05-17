@@ -49,7 +49,7 @@ export default function CallControls({
   const [isClosingConfirmOpen, setIsClosingConfirmOpen] = useState(false);
   const [isForceCloseConfirmOpen, setIsForceCloseConfirmOpen] = useState(false);
   const { toast } = useToast();
-  
+
   // Connect to the WebSocket hub as a caller
   const callerHub = useCallerHub(sessionId);
 
@@ -78,15 +78,15 @@ export default function CallControls({
     }
 
     setIsCallingNumber(true);
-    
+
     setTimeout(() => {
       const randomIndex = Math.floor(Math.random() * remainingNumbers.length);
       const number = remainingNumbers[randomIndex];
-      
+
       // IMPORTANT: First broadcast the number to all clients immediately
       try {
         logWithTimestamp(`Broadcasting number ${number} via realtime channels`);
-        
+
         // Use a dedicated broadcast channel
         supabase.channel('number-broadcast').send({
           type: 'broadcast',
@@ -107,14 +107,23 @@ export default function CallControls({
       } catch (err) {
         console.error("Error sending broadcast:", err);
       }
-      
+
       // Also use the connection manager for database persistence
       const connection = getSingleSourceConnection();
       if (connection) {
-        connection.broadcastNumberCalled(
-          sessionId, 
-          number,
-          getCalledNumbersFromRemaining(number, remainingNumbers)
+        // Get the called numbers
+        const calledNumbers = getCalledNumbersFromRemaining(number, remainingNumbers);
+
+        // Use broadcast method directly with the correct parameters
+        connection.broadcast(
+          'GAME_UPDATES_BASE',
+          'number-called',
+          { 
+            number, 
+            sessionId,
+            calledNumbers,
+            timestamp: new Date().toISOString()
+          }
         )
           .then(success => {
             if (!success) {
@@ -125,7 +134,7 @@ export default function CallControls({
             console.error("Error calling number through connection manager:", err);
           });
       }
-      
+
       onCallNumber(number);
       setIsCallingNumber(false);
     }, 1000);
@@ -137,15 +146,15 @@ export default function CallControls({
     // Create a full range of numbers based on game type (75-ball or 90-ball)
     const maxNumber = gameType === '75-ball' ? 75 : 90;
     const allNumbers = Array.from({ length: maxNumber }, (_, i) => i + 1);
-    
+
     // Filter out the remaining numbers to get previously called numbers
     const previouslyCalled = allNumbers.filter(n => !remaining.includes(n));
-    
+
     // Add the current called number if it's not already in the list
     if (!previouslyCalled.includes(calledNumber)) {
       return [...previouslyCalled, calledNumber];
     }
-    
+
     return previouslyCalled;
   };
 
@@ -156,7 +165,7 @@ export default function CallControls({
         logWithTimestamp("Broadcasting game start via realtime");
         callerHub.startGame();
       }
-      
+
       await onGoLive();
     } catch (error) {
       console.error('Error going live:', error);
@@ -184,18 +193,18 @@ export default function CallControls({
     }
     setIsClosingConfirmOpen(false);
   };
-  
+
   const handleForceClose = () => {
     setIsForceCloseConfirmOpen(true);
   };
-  
+
   const confirmForceClose = () => {
     if (onForceClose) {
       onForceClose();
     }
     setIsForceCloseConfirmOpen(false);
   };
-  
+
   const handleReconnectClick = () => {
     if (callerHub.reconnect) {
       callerHub.reconnect();
@@ -207,7 +216,7 @@ export default function CallControls({
   };
 
   const isLastGame = currentGameNumber >= numberOfGames;
-  
+
   // CRITICAL: Remove ALL conditions that would disable the Go Live button
   // We are setting this to false to ensure it's always enabled
   const isGoLiveDisabled = false;
@@ -293,7 +302,7 @@ export default function CallControls({
             <div className="text-sm text-gray-500 mb-1">Remaining Numbers</div>
             <div className="text-2xl font-bold">{remainingNumbers.length}</div>
           </div>
-          
+
           <div className="grid grid-cols-1 gap-3">
             <Button
               className="bg-gradient-to-r from-bingo-primary to-bingo-secondary hover:from-bingo-secondary hover:to-bingo-tertiary"
@@ -302,13 +311,13 @@ export default function CallControls({
             >
               {claimCount > 0 ? 'Review Claims First' : (isCallingNumber ? 'Calling...' : 'Call Next Number')}
             </Button>
-            
+
             {claimCount > 0 && (
               <p className="text-xs text-red-600 text-center">
                 You must verify all pending claims before calling more numbers
               </p>
             )}
-            
+
             {onCloseGame && (
               <Button
                 variant="secondary"
@@ -318,7 +327,7 @@ export default function CallControls({
                 {isLastGame ? 'Complete Session' : 'Close Game'}
               </Button>
             )}
-            
+
             {/* Add FORCE close button */}
             {onForceClose && (
               <Button
@@ -330,14 +339,14 @@ export default function CallControls({
                 {isLastGame ? 'FORCE Complete Session' : 'FORCE Close Game'}
               </Button>
             )}
-            
+
             <Button 
               variant="destructive"
               onClick={onEndGame}
             >
               End Game
             </Button>
-            
+
             <GoLiveButton
               sessionId={sessionId}
               disabled={false}
@@ -349,7 +358,7 @@ export default function CallControls({
               Go Live
             </GoLiveButton>
           </div>
-          
+
           {renderConnectionStatus()}
         </CardContent>
       </Card>
@@ -380,7 +389,7 @@ export default function CallControls({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      
+
       {/* Force Close Confirmation Dialog */}
       <AlertDialog 
         open={isForceCloseConfirmOpen} 

@@ -26,68 +26,71 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
   const [claimStatus, setClaimStatus] = useState<any>(null);
   const [lastPingTime, setLastPingTime] = useState<number>(0);
-  
+
   // Get the singleton connection
   const connection = getSingleSourceConnection();
-  
+
   // Connect to a session
   const connect = useCallback((newSessionId: string) => {
     if (!newSessionId) {
       logWithTimestamp('Cannot connect: No session ID provided', 'error');
       return;
     }
-    
+
     logWithTimestamp(`Connecting to session: ${newSessionId}`, 'info');
     setSessionId(newSessionId);
-    
+
     // Use the singleton connection to manage the actual connection
     connection.connect(newSessionId);
-    
+
     // Update last ping time
     if (connection.getLastPing()) {
       setLastPingTime(connection.getLastPing()?.getTime() || 0);
     }
   }, [connection]);
-  
+
   // Initialize with initial session ID if provided
   useEffect(() => {
     if (initialSessionId) {
       connect(initialSessionId);
     }
-    
+
     // Set up a connection listener
     const cleanup = connection.addConnectionListener((connected) => {
       setIsConnected(connected);
     });
-    
+
     // Return cleanup function
     return () => {
       cleanup();
     };
   }, [connection, connect, initialSessionId]);
-  
+
   // Claim submission
   const submitBingoClaim = useCallback((ticket: any, playerCode: string, gameSessionId: string) => {
     if (!isConnected) {
       logWithTimestamp('Cannot submit claim: WebSocket not connected', 'error');
       return false;
     }
-    
+
     // Use the claim broadcast utility
     return performClaimBroadcast(ticket, playerCode, gameSessionId);
   }, [isConnected]);
-  
+
   // Claim validation
   const sendClaimValidation = useCallback(async (claimId: string, isValid: boolean, sessionId: string) => {
     if (!connection) {
       logWithTimestamp('Cannot send claim validation: No WebSocket connection', 'error');
       return false;
     }
-    
+
     try {
       // Broadcast validation result
+      // Import CHANNEL_NAMES and EVENT_TYPES
+      const { CHANNEL_NAMES, EVENT_TYPES } = await import('@/constants/websocketConstants');
+
       const success = await connection.broadcast(
-        'claim-updates',
+        'CLAIM_UPDATES_BASE' as keyof typeof CHANNEL_NAMES,
         'claim-validation',
         {
           claimId,
@@ -96,34 +99,35 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({
           timestamp: new Date().toISOString()
         }
       );
-      
+
       logWithTimestamp(`Claim validation ${claimId} sent: ${success}`, 'info');
-      return success;
+      // Ensure we return a boolean value
+      return success === true;
     } catch (error) {
       logWithTimestamp(`Error sending claim validation: ${error}`, 'error');
       return false;
     }
   }, [connection]);
-  
+
   // Player presence
   const updatePlayerPresence = useCallback(async (sessionId: string, playerData: any) => {
     return updatePlayerPresence(sessionId, playerData);
   }, []);
-  
+
   // Set up channel listeners
   useEffect(() => {
     if (!sessionId || !isConnected) return;
-    
+
     const cleanupListeners = setupChannelListeners(
       sessionId,
       (claimData: any) => {
         setClaimStatus(claimData);
       }
     );
-    
+
     return cleanupListeners;
   }, [sessionId, isConnected]);
-  
+
   // Context value
   const contextValue: NetworkContextType = {
     isConnected,
@@ -134,7 +138,7 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({
     sendClaimValidation,
     updatePlayerPresence,
   };
-  
+
   return (
     <NetworkContext.Provider value={contextValue}>
       {children}
