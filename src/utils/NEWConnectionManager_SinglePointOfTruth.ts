@@ -1,4 +1,3 @@
-
 import { SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import { CONNECTION_STATES, WebSocketConnectionStatus, EVENT_TYPES } from '@/constants/websocketConstants';
 import { logDebug, logInfo, logWarn, logError } from '@/utils/logUtils';
@@ -763,14 +762,14 @@ export class NEWConnectionManager_SinglePointOfTruth {
   /**
    * Get the current overall connection status
    */
-  public getCurrentOverallStatus(): WebSocketConnectionStatus {
+  public getCurrentConnectionState(): WebSocketConnectionStatus {
     return this.serviceStatusInternal;
   }
 
   /**
    * Check if the service is connected
    */
-  public isOverallConnected(): boolean {
+  public isConnected(): boolean {
     return this.serviceStatusInternal === CONNECTION_STATES.CONNECTED && this.isSupabaseClientInitialized;
   }
 
@@ -919,6 +918,136 @@ export class NEWConnectionManager_SinglePointOfTruth {
     payload: any
   ): void {
     this.sendMessage(CHANNEL_NAMES.PARTICIPANTS_BASE, sessionId, eventName, payload);
+  }
+
+  /**
+   * Connect to a session (alias for connectToSession)
+   */
+  public connect(sessionId: string): void {
+    this.connectToSession(sessionId);
+  }
+
+  /**
+   * Add connection listener (alias for addOverallStatusListener for backward compatibility)
+   */
+  public addConnectionListener(
+    listener: (isConnected: boolean) => void
+  ): () => void {
+    // Convert the simple boolean listener to work with our more comprehensive status listener
+    return this.addOverallStatusListener((status, isReady) => {
+      // Call the original listener with just the connected status
+      listener(status === CONNECTION_STATES.CONNECTED && isReady);
+    });
+  }
+
+  /**
+   * Broadcast number called for a session
+   */
+  public broadcastNumberCalled(
+    sessionId: string,
+    number: number,
+    calledNumbers?: number[]
+  ): Promise<boolean> {
+    if (!this.supabaseClient || !sessionId) {
+      logError('[NCM_SPOT] Cannot broadcast number called: Missing client or session ID.');
+      return Promise.resolve(false);
+    }
+
+    try {
+      const channelName = this.getGameUpdatesChannelName(sessionId);
+      const channel = this.getOrCreateChannel(channelName);
+
+      if (!channel) {
+        logError(`[NCM_SPOT] Cannot broadcast number called: Failed to get/create channel ${channelName}`);
+        return Promise.resolve(false);
+      }
+
+      const payload = {
+        number,
+        sessionId,
+        calledNumbers: calledNumbers || [],
+        timestamp: new Date().toISOString()
+      };
+
+      logInfo(`[NCM_SPOT] Broadcasting number ${number} called for session ${sessionId}`);
+      
+      return new Promise((resolve) => {
+        channel.send({
+          type: 'broadcast',
+          event: EVENT_TYPES.NUMBER_CALLED,
+          payload
+        }).then(() => {
+          logInfo(`[NCM_SPOT] Successfully broadcast number ${number} called`);
+          resolve(true);
+        }).catch(error => {
+          logError(`[NCM_SPOT] Error broadcasting number ${number} called: ${error}`);
+          resolve(false);
+        });
+      });
+    } catch (error) {
+      logError(`[NCM_SPOT] Exception broadcasting number called: ${error}`);
+      return Promise.resolve(false);
+    }
+  }
+  
+  /**
+   * Utility method for broadcasting messages
+   */
+  public broadcast(
+    channelName: string,
+    eventName: string,
+    payload: any
+  ): Promise<boolean> {
+    if (!this.supabaseClient) {
+      logError('[NCM_SPOT] Cannot broadcast: Missing client.');
+      return Promise.resolve(false);
+    }
+
+    try {
+      const channel = this.getOrCreateChannel(channelName);
+      
+      if (!channel) {
+        logError(`[NCM_SPOT] Cannot broadcast: Failed to get/create channel ${channelName}`);
+        return Promise.resolve(false);
+      }
+
+      logInfo(`[NCM_SPOT] Broadcasting event ${eventName} on channel ${channelName}`);
+      
+      return new Promise((resolve) => {
+        channel.send({
+          type: 'broadcast',
+          event: eventName,
+          payload
+        }).then(() => {
+          logInfo(`[NCM_SPOT] Successfully broadcast event ${eventName}`);
+          resolve(true);
+        }).catch(error => {
+          logError(`[NCM_SPOT] Error broadcasting event ${eventName}: ${error}`);
+          resolve(false);
+        });
+      });
+    } catch (error) {
+      logError(`[NCM_SPOT] Exception broadcasting event: ${error}`);
+      return Promise.resolve(false);
+    }
+  }
+
+  /**
+   * Update last ping time
+   */
+  public updateLastPing(): void {
+    // This method would normally update a last ping timestamp
+    // For now, we'll just log it
+    logDebug(`[NCM_SPOT] Updating last ping: ${new Date().toISOString()}`);
+  }
+  
+  /**
+   * Get last ping time
+   */
+  public getLastPing(): string {
+    // This would normally return the actual last ping time
+    // For now, we'll just return the current time
+    return new Date().toISOString();
   }
 }
 

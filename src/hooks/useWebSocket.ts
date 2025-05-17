@@ -1,104 +1,75 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+
+import { useState, useEffect, useCallback } from 'react';
 import { getNCMInstance } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
-import { logWithTimestamp } from '@/utils/logUtils';
-import { EVENT_TYPES, WebSocketConnectionStatus, CONNECTION_STATES, CHANNEL_NAMES } from '@/constants/websocketConstants';
+import { EVENT_TYPES, WebSocketConnectionStatus } from '@/constants/websocketConstants';
 
-/**
- * A React hook to interact with the centralized WebSocket service (SingleSourceTrueConnections).
- */
-export function useWebSocket(externalSessionId?: string | null) {
-  const sstc = getNCMInstance();
-  
-  // Use provided external sessionId directly - no context dependency
-  const sessionId = externalSessionId;
+interface UseWebSocketProps {
+  sessionId?: string | null;
+}
 
-  const [isServiceReady, setIsServiceReady] = useState(sstc.isServiceInitialized() && sstc.isConnected());
-  const [connectionState, setConnectionState] = useState<WebSocketConnectionStatus>(sstc.getCurrentConnectionState());
+export function useWebSocket(sessionId?: string | null) {
+  const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [connectionState, setConnectionState] = useState<WebSocketConnectionStatus>('disconnected');
   const [lastError, setLastError] = useState<string | null>(null);
   
-  // Unique ID for logging instances of this hook
-  const instanceId = useRef(`wsHook-${Math.random().toString(36).substring(2, 9)}`).current;
+  const connection = getNCMInstance();
 
+  // Initialize connection status
   useEffect(() => {
-    logWithTimestamp(`[${instanceId}] Hook mounted/updated. SessionId: ${sessionId}, Current SSTC State: ${sstc.getCurrentConnectionState()}, Service Initialized: ${sstc.isServiceInitialized()}`, 'debug');
-
-    // Listener for overall SSTC status changes
-    const handleSSTCStatusChange = (status: WebSocketConnectionStatus, serviceIsInitialized: boolean) => {
-      logWithTimestamp(`[${instanceId}] SSTC Status Listener: status=${status}, serviceReady=${serviceIsInitialized}`, 'debug');
-      setConnectionState(status);
-      setIsServiceReady(serviceIsInitialized && status === CONNECTION_STATES.CONNECTED);
-    };
-
-    const cleanupStatusListener = sstc.addStatusListener(handleSSTCStatusChange);
-    
-    // Initial connect attempt if sessionId is present and service is initialized by SSTC
-    if (sessionId && sstc.isServiceInitialized()) {
-      logWithTimestamp(`[${instanceId}] SessionId available, calling SSTC connect for session: ${sessionId}`, 'info');
-      sstc.connect(sessionId); // Make SSTC aware of the current session
-    } else if (!sstc.isServiceInitialized()){
-      logWithTimestamp(`[${instanceId}] Deferring SSTC connect: Service not initialized. SessionId: ${sessionId}`, 'warn');
-    } else if (!sessionId) {
-      logWithTimestamp(`[${instanceId}] Deferring SSTC connect: No session ID.`, 'warn');
-    }
-
-    return () => {
-      logWithTimestamp(`[${instanceId}] Cleaning up useWebSocket hook. SessionId: ${sessionId}`, 'debug');
-      cleanupStatusListener();
-      // Listeners added via listenForEvent below will be cleaned up by their own returned functions
-    };
-  }, [sessionId, sstc, instanceId]); // sstc is stable, instanceId is stable
-
-  const listenForEvent = useCallback(
-    <T = any>(
-      eventName: string,
-      callback: (payload: T) => void
-    ): (() => void) => {
-      if (!sessionId) {
-        logWithTimestamp(`[${instanceId}] listenForEvent: No sessionId, cannot add listener for ${eventName}.`, 'warn');
-        return () => {};
-      }
-      if (!isServiceReady) {
-        logWithTimestamp(`[${instanceId}] listenForEvent: WebSocket not ready (state: ${connectionState}), deferring listener for ${eventName}.`, 'warn');
-        return () => {};
-      }
-      if (!eventName || typeof eventName !== 'string') {
-        logWithTimestamp(`[${instanceId}] listenForEvent: Invalid eventName '${eventName}'. Listener not added.`, 'error');
-        return () => {};
-      }
-
-      // Determine the channel name based on event type
-      const channelNameKey = eventName.includes('claim') ? 'CLAIM_UPDATES_BASE' : 'GAME_UPDATES_BASE';
-      
-      try {
-        // SSTC will construct the full channel name using sessionId
-        return sstc.listenForEvent<T>(channelNameKey, eventName, callback, sessionId);
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        setLastError(errorMessage);
-        logWithTimestamp(`[${instanceId}] Error setting up listener: ${errorMessage}`, 'error');
-        return () => {};
-      }
-    },
-    [sessionId, sstc, isServiceReady, connectionState, instanceId]
-  );
+    setIsConnected(connection.isConnected());
+    setConnectionState(connection.getCurrentConnectionState());
+  }, [connection]);
   
-  // Expose connect method for manual reconnection
-  const connect = useCallback(() => {
+  // Set up connection listener
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    // Listen for connection status changes
+    const cleanup = connection.addOverallStatusListener((status, isReady) => {
+      setIsConnected(status === 'connected' && isReady);
+      setConnectionState(status);
+    });
+    
+    // Connect to session if sessionId provided
     if (sessionId) {
-      sstc.connect(sessionId);
-      return true;
+      connection.connect(sessionId);
     }
-    return false;
-  }, [sessionId, sstc]);
-
+    
+    return cleanup;
+  }, [sessionId, connection]);
+  
+  // Method to listen for specific events
+  const listenForEvent = useCallback(<T = any>(
+    eventName: string,
+    callback: (data: T) => void,
+  ) => {
+    if (!sessionId) {
+      return () => {}; // Return no-op cleanup if no sessionId
+    }
+    
+    const channelName = `game_updates-${sessionId}`;
+    
+    // Listen for the specific event on the game updates channel
+    return connection.listenForEvent(
+      channelName,
+      eventName,
+      callback
+    );
+  }, [sessionId, connection]);
+  
+  // Method to manually reconnect
+  const reconnect = useCallback(() => {
+    if (sessionId) {
+      connection.connect(sessionId);
+    }
+  }, [sessionId, connection]);
+  
   return {
-    isConnected: connectionState === CONNECTION_STATES.CONNECTED && isServiceReady,
-    isWsReady: isServiceReady, // True if SSTC is initialized and its overall status is 'connected'
+    isConnected,
     connectionState,
+    lastError,
+    reconnect,
     listenForEvent,
-    connect,
-    EVENTS: EVENT_TYPES, // For convenience
-    sessionId,
-    lastError
+    EVENTS: EVENT_TYPES // Export event types for convenience
   };
 }

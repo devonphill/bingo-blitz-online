@@ -50,8 +50,10 @@ export function useCallerNumbers({ sessionId }: UseCallerNumbersProps) {
     const instanceId = `CallerNumbers-${Math.random().toString(36).substring(2, 7)}`;
     
     // Set up listeners manually since setupNumberUpdateListeners might not exist
+    const gameUpdatesChannel = `game_updates-${sessionId}`;
+    
     const numberListener = connection.listenForEvent(
-      'GAME_UPDATES_BASE',
+      gameUpdatesChannel,
       EVENT_TYPES.NUMBER_CALLED,
       (data: any) => {
         logWithTimestamp(`[${instanceId}] Received number update: ${data.number}`, 'info');
@@ -59,19 +61,17 @@ export function useCallerNumbers({ sessionId }: UseCallerNumbersProps) {
           setCalledNumbers(data.calledNumbers);
         }
         setLastCalledNumber(data.number);
-      },
-      sessionId
+      }
     );
     
     const resetListener = connection.listenForEvent(
-      'GAME_UPDATES_BASE',
+      gameUpdatesChannel,
       EVENT_TYPES.GAME_RESET,
       () => {
         logWithTimestamp(`[${instanceId}] Received game reset`, 'info');
         setCalledNumbers([]);
         setLastCalledNumber(null);
-      },
-      sessionId
+      }
     );
     
     // Return cleanup
