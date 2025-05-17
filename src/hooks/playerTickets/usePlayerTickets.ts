@@ -26,7 +26,7 @@ export interface UsePlayerTicketsResult {
  */
 export function usePlayerTickets(
   sessionId: string | null | undefined,
-  playerId: string | null | undefined,
+  playerId?: string | null,
   playerCode?: string | null
 ): UsePlayerTicketsResult {
   const [tickets, setTickets] = useState<PlayerTicket[]>([]);
@@ -87,7 +87,7 @@ export function usePlayerTickets(
             numbers = [];
             
             for (let i = 0; i < rows; i++) {
-              const row = [];
+              const row: number[] = [];
               for (let j = 0; j < cols; j++) {
                 const index = i * cols + j;
                 row.push(index < ticket.numbers.length ? ticket.numbers[index] : 0);
@@ -96,7 +96,7 @@ export function usePlayerTickets(
             }
           } else {
             // Already in 2D format
-            numbers = ticket.numbers;
+            numbers = ticket.numbers as number[][];
           }
           
           // Initialize marked array if needed

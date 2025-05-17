@@ -46,7 +46,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     tickets, 
     isLoading: isLoadingTickets,
     error
-  } = usePlayerTickets(sessionId);
+  } = usePlayerTickets(sessionId, player?.id);
   
   // Mark number on a ticket
   const markNumber = useCallback((ticketId: string, rowIndex: number, colIndex: number, number: number) => {

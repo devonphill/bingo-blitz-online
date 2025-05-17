@@ -1,135 +1,216 @@
-
-import { logWithTimestamp } from './logUtils';
 import { supabase } from '@/integrations/supabase/client';
-
-// Debug setting - can be toggled during development
-const DEBUG_ENABLED = true;
+import { logWithTimestamp } from './logUtils';
 
 /**
- * Advanced number call debugging utility
+ * Utility function to log the current state of all called numbers for a session
  */
-export const numberDebugUtils = {
-  /**
-   * Log number call for debugging
-   */
-  logNumberCall: (number: number, sessionId: string, source: string): void => {
-    if (!DEBUG_ENABLED) return;
-    
-    logWithTimestamp(`[NumberDebug] ${source}: Called number ${number} for session ${sessionId}`, 'info');
-    
-    // You can also debug-log to console with more detail
-    console.log(`[NumberDebug] CALLED NUMBER DETAILS:`, {
-      number,
-      sessionId,
-      source,
-      timestamp: new Date().toISOString(),
-      stack: new Error().stack?.split('\n').slice(1, 5).join('\n') // Capture limited stack trace
-    });
-  },
-  
-  /**
-   * Check if a number has already been called
-   */
-  isNumberAlreadyCalled: async (number: number, sessionId: string): Promise<boolean> => {
-    try {
-      const { data, error } = await supabase
-        .from('sessions_progress')
-        .select('called_numbers')
-        .eq('session_id', sessionId)
-        .single();
-        
-      if (error) {
-        logWithTimestamp(`[NumberDebug] Error checking if number is called: ${error.message}`, 'error');
-        return false;
-      }
-      
-      if (data && Array.isArray(data.called_numbers)) {
-        const isAlreadyCalled = data.called_numbers.includes(number);
-        if (isAlreadyCalled && DEBUG_ENABLED) {
-          logWithTimestamp(`[NumberDebug] Number ${number} is ALREADY CALLED for session ${sessionId}`, 'warn');
-        }
-        return isAlreadyCalled;
-      }
-      
-      return false;
-    } catch (err) {
-      logWithTimestamp(`[NumberDebug] Exception checking called numbers: ${err}`, 'error');
-      return false;
+export const debugLogCalledNumbers = async (
+  sessionId: string | null | undefined,
+  label: string = 'Called Numbers Status'
+): Promise<void> => {
+  try {
+    if (!sessionId) {
+      console.warn('No sessionId provided to debugLogCalledNumbers');
+      return;
     }
-  },
-  
-  /**
-   * Compare local and database called numbers
-   */
-  compareCalledNumbers: async (localNumbers: number[], sessionId: string): Promise<{
-    missing: number[];
-    extra: number[];
-    match: boolean;
-  }> => {
-    try {
-      const { data, error } = await supabase
-        .from('sessions_progress')
-        .select('called_numbers')
-        .eq('session_id', sessionId)
-        .single();
-        
-      if (error || !data || !Array.isArray(data.called_numbers)) {
-        return { missing: [], extra: [], match: false };
-      }
-      
-      const dbNumbers = data.called_numbers;
-      const missing = dbNumbers.filter(n => !localNumbers.includes(n));
-      const extra = localNumbers.filter(n => !dbNumbers.includes(n));
-      
-      if (DEBUG_ENABLED && (missing.length > 0 || extra.length > 0)) {
-        logWithTimestamp(`[NumberDebug] Number discrepancy for session ${sessionId}:
-          - Missing from local: ${missing.join(', ')}
-          - Extra in local: ${extra.join(', ')}
-          - DB has ${dbNumbers.length} numbers, local has ${localNumbers.length} numbers
-        `, 'warn');
-      }
-      
-      return {
-        missing,
-        extra,
-        match: missing.length === 0 && extra.length === 0
-      };
-    } catch (err) {
-      logWithTimestamp(`[NumberDebug] Exception comparing numbers: ${err}`, 'error');
-      return { missing: [], extra: [], match: false };
+
+    const { data: sessionProgress, error } = await supabase
+      .from('sessions_progress')
+      .select('called_numbers, current_game_number')
+      .eq('session_id', sessionId)
+      .single();
+
+    if (error) {
+      console.error(`Error fetching called numbers: ${error.message}`);
+      return;
     }
+
+    const calledNumbers = sessionProgress?.called_numbers || [];
+    const currentGame = sessionProgress?.current_game_number || 1;
+
+    console.log(`===== ${label} =====`);
+    console.log(`Session: ${sessionId}`);
+    console.log(`Game Number: ${currentGame}`);
+    console.log(`Numbers Called (${calledNumbers.length}):`, calledNumbers);
+    console.log('===========================');
+  } catch (err) {
+    console.error('Error in debugLogCalledNumbers:', err);
   }
 };
 
 /**
- * Add called number prevention to supabase client
- * This adds a wrapper to detect and prevent duplicate number calls
+ * Check if the local storage called numbers are in sync with the database
  */
-export const setupNumberCallPrevention = () => {
-  // Store the original .update method
-  const originalUpdate = supabase.from('').update;
-  
-  // Override the update method to check for duplicate numbers
-  (supabase.from as any) = function(table: string) {
-    // Fix this line to use a valid table name instead of empty string
-    const originalFromResult = table ? originalUpdate.call(this, table) : null;
+export const checkCalledNumbersSync = async (
+  sessionId: string | null | undefined,
+  localCalledNumbers: number[]
+): Promise<boolean> => {
+  if (!sessionId) {
+    console.warn('No sessionId provided to checkCalledNumbersSync');
+    return false;
+  }
+
+  try {
+    const { data: sessionProgress, error } = await supabase
+      .from('sessions_progress')
+      .select('called_numbers')
+      .eq('session_id', sessionId)
+      .single();
+
+    if (error) {
+      console.error(`Error checking called numbers sync: ${error.message}`);
+      return false;
+    }
+
+    const dbCalledNumbers = sessionProgress?.called_numbers || [];
+
+    // Check if the arrays have the same length
+    if (localCalledNumbers.length !== dbCalledNumbers.length) {
+      console.warn(
+        `Called numbers out of sync: Local has ${localCalledNumbers.length}, DB has ${dbCalledNumbers.length}`
+      );
+      return false;
+    }
+
+    // Check if all numbers match (order matters)
+    for (let i = 0; i < localCalledNumbers.length; i++) {
+      if (localCalledNumbers[i] !== dbCalledNumbers[i]) {
+        console.warn(
+          `Called numbers out of sync at position ${i}: Local has ${localCalledNumbers[i]}, DB has ${dbCalledNumbers[i]}`
+        );
+        return false;
+      }
+    }
+
+    return true;
+  } catch (err) {
+    console.error('Error in checkCalledNumbersSync:', err);
+    return false;
+  }
+};
+
+/**
+ * Get the last called number from the local storage or database
+ */
+export const getLastCalledNumber = async (
+  sessionId: string | null | undefined,
+  localCalledNumbers?: number[]
+): Promise<number | null> => {
+  // If we have local called numbers, use the last one
+  if (localCalledNumbers && localCalledNumbers.length > 0) {
+    return localCalledNumbers[localCalledNumbers.length - 1];
+  }
+
+  // Otherwise, fetch from the database
+  if (!sessionId) {
+    console.warn('No sessionId provided to getLastCalledNumber');
+    return null;
+  }
+
+  try {
+    const { data: sessionProgress, error } = await supabase
+      .from('sessions_progress')
+      .select('called_numbers')
+      .eq('session_id', sessionId)
+      .single();
+
+    if (error) {
+      console.error(`Error fetching last called number: ${error.message}`);
+      return null;
+    }
+
+    const dbCalledNumbers = sessionProgress?.called_numbers || [];
     
-    // Only modify behavior for sessions_progress table
-    if (table === 'sessions_progress') {
-      const originalUpdateFn = originalFromResult.update;
-      
-      originalFromResult.update = async function(this: any, data: any) {
-        // If we're updating called_numbers, check for duplicates
-        if (data && data.called_numbers) {
-          // Add validation logic here
-          logWithTimestamp(`[NumberDebug] Called numbers update detected`, 'info');
-        }
-        
-        // Call the original update function
-        return originalUpdateFn.call(this, data);
-      };
+    if (dbCalledNumbers.length === 0) {
+      return null;
+    }
+
+    return dbCalledNumbers[dbCalledNumbers.length - 1];
+  } catch (err) {
+    console.error('Error in getLastCalledNumber:', err);
+    return null;
+  }
+};
+
+/**
+ * Load the called numbers from the database and return them
+ */
+export const fetchCalledNumbersFromDb = async (
+  sessionId: string
+): Promise<number[]> => {
+  try {
+    logWithTimestamp(`Fetching called numbers from database for session ${sessionId}`, 'info');
+    
+    if (!sessionId) {
+      logWithTimestamp('No sessionId provided to fetchCalledNumbersFromDb', 'warn');
+      return [];
     }
     
-    return originalFromResult;
-  };
+    const { data, error } = await supabase
+      .from('sessions_progress') // Using the correct table name
+      .select('called_numbers')
+      .eq('session_id', sessionId)
+      .single();
+      
+    if (error) {
+      logWithTimestamp(`Error fetching called numbers: ${error.message}`, 'error');
+      return [];
+    }
+    
+    const calledNumbers = data?.called_numbers || [];
+    logWithTimestamp(`Retrieved ${calledNumbers.length} called numbers from DB`, 'info');
+    
+    return calledNumbers;
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    logWithTimestamp(`Exception in fetchCalledNumbersFromDb: ${errorMessage}`, 'error');
+    return [];
+  }
+};
+
+/**
+ * Debug utility to dump all player tickets for a session
+ */
+export const debugDumpAllPlayerTickets = async (
+  sessionId: string
+): Promise<void> => {
+  try {
+    if (!sessionId) {
+      console.warn('No sessionId provided to debugDumpAllPlayerTickets');
+      return;
+    }
+
+    const { data: tickets, error } = await supabase
+      .from('assigned_tickets')
+      .select(`
+        id, serial, position, perm, layout_mask, numbers,
+        players:player_id (id, nickname, player_code)
+      `)
+      .eq('session_id', sessionId);
+
+    if (error) {
+      console.error(`Error fetching tickets: ${error.message}`);
+      return;
+    }
+
+    console.log(`===== All Player Tickets for Session ${sessionId} =====`);
+    console.log(`Found ${tickets?.length || 0} tickets`);
+    
+    if (tickets && tickets.length > 0) {
+      tickets.forEach((ticket, index) => {
+        const playerInfo = ticket.players;
+        console.log(`Ticket #${index + 1}:`);
+        console.log(`  ID: ${ticket.id}`);
+        console.log(`  Serial: ${ticket.serial}`);
+        console.log(`  Position: ${ticket.position}`);
+        console.log(`  Player: ${playerInfo?.nickname || 'Unknown'} (${playerInfo?.player_code || 'No code'})`);
+        console.log(`  Numbers: ${JSON.stringify(ticket.numbers)}`);
+        console.log('-------------------');
+      });
+    }
+    
+    console.log('=============================================');
+  } catch (err) {
+    console.error('Error in debugDumpAllPlayerTickets:', err);
+  }
 };

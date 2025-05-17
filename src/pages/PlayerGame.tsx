@@ -10,7 +10,7 @@ import { PlayerGameContent } from '@/components/game';
 import { Spinner } from "@/components/ui/spinner";
 import { logWithTimestamp } from '@/utils/logUtils';
 import { GameProvider } from '@/contexts/GameContext';
-import { submitBingoClaim } from '@/utils/claimUtils';
+import { submitClaim } from '@/utils/claimUtils';
 
 const PlayerGame = () => {
   const { playerCode } = useParams<{ playerCode?: string }>();
@@ -86,13 +86,13 @@ const PlayerGame = () => {
     });
   }, [player?.sessionId, connect, toast]);
 
-  // Handle bingo claim using the new utility function
+  // Handle bingo claim
   const handleClaimBingo = useCallback((ticket: any) => {
-    if (!player?.sessionId || !playerCode) {
-      log('Cannot submit claim: Missing session ID or player code', 'warn');
+    if (!player?.sessionId || !playerCode || !player?.id) {
+      log('Cannot submit claim: Missing session ID, player code, or player ID', 'warn');
       toast({
         title: "Cannot Submit Claim",
-        description: "Missing session ID or player code.",
+        description: "Missing session ID or player information.",
         variant: "destructive"
       });
       return;
@@ -116,20 +116,27 @@ const PlayerGame = () => {
     log(`Submitting bingo claim for ticket in session ${player.sessionId}`, 'info');
     setClaimStatus("pending");
     
-    // Use the utility function for claim submission
-    submitBingoClaim(ticket, playerCode, player.sessionId, player.name)
-      .then((success) => {
-        if (success) {
+    // Submit the claim using utility function with all required parameters
+    submitClaim(
+      player.sessionId,
+      player.id,
+      player.name,
+      ticket.id,
+      ticket.serial,
+      "oneLine"  // Default pattern, should be dynamic based on game state
+    )
+      .then((result) => {
+        if (result.success) {
           log('Claim submitted successfully', 'info');
           toast({
             title: "Claim Submitted",
             description: "Your claim has been submitted and is awaiting validation.",
           });
         } else {
-          log('Failed to submit claim', 'error');
+          log(`Failed to submit claim: ${result.error}`, 'error');
           toast({
             title: "Claim Submission Failed",
-            description: "Failed to submit your claim. Please try again.",
+            description: result.error || "Failed to submit your claim. Please try again.",
             variant: "destructive"
           });
           setClaimStatus("none");

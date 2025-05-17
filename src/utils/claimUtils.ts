@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from './logUtils';
 
@@ -53,8 +54,7 @@ export const submitClaim = async (
       .select('*')
       .eq('session_id', sessionId)
       .eq('player_id', playerId)
-      .eq('win_pattern', winPattern)
-      .eq('status', 'pending');
+      .eq('pattern_claimed', winPattern);
 
     if (checkError) {
       logWithTimestamp(`Error checking existing claims: ${checkError.message}`, 'error');
@@ -71,19 +71,17 @@ export const submitClaim = async (
     }
 
     // Create the claim
-    const claim: ClaimData = {
+    const claimData = {
       session_id: sessionId,
       player_id: playerId,
       player_name: playerName,
-      ticket_id: ticketId,
       ticket_serial: ticketSerial,
-      win_pattern: winPattern,
-      status: 'pending'
+      pattern_claimed: winPattern
     };
 
     const { data, error } = await supabase
       .from('claims')
-      .insert([claim])
+      .insert([claimData])
       .select();
 
     if (error) {
@@ -109,22 +107,22 @@ export const submitClaim = async (
  */
 export const getClaimStatus = async (
   claimId: string
-): Promise<{ status: string; error?: string }> => {
+): Promise<{ validation_status?: string; error?: string }> => {
   try {
     const { data, error } = await supabase
       .from('claims')
-      .select('status')
+      .select('verification_notes')
       .eq('id', claimId)
       .single();
 
     if (error) {
-      return { status: 'error', error: error.message };
+      return { error: error.message };
     }
 
-    return { status: data?.status || 'unknown' };
+    return { validation_status: data?.verification_notes || 'unknown' };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    return { status: 'error', error: errorMessage };
+    return { error: errorMessage };
   }
 };
 
@@ -136,11 +134,14 @@ export const verifyClaim = async (
   isValid: boolean
 ): Promise<{ success: boolean; error?: string }> => {
   try {
-    const status = isValid ? 'verified' : 'rejected';
+    const updateData = {
+      verified_at: new Date().toISOString(),
+      verification_notes: isValid ? 'VALID' : 'INVALID'
+    };
     
     const { error } = await supabase
       .from('claims')
-      .update({ status, updated_at: new Date().toISOString() })
+      .update(updateData)
       .eq('id', claimId);
 
     if (error) {
@@ -151,5 +152,51 @@ export const verifyClaim = async (
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     return { success: false, error: errorMessage };
+  }
+};
+
+/**
+ * Submit a bingo claim with ticket data
+ * Helper function for PlayerGame component
+ */
+export const submitBingoClaim = async (
+  ticket: any,
+  playerCode: string,
+  sessionId: string,
+  playerName: string
+): Promise<boolean> => {
+  try {
+    // Find player ID using the player code
+    const { data: playerData, error: playerError } = await supabase
+      .from('players')
+      .select('id')
+      .eq('player_code', playerCode)
+      .single();
+
+    if (playerError || !playerData) {
+      logWithTimestamp(`Error finding player ID: ${playerError?.message || 'No player found'}`, 'error');
+      return false;
+    }
+
+    const playerId = playerData.id;
+    const ticketId = ticket?.id;
+    const ticketSerial = ticket?.serial;
+    const winPattern = 'oneLine'; // Default pattern, should be dynamic in a real implementation
+
+    // Submit the claim using our standard function
+    const result = await submitClaim(
+      sessionId,
+      playerId,
+      playerName,
+      ticketId,
+      ticketSerial,
+      winPattern
+    );
+
+    return result.success;
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    logWithTimestamp(`Error in submitBingoClaim: ${errorMessage}`, 'error');
+    return false;
   }
 };
