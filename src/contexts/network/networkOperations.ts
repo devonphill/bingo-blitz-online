@@ -1,9 +1,12 @@
-
 import { logWithTimestamp } from '@/utils/logUtils';
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { CHANNEL_NAMES, EVENT_TYPES } from '@/constants/websocketConstants';
 import { supabase } from '@/integrations/supabase/client';
-import { numberDebugUtils } from '@/utils/numberDebugUtils';
+import { 
+  isNumberAlreadyCalled, 
+  logNumberCall, 
+  fetchCalledNumbersFromDb 
+} from '@/utils/numberDebugUtils';
 
 // Call a number for a specific session
 export const callNumberForSession = async (
@@ -18,14 +21,14 @@ export const callNumberForSession = async (
 
   try {
     // First check if the number has already been called
-    const isAlreadyCalled = await numberDebugUtils.isNumberAlreadyCalled(number, sessionId);
+    const isAlreadyCalled = await isNumberAlreadyCalled(number, sessionId);
     if (isAlreadyCalled) {
       logWithTimestamp(`Number ${number} has already been called for session ${sessionId}`, 'warn');
       return false;
     }
 
     // Track the call for debugging
-    numberDebugUtils.logNumberCall(number, sessionId, 'callNumberForSession');
+    logNumberCall(number, sessionId, 'callNumberForSession');
     
     const connection = getSingleSourceConnection();
     if (!connection) {

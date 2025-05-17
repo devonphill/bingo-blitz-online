@@ -111,7 +111,7 @@ export default function CallControls({
       // Also use the connection manager for database persistence
       const connection = getSingleSourceConnection();
       if (connection) {
-        connection.callNumber(number, sessionId)
+        connection.callNumberForSession(number, sessionId, getCalledNumbersFromRemaining(number, remainingNumbers))
           .then(success => {
             if (!success) {
               console.error("Failed to call number through connection manager");

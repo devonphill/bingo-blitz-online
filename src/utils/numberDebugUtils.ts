@@ -214,3 +214,47 @@ export const debugDumpAllPlayerTickets = async (
     console.error('Error in debugDumpAllPlayerTickets:', err);
   }
 };
+
+/**
+ * Check if a number has already been called for a session
+ */
+export const isNumberAlreadyCalled = async (
+  number: number,
+  sessionId: string
+): Promise<boolean> => {
+  try {
+    if (!sessionId) {
+      logWithTimestamp('No sessionId provided to isNumberAlreadyCalled', 'warn');
+      return false;
+    }
+
+    const { data, error } = await supabase
+      .from('sessions_progress')
+      .select('called_numbers')
+      .eq('session_id', sessionId)
+      .single();
+
+    if (error) {
+      logWithTimestamp(`Error checking if number is already called: ${error.message}`, 'error');
+      return false;
+    }
+
+    const calledNumbers = data?.called_numbers || [];
+    return calledNumbers.includes(number);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    logWithTimestamp(`Exception in isNumberAlreadyCalled: ${errorMessage}`, 'error');
+    return false;
+  }
+};
+
+/**
+ * Log a number call for debugging purposes
+ */
+export const logNumberCall = (
+  number: number,
+  sessionId: string,
+  source: string = 'unknown'
+): void => {
+  logWithTimestamp(`NUMBER CALL: ${number} for session ${sessionId} from ${source}`, 'info');
+};
