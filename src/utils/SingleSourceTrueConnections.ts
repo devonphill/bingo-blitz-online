@@ -82,7 +82,7 @@ class SingleSourceTrueConnections {
         getClient: () => this.client as SupabaseClient,
       };
 
-      this.setConnectionState('initialized');
+      this.setConnectionState('connected');
       logWithTimestamp('[SSTC] WebSocket service initialized successfully', 'info');
       this.notifyStatusListeners();
     } catch (error) {
@@ -128,7 +128,7 @@ class SingleSourceTrueConnections {
 
     if (!this.isServiceInitialized()) {
       logWithTimestamp('[SSTC] Cannot connect: WebSocket service not initialized', 'warn');
-      this.setConnectionState('not_initialized');
+      this.setConnectionState('disconnected');
       this.notifyStatusListeners();
       return;
     }
@@ -205,16 +205,16 @@ class SingleSourceTrueConnections {
    * @param listener The listener function to add.
    * @returns A function to remove the listener.
    */
-  public addConnectionListener(listener: (isConnected: boolean, connectionState: ConnectionState) => void): () => void {
+  public addConnectionListener(listener: (isConnected: boolean) => void): () => void {
     // Add the listener to our array
-    this.statusListeners.push(listener);
+    this.connectionListeners.push(listener);
     
     // Immediately call the listener with the current state
-    listener(this.isConnected(), this.connectionState);
+    listener(this.isConnected());
     
     // Return a cleanup function
     return () => {
-      this.statusListeners = this.statusListeners.filter(l => l !== listener);
+      this.connectionListeners = this.connectionListeners.filter(l => l !== listener);
     };
   }
 
@@ -266,108 +266,9 @@ class SingleSourceTrueConnections {
   }
   
   /**
-   * Adds a listener for a specific event on a channel
-   */
-  public listenForEvent<T>(channelName: string, eventType: string, callback: (payload: T) => void): () => void {
-    if (!this.isServiceInitialized()) {
-      logWithTimestamp('[SSTC] Cannot listen for event: WebSocket service not initialized', 'warn');
-      return () => {};
-    }
-
-    if (!eventType) {
-      logWithTimestamp('[SSTC] Cannot listen for undefined event type', 'error');
-      return () => {};
-    }
-
-    // Get or create the channel
-    const channel = this.getOrCreateChannel(channelName);
-    
-    // Increment reference count for this channel
-    this.incrementChannelRefCount(channelName);
-    
-    // Log the listener setup
-    logWithTimestamp(`[SSTC] Setting up listener for event: ${eventType} on channel: ${channelName}`, 'info');
-
-    // Add the listener to the channel
-    channel.on('broadcast', { event: eventType }, (payload) => {
-      logWithTimestamp(`[SSTC] Received event: ${eventType} on channel: ${channelName}`, 'info');
-      callback(payload as T);
-    });
-    
-    // Return a function to remove this specific listener
-    return () => {
-      this.handleListenerRemoved(channelName, eventType, callback);
-    };
-  }
-
-  /**
-   * Properly handles removal of a specific listener
-   */
-  private handleListenerRemoved(channelName: string, eventType: string, callback: Function): void {
-    logWithTimestamp(`[SSTC] Removing listener for event: ${eventType} on channel: ${channelName}`, 'info');
-    
-    const channel = this.channels.get(channelName);
-    if (!channel) {
-      logWithTimestamp(`[SSTC] No channel found for ${channelName} when removing listener`, 'warn');
-      return;
-    }
-    
-    try {
-      // For Supabase RealtimeChannel, we need to filter by event name
-      // This only removes this specific event listener, not the entire channel
-      channel.off('broadcast', { event: eventType });
-      logWithTimestamp(`[SSTC] Successfully removed listener for event '${eventType}' on channel '${channelName}'`, 'info');
-    } catch (error) {
-      logWithTimestamp(`[SSTC] Error removing listener: ${error}`, 'error');
-    }
-    
-    // Decrement the reference count for this channel
-    this.decrementChannelRefCount(channelName);
-  }
-
-  /**
-   * Decrements the reference count for a channel and cleans up if needed
-   */
-  private decrementChannelRefCount(channelName: string): void {
-    const currentCount = this.channelRefCounts.get(channelName) || 0;
-    const newCount = Math.max(0, currentCount - 1);
-    
-    this.channelRefCounts.set(channelName, newCount);
-    
-    if (newCount <= 0) {
-      // Reference count is 0, time to clean up this channel
-      logWithTimestamp(`[SSTC] Channel ${channelName} ref count is 0. Unsubscribing and removing from channel maps`, 'info');
-      
-      const channel = this.channels.get(channelName);
-      if (channel) {
-        // Properly unsubscribe from the channel first
-        channel.unsubscribe().then(() => {
-          logWithTimestamp(`[SSTC] Successfully unsubscribed from channel ${channelName}`, 'info');
-          
-          // Finally remove from our local maps
-          this.channels.delete(channelName);
-          this.channelRefCounts.delete(channelName);
-        }).catch(error => {
-          logWithTimestamp(`[SSTC] Error unsubscribing from channel ${channelName}: ${error}`, 'error');
-        });
-      }
-    } else {
-      // Channel still has active listeners
-      logWithTimestamp(`[SSTC] Channel ${channelName} ref count is now ${newCount}. Channel remains active`, 'info');
-    }
-  }
-
-  /**
-   * Increments the reference count for a channel
-   */
-  private incrementChannelRefCount(channelName: string): void {
-    const currentCount = this.channelRefCounts.get(channelName) || 0;
-    this.channelRefCounts.set(channelName, currentCount + 1);
-    logWithTimestamp(`[SSTC] Channel ${channelName} ref count increased to ${currentCount + 1}`, 'info');
-  }
-
-  /**
    * Gets an existing channel or creates a new one
+   * @param channelName The name of the channel to get or create
+   * @returns The RealtimeChannel instance
    */
   private getOrCreateChannel(channelName: string): RealtimeChannel {
     const existingChannel = this.channels.get(channelName);
@@ -410,6 +311,115 @@ class SingleSourceTrueConnections {
   }
 
   /**
+   * Adds a listener for a specific event on a channel
+   * @param channelName The channel name to listen on
+   * @param eventType The event type to listen for
+   * @param callback The callback function to call when the event is triggered
+   * @returns A cleanup function to remove the listener
+   */
+  public listenForEvent<T>(channelName: string, eventType: string, callback: (payload: T) => void): () => void {
+    if (!this.isServiceInitialized()) {
+      logWithTimestamp('[SSTC] Cannot listen for event: WebSocket service not initialized', 'warn');
+      return () => {};
+    }
+
+    if (!eventType) {
+      logWithTimestamp('[SSTC] Cannot listen for undefined event type', 'error');
+      return () => {};
+    }
+
+    // Get or create the channel
+    const channel = this.getOrCreateChannel(channelName);
+    
+    // Increment reference count for this channel
+    this.incrementChannelRefCount(channelName);
+    
+    // Log the listener setup
+    logWithTimestamp(`[SSTC] Setting up listener for event: ${eventType} on channel: ${channelName}`, 'info');
+
+    // Add the listener to the channel
+    channel.on('broadcast', { event: eventType }, (payload) => {
+      logWithTimestamp(`[SSTC] Received event: ${eventType} on channel: ${channelName}`, 'info');
+      callback(payload as T);
+    });
+    
+    // Return a function to remove this specific listener
+    return () => {
+      this.handleListenerRemoved(channelName, eventType, callback);
+    };
+  }
+
+  /**
+   * Properly handles removal of a specific listener
+   * @param channelName Channel name where the listener was registered
+   * @param eventType Event type the listener was registered for
+   * @param callback Callback function registered
+   */
+  private handleListenerRemoved(channelName: string, eventType: string, callback: Function): void {
+    logWithTimestamp(`[SSTC] Removing listener for event: ${eventType} on channel: ${channelName}`, 'info');
+    
+    const channel = this.channels.get(channelName);
+    if (!channel) {
+      logWithTimestamp(`[SSTC] No channel found for ${channelName} when removing listener`, 'warn');
+      return;
+    }
+    
+    try {
+      // For Supabase RealtimeChannel, remove the specific event listener
+      channel.on('broadcast', { event: eventType }, undefined); // This removes the listener for this event type
+      logWithTimestamp(`[SSTC] Successfully removed listener for event '${eventType}' on channel '${channelName}'`, 'info');
+    } catch (error) {
+      logWithTimestamp(`[SSTC] Error removing listener: ${error}`, 'error');
+    }
+    
+    // Decrement the reference count for this channel
+    this.decrementChannelRefCount(channelName);
+  }
+
+  /**
+   * Increments the reference count for a channel
+   * @param channelName The channel name to increment the reference count for
+   */
+  private incrementChannelRefCount(channelName: string): void {
+    const currentCount = this.channelRefCounts.get(channelName) || 0;
+    this.channelRefCounts.set(channelName, currentCount + 1);
+    logWithTimestamp(`[SSTC] Channel ${channelName} ref count increased to ${currentCount + 1}`, 'info');
+  }
+
+  /**
+   * Decrements the reference count for a channel and cleans up if needed
+   * @param channelName The channel name to decrement the reference count for
+   */
+  private decrementChannelRefCount(channelName: string): void {
+    const currentCount = this.channelRefCounts.get(channelName) || 0;
+    const newCount = Math.max(0, currentCount - 1);
+    
+    this.channelRefCounts.set(channelName, newCount);
+    
+    if (newCount <= 0) {
+      // Reference count is 0, time to clean up this channel
+      logWithTimestamp(`[SSTC] Channel ${channelName} ref count is 0. Unsubscribing and removing from channel maps`, 'info');
+      
+      const channel = this.channels.get(channelName);
+      if (channel) {
+        // Properly unsubscribe from the channel first
+        channel.unsubscribe().then(() => {
+          logWithTimestamp(`[SSTC] Successfully unsubscribed from channel ${channelName}`, 'info');
+          
+          // Finally remove from our local maps
+          this.channels.delete(channelName);
+          this.channelRefCounts.delete(channelName);
+        }).catch(error => {
+          logWithTimestamp(`[SSTC] Error unsubscribing from channel ${channelName}: ${error}`, 'error');
+        });
+      }
+    } else {
+      // Channel still has active listeners
+      logWithTimestamp(`[SSTC] Channel ${channelName} ref count is now ${newCount}. Channel remains active`, 'info');
+    }
+  }
+
+  /**
    * Clears the singleton instance, useful for testing or when the application needs to reset the connection.
    */
   public static clearInstance(): void {
@@ -423,7 +433,7 @@ class SingleSourceTrueConnections {
   }
   
   /**
-   * A helper interface to expose to the singleton instance's methods
+   * A helper function to set up number update listeners
    */
   public setupNumberUpdateListeners(
     sessionId: string | null | undefined,
@@ -555,10 +565,6 @@ class SingleSourceTrueConnections {
   }
 }
 
-interface WebSocketService {
-  getClient: () => SupabaseClient;
-}
-
 /**
  * Gets the singleton instance of the SingleSourceTrueConnections class.
  * This function is the main entry point for accessing the WebSocket connection manager.
@@ -566,4 +572,8 @@ interface WebSocketService {
  */
 export function getSingleSourceConnection(): SingleSourceTrueConnections {
   return SingleSourceTrueConnections.getInstance();
+}
+
+interface WebSocketService {
+  getClient: () => SupabaseClient;
 }
