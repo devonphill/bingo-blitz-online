@@ -33,7 +33,7 @@ export function PlayerTicketManager({ autoMarking, onClaimBingo }: PlayerTicketM
   // Generate a unique ID for this component instance for better debug logging
   const instanceId = useRef(`PTM-${Math.random().toString(36).substring(2, 9)}`).current;
   
-  // Use the usePlayerTickets hook to fetch tickets
+  // Use the usePlayerTickets hook to fetch and manage tickets
   const {
     playerTickets,
     isLoadingTickets,
@@ -41,7 +41,7 @@ export function PlayerTicketManager({ autoMarking, onClaimBingo }: PlayerTicketM
     refreshTickets,
     isRefreshingTickets,
     updateWinningStatus
-  } = usePlayerTickets(sessionId, player?.id, player?.playerCode);
+  } = usePlayerTickets(sessionId, player?.id);
 
   // Create a logger for this component
   const log = (message: string, level: 'info' | 'warn' | 'error' = 'info') => {
@@ -107,8 +107,14 @@ export function PlayerTicketManager({ autoMarking, onClaimBingo }: PlayerTicketM
     }
     
     // Check connection state before setting up listeners
-    if (!isConnected || (connectionState !== 'SUBSCRIBED' && connectionState !== 'connected')) {
+    if (!isConnected || connectionState !== 'connected') {
       log(`WebSocket not ready (state: ${connectionState}), deferring game state listener setup`, 'warn');
+      return;
+    }
+    
+    // Verify that we have valid event types
+    if (!EVENTS || !EVENTS.NUMBER_CALLED || !EVENTS.GAME_STATE_UPDATE) {
+      log(`Missing required event types, skipping listener setup`, 'error');
       return;
     }
     
@@ -116,6 +122,12 @@ export function PlayerTicketManager({ autoMarking, onClaimBingo }: PlayerTicketM
     
     // Listen for number called updates
     const numberCleanup = listenForEvent(EVENTS.NUMBER_CALLED, (data: any) => {
+      // Verify the data is for our session
+      if (data?.sessionId !== sessionId) {
+        log(`Ignoring number called for different session: ${data?.sessionId}`, 'debug');
+        return;
+      }
+      
       log(`Received number called update: ${data.number}`, 'info');
       
       if (data.calledNumbers && Array.isArray(data.calledNumbers)) {
@@ -134,6 +146,12 @@ export function PlayerTicketManager({ autoMarking, onClaimBingo }: PlayerTicketM
     
     // Listen for game state updates
     const stateCleanup = listenForEvent(EVENTS.GAME_STATE_UPDATE, (data: any) => {
+      // Verify the data is for our session
+      if (data?.sessionId !== sessionId) {
+        log(`Ignoring game state update for different session: ${data?.sessionId}`, 'debug');
+        return;
+      }
+      
       log(`Received game state update`, 'info');
       
       if (data.currentWinPattern) {

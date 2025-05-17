@@ -1,4 +1,3 @@
-
 import { logWithTimestamp } from '@/utils/logUtils';
 import { ConnectionState } from '@/constants/connectionConstants';
 import { supabase } from '@/integrations/supabase/client';
@@ -31,7 +30,10 @@ export class SingleSourceTrueConnections {
   private channels: Map<string, RealtimeChannel> = new Map();
   private channelRefCounts: Map<string, number> = new Map();
   
-  // Listeners
+  // Event listeners tracking - track by channel, event, and callback for precise removal
+  private eventListeners: Map<string, Map<string, Set<Function>>> = new Map();
+  
+  // Connection listeners
   private connectionListeners: Array<(isConnected: boolean, connectionState: WebSocketConnectionStatus) => void> = [];
   private statusListeners: Set<(status: WebSocketConnectionStatus, isServiceInitialized: boolean) => void> = new Set();
   
@@ -231,10 +233,22 @@ export class SingleSourceTrueConnections {
    */
   private cleanupAllSessionChannels(): void {
     logWithTimestamp('[SSTC] cleanupAllSessionChannels: Clearing local channel and ref count maps. Full channel removal will be tied to ref counting.', 'info');
+    
+    // Properly unsubscribe from each channel before clearing maps
+    this.channels.forEach((channel, channelName) => {
+      try {
+        logWithTimestamp(`[SSTC] Unsubscribing from channel ${channelName} during cleanup`, 'info');
+        channel.unsubscribe();
+        supabase.removeChannel(channel);
+      } catch (e) {
+        logWithTimestamp(`[SSTC] Error unsubscribing from channel ${channelName}: ${e}`, 'error');
+      }
+    });
+    
+    // Clear all maps
     this.channels.clear();
     this.channelRefCounts.clear();
-    // Note: This does NOT yet call removeChannel on the webSocketService for each channel.
-    // That will be part of the reference counting logic when a channel's ref count hits 0.
+    this.eventListeners.clear();
   }
   
   /**
@@ -305,33 +319,128 @@ export class SingleSourceTrueConnections {
     
     if (this.channels.has(channelName)) {
       const existingChannel = this.channels.get(channelName)!;
-      console.log(`[SSTC DEBUG] getOrCreateChannel: Found existing channel '${channelName}' with state: ${existingChannel.state}`);
+      logWithTimestamp(`[SSTC] getOrCreateChannel: Found existing channel '${channelName}' with state: ${existingChannel.state}`, 'info');
       
-      // FIXED: Also reuse channels that are in the process of joining
+      // Reuse channels that are joined or in the process of joining
       if (existingChannel.state === 'joined' || existingChannel.state === 'joining') {
-        console.log(`[SSTC DEBUG] getOrCreateChannel: Reusing ${existingChannel.state === 'joined' ? 'ALREADY JOINED' : 'CURRENTLY JOINING'} channel '${channelName}'.`);
+        logWithTimestamp(`[SSTC] getOrCreateChannel: Reusing ${existingChannel.state === 'joined' ? 'ALREADY JOINED' : 'CURRENTLY JOINING'} channel '${channelName}'.`, 'info');
         return existingChannel;
       } else {
-        console.log(`[SSTC DEBUG] Existing channel '${channelName}' is not usable (state: ${existingChannel.state}). Will remove and recreate.`);
+        logWithTimestamp(`[SSTC] Existing channel '${channelName}' is not usable (state: ${existingChannel.state}). Will remove and recreate.`, 'info');
         try {
+          existingChannel.unsubscribe();
           supabase.removeChannel(existingChannel);
         } catch (e) {
-          console.error('[SSTC] Error removing channel:', e);
+          logWithTimestamp(`[SSTC] Error removing channel: ${e}`, 'error');
         }
         this.channels.delete(channelName);
         this.channelRefCounts.delete(channelName);
+        
+        // Also clean up any event listeners for this channel
+        if (this.eventListeners.has(channelName)) {
+          this.eventListeners.delete(channelName);
+        }
       }
     }
     
-    console.log(`[SSTC DEBUG] Creating NEW channel instance for: ${channelName}`);
+    logWithTimestamp(`[SSTC] Creating NEW channel instance for: ${channelName}`, 'info');
     try {
       const newChannel = supabase.channel(channelName);
       this.channels.set(channelName, newChannel);
       this.channelRefCounts.set(channelName, 0); // Initialize ref count
       return newChannel;
     } catch (e) {
-      console.error('[SSTC] Error creating channel:', e);
+      logWithTimestamp(`[SSTC] Error creating channel: ${e}`, 'error');
       return null;
+    }
+  }
+  
+  /**
+   * Track a listener for an event
+   * @param channelName Channel name
+   * @param eventType Event type
+   * @param callback Callback function
+   */
+  private trackListener(channelName: string, eventType: string, callback: Function): void {
+    // Initialize channel map if it doesn't exist
+    if (!this.eventListeners.has(channelName)) {
+      this.eventListeners.set(channelName, new Map());
+    }
+    
+    // Initialize event map if it doesn't exist
+    const channelListeners = this.eventListeners.get(channelName)!;
+    if (!channelListeners.has(eventType)) {
+      channelListeners.set(eventType, new Set());
+    }
+    
+    // Add the callback to the set
+    const eventCallbacks = channelListeners.get(eventType)!;
+    eventCallbacks.add(callback);
+    
+    logWithTimestamp(`[SSTC] Tracked new listener for event '${eventType}' on channel '${channelName}'. Total: ${eventCallbacks.size}`, 'info');
+  }
+  
+  /**
+   * Remove a tracked listener
+   * @param channelName Channel name
+   * @param eventType Event type
+   * @param callback Callback function
+   * @returns true if the listener was removed
+   */
+  private removeTrackedListener(channelName: string, eventType: string, callback: Function): boolean {
+    if (!this.eventListeners.has(channelName)) {
+      return false;
+    }
+    
+    const channelListeners = this.eventListeners.get(channelName)!;
+    if (!channelListeners.has(eventType)) {
+      return false;
+    }
+    
+    const eventCallbacks = channelListeners.get(eventType)!;
+    const removed = eventCallbacks.delete(callback);
+    
+    // Clean up empty maps
+    if (eventCallbacks.size === 0) {
+      channelListeners.delete(eventType);
+      if (channelListeners.size === 0) {
+        this.eventListeners.delete(channelName);
+      }
+    }
+    
+    logWithTimestamp(`[SSTC] ${removed ? 'Removed' : 'Failed to remove'} tracked listener for event '${eventType}' on channel '${channelName}'`, removed ? 'info' : 'warn');
+    
+    return removed;
+  }
+  
+  /**
+   * Handle removal of a listener
+   * @param channelName Channel name
+   * @param eventType Event type
+   * @param callback Callback function
+   */
+  private handleListenerRemoved(channelName: string, eventType: string, callback: Function): void {
+    logWithTimestamp(`[SSTC] Handling removal of listener for event '${eventType}' on channel '${channelName}'`, 'info');
+    
+    // Get the channel
+    const channel = this.channels.get(channelName);
+    if (!channel) {
+      logWithTimestamp(`[SSTC] Cannot remove listener: Channel '${channelName}' not found`, 'warn');
+      return;
+    }
+    
+    try {
+      // Remove the specific listener from the channel
+      channel.off('broadcast', { event: eventType }, callback as any);
+      logWithTimestamp(`[SSTC] Successfully removed listener for event '${eventType}' on channel '${channelName}'`, 'info');
+      
+      // Remove from our tracking
+      this.removeTrackedListener(channelName, eventType, callback);
+      
+      // Decrement the reference count
+      this.decrementChannelRefCount(channelName);
+    } catch (e) {
+      logWithTimestamp(`[SSTC] Error removing listener for event '${eventType}': ${e}`, 'error');
     }
   }
   
@@ -383,20 +492,17 @@ export class SingleSourceTrueConnections {
       });
     }
     
+    // Track this listener
+    this.trackListener(channelName, eventType, callback);
+    
     // Set up the listener
     logWithTimestamp(`[SSTC] Adding listener for event '${eventType}' on channel '${channelName}'.`, 'info');
     channel.on('broadcast', { event: eventType }, callback as any);
     
-    // Return cleanup function
+    // Return cleanup function that properly handles listener removal
     return () => {
       logWithTimestamp(`[SSTC] Cleaning up listener for event '${eventType}' on channel '${channelName}'.`, 'info');
-      try {
-        // Use channel.unsubscribe method since .off doesn't exist
-        channel.unsubscribe();
-      } catch (e) {
-        logWithTimestamp(`[SSTC] Error in channel unsubscribe for ${eventType} on ${channelName}: ${e}`, 'error');
-      }
-      this.decrementChannelRefCount(channelName);
+      this.handleListenerRemoved(channelName, eventType, callback);
     };
   }
   
@@ -410,22 +516,34 @@ export class SingleSourceTrueConnections {
     
     logWithTimestamp(`[SSTC] decrementChannelRefCount: ${channelName} ref count: ${currentRefCount} -> ${newRefCount}`, 'info');
     
-    if (newRefCount === 0) {
+    if (newRefCount <= 0) {
       // No more listeners for this channel, clean up
       const channel = this.channels.get(channelName);
       if (channel) {
-        logWithTimestamp(`[SSTC] No more listeners for channel ${channelName}, removing channel`, 'info');
+        logWithTimestamp(`[SSTC] Channel ${channelName} ref count is 0. Unsubscribing and removing from Supabase and SSTC maps.`, 'info');
         try {
+          // First unsubscribe from the channel
+          channel.unsubscribe();
+          
+          // Then remove it from Supabase
           supabase.removeChannel(channel);
+          
+          // Finally, remove from our maps
+          this.channels.delete(channelName);
+          this.channelRefCounts.delete(channelName);
+          
+          // Clean up any remaining listener references
+          if (this.eventListeners.has(channelName)) {
+            this.eventListeners.delete(channelName);
+          }
         } catch (e) {
-          console.error('[SSTC] Error removing channel:', e);
+          logWithTimestamp(`[SSTC] Error cleaning up channel ${channelName}: ${e}`, 'error');
         }
-        this.channels.delete(channelName);
-        this.channelRefCounts.delete(channelName);
       }
     } else {
-      // Update ref count
+      // Update ref count but leave the channel intact
       this.channelRefCounts.set(channelName, newRefCount);
+      logWithTimestamp(`[SSTC] Channel ${channelName} ref count is now ${newRefCount}. Channel remains active.`, 'info');
     }
   }
   

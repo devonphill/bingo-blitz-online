@@ -38,16 +38,25 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isBingo, setIsBingo] = useState(false);
   const [winningTickets, setWinningTickets] = useState<PlayerTicket[]>([]);
   
-  // Create a unique ID for this component instance
+  // Create a unique ID for this component instance for better debug logging
   const instanceId = React.useRef(`GameContext-${Math.random().toString(36).substring(2, 7)}`).current;
   
   // Use the PlayerTickets hook to fetch and manage tickets
   const { 
-    tickets, 
-    isLoading: isLoadingTickets,
-    error
+    playerTickets, 
+    isLoadingTickets,
+    ticketError,
+    refreshTickets,
+    isRefreshingTickets,
+    updateWinningStatus
   } = usePlayerTickets(sessionId, player?.id);
   
+  // Create a logger for this component
+  const log = (message: string, level: 'info' | 'warn' | 'error' = 'info') => {
+    const prefix = `GameContext (${instanceId})`;
+    logWithTimestamp(`${prefix}: ${message}`, level);
+  };
+
   // Mark number on a ticket
   const markNumber = useCallback((ticketId: string, rowIndex: number, colIndex: number, number: number) => {
     // Implementation here - simplified for example
@@ -62,46 +71,37 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsBingo(false);
   }, []);
   
-  // Process tickets to check for winners based on called numbers and win pattern
-  const updateWinningStatus = useCallback((calledNums: number[], winPattern: string | null) => {
-    // This would check each ticket against the called numbers and current win pattern
-    // For simplicity, we'll just log that this was called
-    console.log(`Checking winning status with ${calledNums.length} called numbers and pattern ${winPattern}`);
-    
-    // In a real implementation, this would set winningTickets based on which tickets match the win pattern
-  }, []);
-  
   // Listen for number called updates
   useEffect(() => {
     // ENFORCE PREREQUISITE CHECKS: Only set up listeners if we have a valid session ID and WebSocket is ready
     if (!sessionId) {
-      logWithTimestamp(`[${instanceId}] No session ID available, skipping number listener setup`, 'warn');
+      log(`No session ID available, skipping number listener setup`, 'warn');
       return () => {};
     }
     
     // Check WebSocket readiness before setting up listeners
     if (!isWsReady) {
-      logWithTimestamp(`[${instanceId}] WebSocket not ready, deferring number listener setup`, 'warn');
+      log(`WebSocket not ready (state: ${connectionState}), deferring number listener setup`, 'warn');
       return () => {};
     }
     
     // Verify that we have a valid event type
     if (!EVENTS || !EVENTS.NUMBER_CALLED) {
-      logWithTimestamp(`[${instanceId}] No valid event type for NUMBER_CALLED, skipping listener setup`, 'error');
+      log(`No valid event type for NUMBER_CALLED, skipping listener setup`, 'error');
       return () => {};
     }
     
-    logWithTimestamp(`[${instanceId}] Setting up number called listener for session ${sessionId}`, 'info');
+    log(`Setting up number called listener for session ${sessionId}`, 'info');
     const removeNumberListener = listenForEvent(
       EVENTS.NUMBER_CALLED, 
       (data: any) => {
         // Verify the data is for our session
         if (data?.sessionId !== sessionId) {
-          logWithTimestamp(`[${instanceId}] Ignoring number called for different session: ${data?.sessionId}`, 'debug');
+          log(`Ignoring number called for different session: ${data?.sessionId}`, 'debug');
           return;
         }
         
-        logWithTimestamp(`[${instanceId}] Number called update: ${JSON.stringify(data)}`, 'info');
+        log(`Number called update: ${JSON.stringify(data)}`, 'info');
         
         if (data.number !== undefined) {
           setLastCalledNumber(data.number);
@@ -120,43 +120,43 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     // Clean up when unmounting or session/connection state changes
     return () => {
-      logWithTimestamp(`[${instanceId}] Cleaning up number called listener`, 'info');
+      log(`Cleaning up number called listener`, 'info');
       removeNumberListener();
     };
-  }, [sessionId, currentWinPattern, listenForEvent, EVENTS, updateWinningStatus, isWsReady, instanceId]);
+  }, [sessionId, currentWinPattern, listenForEvent, EVENTS, updateWinningStatus, isWsReady, connectionState, instanceId]);
   
   // Listen for game state updates
   useEffect(() => {
     // ENFORCE PREREQUISITE CHECKS: Only set up listeners if we have a valid session ID and WebSocket is ready
     if (!sessionId) {
-      logWithTimestamp(`[${instanceId}] No session ID available, skipping game state listener setup`, 'warn');
+      log(`No session ID available, skipping game state listener setup`, 'warn');
       return () => {};
     }
     
     // Check WebSocket readiness before setting up listeners
     if (!isWsReady) {
-      logWithTimestamp(`[${instanceId}] WebSocket not ready, deferring game state listener setup`, 'warn');
+      log(`WebSocket not ready (state: ${connectionState}), deferring game state listener setup`, 'warn');
       return () => {};
     }
     
     // Verify that we have a valid event type
     if (!EVENTS || !EVENTS.GAME_STATE_UPDATE) {
-      logWithTimestamp(`[${instanceId}] No valid event type for GAME_STATE_UPDATE, skipping listener setup`, 'error');
+      log(`No valid event type for GAME_STATE_UPDATE, skipping listener setup`, 'error');
       return () => {};
     }
     
-    logWithTimestamp(`[${instanceId}] Setting up game state listener for session ${sessionId}`, 'info');
+    log(`Setting up game state listener for session ${sessionId}`, 'info');
     const removeStateListener = listenForEvent(
       EVENTS.GAME_STATE_UPDATE,
       (gameState: any) => {
         // Verify the data is for our session
         if (gameState?.sessionId !== sessionId) {
-          logWithTimestamp(`[${instanceId}] Ignoring game state update for different session: ${gameState?.sessionId}`, 'debug');
+          log(`Ignoring game state update for different session: ${gameState?.sessionId}`, 'debug');
           return;
         }
         
         if (gameState?.currentWinPattern) {
-          logWithTimestamp(`[${instanceId}] Win pattern update: ${gameState.currentWinPattern}`, 'info');
+          log(`Win pattern update: ${gameState.currentWinPattern}`, 'info');
           setCurrentWinPattern(gameState.currentWinPattern);
           
           // Update winning status when pattern changes
@@ -181,16 +181,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     // Clean up when unmounting or session/connection state changes
     return () => {
-      logWithTimestamp(`[${instanceId}] Cleaning up game state listener`, 'info');
+      log(`Cleaning up game state listener`, 'info');
       removeStateListener();
     };
-  }, [sessionId, calledNumbers, listenForEvent, EVENTS, updateWinningStatus, isWsReady, instanceId]);
+  }, [sessionId, calledNumbers, listenForEvent, EVENTS, updateWinningStatus, isWsReady, connectionState, currentWinPattern, instanceId]);
   
   const value: GameContextData = {
     calledNumbers,
     lastCalledNumber,
     currentWinPattern,
-    playerTickets: tickets,
+    playerTickets, 
     winningTickets,
     isLoadingTickets,
     markNumber,

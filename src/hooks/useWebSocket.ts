@@ -92,29 +92,20 @@ export function useWebSocket(sessionId: string | null | undefined) {
     }
   }, [sessionId, instanceId, connection]);
   
-  // Disconnect function
-  const disconnect = useCallback(() => {
-    logWithTimestamp(`[${instanceId}] Manually disconnecting WebSocket`, 'info');
-    setIsConnected(false);
-    setConnectionState('disconnected');
-    setIsWsReady(false);
-    return () => {};
-  }, [instanceId]);
-  
   // Listen for a specific event with added validation
   const listenForEvent = useCallback(<T>(
     eventType: string, 
     handler: (data: T) => void
   ) => {
-    // Skip if no session ID
-    if (!sessionId) {
-      logWithTimestamp(`[${instanceId}] Cannot listen for event: No session ID`, 'warn');
-      return () => {};
-    }
-    
     // Validate event type - CRITICAL FIX
     if (!eventType) {
       logWithTimestamp(`[${instanceId}] Cannot listen for undefined event type`, 'error');
+      return () => {};
+    }
+    
+    // Skip if no session ID
+    if (!sessionId) {
+      logWithTimestamp(`[${instanceId}] Cannot listen for event: No session ID`, 'warn');
       return () => {};
     }
     
@@ -188,7 +179,6 @@ export function useWebSocket(sessionId: string | null | undefined) {
     connectionState,
     lastError,
     connect,
-    disconnect,
     listenForEvent,
     EVENTS  // Expose the event types
   };

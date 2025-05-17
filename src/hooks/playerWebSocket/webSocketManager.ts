@@ -27,10 +27,48 @@ export function setupNumberUpdateListeners(
     return () => {};
   }
   
-  return singleSource.setupNumberUpdateListeners(
-    sessionId,
-    onNumberUpdate,
-    onGameReset,
-    instanceId
+  // Set up connection to session if needed
+  if (singleSource.getCurrentSessionId() !== sessionId) {
+    singleSource.connect(sessionId);
+  }
+
+  // Get event type constants from SingleSourceTrueConnections
+  const EVENT_TYPES = singleSource.constructor.EVENT_TYPES;
+  if (!EVENT_TYPES || !EVENT_TYPES.NUMBER_CALLED || !EVENT_TYPES.GAME_RESET) {
+    logWithTimestamp(`[${instanceId}] Missing required event types, skipping listener setup`, 'error');
+    return () => {};
+  }
+  
+  // Set up number called listener
+  const numberCleanup = singleSource.listenForEvent(
+    'game-updates',
+    EVENT_TYPES.NUMBER_CALLED,
+    (data: any) => {
+      // Check if the data is for our session
+      if (data?.sessionId === sessionId) {
+        logWithTimestamp(`[${instanceId}] Received number update for session ${sessionId}: ${data.number}`, 'info');
+        onNumberUpdate(data.number, data.calledNumbers || []);
+      }
+    }
   );
+  
+  // Set up game reset listener
+  const resetCleanup = singleSource.listenForEvent(
+    'game-updates',
+    EVENT_TYPES.GAME_RESET,
+    (data: any) => {
+      // Check if the data is for our session
+      if (data?.sessionId === sessionId) {
+        logWithTimestamp(`[${instanceId}] Received game reset for session ${sessionId}`, 'info');
+        onGameReset();
+      }
+    }
+  );
+  
+  // Return combined cleanup function
+  return () => {
+    logWithTimestamp(`[${instanceId}] Cleaning up number update listeners`, 'info');
+    numberCleanup();
+    resetCleanup();
+  };
 }
