@@ -19,7 +19,7 @@ export const usePlayerClaimManagement = ({ sessionId, playerName, playerCode }: 
   // Using our websocket hook to handle connection status
   const websocket = usePlayerWebSocketNumbers(sessionId);
   
-  // We need to modify this line to check isConnected instead of isWsReady
+  // We need to check isConnected instead of isWsReady
   const isConnectionReady = websocket.isConnected;
 
   // Listen for claim validation results
