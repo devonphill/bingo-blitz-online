@@ -26,12 +26,11 @@ export default function PlayerTicketView({
   console.log('CLAIM DEBUG - Available tickets in PlayerTicketView:', 
     tickets.map(t => ({ 
       id: t.id, 
-      serial: t.serial, 
-      perm: t.perm, 
+      serial: t.serial_number, 
+      perm: t.perm_number, 
       position: t.position, 
       is_winning: t.is_winning,
-      numbersType: Array.isArray(t.numbers) ? 
-        (Array.isArray(t.numbers[0]) ? '2D array' : '1D array') : 'not array'
+      hasRawNumbers: Array.isArray(t.raw_numbers)
     }))
   );
   
@@ -53,10 +52,10 @@ export default function PlayerTicketView({
   return (
     <div className="space-y-4 p-4">
       {tickets.map((ticket, index) => (
-        <Card key={ticket.id || ticket.serial || index} className="mb-4">
+        <Card key={ticket.id || ticket.serial_number || index} className="mb-4">
           <CardHeader className="pb-0">
             <CardTitle className="text-sm flex justify-between">
-              <span>Ticket #{ticket.serial || index + 1}</span>
+              <span>Ticket #{ticket.serial_number || index + 1}</span>
               {ticket.is_winning && <span className="text-green-500">Winning!</span>}
               {onClaimBingo && (
                 <Button 
@@ -67,8 +66,8 @@ export default function PlayerTicketView({
                     // Log the ticket being claimed
                     console.log('CLAIM DEBUG - Claiming specific ticket:', {
                       id: ticket.id,
-                      serial: ticket.serial,
-                      perm: ticket.perm,
+                      serial: ticket.serial_number,
+                      perm: ticket.perm_number,
                       is_winning: ticket.is_winning
                     });
                     onClaimBingo(ticket);
@@ -83,12 +82,12 @@ export default function PlayerTicketView({
           <CardContent>
             {ticket ? (
               <BingoTicketDisplay
-                numbers={ticket.numbers}
+                numbers={ticket.raw_numbers || ticket.numbers_grid || []} 
                 layoutMask={ticket.layout_mask}
                 calledNumbers={calledNumbers}
-                serial={ticket.serial || `T${index}`}
-                perm={ticket.perm}
-                position={ticket.position}
+                serial={ticket.serial_number || `T${index}`}
+                perm={ticket.perm_number}
+                position={ticket.position || 0}
                 autoMarking={true}
                 currentWinPattern={currentWinPattern}
                 showProgress={true}

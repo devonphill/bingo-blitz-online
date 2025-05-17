@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -9,7 +10,7 @@ export interface PlayerTicket {
   id: string;                     // From assigned_tickets
   serial_number: string;          // From assigned_tickets (assuming 'serial' column)
   perm_number: number;            // From assigned_tickets (assuming 'perm' column)
-  position: number;               // From assigned_tickets, should be required for ordering
+  position: number;               // From assigned_tickets, required for ordering
   layout_mask: number;            // From assigned_tickets
   raw_numbers: number[];          // The flat array of numbers from assigned_tickets.numbers
   numbers_grid: (number | null)[][]; // The 2D grid (e.g., 3x9) for UI display
@@ -32,11 +33,9 @@ export interface UsePlayerTicketsResult {
   isRefreshingTickets: boolean;
   currentWinningTickets: PlayerTicket[];
   updateWinningStatus: (calledNumbers: number[], currentWinPattern: string | null) => void;
-  // Add any other methods/state GameContext was expecting if sourced from here
 }
 
 // --- Helper to build the 3x9 grid from flat numbers and layout mask ---
-// This logic is based on the grid reconstruction from your /hooks/usePlayerTickets.ts
 const buildTicketGrid = (flatNumbers: number[], layoutMask: number): (number | null)[][] => {
   const grid: (number | null)[][] = [[], [], []]; // 3 rows
   const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse(); // Assuming 27 cells for 9x3
@@ -74,13 +73,10 @@ const buildTicketGrid = (flatNumbers: number[], layoutMask: number): (number | n
   return grid;
 };
 
-
 export function usePlayerTickets(
   sessionId: string | null | undefined,
   playerId?: string | null,       // Player's database UUID
   playerCode?: string | null,    // Short player code
-  // For win checking, these need to be passed in or fetched by the hook
-  // Let's assume for now updateWinningStatus will receive them
 ): UsePlayerTicketsResult {
   const [playerTickets, setPlayerTickets] = useState<PlayerTicket[]>([]);
   const [isLoadingTickets, setIsLoadingTickets] = useState(true);
@@ -97,13 +93,14 @@ export function usePlayerTickets(
 
     const normalizedPattern = normalizeWinPattern(winPatternForWinCheck || 'oneLine', 'MAINSTAGE');
 
+    console.log(`Processing ${fetchedDbTickets.length} tickets with pattern: ${normalizedPattern}`);
+
     return fetchedDbTickets.map((dbTicket) => {
       const rawNumbers: number[] = dbTicket.numbers || [];
       const layoutMask: number = dbTicket.layout_mask || 0;
       
-      // This is where the TS2322/TS2352 error was.
-      // 'numbers_grid' should be number[][]
-      const numbersGrid: (number | null)[][] = buildTicketGrid(rawNumbers, layoutMask);
+      // Build the 2D grid from the flat array of numbers
+      const numbersGrid = buildTicketGrid(rawNumbers, layoutMask);
 
       // Perform win checking
       const winCheckResult = checkMainstageWinPattern(
@@ -111,22 +108,23 @@ export function usePlayerTickets(
         calledNumbersForWinCheck,
         normalizedPattern as AllowedWinPattern // Cast if necessary, ensure AllowedWinPattern is correct
       );
-
+      
+      // Create the PlayerTicket object with all required properties
       return {
         id: dbTicket.id,
-        serial_number: dbTicket.serial, // Assuming DB column is 'serial'
-        perm_number: dbTicket.perm,     // Assuming DB column is 'perm'
-        position: dbTicket.position,    // Ensure this is NOT NULL in DB or handle a default
+        serial_number: dbTicket.serial, // DB column is 'serial'
+        perm_number: dbTicket.perm,     // DB column is 'perm'
+        position: dbTicket.position || 0, // Ensure position is always a number
         layout_mask: layoutMask,
-        raw_numbers: rawNumbers,
-        numbers_grid: numbersGrid,      // Assign the 2D grid
-        markedPositions: {},            // Initialize as needed
+        raw_numbers: rawNumbers,         // Keep the original flat array
+        numbers_grid: numbersGrid,       // Add the 2D grid
+        markedPositions: {},             // Initialize as needed
         is_winning: winCheckResult.isWinner,
         winning_pattern: winCheckResult.isWinner ? winPatternForWinCheck : null,
         to_go: winCheckResult.tg,
       };
     });
-  }, []); // Empty dependency array if normalizeWinPattern and checkMainstageWinPattern are pure functions
+  }, []); 
 
   const fetchTickets = useCallback(async (forceRefresh = false) => {
     if (!sessionId) {
@@ -135,6 +133,7 @@ export function usePlayerTickets(
       setIsLoadingTickets(false);
       return;
     }
+    
     // Determine actual playerId if only playerCode is available
     let currentPId = playerId;
     if (!currentPId && playerCode) {
@@ -165,13 +164,12 @@ export function usePlayerTickets(
         return;
     }
 
-
     if (forceRefresh) setIsRefreshingTickets(true);
     else setIsLoadingTickets(true);
     setTicketError(null);
 
     try {
-      logWithTimestamp(`Workspaceing tickets for player ${currentPId} in session ${sessionId}`, 'info');
+      logWithTimestamp(`Fetching tickets for player ${currentPId} in session ${sessionId}`, 'info');
 
       const { data: assignedTicketsData, error: ticketsFetchError } = await supabase
         .from('assigned_tickets')
@@ -207,10 +205,12 @@ export function usePlayerTickets(
 
       const processed = processFetchedTickets(assignedTicketsData, calledNumbers, currentWinPattern);
       setPlayerTickets(processed);
-      setCurrentWinningTickets(processed.filter(t => t.is_winning));
+      
+      const winningTickets = processed.filter(t => t.is_winning);
+      setCurrentWinningTickets(winningTickets);
 
-      if (currentWinningTickets.length > 0) {
-        logWithTimestamp(`Found ${currentWinningTickets.length} winning tickets initially!`, 'info');
+      if (winningTickets.length > 0) {
+        logWithTimestamp(`Found ${winningTickets.length} winning tickets initially!`, 'info');
       }
 
     } catch (err) {
@@ -223,7 +223,7 @@ export function usePlayerTickets(
       setIsLoadingTickets(false);
       setIsRefreshingTickets(false);
     }
-  }, [sessionId, playerId, playerCode, processFetchedTickets]); // Include processFetchedTickets
+  }, [sessionId, playerId, playerCode, processFetchedTickets]); 
 
   useEffect(() => {
     if (sessionId && (playerId || playerCode)) {
@@ -241,14 +241,28 @@ export function usePlayerTickets(
     currentWinPattern: string | null
   ) => {
     setPlayerTickets(currentTickets => {
-      const updatedTickets = processFetchedTickets(currentTickets, calledNumbers, currentWinPattern);
-      setCurrentWinningTickets(updatedTickets.filter(t => t.is_winning));
-      if (currentWinningTickets.length > 0) {
-         logWithTimestamp(`Found ${currentWinningTickets.length} winning tickets after update!`, 'info');
+      // Create a proper array of DB-like objects from the current tickets
+      const ticketsForProcessing = currentTickets.map(ticket => ({
+        id: ticket.id,
+        serial: ticket.serial_number,
+        perm: ticket.perm_number,
+        position: ticket.position,
+        layout_mask: ticket.layout_mask,
+        numbers: ticket.raw_numbers
+      }));
+      
+      const updatedTickets = processFetchedTickets(ticketsForProcessing, calledNumbers, currentWinPattern);
+      
+      const winningTickets = updatedTickets.filter(t => t.is_winning);
+      setCurrentWinningTickets(winningTickets);
+      
+      if (winningTickets.length > 0) {
+         logWithTimestamp(`Found ${winningTickets.length} winning tickets after update!`, 'info');
       }
+      
       return updatedTickets;
     });
-  }, [processFetchedTickets, currentWinningTickets.length]); // Added currentWinningTickets.length to dependencies for re-logging
+  }, [processFetchedTickets]); 
 
   return {
     playerTickets,

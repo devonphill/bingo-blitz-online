@@ -20,6 +20,15 @@ interface SafeBingoTicketDisplayProps {
  * Wraps the SimpleBingoTicketDisplay with an error boundary
  */
 export default function SafeBingoTicketDisplay(props: SafeBingoTicketDisplayProps) {
+  // Log more detailed type info for debugging
+  const numberType = Array.isArray(props.numbers) 
+    ? (Array.isArray(props.numbers[0]) ? '2D array' : '1D array') 
+    : 'not array';
+  
+  console.log(`SafeBingoTicketDisplay - Ticket ${props.serial}, numbers type: ${numberType}, length: ${
+    Array.isArray(props.numbers) ? props.numbers.length : 0
+  }`);
+  
   return (
     <TicketErrorBoundary serial={props.serial}>
       <SimpleBingoTicketDisplay {...props} />

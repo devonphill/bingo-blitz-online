@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { usePlayerContext } from '@/contexts/PlayerContext';
 import { useSessionContext } from '@/contexts/SessionProvider';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { usePlayerTickets } from '@/hooks/usePlayerTickets';
+import { usePlayerTickets } from '@/hooks/playerTickets/usePlayerTickets';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import PlayerTicketView from './PlayerTicketView';
 import { useToast } from '@/hooks/use-toast';
@@ -40,7 +41,7 @@ export function PlayerTicketManager({ autoMarking, onClaimBingo }: PlayerTicketM
     refreshTickets,
     isRefreshingTickets,
     updateWinningStatus
-  } = usePlayerTickets(sessionId);
+  } = usePlayerTickets(sessionId, player?.id, player?.playerCode);
 
   // Create a logger for this component
   const log = (message: string, level: 'info' | 'warn' | 'error' = 'info') => {
@@ -162,7 +163,7 @@ export function PlayerTicketManager({ autoMarking, onClaimBingo }: PlayerTicketM
   // Handle ticket claim
   const handleClaimTicket = (ticket: any) => {
     if (onClaimBingo) {
-      log(`Claiming bingo for ticket ${ticket.id || ticket.serial}`);
+      log(`Claiming bingo for ticket ${ticket.id || ticket.serial_number}`);
       onClaimBingo(ticket);
     }
   };
@@ -276,6 +277,7 @@ export function PlayerTicketManager({ autoMarking, onClaimBingo }: PlayerTicketM
         calledNumbers={calledNumbers}
         lastCalledNumber={lastCalledNumber}
         currentWinPattern={currentWinPattern}
+        onClaimBingo={handleClaimTicket}
       />
     </div>
   );

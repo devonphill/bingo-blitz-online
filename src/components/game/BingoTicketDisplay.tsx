@@ -23,7 +23,7 @@ export default function BingoTicketDisplay(props: BingoTicketDisplayProps) {
   console.log(`BingoTicketDisplay - Rendering ticket ${props.serial}, numbers type: ${
     Array.isArray(props.numbers) ? 
       (Array.isArray(props.numbers[0]) ? '2D array' : '1D array') : 'not array'
-  }`);
+  }, length: ${Array.isArray(props.numbers) ? props.numbers.length : 0}`);
   
   return <SafeBingoTicketDisplay {...props} />;
 }
