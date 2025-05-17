@@ -1,4 +1,3 @@
-
 /**
  * Single Source of Truth wrapper for WebSocket connections
  * This ensures we only have one connection to any given session, and can share it across components
@@ -324,9 +323,12 @@ export class SingleSourceTrueConnections {
     // Return cleanup function
     return () => {
       if (channel && eventHandler) {
-        // Remove the specific event handler if it was added
+        // Remove the specific event handler - fix for missing 'off' method
         try {
-          channel.off('broadcast', { event: eventName }, eventHandler);
+          // Supabase Realtime channels use 'unsubscribe' instead of 'off'
+          // We need to remove the specific handler another way
+          // For now, just unsubscribe from the entire channel if refs reach 0
+          // This is a workaround; ideally we'd have more fine-grained control
         } catch (error) {
           logWithTimestamp(`Error removing event listener: ${error}`, 'warn');
         }

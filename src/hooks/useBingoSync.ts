@@ -2,8 +2,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNetworkStatus } from '@/contexts/NetworkStatusContext';
 import { useNetworkContext } from '@/contexts/network';
-import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
+import { getSingleSourceConnection } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { CHANNEL_NAMES, EVENT_TYPES } from '@/constants/websocketConstants';
 
 export function useBingoSync(sessionId: string | null) {
   // Use both contexts for backwards compatibility during refactoring
@@ -60,7 +61,7 @@ export function useBingoSync(sessionId: string | null) {
     
     // Use SingleSourceTrueConnections directly
     const cleanup = connection.listenForEvent(
-      'game-updates',
+      'GAME_UPDATES_BASE',
       'game-state-changed',
       (data: any) => {
         if (data?.sessionId === sessionId) {

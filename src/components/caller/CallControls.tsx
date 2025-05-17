@@ -9,7 +9,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useCallerHub } from '@/hooks/useCallerHub';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { GoLiveButton } from '@/components/ui/go-live-button';
-import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
+import { getSingleSourceConnection } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
+import { CHANNEL_NAMES, EVENT_TYPES } from '@/constants/websocketConstants';
 
 interface CallerControlsProps {
   onCallNumber: (number: number) => void;
@@ -114,10 +115,10 @@ export default function CallControls({
         // Get the called numbers
         const calledNumbers = getCalledNumbersFromRemaining(number, remainingNumbers);
 
-        // Use broadcast method directly with the correct parameters
+        // Update to use the broadcast method with correct parameters
         connection.broadcast(
           'GAME_UPDATES_BASE',
-          'number-called',
+          EVENT_TYPES.NUMBER_CALLED,
           { 
             number, 
             sessionId,

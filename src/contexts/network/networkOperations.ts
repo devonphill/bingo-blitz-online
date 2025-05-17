@@ -1,6 +1,6 @@
 
 import { logWithTimestamp } from '@/utils/logUtils';
-import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
+import { getSingleSourceConnection } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
 import { CHANNEL_NAMES, EVENT_TYPES } from '@/constants/websocketConstants';
 import { supabase } from '@/integrations/supabase/client';
 import { 
@@ -91,13 +91,20 @@ export const callNumberForSession = async (
     
     // Then broadcast the number
     logWithTimestamp(`Calling number ${number} for session ${sessionId}`, 'info');
-    const result = await connection.broadcastNumberCalled(
-      sessionId, 
-      number,
-      calledNumbers
+    
+    // Fix: Use the broadcastEvent function with proper parameters
+    const result = await broadcastEvent(
+      'GAME_UPDATES_BASE',
+      EVENT_TYPES.NUMBER_CALLED,
+      { 
+        sessionId,
+        number,
+        calledNumbers,
+        timestamp: new Date().toISOString()
+      }
     );
     
-    return result === true || result === 'ok' || false;
+    return result;
   } catch (error) {
     logWithTimestamp(`Error calling number: ${error}`, 'error');
     return false;
@@ -143,9 +150,8 @@ export const resetGameForSession = async (
       // Continue with broadcast even if DB update fails
     }
     
-    // Broadcast the reset event
-    logWithTimestamp(`Resetting game for session ${sessionId}`, 'info');
-    const result = await connection.broadcast(
+    // Fix: Use the broadcastEvent function for reset
+    return await broadcastEvent(
       'GAME_UPDATES_BASE',
       EVENT_TYPES.GAME_RESET,
       { 
@@ -153,8 +159,6 @@ export const resetGameForSession = async (
         timestamp: new Date().toISOString() 
       }
     );
-    
-    return result === true || result === 'ok' || false;
   } catch (error) {
     logWithTimestamp(`Error resetting game: ${error}`, 'error');
     return false;
@@ -163,7 +167,7 @@ export const resetGameForSession = async (
 
 // Function to broadcast any generic event
 export const broadcastEvent = async (
-  channelName: "GAME_UPDATES_BASE" | "CLAIM_UPDATES_BASE",
+  channelName: "GAME_UPDATES_BASE" | "CLAIM_UPDATES_BASE" | "GAME_UPDATES" | "CLAIM_UPDATES",
   eventType: string,
   data: any
 ): Promise<boolean> => {
@@ -183,7 +187,12 @@ export const broadcastEvent = async (
     logWithTimestamp(`Broadcasting event ${eventType} on channel ${channelName}`, 'info');
     const result = await connection.broadcast(channelName, eventType, data);
     
-    return result === true || result === 'ok' || false;
+    // Ensure we always return a boolean
+    if (typeof result === 'string') {
+      return result === 'ok';
+    }
+    
+    return !!result;
   } catch (error) {
     logWithTimestamp(`Error broadcasting event: ${error}`, 'error');
     return false;
@@ -220,12 +229,17 @@ export const syncCalledNumbers = async (
     const connection = getSingleSourceConnection();
     
     if (data.called_numbers.length > 0) {
-      // If we have numbers, broadcast the last one with the full list
+      // Fix: Use broadcastEvent for syncing numbers
       const lastNumber = data.called_numbers[data.called_numbers.length - 1];
-      await connection.broadcastNumberCalled(
-        sessionId,
-        lastNumber,
-        data.called_numbers
+      return await broadcastEvent(
+        'GAME_UPDATES_BASE',
+        EVENT_TYPES.NUMBER_CALLED,
+        {
+          sessionId,
+          number: lastNumber,
+          calledNumbers: data.called_numbers,
+          timestamp: new Date().toISOString()
+        }
       );
     }
     
