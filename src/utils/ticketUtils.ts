@@ -1,3 +1,4 @@
+
 import { toast } from 'sonner';
 
 /**
@@ -59,11 +60,12 @@ export function processTicketLayout(numbers: number[], layoutMask: number): (num
   // Place numbers into the grid according to the mask
   let numberIndex = 0;
   
-  // Process each row and column to ensure correct number placement
+  // We need to process the mask correctly - in standard bingo tickets, mask bits are ordered:
+  // Row 1 (cols 1-9), Row 2 (cols 1-9), Row 3 (cols 1-9)
   for (let row = 0; row < 3; row++) {
     for (let col = 0; col < 9; col++) {
-      // Calculate bit position in the mask
-      const bitPosition = row * 9 + col;
+      // Calculate bit position in the mask - reading from right to left
+      const bitPosition = (row * 9) + col;
       const shouldHaveNumber = maskBinary[maskBinary.length - 1 - bitPosition] === '1';
       
       if (shouldHaveNumber && numberIndex < numbers.length) {

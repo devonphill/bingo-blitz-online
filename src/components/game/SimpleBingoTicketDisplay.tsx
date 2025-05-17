@@ -28,16 +28,19 @@ const SimpleBingoTicketDisplay: React.FC<SimpleBingoTicketDisplayProps> = ({
   // Process the ticket layout using the layout mask
   useEffect(() => {
     if (Array.isArray(numbers) && layoutMask !== undefined) {
-      // Convert the flat array of numbers to a grid using the layout mask
-      const numbersArray = numbers.filter(n => n !== null) as number[];
+      // Filter out null values and use only valid numbers
+      const numbersArray = numbers.filter(n => n !== null && n !== undefined) as number[];
+      // Process the layout using the mask and filtered numbers
       const processedGrid = processTicketLayout(numbersArray, layoutMask);
       setGrid(processedGrid);
       
-      console.log(`Processed ticket ${serial} - grid size: ${processedGrid.length}x${processedGrid[0]?.length || 0}`);
+      console.log(`Processed ticket ${serial} - grid size: ${processedGrid.length}x${processedGrid[0]?.length || 0}, numbers: ${numbersArray.length}, mask: ${layoutMask.toString(2).padStart(27, '0')}`);
+    } else {
+      console.error(`Could not process ticket layout - invalid input: numbers=${numbers}, layoutMask=${layoutMask}`);
     }
   }, [numbers, layoutMask, serial]);
   
-  if (!grid.length || grid.some(row => !row.length)) {
+  if (!grid.length || grid.some(row => !row || !Array.isArray(row))) {
     return <div className="p-4 text-center text-gray-500">Processing ticket...</div>;
   }
   

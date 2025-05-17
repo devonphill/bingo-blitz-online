@@ -1,5 +1,6 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getSingleSourceConnection, SingleSourceTrueConnections } from '@/utils/SingleSourceTrueConnections';
+import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { EVENT_TYPES, WebSocketConnectionStatus, CONNECTION_STATES, CHANNEL_NAMES } from '@/constants/websocketConstants';
 import { useSessionContext } from '@/contexts/SessionContext'; // To get sessionId
@@ -79,7 +80,7 @@ export function useWebSocket() {
 
   return {
     isConnected: connectionState === CONNECTION_STATES.CONNECTED && isServiceReady,
-    isWsReady, // True if SSTC is initialized and its overall status is 'connected'
+    isWsReady: isServiceReady, // True if SSTC is initialized and its overall status is 'connected'
     connectionState,
     listenForEvent,
     EVENTS: EVENT_TYPES, // For convenience

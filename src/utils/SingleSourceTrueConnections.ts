@@ -1,9 +1,29 @@
+
 import { createClient, SupabaseClient, RealtimeChannel, RealtimeChannelSendResponse } from '@supabase/supabase-js';
 import { logWithTimestamp } from './logUtils';
 import { EVENT_TYPES, CHANNEL_NAMES, CONNECTION_STATES, WebSocketConnectionStatus } from '@/constants/websocketConstants';
 import { Database } from '@/types/supabase'; // Assuming your generated Supabase types are here
+import { supabase } from "@/integrations/supabase/client";
 
 type GenericEventListener<T = any> = (payload: T) => void;
+
+interface NumberCalledPayload {
+  sessionId: string;
+  number: number;
+  calledNumbers: number[];
+  timestamp: number;
+}
+
+interface ClaimSubmittedPayload {
+  sessionId: string;
+  playerId: string;
+  playerName?: string;
+  playerCode?: string;
+  ticketSerial: string;
+  ticketDetails?: any;
+  calledNumbers: number[];
+  patternClaimed: string;
+}
 
 class SingleSourceTrueConnections {
   private static instance: SingleSourceTrueConnections | null = null;
@@ -19,14 +39,18 @@ class SingleSourceTrueConnections {
   private currentSessionIdInternal: string | null = null;
   private serviceStatus: WebSocketConnectionStatus = CONNECTION_STATES.DISCONNECTED;
   private isBaseServiceInitialized: boolean = false; // Tracks if Supabase client is set
+  private lastPingTime: number = 0;
 
   // Listeners for overall SSTC status changes
   private sstcStatusListeners: Array<(status: WebSocketConnectionStatus, isServiceReady: boolean) => void> = [];
+  // Connection listeners for backward compatibility
+  private connectionListeners: Array<(isConnected: boolean) => void> = [];
 
   private constructor() {
     logWithTimestamp('[SSTC] Instance created. Call initialize() with Supabase client.', 'info');
     // No direct WebSocketService instantiation here now, relies on public initialize
     this.setupBrowserConnectivityListeners();
+    this.lastPingTime = Date.now();
   }
 
   public static getInstance(): SingleSourceTrueConnections {
@@ -83,6 +107,7 @@ class SingleSourceTrueConnections {
       this.serviceStatus = newStatus;
       logWithTimestamp(`[SSTC] Overall status changed to: ${this.serviceStatus}`, 'info');
       this.notifySSTCStatusListeners();
+      this.notifyConnectionListeners();
     }
   }
 
@@ -113,6 +138,7 @@ class SingleSourceTrueConnections {
     }
     
     this.currentSessionIdInternal = sessionId;
+    this.lastPingTime = Date.now();
     // Connection status reflects base client readiness; session channels are established on demand.
     this.updateOverallStatus(CONNECTION_STATES.CONNECTED); // Assuming base connection allows channels to be made
     // Components will call listenForEvent which will establish session-specific channels
@@ -148,6 +174,20 @@ class SingleSourceTrueConnections {
       logWithTimestamp(`[SSTC] Status listener removed. Remaining: ${this.sstcStatusListeners.length}`, 'info');
     };
   }
+  
+  // For backward compatibility with old NetworkProvider
+  public addConnectionListener(listener: (isConnected: boolean) => void): () => void {
+    this.connectionListeners.push(listener);
+    try {
+      listener(this.isConnected());
+    } catch (e) {
+      logWithTimestamp('[SSTC] Error in initial call to connection listener', 'error', e);
+    }
+    return () => {
+      this.connectionListeners = this.connectionListeners.filter(l => l !== listener);
+      logWithTimestamp(`[SSTC] Connection listener removed. Remaining: ${this.connectionListeners.length}`, 'info');
+    };
+  }
 
   private notifySSTCStatusListeners(): void {
     const currentStatus = this.serviceStatus;
@@ -158,6 +198,18 @@ class SingleSourceTrueConnections {
         listener(currentStatus, currentReady);
       } catch (error) {
         logWithTimestamp('[SSTC] Error in status listener callback', 'error', error);
+      }
+    });
+  }
+  
+  private notifyConnectionListeners(): void {
+    const isConnected = this.isConnected();
+    logWithTimestamp(`[SSTC] Notifying ${this.connectionListeners.length} connection listeners. Connected: ${isConnected}`, 'info');
+    this.connectionListeners.forEach(listener => {
+      try {
+        listener(isConnected);
+      } catch (error) {
+        logWithTimestamp('[SSTC] Error in connection listener callback', 'error', error);
       }
     });
   }
@@ -319,7 +371,7 @@ class SingleSourceTrueConnections {
       const channel = this.channels.get(channelName);
       if (channel) {
         channel.unsubscribe()
-          .then(() => logWithTimestamp(`[SSTC] Successfully unsubscribed from Supabase channel ${channelName}`, 'info`))
+          .then(() => logWithTimestamp(`[SSTC] Successfully unsubscribed from Supabase channel ${channelName}`, 'info`'))
           .catch(err => logWithTimestamp(`[SSTC] Error unsubscribing from Supabase channel ${channelName}: ${err}`, 'error'))
           .finally(() => {
             // Supabase client might remove the channel itself after unsubscribe, or we might do it.
@@ -339,6 +391,45 @@ class SingleSourceTrueConnections {
       }
     } else {
       this.channelRefCounts.set(channelName, count);
+    }
+  }
+  
+  // Method for backward compatibility with old code
+  public getLastPing(): number {
+    return this.lastPingTime;
+  }
+  
+  // Method to support broadcast functionality
+  public async broadcast(
+    channelBase: keyof typeof CHANNEL_NAMES, 
+    eventName: string, 
+    payload: any, 
+    sessionId?: string
+  ): Promise<RealtimeChannelSendResponse | null> {
+    const sId = sessionId || this.currentSessionIdInternal;
+    if (!sId) {
+      logWithTimestamp('[SSTC] broadcast: No session ID available.', 'error');
+      return null;
+    }
+    
+    const channelName = this.getSessionChannelName(CHANNEL_NAMES[channelBase], sId);
+    if (!channelName) return null;
+    
+    const channel = this.getOrCreateChannel(channelName);
+    if (!channel || (channel.state !== 'joined' && channel.state !== 'joining')) {
+      logWithTimestamp(`[SSTC] Cannot broadcast ${eventName}: Channel ${channelName} not ready. State: ${channel?.state}`, 'error');
+      return null;
+    }
+    
+    try {
+      return await channel.send({
+        type: 'broadcast',
+        event: eventName,
+        payload,
+      });
+    } catch (error) {
+      logWithTimestamp(`[SSTC] Error broadcasting ${eventName}: ${error}`, 'error');
+      return null;
     }
   }
 
@@ -372,58 +463,184 @@ class SingleSourceTrueConnections {
     }
   }
   
-  public async submitClaimToDb(claimData: Omit<Database['public']['Tables']['claims']['Insert'], 'id' | 'claimed_at' | 'status'>): Promise<{ data: any, error: any }> {
+  public async submitClaimToDb(claimData: Omit<Database['public']['Tables']['claims']['Insert'], 'id' | 'claimed_at' | 'status'>): Promise<{ data: any; error: any }> {
     if (!this.supabaseRealtimeClient) {
       logWithTimestamp('[SSTC] submitClaimToDb: Supabase client not initialized.', 'error');
       return { data: null, error: new Error("Supabase client not initialized.") };
     }
     logWithTimestamp('[SSTC] submitClaimToDb: Inserting claim into DB.', 'info', claimData);
-    const { data, error } = await this.supabaseRealtimeClient
-      .from('claims')
-      .insert({ ...claimData, status: 'pending' }) // We decided claims table has no status, this needs to align with DB schema
-      .select()
-      .single();
+    
+    try {
+      const { data, error } = await supabase
+        .from('claims')
+        .insert({ ...claimData })
+        .select()
+        .single();
 
-    if (error) {
-      logWithTimestamp('[SSTC] submitClaimToDb: Error inserting claim to DB.', 'error', error);
-    } else {
-      logWithTimestamp('[SSTC] submitClaimToDb: Claim successfully inserted to DB.', 'info', data);
+      if (error) {
+        logWithTimestamp('[SSTC] submitClaimToDb: Error inserting claim to DB.', 'error', error);
+      } else {
+        logWithTimestamp('[SSTC] submitClaimToDb: Claim successfully inserted to DB.', 'info', data);
+      }
+      return { data, error };
+    } catch (err) {
+      logWithTimestamp('[SSTC] submitClaimToDb: Exception inserting claim to DB.', 'error', err);
+      return { data: null, error: err };
     }
-    return { data, error };
   }
 
-  // Placeholder for other methods that were on Lovable's list, to be implemented as needed
+  // Implementation for callNumber method
   public async callNumber(sessionId: string, numberToCall: number, currentCalledNumbers: number[]): Promise<void> {
-    logWithTimestamp(`[SSTC] STUB: callNumber called for session ${sessionId}, number ${numberToCall}`, 'info');
-    // This should:
-    // 1. Validate number (not already called - ideally this logic moves fully here or to a service it uses)
-    // 2. Update database (sessions_progress)
-    // 3. Call this.broadcastNumberCalled(...)
-    // For now, just broadcast
-    await this.broadcastNumberCalled(sessionId, numberToCall, [...currentCalledNumbers, numberToCall]);
-  }
-
-  public async submitBingoClaim(payload: ClaimSubmittedPayload): Promise<RealtimeChannelSendResponse | null> {
-    logWithTimestamp('[SSTC] STUB: submitBingoClaim called.', 'info', payload);
-    // This should:
-    // 1. Insert into 'claims' table (using submitClaimToDb or similar)
-    // 2. If DB insert is successful, broadcast EVENT_TYPES.CLAIM_SUBMITTED
-    // For now, just broadcast:
-    const channelName = this.getSessionChannelName(CHANNEL_NAMES.CLAIM_UPDATES_BASE, payload.sessionId);
-    if (!channelName) return null;
-    const channel = this.getOrCreateChannel(channelName);
-    if (channel && (channel.state === 'joined' || channel.state === 'joining')) {
-        try {
-            return await channel.send({ type: 'broadcast', event: EVENT_TYPES.CLAIM_SUBMITTED, payload });
-        } catch (error) {
-            logWithTimestamp(`[SSTC] Error broadcasting ${EVENT_TYPES.CLAIM_SUBMITTED}: ${error}`, 'error');
-            return null;
-        }
+    logWithTimestamp(`[SSTC] callNumber called for session ${sessionId}, number ${numberToCall}`, 'info');
+    
+    if (!sessionId || numberToCall === undefined || numberToCall === null) {
+      logWithTimestamp(`[SSTC] callNumber: Missing required parameters`, 'error');
+      return;
     }
-    return null;
+    
+    try {
+      // First, update the database
+      const { error } = await supabase
+        .from('sessions_progress')
+        .update({ 
+          called_numbers: [...currentCalledNumbers, numberToCall],
+          updated_at: new Date().toISOString()
+        })
+        .eq('session_id', sessionId);
+      
+      if (error) {
+        logWithTimestamp(`[SSTC] callNumber: Error updating called numbers in database: ${error.message}`, 'error');
+        return;
+      }
+      
+      // Then broadcast the update
+      await this.broadcastNumberCalled(sessionId, numberToCall, [...currentCalledNumbers, numberToCall]);
+      
+    } catch (error) {
+      logWithTimestamp(`[SSTC] callNumber: Exception: ${error}`, 'error');
+    }
   }
   
-  // ... other methods like onSessionProgressUpdate, etc. would use listenForEvent ...
+  // Implementation for submitBingoClaim
+  public async submitBingoClaim(payload: ClaimSubmittedPayload): Promise<{ success: boolean; claimId?: string }> {
+    if (!payload.sessionId || !payload.ticketSerial) {
+      logWithTimestamp('[SSTC] submitBingoClaim: Missing required properties in payload', 'error');
+      return { success: false };
+    }
+    
+    try {
+      // First insert the claim in the database
+      const claimData = {
+        session_id: payload.sessionId,
+        player_id: payload.playerId,
+        player_code: payload.playerCode,
+        player_name: payload.playerName,
+        ticket_serial: payload.ticketSerial,
+        ticket_details: payload.ticketDetails,
+        called_numbers_snapshot: payload.calledNumbers,
+        pattern_claimed: payload.patternClaimed
+      };
+      
+      const { data, error } = await this.submitClaimToDb(claimData);
+      
+      if (error) {
+        logWithTimestamp('[SSTC] submitBingoClaim: Failed to insert claim to DB', 'error', error);
+        return { success: false };
+      }
+      
+      // Then broadcast the claim to the channel
+      const channelName = this.getSessionChannelName(CHANNEL_NAMES.CLAIM_UPDATES_BASE, payload.sessionId);
+      if (!channelName) return { success: false };
+      
+      const channel = this.getOrCreateChannel(channelName);
+      if (channel && (channel.state === 'joined' || channel.state === 'joining')) {
+        await channel.send({ 
+          type: 'broadcast', 
+          event: EVENT_TYPES.CLAIM_SUBMITTED, 
+          payload 
+        });
+        return { success: true, claimId: data?.id };
+      }
+      
+      return { success: false };
+      
+    } catch (error) {
+      logWithTimestamp('[SSTC] submitBingoClaim: Exception', 'error', error);
+      return { success: false };
+    }
+  }
+  
+  // Update player presence in the game
+  public async updatePlayerPresence(sessionId: string, playerId: string, presenceData: any): Promise<boolean> {
+    if (!sessionId || !playerId) {
+      logWithTimestamp('[SSTC] updatePlayerPresence: Missing sessionId or playerId', 'error');
+      return false;
+    }
+    
+    try {
+      const channelName = this.getSessionChannelName(CHANNEL_NAMES.PLAYER_PRESENCE_BASE, sessionId);
+      if (!channelName) return false;
+      
+      const channel = this.getOrCreateChannel(channelName);
+      if (!channel) return false;
+      
+      // Ensure channel is subscribed before tracking
+      if (channel.state !== 'joined') {
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Channel subscription timeout'));
+          }, 5000);
+          
+          const onSubscribed = (status: string) => {
+            if (status === 'SUBSCRIBED') {
+              clearTimeout(timeout);
+              channel.unsubscribe(onSubscribed);
+              resolve();
+            }
+          };
+          
+          channel.subscribe(onSubscribed);
+        });
+      }
+      
+      // Track presence data for this player
+      await channel.track({
+        player_id: playerId,
+        ...presenceData,
+        online_at: new Date().toISOString()
+      });
+      
+      return true;
+    } catch (error) {
+      logWithTimestamp('[SSTC] updatePlayerPresence: Exception', 'error', error);
+      return false;
+    }
+  }
+  
+  // Sync called numbers for a session
+  public async syncCalledNumbers(sessionId: string): Promise<number[] | null> {
+    if (!sessionId) {
+      return null;
+    }
+    
+    try {
+      const { data, error } = await supabase
+        .from('sessions_progress')
+        .select('called_numbers')
+        .eq('session_id', sessionId)
+        .single();
+      
+      if (error) {
+        logWithTimestamp('[SSTC] syncCalledNumbers: Error fetching called numbers', 'error', error);
+        return null;
+      }
+      
+      return data?.called_numbers || [];
+    } catch (error) {
+      logWithTimestamp('[SSTC] syncCalledNumbers: Exception', 'error', error);
+      return null;
+    }
+  }
 }
 
 export const getSingleSourceConnection = (): SingleSourceTrueConnections => {
