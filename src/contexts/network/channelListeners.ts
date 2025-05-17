@@ -29,28 +29,30 @@ export const setupChannelListeners = (
   
   // Listen for claim validation events
   const validationCleanup = connection.listenForEvent(
-    CHANNEL_NAMES.CLAIM_UPDATES,
-    EVENT_TYPES.CLAIM_VALIDATION,
+    CHANNEL_NAMES.CLAIM_UPDATES_BASE,
+    EVENT_TYPES.CLAIM_VALIDATING_TKT,
     (payload: any) => {
       // Only process updates for our session
       if (payload?.sessionId === sessionId) {
         logWithTimestamp(`Received claim validation for session ${sessionId}`, 'info');
         onClaimUpdate(payload);
       }
-    }
+    },
+    sessionId
   );
   
   // Listen for claim result events
   const resultCleanup = connection.listenForEvent(
-    CHANNEL_NAMES.CLAIM_UPDATES,
-    EVENT_TYPES.CLAIM_RESULT,
+    CHANNEL_NAMES.CLAIM_UPDATES_BASE,
+    EVENT_TYPES.CLAIM_RESOLUTION,
     (payload: any) => {
       // Only process updates for our session
       if (payload?.sessionId === sessionId) {
         logWithTimestamp(`Received claim result for session ${sessionId}`, 'info');
         onClaimUpdate(payload);
       }
-    }
+    },
+    sessionId
   );
   
   // Return a combined cleanup function

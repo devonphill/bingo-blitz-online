@@ -10,7 +10,7 @@ interface DebugPanelProps {
 
 export default function DebugPanel({ sessionId }: DebugPanelProps) {
   const [connectionStatus, setConnectionStatus] = useState<string>('unknown');
-  const [lastPing, setLastPing] = useState<Date | null>(null);
+  const [lastPingTime, setLastPingTime] = useState<Date | null>(null);
   const [pingTimeDisplay, setPingTimeDisplay] = useState<string>('N/A');
   
   // Update connection status and ping time
@@ -25,10 +25,16 @@ export default function DebugPanel({ sessionId }: DebugPanelProps) {
     // Update ping display
     const interval = setInterval(() => {
       const pingTime = connection.getLastPing();
-      setLastPing(pingTime);
       
-      if (pingTime) {
+      // Only update if pingTime is a valid Date
+      if (pingTime instanceof Date) {
+        setLastPingTime(pingTime);
         setPingTimeDisplay(pingTime.toLocaleTimeString());
+      } else if (typeof pingTime === 'number') {
+        // If pingTime is a timestamp number, convert to Date first
+        const pingDate = new Date(pingTime);
+        setLastPingTime(pingDate);
+        setPingTimeDisplay(pingDate.toLocaleString());
       }
     }, 1000);
     

@@ -1,9 +1,11 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { useSessionContext } from '@/contexts/SessionProvider';
+import { EVENT_TYPES } from '@/constants/websocketConstants';
 import { useWebSocket } from '@/hooks/useWebSocket';
-import { loadStoredNumbers, saveNumbersToStorage } from './storageUtils';
 import { fetchCalledNumbers } from './databaseUtils';
+import { loadStoredNumbers, saveNumbersToStorage } from './storageUtils';
 
 // Interface for number called payload
 interface NumberCalledPayload {
@@ -23,7 +25,6 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) 
   const [numbers, setNumbers] = useState<number[]>([]);
   const [lastCalledNumber, setLastCalledNumber] = useState<number | null>(null);
   const [lastUpdateTime, setLastUpdateTime] = useState<number>(Date.now());
-  const { currentSession } = useSessionContext();
   
   // Create unique instance ID for this hook
   const instanceId = useRef(`WSNum-${Math.random().toString(36).substring(2, 9)}`).current;
@@ -125,12 +126,12 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) 
     
     // Set up listeners using the useWebSocket hook
     const numberCleanup = listenForEvent(
-      EVENTS.NUMBER_CALLED,
+      EVENT_TYPES.NUMBER_CALLED,
       handleNumberUpdate
     );
     
     const resetCleanup = listenForEvent(
-      EVENTS.GAME_RESET,
+      EVENT_TYPES.GAME_RESET,
       handleGameReset
     );
     
@@ -146,7 +147,9 @@ export function usePlayerWebSocketNumbers(sessionId: string | null | undefined) 
   const reconnect = useCallback(() => {
     if (sessionId) {
       log(`Manually reconnecting to session ${sessionId}`, 'info');
-      connect();
+      if (connect) {
+        connect();
+      }
       
       // Re-fetch data from database
       fetchCalledNumbers(sessionId).then(dbNumbers => {

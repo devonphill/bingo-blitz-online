@@ -3,14 +3,17 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { EVENT_TYPES, WebSocketConnectionStatus, CONNECTION_STATES, CHANNEL_NAMES } from '@/constants/websocketConstants';
-import { useSessionContext } from '@/contexts/SessionContext'; // To get sessionId
+import { useSessionContext } from '@/contexts/SessionContext';
 
 /**
  * A React hook to interact with the centralized WebSocket service (SingleSourceTrueConnections).
  */
-export function useWebSocket() {
+export function useWebSocket(externalSessionId?: string | null) {
   const sstc = getSingleSourceConnection();
-  const { sessionId } = useSessionContext(); // Get current sessionId from SessionContext
+  const sessionContext = useSessionContext();
+  
+  // Use provided external sessionId or sessionContext.currentSession?.id
+  const sessionId = externalSessionId || sessionContext?.currentSession?.id;
 
   const [isServiceReady, setIsServiceReady] = useState(sstc.isServiceInitialized() && sstc.isConnected());
   const [connectionState, setConnectionState] = useState<WebSocketConnectionStatus>(sstc.getCurrentConnectionState());
@@ -31,8 +34,6 @@ export function useWebSocket() {
     const cleanupStatusListener = sstc.addStatusListener(handleSSTCStatusChange);
     
     // Initial connect attempt if sessionId is present and service is initialized by SSTC
-    // SSTC's initialize method should be called once at app startup.
-    // SSTC's connect method makes it "session-aware".
     if (sessionId && sstc.isServiceInitialized()) {
       logWithTimestamp(`[${instanceId}] SessionId available, calling SSTC connect for session: ${sessionId}`, 'info');
       sstc.connect(sessionId); // Make SSTC aware of the current session
@@ -46,46 +47,52 @@ export function useWebSocket() {
       logWithTimestamp(`[${instanceId}] Cleaning up useWebSocket hook. SessionId: ${sessionId}`, 'debug');
       cleanupStatusListener();
       // Listeners added via listenForEvent below will be cleaned up by their own returned functions
-      // No global disconnect here, SSTC handles channel lifecycle via reference counting.
     };
   }, [sessionId, sstc, instanceId]); // sstc is stable, instanceId is stable
 
   const listenForEvent = useCallback(
     <T = any>(
-      baseChannelNameKey: keyof typeof CHANNEL_NAMES,
       eventName: string,
       callback: (payload: T) => void
     ): (() => void) => {
       if (!sessionId) {
-        logWithTimestamp(`[${instanceId}] listenForEvent: No sessionId, cannot add listener for ${eventName} on ${baseChannelNameKey}.`, 'warn');
+        logWithTimestamp(`[${instanceId}] listenForEvent: No sessionId, cannot add listener for ${eventName}.`, 'warn');
         return () => {};
       }
       if (!isServiceReady) {
-        logWithTimestamp(`[${instanceId}] listenForEvent: WebSocket not ready (state: ${connectionState}), deferring listener for ${eventName} on ${baseChannelNameKey}.`, 'warn');
+        logWithTimestamp(`[${instanceId}] listenForEvent: WebSocket not ready (state: ${connectionState}), deferring listener for ${eventName}.`, 'warn');
         return () => {};
       }
       if (!eventName || typeof eventName !== 'string') {
-        logWithTimestamp(`[${instanceId}] listenForEvent: Invalid eventName '${eventName}' for ${baseChannelNameKey}. Listener not added.`, 'error');
+        logWithTimestamp(`[${instanceId}] listenForEvent: Invalid eventName '${eventName}'. Listener not added.`, 'error');
         return () => {};
       }
 
+      // Determine the channel name based on event type
+      const channelNameKey = eventName.includes('claim') ? 'CLAIM_UPDATES_BASE' : 'GAME_UPDATES_BASE';
+      
       // SSTC will construct the full channel name using sessionId
-      return sstc.listenForEvent<T>(baseChannelNameKey, eventName, callback, sessionId);
+      return sstc.listenForEvent<T>(channelNameKey, eventName, callback, sessionId);
     },
     [sessionId, sstc, isServiceReady, connectionState, instanceId]
   );
   
-  // Expose specific broadcast methods if needed, or let components get SSTC instance for broadcasting
-  // For now, focusing on listening.
+  // Expose connect method for manual reconnection
+  const connect = useCallback(() => {
+    if (sessionId) {
+      sstc.connect(sessionId);
+      return true;
+    }
+    return false;
+  }, [sessionId, sstc]);
 
   return {
     isConnected: connectionState === CONNECTION_STATES.CONNECTED && isServiceReady,
     isWsReady: isServiceReady, // True if SSTC is initialized and its overall status is 'connected'
     connectionState,
     listenForEvent,
+    connect,
     EVENTS: EVENT_TYPES, // For convenience
-    // Expose connect/disconnect from SSTC if components need to trigger them via the hook
-    // connectToSession: sstc.connect, (already called by useEffect based on sessionId)
-    // disconnectSession: sstc.disconnect,
+    sessionId
   };
 }

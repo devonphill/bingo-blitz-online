@@ -5,7 +5,7 @@ import { logWithTimestamp } from '@/utils/logUtils';
 import { v4 as uuidv4 } from 'uuid';
 import { toast as sonnerToast } from 'sonner';
 import { useWebSocket } from '@/hooks/useWebSocket';
-import { CHANNEL_NAMES } from '@/constants/websocketConstants';
+import { EVENT_TYPES, CHANNEL_NAMES } from '@/constants/websocketConstants';
 
 /**
  * Hook for managing player claim submissions without client-side validation
@@ -167,7 +167,7 @@ export function usePlayerClaimManagement(
       const submitEvent = new CustomEvent('submitPlayerClaim', {
         detail: { 
           claimData,
-          channelName: CHANNEL_NAMES.GAME_UPDATES, 
+          channelName: CHANNEL_NAMES.CLAIM_UPDATES_BASE, 
           eventType: EVENTS.CLAIM_SUBMITTED
         }
       });

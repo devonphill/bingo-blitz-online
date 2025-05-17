@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
+import { EVENT_TYPES } from '@/constants/websocketConstants';
 
 interface PlayerTicketManagerProps {
   autoMarking: boolean;
@@ -112,64 +113,64 @@ export function PlayerTicketManager({ autoMarking, onClaimBingo }: PlayerTicketM
       return;
     }
     
-    // Verify that we have valid event types
-    if (!EVENTS || !EVENTS.NUMBER_CALLED || !EVENTS.GAME_STATE_UPDATE) {
-      log(`Missing required event types, skipping listener setup`, 'error');
-      return;
-    }
-    
     log(`Setting up game state update listeners for session ${sessionId}`, 'info');
     
     // Listen for number called updates
-    const numberCleanup = listenForEvent(EVENTS.NUMBER_CALLED, (data: any) => {
-      // Verify the data is for our session
-      if (data?.sessionId !== sessionId) {
-        log(`Ignoring number called for different session: ${data?.sessionId}`, 'info');
-        return;
-      }
-      
-      log(`Received number called update: ${data.number}`, 'info');
-      
-      if (data.calledNumbers && Array.isArray(data.calledNumbers)) {
-        setCalledNumbers(data.calledNumbers);
-        
-        if (data.calledNumbers.length > 0) {
-          setLastCalledNumber(data.calledNumbers[data.calledNumbers.length - 1]);
+    const numberCleanup = listenForEvent(
+      EVENT_TYPES.NUMBER_CALLED,
+      (data: any) => {
+        // Verify the data is for our session
+        if (data?.sessionId !== sessionId) {
+          log(`Ignoring number called for different session: ${data?.sessionId}`, 'info');
+          return;
         }
         
-        // Update winning status of tickets with new called numbers
-        if (currentWinPattern) {
-          updateWinningStatus(data.calledNumbers, currentWinPattern);
+        log(`Received number called update: ${data.number}`, 'info');
+        
+        if (data.calledNumbers && Array.isArray(data.calledNumbers)) {
+          setCalledNumbers(data.calledNumbers);
+          
+          if (data.calledNumbers.length > 0) {
+            setLastCalledNumber(data.calledNumbers[data.calledNumbers.length - 1]);
+          }
+          
+          // Update winning status of tickets with new called numbers
+          if (currentWinPattern) {
+            updateWinningStatus(data.calledNumbers, currentWinPattern);
+          }
         }
       }
-    });
+    );
     
     // Listen for game state updates
-    const stateCleanup = listenForEvent(EVENTS.GAME_STATE_UPDATE, (data: any) => {
-      // Verify the data is for our session
-      if (data?.sessionId !== sessionId) {
-        log(`Ignoring game state update for different session: ${data?.sessionId}`, 'info');
-        return;
-      }
-      
-      log(`Received game state update`, 'info');
-      
-      if (data.currentWinPattern) {
-        setCurrentWinPattern(data.currentWinPattern);
-        log(`Win pattern updated to: ${data.currentWinPattern}`, 'info');
-      }
-      
-      if (data.calledNumbers && Array.isArray(data.calledNumbers)) {
-        setCalledNumbers(data.calledNumbers);
-        
-        if (data.calledNumbers.length > 0) {
-          setLastCalledNumber(data.calledNumbers[data.calledNumbers.length - 1]);
+    const stateCleanup = listenForEvent(
+      EVENT_TYPES.GAME_STATE_UPDATE,
+      (data: any) => {
+        // Verify the data is for our session
+        if (data?.sessionId !== sessionId) {
+          log(`Ignoring game state update for different session: ${data?.sessionId}`, 'info');
+          return;
         }
         
-        // Update winning status of tickets with new called numbers and possibly new pattern
-        updateWinningStatus(data.calledNumbers, data.currentWinPattern || currentWinPattern);
+        log(`Received game state update`, 'info');
+        
+        if (data.currentWinPattern) {
+          setCurrentWinPattern(data.currentWinPattern);
+          log(`Win pattern updated to: ${data.currentWinPattern}`, 'info');
+        }
+        
+        if (data.calledNumbers && Array.isArray(data.calledNumbers)) {
+          setCalledNumbers(data.calledNumbers);
+          
+          if (data.calledNumbers.length > 0) {
+            setLastCalledNumber(data.calledNumbers[data.calledNumbers.length - 1]);
+          }
+          
+          // Update winning status of tickets with new called numbers and possibly new pattern
+          updateWinningStatus(data.calledNumbers, data.currentWinPattern || currentWinPattern);
+        }
       }
-    });
+    );
     
     return () => {
       log('Cleaning up game state update listeners', 'info');

@@ -1,7 +1,7 @@
 
 import { logWithTimestamp } from "@/utils/logUtils";
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
-import { EVENT_TYPES } from '@/constants/websocketConstants';
+import { EVENT_TYPES, CHANNEL_NAMES } from '@/constants/websocketConstants';
 
 /**
  * Registers listeners for WebSocket number updates using SingleSourceTrueConnections
@@ -29,7 +29,7 @@ export function setupNumberUpdateListeners(
   }
   
   // Set up connection to session if needed
-  if (singleSource.getCurrentSessionId() !== sessionId) {
+  if (singleSource.getActiveSessionId() !== sessionId) {
     singleSource.connect(sessionId);
   }
 
@@ -41,7 +41,7 @@ export function setupNumberUpdateListeners(
   
   // Set up number called listener
   const numberCleanup = singleSource.listenForEvent(
-    'game-updates',
+    CHANNEL_NAMES.GAME_UPDATES_BASE,
     EVENT_TYPES.NUMBER_CALLED,
     (data: any) => {
       // Check if the data is for our session
@@ -49,12 +49,13 @@ export function setupNumberUpdateListeners(
         logWithTimestamp(`[${instanceId}] Received number update for session ${sessionId}: ${data.number}`, 'info');
         onNumberUpdate(data.number, data.calledNumbers || []);
       }
-    }
+    },
+    sessionId
   );
   
   // Set up game reset listener
   const resetCleanup = singleSource.listenForEvent(
-    'game-updates',
+    CHANNEL_NAMES.GAME_UPDATES_BASE,
     EVENT_TYPES.GAME_RESET,
     (data: any) => {
       // Check if the data is for our session
@@ -62,7 +63,8 @@ export function setupNumberUpdateListeners(
         logWithTimestamp(`[${instanceId}] Received game reset for session ${sessionId}`, 'info');
         onGameReset();
       }
-    }
+    },
+    sessionId
   );
   
   // Return combined cleanup function

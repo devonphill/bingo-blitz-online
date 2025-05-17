@@ -1,10 +1,11 @@
+
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { usePlayerTickets, PlayerTicket } from '@/hooks/playerTickets/usePlayerTickets'; 
 import { usePlayerContext } from './PlayerContext';
 import { useSessionContext } from './SessionProvider';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { logWithTimestamp } from '@/utils/logUtils';
-import { CHANNEL_NAMES } from '@/constants/websocketConstants';
+import { EVENT_TYPES } from '@/constants/websocketConstants';
 
 interface GameContextData {
   calledNumbers: number[];
@@ -25,7 +26,7 @@ const GameContext = createContext<GameContextData | undefined>(undefined);
 export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { player } = usePlayerContext();
   const { currentSession } = useSessionContext();
-  const sessionId = player?.sessionId || null;
+  const sessionId = player?.sessionId || currentSession?.id || null;
   
   // Only set up WebSocket when we have a valid session ID
   const { listenForEvent, EVENTS, isConnected, connectionState, isWsReady } = useWebSocket(sessionId);

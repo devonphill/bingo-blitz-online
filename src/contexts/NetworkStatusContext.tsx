@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useNetworkContext } from './network';
 import { ConnectionState } from '@/constants/connectionConstants';
+import { WebSocketConnectionStatus } from '@/constants/websocketConstants';
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 
 interface NetworkStatusContextType {
@@ -22,6 +23,17 @@ const NetworkStatusContext = createContext<NetworkStatusContextType>({
   callNumber: async () => false
 });
 
+// Helper function to convert WebSocketConnectionStatus to ConnectionState
+const mapConnectionState = (wsStatus: WebSocketConnectionStatus): ConnectionState => {
+  switch(wsStatus) {
+    case 'connected': return 'connected';
+    case 'connecting': return 'connecting';
+    case 'disconnected': return 'disconnected';
+    case 'reconnecting': return 'connecting'; // Map reconnecting to connecting
+    default: return 'disconnected';
+  }
+};
+
 export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({ 
   children 
 }) => {
@@ -32,12 +44,13 @@ export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     const connection = getSingleSourceConnection();
     
-    const cleanup = connection.addConnectionListener((isConnected) => {
-      setConnectionState(connection.getCurrentConnectionState());
+    const cleanup = connection.addStatusListener((status) => {
+      // Convert WebSocketConnectionStatus to ConnectionState
+      setConnectionState(mapConnectionState(status));
     });
     
     // Call once to set initial state
-    setConnectionState(connection.getCurrentConnectionState());
+    setConnectionState(mapConnectionState(connection.getCurrentConnectionState()));
     
     return cleanup;
   }, []);
@@ -59,20 +72,22 @@ export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [sessionId]);
   
   // Call a number for the current session
-  const callNumber = useCallback(async (number: number, specificSessionId?: string) => {
+  const callNumber = useCallback(async (number: number, specificSessionId?: string): Promise<boolean> => {
     const targetSessionId = specificSessionId || sessionId;
     if (!targetSessionId) return false;
     
     try {
       const connection = getSingleSourceConnection();
-      return await connection.broadcastNumberCalled(targetSessionId, number);
+      const result = await connection.broadcastNumberCalled(targetSessionId, number);
+      // Convert any response to boolean
+      return result !== false;
     } catch (error) {
       console.error('Error calling number:', error);
       return false;
     }
   }, [sessionId]);
   
-  const value = {
+  const value: NetworkStatusContextType = {
     isConnected: networkIsConnected,
     connectionState,
     reconnect,
