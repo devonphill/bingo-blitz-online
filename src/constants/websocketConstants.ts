@@ -4,7 +4,8 @@ export const CONNECTION_STATES = {
   CONNECTED: 'connected',
   CONNECTING: 'connecting',
   DISCONNECTED: 'disconnected',
-  RECONNECTING: 'reconnecting'
+  RECONNECTING: 'reconnecting',
+  ERROR: 'error'
 } as const;
 
 // Connection status type
@@ -23,13 +24,13 @@ export const EVENT_TYPES = {
   GAME_STATE_UPDATE: 'game-state-update',
   GAME_RESET: 'game-reset',
   WIN_PATTERN_UPDATED: 'win-pattern-updated',
-  
+
   // Claim events
   CLAIM_SUBMITTED: 'claim-submitted',
   CLAIM_VALIDATING: 'claim-validating',
   CLAIM_VALIDATING_TKT: 'claim-validating-tkt',
   CLAIM_RESOLUTION: 'claim-resolution',
-  
+
   // Player events
   PLAYER_JOIN: 'player-join',
   PLAYER_LEAVE: 'player-leave',
