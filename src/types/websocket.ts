@@ -1,37 +1,7 @@
+// In src/types/websocket.ts
+import { CONNECTION_STATES } from '@/constants/websocketConstants';
 
-/**
- * WebSocket communication types
- */
+export type WebSocketConnectionStatus = typeof CONNECTION_STATES[keyof typeof CONNECTION_STATES];
 
-// WebSocketConnectionStatus - derived from CONNECTION_STATES values
-export type WebSocketConnectionStatus = 
-  | 'connected'
-  | 'connecting'
-  | 'disconnected'
-  | 'error'
-  | 'unknown';
-
-// WebSocket event payload
-export interface WebSocketEventPayload<T = any> {
-  type: string;
-  event: string;
-  payload: T;
-}
-
-// Standard number called payload
-export interface NumberCalledPayload {
-  number: number;
-  sessionId: string;
-  timestamp: number;
-  calledNumbers?: number[];
-  broadcastId?: string;
-}
-
-// Standard claim submitted payload
-export interface ClaimSubmittedPayload {
-  claimId: string;
-  playerId: string;
-  playerName: string;
-  sessionId: string;
-  timestamp: number;
-}
+// You can also put your payload interfaces like NumberCalledPayload, ClaimSubmittedPayload etc. here
+// or keep them in websocketConstants.ts if preferred.
