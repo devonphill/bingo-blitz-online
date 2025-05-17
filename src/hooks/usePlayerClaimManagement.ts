@@ -73,7 +73,8 @@ export const usePlayerClaimManagement = ({ sessionId, playerName, playerCode }: 
         timestamp: new Date().toISOString()
       };
       
-      connectionManager.listenForEvent(
+      // Send the claim data using the broadcast method
+      connectionManager.broadcast(
         claimSenderChannelName, 
         EVENT_TYPES.CLAIM_SUBMITTED, 
         claimData

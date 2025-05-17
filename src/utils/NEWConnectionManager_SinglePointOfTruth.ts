@@ -21,6 +21,9 @@ const ADDITIONAL_EVENT_TYPES = {
 // Export the channel names for external use
 export const NCM_CHANNEL_NAMES = CHANNEL_NAMES;
 
+// Type alias for generic event listeners
+type GenericEventListener<T = any> = (payload: T) => void;
+
 /**
  * Single source of truth for all WebSocket connections
  * This class is responsible for managing all WebSocket connections
@@ -43,6 +46,9 @@ export class NEWConnectionManager_SinglePointOfTruth {
   private isSupabaseClientInitialized: boolean = false;
 
   private overallStatusListeners: Array<(status: WebSocketConnectionStatus, isServiceReady: boolean) => void> = [];
+
+  // Track which channels have broadcast handlers attached
+  private channelBroadcastHandlerAttached: Map<string, boolean> = new Map();
 
   /**
    * Private constructor to prevent direct instantiation
@@ -168,6 +174,19 @@ export class NEWConnectionManager_SinglePointOfTruth {
   }
 
   /**
+   * Add connection listener (alias for addOverallStatusListener for backward compatibility)
+   */
+  public addConnectionListener(
+    listener: (isConnected: boolean) => void
+  ): () => void {
+    // Convert the simple boolean listener to work with our more comprehensive status listener
+    return this.addOverallStatusListener((status, isReady) => {
+      // Call the original listener with just the connected status
+      listener(status === CONNECTION_STATES.CONNECTED && isReady);
+    });
+  }
+
+  /**
    * Notify all overall status listeners of a status change
    */
   private notifyOverallStatusListeners(): void {
@@ -212,9 +231,6 @@ export class NEWConnectionManager_SinglePointOfTruth {
   private getFullChannelName(channelBase: string, sessionId: string): string {
     return `${channelBase}-${sessionId}`;
   }
-
-  // Track which channels have broadcast handlers attached
-  private channelBroadcastHandlerAttached: Map<string, boolean> = new Map();
 
   /**
    * Connect to a session by creating channels for the specified session ID
@@ -283,19 +299,6 @@ export class NEWConnectionManager_SinglePointOfTruth {
    */
   public connect(sessionId: string): void {
     this.connectToSession(sessionId);
-  }
-
-  /**
-   * Add connection listener (alias for addOverallStatusListener for backward compatibility)
-   */
-  public addConnectionListener(
-    listener: (isConnected: boolean) => void
-  ): () => void {
-    // Convert the simple boolean listener to work with our more comprehensive status listener
-    return this.addOverallStatusListener((status, isReady) => {
-      // Call the original listener with just the connected status
-      listener(status === CONNECTION_STATES.CONNECTED && isReady);
-    });
   }
 
   /**
@@ -514,35 +517,6 @@ export class NEWConnectionManager_SinglePointOfTruth {
   }
 
   /**
-   * Remove a channel and all its listeners
-   */
-  private removeChannelAndListeners(fullChannelName: string): void {
-    const channel = this.activeChannels.get(fullChannelName);
-    if (!channel) {
-      logWarn(`[NCM_SPOT] Cannot remove channel: ${fullChannelName} not found.`);
-      return;
-    }
-
-    logInfo(`[NCM_SPOT] Removing channel and all listeners: ${fullChannelName}`);
-
-    // Unsubscribe from the channel
-    channel.unsubscribe();
-
-    // Remove the channel from Supabase client
-    if (this.supabaseClient) {
-      this.supabaseClient.removeChannel(channel);
-    }
-
-    // Clean up all maps
-    this.activeChannels.delete(fullChannelName);
-    this.channelRefCounts.delete(fullChannelName);
-    this.specificEventListeners.delete(fullChannelName);
-    this.channelBroadcastHandlerAttached.delete(fullChannelName);
-
-    logInfo(`[NCM_SPOT] Successfully removed channel: ${fullChannelName}`);
-  }
-
-  /**
    * Disconnect from the current session by unsubscribing from all channels
    */
   public disconnectCurrentSessionChannels(): void {
@@ -574,6 +548,35 @@ export class NEWConnectionManager_SinglePointOfTruth {
     this.notifyOverallStatusListeners();
 
     logInfo('[NCM_SPOT] Successfully disconnected from session.');
+  }
+
+  /**
+   * Remove a channel and all its listeners
+   */
+  private removeChannelAndListeners(fullChannelName: string): void {
+    const channel = this.activeChannels.get(fullChannelName);
+    if (!channel) {
+      logWarn(`[NCM_SPOT] Cannot remove channel: ${fullChannelName} not found.`);
+      return;
+    }
+
+    logInfo(`[NCM_SPOT] Removing channel and all listeners: ${fullChannelName}`);
+
+    // Unsubscribe from the channel
+    channel.unsubscribe();
+
+    // Remove the channel from Supabase client
+    if (this.supabaseClient) {
+      this.supabaseClient.removeChannel(channel);
+    }
+
+    // Clean up all maps
+    this.activeChannels.delete(fullChannelName);
+    this.channelRefCounts.delete(fullChannelName);
+    this.specificEventListeners.delete(fullChannelName);
+    this.channelBroadcastHandlerAttached.delete(fullChannelName);
+
+    logInfo(`[NCM_SPOT] Successfully removed channel: ${fullChannelName}`);
   }
 
   /**
@@ -1079,6 +1082,5 @@ export class NEWConnectionManager_SinglePointOfTruth {
  * This is the recommended way to access the connection manager
  */
 export const getNCMInstance = (): NEWConnectionManager_SinglePointOfTruth => {
-  return NEWConnectionManager_SinglePointOfTruth.instance;
+  return NEWConnectionManager_SinglePointOfTruth.getInstance();
 };
-
