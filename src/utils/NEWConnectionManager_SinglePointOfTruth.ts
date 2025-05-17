@@ -396,16 +396,18 @@ export class NEWConnectionManager_SinglePointOfTruth {
 
     // Proactively join essential channels
     try {
-      // Set up presence listener
+      // Set up presence listener - FIX: Add proper channelName as first argument
+      const presenceChannelName = this.getParticipantChannelName(sessionId);
       this.listenForEvent(
-        this.getParticipantChannelName(sessionId), 
+        presenceChannelName, 
         'presence', 
         this.handlePresenceEvent.bind(this)
       );
 
-      // Set up game updates listener
+      // Set up game updates listener - FIX: Add proper channelName as first argument
+      const gameUpdatesChannelName = this.getGameUpdatesChannelName(sessionId);
       this.listenForEvent(
-        this.getGameUpdatesChannelName(sessionId), 
+        gameUpdatesChannelName, 
         ADDITIONAL_EVENT_TYPES.CHANGES_DETECTED, 
         this.handleGameUpdatesEvent.bind(this)
       );
@@ -572,12 +574,12 @@ export class NEWConnectionManager_SinglePointOfTruth {
       return () => {}; // Return no-op cleanup function
     }
 
-    // Set up presence event listeners
+    // Fix cast for presenceState() to be any[] instead of expecting RealtimePresenceState to match any[]
     const syncCleanup = this.listenForEvent(channelName, 'presence', ({ event }) => {
       if (event === 'sync') {
         callback({ 
           eventType: 'sync', 
-          newPresences: channel.presenceState() || [], 
+          newPresences: channel.presenceState() as any[] || [], 
           leftPresences: [] 
         });
       }
@@ -630,7 +632,7 @@ export class NEWConnectionManager_SinglePointOfTruth {
     channelName: string, 
     sessionId: string, 
     eventName: string, 
-    callback: Function
+    callback: (payload: any) => void
   ): () => void {
     logWarn('[NCM_SPOT] addEventListener is deprecated. Use listenForEvent instead.');
     const fullChannelName = this.getFullChannelName(channelName, sessionId);
@@ -689,12 +691,13 @@ export class NEWConnectionManager_SinglePointOfTruth {
 
     logInfo(`[NCM_SPOT] Disconnecting from session: ${sessionId}`);
 
-    // Unsubscribe from all channels for this session
-    this.unsubscribeFromChannel(CHANNEL_NAMES.GAME_DETAILS, sessionId);
-    this.unsubscribeFromChannel(CHANNEL_NAMES.CLAIM_SENDER, sessionId);
-    this.unsubscribeFromChannel(CHANNEL_NAMES.GAME_UPDATES, sessionId);
-    this.unsubscribeFromChannel(CHANNEL_NAMES.CLAIMS_VALIDATION, sessionId);
-    this.unsubscribeFromChannel(CHANNEL_NAMES.PARTICIPANTS, sessionId);
+    // Instead of calling unsubscribeFromChannel with non-existent properties,
+    // use the correct channel name getters and removeChannelAndListeners method
+    this.removeChannelAndListeners(this.getGameDetailsChannelName(sessionId));
+    this.removeChannelAndListeners(this.getClaimSenderChannelName(sessionId));
+    this.removeChannelAndListeners(this.getGameUpdatesChannelName(sessionId));
+    this.removeChannelAndListeners(this.getClaimsValidationChannelName(sessionId));
+    this.removeChannelAndListeners(this.getParticipantChannelName(sessionId));
 
     if (this.currentSessionIdInternal === sessionId) {
       this.currentSessionIdInternal = null;
