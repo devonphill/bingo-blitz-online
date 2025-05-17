@@ -1,3 +1,4 @@
+
 import { SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import { CONNECTION_STATES, WebSocketConnectionStatus, EVENT_TYPES } from '@/constants/websocketConstants';
 import { logDebug, logInfo, logWarn, logError } from '@/utils/logUtils';
@@ -579,7 +580,7 @@ export class NEWConnectionManager_SinglePointOfTruth {
       if (event === 'sync') {
         callback({ 
           eventType: 'sync', 
-          newPresences: channel.presenceState() as any[] || [], 
+          newPresences: Object.values(channel.presenceState() || {}), 
           leftPresences: [] 
         });
       }
@@ -629,13 +630,36 @@ export class NEWConnectionManager_SinglePointOfTruth {
    * Use listenForEvent instead.
    */
   public addEventListener(
-    channelName: string, 
+    channelBaseName: string, 
     sessionId: string, 
     eventName: string, 
     callback: (payload: any) => void
   ): () => void {
     logWarn('[NCM_SPOT] addEventListener is deprecated. Use listenForEvent instead.');
-    const fullChannelName = this.getFullChannelName(channelName, sessionId);
+    
+    // Fix: Construct the full channel name based on the base name
+    let fullChannelName: string;
+    
+    switch (channelBaseName) {
+      case CHANNEL_NAMES.GAME_DETAILS_BASE:
+        fullChannelName = this.getGameDetailsChannelName(sessionId);
+        break;
+      case CHANNEL_NAMES.CLAIM_SENDER_BASE:
+        fullChannelName = this.getClaimSenderChannelName(sessionId);
+        break;
+      case CHANNEL_NAMES.GAME_UPDATES_BASE:
+        fullChannelName = this.getGameUpdatesChannelName(sessionId);
+        break;
+      case CHANNEL_NAMES.CLAIMS_VALIDATION_BASE:
+        fullChannelName = this.getClaimsValidationChannelName(sessionId);
+        break;
+      case CHANNEL_NAMES.PARTICIPANTS_BASE:
+        fullChannelName = this.getParticipantChannelName(sessionId);
+        break;
+      default:
+        fullChannelName = this.getFullChannelName(channelBaseName, sessionId);
+    }
+    
     return this.listenForEvent(fullChannelName, eventName, callback);
   }
 
@@ -646,7 +670,7 @@ export class NEWConnectionManager_SinglePointOfTruth {
    * Use the specific channel send methods instead.
    */
   public sendMessage(
-    channelName: string, 
+    channelBaseName: string, 
     sessionId: string, 
     eventName: string, 
     payload: any
@@ -658,7 +682,28 @@ export class NEWConnectionManager_SinglePointOfTruth {
       return;
     }
 
-    const fullChannelName = this.getFullChannelName(channelName, sessionId);
+    // Fix: Construct the full channel name based on the base name
+    let fullChannelName: string;
+    
+    switch (channelBaseName) {
+      case CHANNEL_NAMES.GAME_DETAILS_BASE:
+        fullChannelName = this.getGameDetailsChannelName(sessionId);
+        break;
+      case CHANNEL_NAMES.CLAIM_SENDER_BASE:
+        fullChannelName = this.getClaimSenderChannelName(sessionId);
+        break;
+      case CHANNEL_NAMES.GAME_UPDATES_BASE:
+        fullChannelName = this.getGameUpdatesChannelName(sessionId);
+        break;
+      case CHANNEL_NAMES.CLAIMS_VALIDATION_BASE:
+        fullChannelName = this.getClaimsValidationChannelName(sessionId);
+        break;
+      case CHANNEL_NAMES.PARTICIPANTS_BASE:
+        fullChannelName = this.getParticipantChannelName(sessionId);
+        break;
+      default:
+        fullChannelName = this.getFullChannelName(channelBaseName, sessionId);
+    }
 
     // Get or create the channel
     const channel = this.getOrCreateChannel(fullChannelName);
@@ -772,9 +817,9 @@ export class NEWConnectionManager_SinglePointOfTruth {
   public addGameDetailsListener(
     sessionId: string, 
     eventName: string, 
-    callback: Function
+    callback: (payload: any) => void
   ): () => void {
-    return this.addEventListener(CHANNEL_NAMES.GAME_DETAILS, sessionId, eventName, callback);
+    return this.addEventListener(CHANNEL_NAMES.GAME_DETAILS_BASE, sessionId, eventName, callback);
   }
 
   /**
@@ -783,9 +828,9 @@ export class NEWConnectionManager_SinglePointOfTruth {
   public addClaimSenderListener(
     sessionId: string, 
     eventName: string, 
-    callback: Function
+    callback: (payload: any) => void
   ): () => void {
-    return this.addEventListener(CHANNEL_NAMES.CLAIM_SENDER, sessionId, eventName, callback);
+    return this.addEventListener(CHANNEL_NAMES.CLAIM_SENDER_BASE, sessionId, eventName, callback);
   }
 
   /**
@@ -794,9 +839,9 @@ export class NEWConnectionManager_SinglePointOfTruth {
   public addGameUpdatesListener(
     sessionId: string, 
     eventName: string, 
-    callback: Function
+    callback: (payload: any) => void
   ): () => void {
-    return this.addEventListener(CHANNEL_NAMES.GAME_UPDATES, sessionId, eventName, callback);
+    return this.addEventListener(CHANNEL_NAMES.GAME_UPDATES_BASE, sessionId, eventName, callback);
   }
 
   /**
@@ -805,9 +850,9 @@ export class NEWConnectionManager_SinglePointOfTruth {
   public addClaimsValidationListener(
     sessionId: string, 
     eventName: string, 
-    callback: Function
+    callback: (payload: any) => void
   ): () => void {
-    return this.addEventListener(CHANNEL_NAMES.CLAIMS_VALIDATION, sessionId, eventName, callback);
+    return this.addEventListener(CHANNEL_NAMES.CLAIMS_VALIDATION_BASE, sessionId, eventName, callback);
   }
 
   /**
@@ -816,9 +861,9 @@ export class NEWConnectionManager_SinglePointOfTruth {
   public addParticipantsListener(
     sessionId: string, 
     eventName: string, 
-    callback: Function
+    callback: (payload: any) => void
   ): () => void {
-    return this.addEventListener(CHANNEL_NAMES.PARTICIPANTS, sessionId, eventName, callback);
+    return this.addEventListener(CHANNEL_NAMES.PARTICIPANTS_BASE, sessionId, eventName, callback);
   }
 
   /**
@@ -829,7 +874,7 @@ export class NEWConnectionManager_SinglePointOfTruth {
     eventName: string, 
     payload: any
   ): void {
-    this.sendMessage(CHANNEL_NAMES.GAME_DETAILS, sessionId, eventName, payload);
+    this.sendMessage(CHANNEL_NAMES.GAME_DETAILS_BASE, sessionId, eventName, payload);
   }
 
   /**
@@ -840,7 +885,7 @@ export class NEWConnectionManager_SinglePointOfTruth {
     eventName: string, 
     payload: any
   ): void {
-    this.sendMessage(CHANNEL_NAMES.CLAIM_SENDER, sessionId, eventName, payload);
+    this.sendMessage(CHANNEL_NAMES.CLAIM_SENDER_BASE, sessionId, eventName, payload);
   }
 
   /**
@@ -851,7 +896,7 @@ export class NEWConnectionManager_SinglePointOfTruth {
     eventName: string, 
     payload: any
   ): void {
-    this.sendMessage(CHANNEL_NAMES.GAME_UPDATES, sessionId, eventName, payload);
+    this.sendMessage(CHANNEL_NAMES.GAME_UPDATES_BASE, sessionId, eventName, payload);
   }
 
   /**
@@ -862,7 +907,7 @@ export class NEWConnectionManager_SinglePointOfTruth {
     eventName: string, 
     payload: any
   ): void {
-    this.sendMessage(CHANNEL_NAMES.CLAIMS_VALIDATION, sessionId, eventName, payload);
+    this.sendMessage(CHANNEL_NAMES.CLAIMS_VALIDATION_BASE, sessionId, eventName, payload);
   }
 
   /**
@@ -873,7 +918,7 @@ export class NEWConnectionManager_SinglePointOfTruth {
     eventName: string, 
     payload: any
   ): void {
-    this.sendMessage(CHANNEL_NAMES.PARTICIPANTS, sessionId, eventName, payload);
+    this.sendMessage(CHANNEL_NAMES.PARTICIPANTS_BASE, sessionId, eventName, payload);
   }
 }
 
