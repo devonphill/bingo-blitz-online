@@ -54,29 +54,17 @@ export function processTicketLayout(numbers: number[], layoutMask: number): (num
   }
   
   // Convert mask to binary string with leading zeros (27 bits for 3x9 grid)
-  // IMPORTANT: Removed .reverse() to ensure consistent processing with useAutoMark.ts
   const maskBinary = layoutMask.toString(2).padStart(27, '0');
-  console.log(`Mask binary: ${maskBinary}`);
   
   // Place numbers into the grid according to the mask
   let numberIndex = 0;
   
-  // Process each row independently to ensure correct number placement
+  // Process each row and column to ensure correct number placement
   for (let row = 0; row < 3; row++) {
-    // Get mask bits for this row
-    const startBitPosition = row * 9;
-    const endBitPosition = startBitPosition + 9;
-    const rowMaskBits = maskBinary.substring(startBitPosition, endBitPosition);
-    
-    // Count how many numbers we need in this row
-    const numbersInRow = rowMaskBits.split('1').length - 1;
-    console.log(`Row ${row} mask: ${rowMaskBits}, needs ${numbersInRow} numbers`);
-    
-    // Place numbers in the row where mask bit is 1
     for (let col = 0; col < 9; col++) {
-      // Check if this position should have a number (1 in the mask)
-      const bitPosition = startBitPosition + col;
-      const shouldHaveNumber = maskBinary.charAt(bitPosition) === '1';
+      // Calculate bit position in the mask
+      const bitPosition = row * 9 + col;
+      const shouldHaveNumber = maskBinary[maskBinary.length - 1 - bitPosition] === '1';
       
       if (shouldHaveNumber && numberIndex < numbers.length) {
         grid[row][col] = numbers[numberIndex];

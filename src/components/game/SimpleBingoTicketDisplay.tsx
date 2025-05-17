@@ -1,36 +1,16 @@
+
 import React, { useEffect, useState } from 'react';
+import { processTicketLayout } from '@/utils/ticketUtils';
 
 interface SimpleBingoTicketDisplayProps {
-  numbers: (number | null)[] | (number | null)[][];
-  layoutMask?: number;
+  numbers: (number | null)[] | number[];
+  layoutMask: number;
   calledNumbers: number[];
   serial?: string;
   perm?: number;
   autoMarking?: boolean;
   onNumberClick?: (number: number) => void;
   showHeader?: boolean;
-}
-
-// Helper function to convert flat array to grid format
-function convertToGrid(numbers: (number | null)[] | (number | null)[][], cols = 9, rows = 3): (number | null)[][] {
-  // If numbers is already a 2D array, return it
-  if (Array.isArray(numbers) && numbers.length > 0 && Array.isArray(numbers[0])) {
-    return numbers as (number | null)[][];
-  }
-  
-  // Otherwise convert from flat array
-  const flatNumbers = numbers as (number | null)[];
-  const grid: (number | null)[][] = [];
-  
-  for (let r = 0; r < rows; r++) {
-    grid[r] = [];
-    for (let c = 0; c < cols; c++) {
-      const index = r * cols + c;
-      grid[r][c] = index < flatNumbers.length ? flatNumbers[index] : null;
-    }
-  }
-  
-  return grid;
 }
 
 const SimpleBingoTicketDisplay: React.FC<SimpleBingoTicketDisplayProps> = ({
@@ -45,15 +25,21 @@ const SimpleBingoTicketDisplay: React.FC<SimpleBingoTicketDisplayProps> = ({
 }) => {
   const [grid, setGrid] = useState<(number | null)[][]>([]);
   
-  // Convert flat array to grid on mount or when numbers change
+  // Process the ticket layout using the layout mask
   useEffect(() => {
-    // Check if numbers is an array
-    if (Array.isArray(numbers)) {
-      setGrid(convertToGrid(numbers));
+    if (Array.isArray(numbers) && layoutMask !== undefined) {
+      // Convert the flat array of numbers to a grid using the layout mask
+      const numbersArray = numbers.filter(n => n !== null) as number[];
+      const processedGrid = processTicketLayout(numbersArray, layoutMask);
+      setGrid(processedGrid);
+      
+      console.log(`Processed ticket ${serial} - grid size: ${processedGrid.length}x${processedGrid[0]?.length || 0}`);
     }
-  }, [numbers]);
+  }, [numbers, layoutMask, serial]);
   
-  if (!grid.length) return <div>Loading ticket...</div>;
+  if (!grid.length || grid.some(row => !row.length)) {
+    return <div className="p-4 text-center text-gray-500">Processing ticket...</div>;
+  }
   
   return (
     <div className="w-full max-w-md mx-auto">
@@ -70,22 +56,22 @@ const SimpleBingoTicketDisplay: React.FC<SimpleBingoTicketDisplayProps> = ({
             {grid.map((row, rowIndex) => (
               <tr key={rowIndex} className="border-b border-gray-200 last:border-b-0">
                 {row.map((num, colIndex) => {
-                  const cellNumber: number = typeof num === 'number' ? num : 0;
-                  const isEmpty = num === null || num === 0;
-                  const isCalled = !isEmpty && calledNumbers.includes(cellNumber);
+                  const isEmpty = num === null;
+                  const isCalled = !isEmpty && calledNumbers.includes(num);
                   
                   return (
                     <td 
-                      key={colIndex}
+                      key={`${rowIndex}-${colIndex}`}
                       className={`
                         border-r border-gray-200 last:border-r-0
                         text-center p-1 text-sm aspect-square
                         ${isEmpty ? 'bg-gray-100' : ''}
                         ${isCalled ? 'bg-green-100 font-bold' : ''}
                         ${autoMarking && isCalled ? 'bg-green-200' : ''}
+                        ${!isEmpty ? 'cursor-pointer' : ''}
                       `}
                       onClick={() => {
-                        if (!isEmpty && onNumberClick) onNumberClick(cellNumber);
+                        if (!isEmpty && onNumberClick) onNumberClick(num);
                       }}
                     >
                       {!isEmpty ? num : ''}

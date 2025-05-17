@@ -20,6 +20,19 @@ interface SafeBingoTicketDisplayProps {
  * Wraps the SimpleBingoTicketDisplay with an error boundary
  */
 export default function SafeBingoTicketDisplay(props: SafeBingoTicketDisplayProps) {
+  // Ensure we have a flat array of numbers
+  let flatNumbers: number[] = [];
+  
+  if (Array.isArray(props.numbers)) {
+    // Check if it's already a flat array
+    if (!Array.isArray(props.numbers[0])) {
+      flatNumbers = props.numbers as number[];
+    } else {
+      // It's a 2D array, flatten it
+      flatNumbers = (props.numbers as number[][]).flat().filter(n => n !== null && n !== undefined) as number[];
+    }
+  }
+  
   // Log more detailed type info for debugging
   const numberType = Array.isArray(props.numbers) 
     ? (Array.isArray(props.numbers[0]) ? '2D array' : '1D array') 
@@ -31,7 +44,15 @@ export default function SafeBingoTicketDisplay(props: SafeBingoTicketDisplayProp
   
   return (
     <TicketErrorBoundary serial={props.serial}>
-      <SimpleBingoTicketDisplay {...props} />
+      <SimpleBingoTicketDisplay 
+        numbers={flatNumbers}
+        layoutMask={props.layoutMask}
+        calledNumbers={props.calledNumbers}
+        serial={props.serial}
+        perm={props.perm}
+        autoMarking={props.autoMarking}
+        showHeader={true}
+      />
     </TicketErrorBoundary>
   );
 }

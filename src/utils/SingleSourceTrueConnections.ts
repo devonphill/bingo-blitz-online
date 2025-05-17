@@ -1,4 +1,3 @@
-
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { logWithTimestamp } from './logUtils';
@@ -9,6 +8,7 @@ import {
   isNumberAlreadyCalled, 
   fetchCalledNumbersFromDb 
 } from '@/utils/numberDebugUtils';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Manages a single WebSocket connection across the entire application.
@@ -687,74 +687,76 @@ class SingleSourceTrueConnections {
    * Submit a bingo claim for validation
    */
   public async submitBingoClaim(
-    ticket: any,
-    playerCode: string,
-    sessionId: string
-  ): Promise<boolean> {
-    if (!ticket || !playerCode || !sessionId) {
-      logWithTimestamp('[SSTC] Cannot submit claim: Missing required parameters', 'error');
-      return false;
-    }
-
+    sessionId: string,
+    playerId: string,
+    playerName: string,
+    ticketId: string,
+    ticketSerial: string,
+    claimedPattern: string,
+    ticketDetails: any = {}
+  ): Promise<{ success: boolean, claimId?: string }> {
     try {
-      // Update last ping time
-      this.updateLastPing();
-
-      const claimId = `claim_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-      
-      // Create the payload
-      const claimPayload = {
-        claimId,
-        playerCode,
-        sessionId,
-        ticket: {
-          ...ticket,
-          // Make sure we have consistent naming
-          serial: ticket.serial || ticket.id,
-          layout_mask: ticket.layout_mask || ticket.layoutMask || 0
-        },
-        timestamp: new Date().toISOString()
-      };
-      
-      // Get current called numbers for this claim
-      const calledNumbers = await fetchCalledNumbersFromDb(sessionId);
-      
-      // Insert into claims table first
-      try {
-        const { error } = await supabase
-          .from('claims')
-          .insert({
-            id: claimId,
-            session_id: sessionId,
-            player_code: playerCode,
-            ticket_serial: ticket.serial || ticket.id,
-            ticket_details: ticket,
-            called_numbers_snapshot: calledNumbers,
-            claimed_at: new Date().toISOString(),
-            pattern_claimed: ticket.winPattern || 'unknown'
-          });
-        
-        if (error) {
-          logWithTimestamp(`[SSTC] Error inserting claim into database: ${error.message}`, 'error');
-          // Continue with broadcast even if DB update fails
-        }
-      } catch (dbError) {
-        logWithTimestamp(`[SSTC] Exception inserting claim into database: ${dbError}`, 'error');
-        // Continue with broadcast even if DB update fails
+      // Get the claim channel
+      const claimChannel = await this.getOrCreateChannel('claim-updates');
+      if (!claimChannel) {
+        throw new Error('Could not create/get claim channel');
       }
-      
-      // Broadcast the claim
-      logWithTimestamp(`[SSTC] Broadcasting claim for player ${playerCode} in session ${sessionId}`, 'info');
-      const result = await this.broadcast(
-        CHANNEL_NAMES.CLAIM_UPDATES,
-        EVENT_TYPES.CLAIM_SUBMITTED,
-        claimPayload
-      );
-      
-      return result;
+
+      // Get current called numbers for the session
+      const { data: sessionData, error: sessionError } = await this.supabase
+        .from('sessions_progress')
+        .select('called_numbers')
+        .eq('session_id', sessionId)
+        .single();
+
+      if (sessionError || !sessionData) {
+        throw new Error(`Error fetching called numbers: ${sessionError?.message || 'No data returned'}`);
+      }
+
+      // Generate a UUID for the claim
+      const claimId = uuidv4();
+
+      // Create a claim record in the database
+      const { error: insertError } = await this.supabase
+        .from('claims')
+        .insert({
+          id: claimId,
+          session_id: sessionId,
+          player_id: playerId, // Fix: This was missing
+          player_name: playerName,
+          player_code: '', // This is optional as per the type
+          ticket_serial: ticketSerial,
+          ticket_details: ticketDetails,
+          called_numbers_snapshot: sessionData.called_numbers || [],
+          claimed_at: new Date().toISOString(),
+          pattern_claimed: claimedPattern
+        });
+
+      if (insertError) {
+        throw new Error(`Error inserting claim: ${insertError.message}`);
+      }
+
+      // Broadcast the claim event
+      claimChannel.send({
+        type: 'broadcast',
+        event: 'claim.new',
+        payload: {
+          claimId,
+          sessionId,
+          playerId,
+          playerName,
+          ticketId,
+          ticketSerial,
+          claimedPattern,
+          calledNumbers: sessionData.called_numbers || [],
+          timestamp: new Date().toISOString()
+        }
+      });
+
+      return { success: true, claimId };
     } catch (error) {
-      logWithTimestamp(`[SSTC] Error submitting claim: ${error}`, 'error');
-      return false;
+      this.logWithTimestamp(`Error submitting bingo claim: ${(error as Error).message}`, 'error');
+      return { success: false, error: (error as Error).message };
     }
   }
 
@@ -821,55 +823,47 @@ class SingleSourceTrueConnections {
    */
   public async updatePlayerPresence(
     sessionId: string,
-    playerData: any
-  ): Promise<boolean> {
-    if (!sessionId || !playerData) {
-      logWithTimestamp('[SSTC] Cannot update player presence: Missing required parameters', 'error');
-      return false;
-    }
-
+    playerId: string,
+    playerName: string,
+    status: 'online' | 'offline' = 'online'
+  ): Promise<{ success: boolean, error?: string }> {
     try {
-      // Update last ping time
-      this.updateLastPing();
-      
-      // Update player presence in database
-      try {
-        const { error } = await supabase
-          .from('player_presence')
-          .upsert({
-            session_id: sessionId,
-            player_code: playerData.code,
-            last_seen: new Date().toISOString(),
-            status: playerData.status || 'online',
-            metadata: playerData
-          })
-          .select();
-        
-        if (error) {
-          throw new Error(`Database error updating player presence: ${error.message}`);
-        }
-      } catch (dbError) {
-        logWithTimestamp(`[SSTC] Error updating player presence in database: ${dbError}`, 'error');
-        // Continue with broadcast even if DB update fails
+      // First check if the player_presence table exists
+      const { error: tableCheckError } = await this.supabase
+        .from('sessions_progress') // Use a known table instead
+        .select('*')
+        .limit(1);
+
+      // If we can't even check for table existence, log error and return early
+      if (tableCheckError) {
+        this.logWithTimestamp(`Error checking database access: ${tableCheckError.message}`, 'error');
+        return { success: false, error: tableCheckError.message };
       }
-      
+
+      // Instead of using player_presence table which may not exist, 
+      // let's use a presence channel to broadcast status changes
+      const presenceChannel = await this.getOrCreateChannel(`presence-${sessionId}`);
+      if (!presenceChannel) {
+        throw new Error('Could not create/get presence channel');
+      }
+
       // Broadcast player presence update
-      logWithTimestamp(`[SSTC] Broadcasting player presence update for player ${playerData.code} in session ${sessionId}`, 'info');
-      const result = await this.broadcast(
-        'presence-updates',
-        'player-presence-update',
-        {
+      presenceChannel.send({
+        type: 'broadcast',
+        event: status === 'online' ? 'player.joined' : 'player.left',
+        payload: {
           sessionId,
-          playerCode: playerData.code,
-          timestamp: new Date().toISOString(),
-          ...playerData
+          playerId,
+          playerName,
+          status,
+          lastSeen: new Date().toISOString()
         }
-      );
-      
-      return result;
+      });
+
+      return { success: true };
     } catch (error) {
-      logWithTimestamp(`[SSTC] Error updating player presence: ${error}`, 'error');
-      return false;
+      this.logWithTimestamp(`Error updating player presence: ${(error as Error).message}`, 'error');
+      return { success: false, error: (error as Error).message };
     }
   }
   
