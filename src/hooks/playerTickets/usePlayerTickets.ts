@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -78,29 +79,31 @@ export function usePlayerTickets(
           // Convert flat numbers array to 2D array for display
           let numbers: number[][] = [];
           
-          if (Array.isArray(ticket.numbers) && !Array.isArray(ticket.numbers[0])) {
-            // If numbers is a flat array, convert to 2D based on game type
-            // For 90-ball bingo (9x3 grid)
-            const rows = 3;
-            const cols = 9;
-            
-            for (let i = 0; i < rows; i++) {
-              const row: number[] = [];
-              for (let j = 0; j < cols; j++) {
-                const index = i * cols + j;
-                row.push(index < ticket.numbers.length ? ticket.numbers[index] : 0);
+          if (Array.isArray(ticket.numbers)) {
+            if (!Array.isArray(ticket.numbers[0])) {
+              // If numbers is a flat array, convert to 2D based on game type
+              // For 90-ball bingo (9x3 grid)
+              const rows = 3;
+              const cols = 9;
+              
+              for (let i = 0; i < rows; i++) {
+                const row: number[] = [];
+                for (let j = 0; j < cols; j++) {
+                  const index = i * cols + j;
+                  row.push(index < ticket.numbers.length ? ticket.numbers[index] : 0);
+                }
+                numbers.push(row);
               }
-              numbers.push(row);
+            } else {
+              // Already in 2D format
+              numbers = ticket.numbers;
             }
-          } else {
-            // Already in 2D format - safely cast the type
-            numbers = ticket.numbers as number[][];
           }
           
           // Initialize marked array if needed
           const marked = Array(numbers.length)
             .fill(null)
-            .map(() => Array(numbers[0].length).fill(false));
+            .map(() => Array(numbers[0]?.length || 0).fill(false));
             
           return {
             id: ticket.id,
