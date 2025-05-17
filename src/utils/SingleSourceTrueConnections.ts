@@ -1,3 +1,4 @@
+
 import { logWithTimestamp } from '@/utils/logUtils';
 import { ConnectionState } from '@/constants/connectionConstants';
 import { supabase } from '@/integrations/supabase/client';
@@ -306,11 +307,12 @@ export class SingleSourceTrueConnections {
       const existingChannel = this.channels.get(channelName)!;
       console.log(`[SSTC DEBUG] getOrCreateChannel: Found existing channel '${channelName}' with state: ${existingChannel.state}`);
       
-      if (existingChannel.state === 'joined') {
-        console.log(`[SSTC DEBUG] getOrCreateChannel: Reusing ALREADY JOINED channel '${channelName}'.`);
+      // FIXED: Also reuse channels that are in the process of joining
+      if (existingChannel.state === 'joined' || existingChannel.state === 'joining') {
+        console.log(`[SSTC DEBUG] getOrCreateChannel: Reusing ${existingChannel.state === 'joined' ? 'ALREADY JOINED' : 'CURRENTLY JOINING'} channel '${channelName}'.`);
         return existingChannel;
       } else {
-        console.log(`[SSTC DEBUG] Existing channel '${channelName}' is not 'joined' (state: ${existingChannel.state}). Will remove and recreate.`);
+        console.log(`[SSTC DEBUG] Existing channel '${channelName}' is not usable (state: ${existingChannel.state}). Will remove and recreate.`);
         try {
           supabase.removeChannel(existingChannel);
         } catch (e) {
