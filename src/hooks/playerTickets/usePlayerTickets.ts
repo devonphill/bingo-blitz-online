@@ -1,147 +1,262 @@
-
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logWithTimestamp } from '@/utils/logUtils';
+import { checkMainstageWinPattern } from '@/utils/mainstageWinLogic'; // Assuming this path is correct
+import { normalizeWinPattern } from '@/utils/winPatternUtils'; // Assuming this path is correct
 
+// --- Central PlayerTicket Type ---
 export interface PlayerTicket {
-  id: string;
-  serial: string;
-  perm: number;
-  position: number;
-  layout_mask: number;
-  numbers: number[][];  // Changed from number[] to number[][] to match the expected type
-  marked?: boolean[][];
-  markedPositions?: { row: number; col: number }[];
+  id: string;                     // From assigned_tickets
+  serial_number: string;          // From assigned_tickets (assuming 'serial' column)
+  perm_number: number;            // From assigned_tickets (assuming 'perm' column)
+  position: number;               // From assigned_tickets, should be required for ordering
+  layout_mask: number;            // From assigned_tickets
+  raw_numbers: number[];          // The flat array of numbers from assigned_tickets.numbers
+  numbers_grid: (number | null)[][]; // The 2D grid (e.g., 3x9) for UI display
+  markedPositions?: Record<string, boolean>; // e.g., { "0,0": true, "1,2": true } or Set<string>
+  is_winning?: boolean;
+  winning_pattern?: string | null;
+  to_go?: number;
 }
 
+// --- AllowedWinPattern Type (from your previous root hook) ---
+// Ensure this aligns with what checkMainstageWinPattern expects
+type AllowedWinPattern = 'oneLine' | 'twoLines' | 'fullHouse' | 'MAINSTAGE_oneLine' | 'MAINSTAGE_twoLines' | 'MAINSTAGE_fullHouse';
+
+// --- Hook Return Type ---
 export interface UsePlayerTicketsResult {
-  tickets: PlayerTicket[];
-  isLoading: boolean;
-  error: Error | null;
+  playerTickets: PlayerTicket[];
+  isLoadingTickets: boolean;
+  ticketError: string | null;
   refreshTickets: () => Promise<void>;
+  isRefreshingTickets: boolean;
+  currentWinningTickets: PlayerTicket[];
+  updateWinningStatus: (calledNumbers: number[], currentWinPattern: string | null) => void;
+  // Add any other methods/state GameContext was expecting if sourced from here
 }
 
-/**
- * Hook to fetch and manage player tickets
- */
+// --- Helper to build the 3x9 grid from flat numbers and layout mask ---
+// This logic is based on the grid reconstruction from your /hooks/usePlayerTickets.ts
+const buildTicketGrid = (flatNumbers: number[], layoutMask: number): (number | null)[][] => {
+  const grid: (number | null)[][] = [[], [], []]; // 3 rows
+  const maskBits = layoutMask.toString(2).padStart(27, "0").split("").reverse(); // Assuming 27 cells for 9x3
+  let numIndex = 0;
+
+  if (!flatNumbers || flatNumbers.length === 0) {
+    // Return an empty grid or grid of nulls if no numbers
+    for (let r = 0; r < 3; r++) {
+      grid[r] = Array(9).fill(null);
+    }
+    return grid;
+  }
+
+  for (let i = 0; i < 27; i++) { // Iterate through all 27 potential cell positions (9 columns x 3 rows)
+    const row = Math.floor(i / 9);
+    // const col = i % 9; // If needed for direct grid[row][col] assignment
+
+    if (maskBits[i] === '1') {
+      if (numIndex < flatNumbers.length) {
+        grid[row].push(flatNumbers[numIndex]);
+        numIndex++;
+      } else {
+        grid[row].push(null); // Not enough numbers for all mask positions
+      }
+    } else {
+      grid[row].push(null); // This cell is empty according to the mask
+    }
+  }
+  // Ensure all rows have 9 columns, padding with null if necessary
+  for (let r = 0; r < 3; r++) {
+    while(grid[r].length < 9) {
+      grid[r].push(null);
+    }
+  }
+  return grid;
+};
+
+
 export function usePlayerTickets(
   sessionId: string | null | undefined,
-  playerId?: string | null,
-  playerCode?: string | null
+  playerId?: string | null,       // Player's database UUID
+  playerCode?: string | null,    // Short player code
+  // For win checking, these need to be passed in or fetched by the hook
+  // Let's assume for now updateWinningStatus will receive them
 ): UsePlayerTicketsResult {
-  const [tickets, setTickets] = useState<PlayerTicket[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+  const [playerTickets, setPlayerTickets] = useState<PlayerTicket[]>([]);
+  const [isLoadingTickets, setIsLoadingTickets] = useState(true);
+  const [ticketError, setTicketError] = useState<string | null>(null);
+  const [isRefreshingTickets, setIsRefreshingTickets] = useState(false);
+  const [currentWinningTickets, setCurrentWinningTickets] = useState<PlayerTicket[]>([]);
 
-  // Function to fetch tickets
-  const fetchTickets = async () => {
-    if (!sessionId || (!playerId && !playerCode)) {
-      setIsLoading(false);
+  const processFetchedTickets = useCallback((
+    fetchedDbTickets: any[], // Raw from DB, assuming 'numbers' is flat array
+    calledNumbersForWinCheck: number[],
+    winPatternForWinCheck: string | null
+  ): PlayerTicket[] => {
+    if (!fetchedDbTickets || fetchedDbTickets.length === 0) return [];
+
+    const normalizedPattern = normalizeWinPattern(winPatternForWinCheck || 'oneLine', 'MAINSTAGE');
+
+    return fetchedDbTickets.map((dbTicket) => {
+      const rawNumbers: number[] = dbTicket.numbers || [];
+      const layoutMask: number = dbTicket.layout_mask || 0;
+      
+      // This is where the TS2322/TS2352 error was.
+      // 'numbers_grid' should be number[][]
+      const numbersGrid: (number | null)[][] = buildTicketGrid(rawNumbers, layoutMask);
+
+      // Perform win checking
+      const winCheckResult = checkMainstageWinPattern(
+        numbersGrid, // Pass the 2D grid
+        calledNumbersForWinCheck,
+        normalizedPattern as AllowedWinPattern // Cast if necessary, ensure AllowedWinPattern is correct
+      );
+
+      return {
+        id: dbTicket.id,
+        serial_number: dbTicket.serial, // Assuming DB column is 'serial'
+        perm_number: dbTicket.perm,     // Assuming DB column is 'perm'
+        position: dbTicket.position,    // Ensure this is NOT NULL in DB or handle a default
+        layout_mask: layoutMask,
+        raw_numbers: rawNumbers,
+        numbers_grid: numbersGrid,      // Assign the 2D grid
+        markedPositions: {},            // Initialize as needed
+        is_winning: winCheckResult.isWinner,
+        winning_pattern: winCheckResult.isWinner ? winPatternForWinCheck : null,
+        to_go: winCheckResult.tg,
+      };
+    });
+  }, []); // Empty dependency array if normalizeWinPattern and checkMainstageWinPattern are pure functions
+
+  const fetchTickets = useCallback(async (forceRefresh = false) => {
+    if (!sessionId) {
+      setPlayerTickets([]);
+      setCurrentWinningTickets([]);
+      setIsLoadingTickets(false);
       return;
     }
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // Build the query based on available parameters
-      let query = supabase
-        .from('assigned_tickets')
-        .select('*');
-
-      if (playerId) {
-        query = query.eq('player_id', playerId);
-      } else if (playerCode) {
-        // If we have playerCode but not playerId, first get the player id
+    // Determine actual playerId if only playerCode is available
+    let currentPId = playerId;
+    if (!currentPId && playerCode) {
+      try {
         const { data: playerData, error: playerError } = await supabase
           .from('players')
           .select('id')
           .eq('player_code', playerCode)
           .single();
-
         if (playerError || !playerData) {
-          throw new Error(`Could not find player with code ${playerCode}`);
+          throw new Error(playerError?.message || `Could not find player with code ${playerCode}`);
         }
-
-        query = query.eq('player_id', playerData.id);
+        currentPId = playerData.id;
+      } catch (e: any) {
+        logWithTimestamp(`Error fetching playerId for code ${playerCode}: ${e.message}`, 'error');
+        setTicketError(e.message);
+        setIsLoadingTickets(false);
+        setIsRefreshingTickets(false);
+        return;
       }
+    }
 
-      // Add session filter and execute query
-      const { data, error: ticketsError } = await query
+    if (!currentPId) { // Still no playerId
+        logWithTimestamp('No playerId available to fetch tickets.', 'warn');
+        setPlayerTickets([]);
+        setCurrentWinningTickets([]);
+        setIsLoadingTickets(false);
+        return;
+    }
+
+
+    if (forceRefresh) setIsRefreshingTickets(true);
+    else setIsLoadingTickets(true);
+    setTicketError(null);
+
+    try {
+      logWithTimestamp(`Workspaceing tickets for player ${currentPId} in session ${sessionId}`, 'info');
+
+      const { data: assignedTicketsData, error: ticketsFetchError } = await supabase
+        .from('assigned_tickets')
+        .select('id, serial, perm, position, layout_mask, numbers') // Select only needed fields
+        .eq('player_id', currentPId)
         .eq('session_id', sessionId)
         .order('position', { ascending: true });
 
-      if (ticketsError) throw ticketsError;
+      if (ticketsFetchError) throw ticketsFetchError;
 
-      if (data && data.length > 0) {
-        // Transform data if needed
-        const formattedTickets = data.map((ticket) => {
-          // Convert flat numbers array to 2D array for display
-          let numbers: number[][] = [];
-          
-          if (Array.isArray(ticket.numbers)) {
-            // Check if numbers is already a 2D array
-            if (Array.isArray(ticket.numbers[0])) {
-              // Already in 2D format
-              numbers = ticket.numbers;
-            } else {
-              // For 90-ball bingo (9x3 grid) - convert flat array to 2D
-              const rows = 3;
-              const cols = 9;
-              
-              for (let i = 0; i < rows; i++) {
-                const row: number[] = [];
-                for (let j = 0; j < cols; j++) {
-                  const index = i * cols + j;
-                  row.push(index < ticket.numbers.length ? ticket.numbers[index] : 0);
-                }
-                numbers.push(row);
-              }
-            }
-          }
-          
-          // Initialize marked array if needed
-          const marked = Array(numbers.length)
-            .fill(null)
-            .map(() => Array(numbers[0]?.length || 0).fill(false));
-            
-          return {
-            id: ticket.id,
-            serial: ticket.serial,
-            perm: ticket.perm,
-            position: ticket.position,
-            layout_mask: ticket.layout_mask,
-            numbers,
-            marked,
-            markedPositions: [] // Initialize empty markedPositions array
-          };
-        });
+      if (!assignedTicketsData || assignedTicketsData.length === 0) {
+        logWithTimestamp('No tickets found for this player in this session', 'info');
+        setPlayerTickets([]);
+        setCurrentWinningTickets([]);
+        return;
+      }
+      
+      logWithTimestamp(`Found ${assignedTicketsData.length} assigned tickets`, 'info');
 
-        logWithTimestamp(`Loaded ${formattedTickets.length} tickets for player`, 'info');
-        setTickets(formattedTickets);
-      } else {
-        logWithTimestamp('No tickets found for player', 'info');
-        setTickets([]);
+      // Fetch current game progress for win checking
+      const { data: sessionProgressData, error: progressError } = await supabase
+        .from('sessions_progress')
+        .select('current_win_pattern, called_numbers')
+        .eq('session_id', sessionId)
+        .single();
+
+      if (progressError) {
+        logWithTimestamp(`Warning: Could not fetch session progress for win checking: ${progressError.message}`, 'warn');
+      }
+      
+      const currentWinPattern = sessionProgressData?.current_win_pattern || 'oneLine';
+      const calledNumbers = sessionProgressData?.called_numbers || [];
+
+      const processed = processFetchedTickets(assignedTicketsData, calledNumbers, currentWinPattern);
+      setPlayerTickets(processed);
+      setCurrentWinningTickets(processed.filter(t => t.is_winning));
+
+      if (currentWinningTickets.length > 0) {
+        logWithTimestamp(`Found ${currentWinningTickets.length} winning tickets initially!`, 'info');
       }
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      logWithTimestamp(`Error fetching tickets: ${errorMessage}`, 'error');
-      setError(err instanceof Error ? err : new Error(String(err)));
+      logWithTimestamp(`Error in fetchTickets: ${errorMessage}`, 'error');
+      setTicketError(errorMessage);
+      setPlayerTickets([]); // Clear tickets on error
+      setCurrentWinningTickets([]);
     } finally {
-      setIsLoading(false);
+      setIsLoadingTickets(false);
+      setIsRefreshingTickets(false);
     }
-  };
+  }, [sessionId, playerId, playerCode, processFetchedTickets]); // Include processFetchedTickets
 
-  // Fetch tickets on mount and when dependencies change
   useEffect(() => {
-    fetchTickets();
-  }, [sessionId, playerId, playerCode]);
+    if (sessionId && (playerId || playerCode)) {
+      fetchTickets();
+    } else {
+      // Clear tickets if session/player context is lost
+      setPlayerTickets([]);
+      setCurrentWinningTickets([]);
+      setIsLoadingTickets(false); // Ensure loading stops if no IDs
+    }
+  }, [sessionId, playerId, playerCode, fetchTickets]);
+
+  const updateWinningStatus = useCallback((
+    calledNumbers: number[],
+    currentWinPattern: string | null
+  ) => {
+    setPlayerTickets(currentTickets => {
+      const updatedTickets = processFetchedTickets(currentTickets, calledNumbers, currentWinPattern);
+      setCurrentWinningTickets(updatedTickets.filter(t => t.is_winning));
+      if (currentWinningTickets.length > 0) {
+         logWithTimestamp(`Found ${currentWinningTickets.length} winning tickets after update!`, 'info');
+      }
+      return updatedTickets;
+    });
+  }, [processFetchedTickets, currentWinningTickets.length]); // Added currentWinningTickets.length to dependencies for re-logging
 
   return {
-    tickets,
-    isLoading,
-    error,
-    refreshTickets: fetchTickets
+    playerTickets,
+    isLoadingTickets,
+    ticketError,
+    refreshTickets: useCallback(() => fetchTickets(true), [fetchTickets]),
+    isRefreshingTickets,
+    currentWinningTickets,
+    updateWinningStatus,
   };
 }
