@@ -4,10 +4,11 @@ import ReactDOM from 'react-dom';
 import { BrowserRouter as Router } from 'react-router-dom';
 import './index.css';
 import App from './App';
-import { getSingleSourceConnection } from './utils/SingleSourceTrueConnections';
+import { getSingleSourceConnection } from './utils/NEWConnectionManager_SinglePointOfTruth';
+import { supabase } from './integrations/supabase/client';
 
-// Initialize SingleSourceTrueConnections early to ensure WebSocketService is ready
-getSingleSourceConnection();
+// Initialize NCM_SPOT with the Supabase client
+getSingleSourceConnection().initialize(supabase);
 
 ReactDOM.render(
   <React.StrictMode>

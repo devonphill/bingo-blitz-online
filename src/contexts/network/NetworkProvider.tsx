@@ -1,11 +1,11 @@
-
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
+import { getSingleSourceConnection } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { performClaimBroadcast } from './claimHandlers';
 import { setupChannelListeners } from './channelListeners';
 import { NetworkProviderProps, NetworkContextType } from './types';
 import { updatePlayerPresence } from './playerPresence';
+import { CONNECTION_STATES } from '@/constants/websocketConstants';
 
 // Create Context
 export const NetworkContext = createContext<NetworkContextType>({
@@ -29,7 +29,7 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({
   const [lastPingTime, setLastPingTime] = useState<number>(0);
 
   // Get the singleton connection
-  const connection = getSingleSourceConnection();
+  const ncmSpot = getSingleSourceConnection();
 
   // Connect to a session
   const connect = useCallback((newSessionId: string) => {
@@ -41,15 +41,9 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({
     logWithTimestamp(`Connecting to session: ${newSessionId}`, 'info');
     setSessionId(newSessionId);
 
-    // Use the singleton connection to manage the actual connection
-    connection.connect(newSessionId);
-
-    // Update last ping time if the method exists
-    const lastPing = connection.getLastPing?.();
-    if (lastPing) {
-      setLastPingTime(typeof lastPing === 'number' ? lastPing : lastPing.getTime());
-    }
-  }, [connection]);
+    // Use NCM_SPOT to connect to the session
+    ncmSpot.connectToSession(newSessionId);
+  }, []);
 
   // Initialize with initial session ID if provided
   useEffect(() => {
@@ -57,16 +51,19 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({
       connect(initialSessionId);
     }
 
-    // Set up a connection listener
-    const cleanup = connection.addConnectionListener((connected) => {
-      setIsConnected(connected);
+    // Set up a connection status listener
+    const cleanup = ncmSpot.addOverallStatusListener((status, isServiceReady) => {
+      setIsConnected(status === CONNECTION_STATES.CONNECTED && isServiceReady);
+      if (status === CONNECTION_STATES.CONNECTED && isServiceReady) {
+        setLastPingTime(Date.now());
+      }
     });
 
     // Return cleanup function
     return () => {
       cleanup();
     };
-  }, [connection, connect, initialSessionId]);
+  }, [connect, initialSessionId]);
 
   // Claim submission
   const submitBingoClaim = useCallback((ticket: any, playerCode: string, gameSessionId: string) => {
@@ -81,18 +78,20 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({
 
   // Claim validation
   const sendClaimValidation = useCallback(async (claimId: string, isValid: boolean, sessionId: string) => {
-    if (!connection) {
+    if (!ncmSpot.isOverallConnected()) {
       logWithTimestamp('Cannot send claim validation: No WebSocket connection', 'error');
       return false;
     }
 
     try {
       // Broadcast validation result
-      // Import CHANNEL_NAMES and EVENT_TYPES
-      const { CHANNEL_NAMES, EVENT_TYPES } = await import('@/constants/websocketConstants');
+      // Import EVENT_TYPES
+      const { EVENT_TYPES } = await import('@/constants/websocketConstants');
 
-      const result = await connection.broadcast(
-        'CLAIM_UPDATES_BASE',
+      // Use NCM_SPOT to send the message on the claims validation channel
+      ncmSpot.sendMessage(
+        'claims_validation', 
+        sessionId, 
         'claim-validation',
         {
           claimId,
@@ -102,14 +101,13 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({
         }
       );
 
-      logWithTimestamp(`Claim validation ${claimId} sent: ${result}`, 'info');
-      // Ensure we return a boolean value
-      return result === true || result === 'ok' || false;
+      logWithTimestamp(`Claim validation ${claimId} sent`, 'info');
+      return true;
     } catch (error) {
       logWithTimestamp(`Error sending claim validation: ${error}`, 'error');
       return false;
     }
-  }, [connection]);
+  }, []);
 
   // Player presence
   const updatePlayerPresence = useCallback(async (sessionId: string, playerData: any) => {

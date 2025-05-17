@@ -1,7 +1,7 @@
 
 import { logWithTimestamp } from '@/utils/logUtils';
-import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
-import { CHANNEL_NAMES, EVENT_TYPES } from '@/constants/websocketConstants';
+import { getSingleSourceConnection } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
+import { EVENT_TYPES } from '@/constants/websocketConstants';
 
 /**
  * Broadcasts a bingo claim to the appropriate channel
@@ -21,15 +21,15 @@ export const performClaimBroadcast = (
       logWithTimestamp('Cannot broadcast claim: Missing required parameters', 'error');
       return false;
     }
-    
-    const connection = getSingleSourceConnection();
-    if (!connection) {
+
+    const ncmSpot = getSingleSourceConnection();
+    if (!ncmSpot.isOverallConnected()) {
       logWithTimestamp('Cannot broadcast claim: Connection not available', 'error');
       return false;
     }
-    
+
     const claimId = `claim_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    
+
     // Create the payload
     const claimPayload = {
       claimId,
@@ -43,16 +43,17 @@ export const performClaimBroadcast = (
       },
       timestamp: new Date().toISOString()
     };
-    
+
     logWithTimestamp(`Broadcasting claim for player ${playerCode} in session ${gameSessionId}`, 'info');
-    
-    // Use the connection to broadcast the claim
-    connection.broadcast(
-      'CLAIM_UPDATES_BASE',
+
+    // Use NCM_SPOT to send the message on the claim sender channel
+    ncmSpot.sendMessage(
+      'claim_sender',
+      gameSessionId,
       EVENT_TYPES.CLAIM_SUBMITTED,
       claimPayload
     );
-    
+
     return true;
   } catch (error) {
     logWithTimestamp(`Error broadcasting claim: ${error}`, 'error');
