@@ -687,7 +687,7 @@ export class NEWConnectionManager_SinglePointOfTruth {
       return () => {}; // Return no-op cleanup function
     }
 
-    // Fix cast for presenceState() to be any[] instead of expecting RealtimePresenceState to match any[]
+    // Fix: Adding the correct event name 'presence' for all three event types
     const syncCleanup = this.listenForEvent(channelName, 'presence', ({ event }) => {
       if (event === 'sync') {
         callback({ 
