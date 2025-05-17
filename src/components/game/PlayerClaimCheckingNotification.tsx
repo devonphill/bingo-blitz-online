@@ -22,7 +22,7 @@ export default function PlayerClaimCheckingNotification({
   const [instanceId] = useState(`PCN-${Math.random().toString(36).substring(2, 5)}`);
 
   // Use websocket hook to listen for claim status updates
-  const { listenForEvent, isConnected, EVENTS } = useWebSocket(sessionId);
+  const { listenForEvent, isConnected } = useWebSocket(sessionId);
 
   // Custom logging function
   const log = useCallback((message: string, level: 'info' | 'warn' | 'error' = 'info') => {
@@ -37,13 +37,14 @@ export default function PlayerClaimCheckingNotification({
       try {
         log(`Checking for active claims for player code ${playerCode} in session ${sessionId}`);
         
-        // Query for claims in validation for this player
+        // Query for claims in validation for this player - using universal_game_logs instead of bingo_claims
         const { data, error } = await supabase
-          .from('bingo_claims')
+          .from('universal_game_logs')
           .select('*')
-          .eq('session_id', sessionId)
-          .eq('player_code', playerCode)
-          .eq('status', 'validating')
+          .eq('session_uuid', sessionId)
+          .eq('player_id', playerCode)
+          .is('validated_at', null)
+          .not('claimed_at', 'is', null)
           .order('created_at', { ascending: false })
           .limit(1);
           
@@ -81,7 +82,7 @@ export default function PlayerClaimCheckingNotification({
     
     // Listen for claim being validated
     const validatingCleanup = listenForEvent(
-      EVENTS.CLAIM_VALIDATING_TKT,
+      EVENT_TYPES.CLAIM_VALIDATING_TKT,
       (data: any) => {
         // Check if this claim belongs to current player
         if (data?.playerCode === playerCode) {
@@ -104,7 +105,7 @@ export default function PlayerClaimCheckingNotification({
     
     // Listen for claim resolution
     const resolutionCleanup = listenForEvent(
-      EVENTS.CLAIM_RESOLUTION, 
+      EVENT_TYPES.CLAIM_RESOLUTION, 
       (data: any) => {
         // Check if this claim belongs to current player
         if (data?.playerCode === playerCode || data?.player_code === playerCode) {
@@ -136,7 +137,7 @@ export default function PlayerClaimCheckingNotification({
       validatingCleanup();
       resolutionCleanup();
     };
-  }, [sessionId, playerCode, isConnected, listenForEvent, EVENTS, toast, log]);
+  }, [sessionId, playerCode, isConnected, listenForEvent, EVENT_TYPES, toast, log]);
 
   // Don't render anything if no active claim
   if (claimStatus === 'none') {

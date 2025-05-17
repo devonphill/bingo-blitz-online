@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { logWithTimestamp } from '@/utils/logUtils';
@@ -43,9 +44,10 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({
     // Use the singleton connection to manage the actual connection
     connection.connect(newSessionId);
 
-    // Update last ping time
-    if (connection.getLastPing()) {
-      setLastPingTime(connection.getLastPing()?.getTime() || 0);
+    // Update last ping time if the method exists
+    const lastPing = connection.getLastPing?.();
+    if (lastPing) {
+      setLastPingTime(typeof lastPing === 'number' ? lastPing : lastPing.getTime());
     }
   }, [connection]);
 
@@ -89,8 +91,8 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({
       // Import CHANNEL_NAMES and EVENT_TYPES
       const { CHANNEL_NAMES, EVENT_TYPES } = await import('@/constants/websocketConstants');
 
-      const success = await connection.broadcast(
-        'CLAIM_UPDATES_BASE' as keyof typeof CHANNEL_NAMES,
+      const result = await connection.broadcast(
+        'CLAIM_UPDATES_BASE',
         'claim-validation',
         {
           claimId,
@@ -100,9 +102,9 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({
         }
       );
 
-      logWithTimestamp(`Claim validation ${claimId} sent: ${success}`, 'info');
+      logWithTimestamp(`Claim validation ${claimId} sent: ${result}`, 'info');
       // Ensure we return a boolean value
-      return success === true;
+      return result === true || result === 'ok' || false;
     } catch (error) {
       logWithTimestamp(`Error sending claim validation: ${error}`, 'error');
       return false;

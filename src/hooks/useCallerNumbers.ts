@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { logWithTimestamp } from '@/utils/logUtils';
 import { callNumberForSession } from '@/contexts/network/networkOperations';
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
+import { EVENT_TYPES } from '@/constants/websocketConstants';
 
 export interface UseCallerNumbersProps {
   sessionId: string;
@@ -49,24 +50,36 @@ export function useCallerNumbers({ sessionId }: UseCallerNumbersProps) {
     // Generate unique instance ID for logging
     const instanceId = `CallerNumbers-${Math.random().toString(36).substring(2, 7)}`;
     
-    // Set up listeners using the singleton connection
-    const cleanup = connection.setupNumberUpdateListeners(
-      sessionId,
-      (number, numbers) => {
-        logWithTimestamp(`[${instanceId}] Received number update: ${number}`, 'info');
-        setCalledNumbers(numbers);
-        setLastCalledNumber(number);
+    // Set up listeners manually since setupNumberUpdateListeners might not exist
+    const numberListener = connection.listenForEvent(
+      'GAME_UPDATES_BASE',
+      EVENT_TYPES.NUMBER_CALLED,
+      (data: any) => {
+        logWithTimestamp(`[${instanceId}] Received number update: ${data.number}`, 'info');
+        if (data.calledNumbers && Array.isArray(data.calledNumbers)) {
+          setCalledNumbers(data.calledNumbers);
+        }
+        setLastCalledNumber(data.number);
       },
+      sessionId
+    );
+    
+    const resetListener = connection.listenForEvent(
+      'GAME_UPDATES_BASE',
+      EVENT_TYPES.GAME_RESET,
       () => {
         logWithTimestamp(`[${instanceId}] Received game reset`, 'info');
         setCalledNumbers([]);
         setLastCalledNumber(null);
       },
-      instanceId
+      sessionId
     );
     
     // Return cleanup
-    return cleanup;
+    return () => {
+      numberListener();
+      resetListener();
+    };
   }, [sessionId, isConnected, connection]);
   
   // Call a number

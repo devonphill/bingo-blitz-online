@@ -14,7 +14,10 @@ export type WebSocketConnectionStatus = typeof CONNECTION_STATES[keyof typeof CO
 // Channel name constants
 export const CHANNEL_NAMES = {
   GAME_UPDATES_BASE: 'game-updates-for-session-',
-  CLAIM_UPDATES_BASE: 'claim-updates-for-session-'
+  CLAIM_UPDATES_BASE: 'claim-updates-for-session-',
+  // Add backwards compatibility aliases
+  GAME_UPDATES: 'game-updates-for-session-',
+  CLAIM_UPDATES: 'claim-updates-for-session-'
 } as const;
 
 // Event types
@@ -30,6 +33,7 @@ export const EVENT_TYPES = {
   CLAIM_VALIDATING: 'claim-validating',
   CLAIM_VALIDATING_TKT: 'claim-validating-tkt',
   CLAIM_RESOLUTION: 'claim-resolution',
+  CLAIM_RESULT: 'claim-resolution', // Alias for backward compatibility
 
   // Player events
   PLAYER_JOIN: 'player-join',

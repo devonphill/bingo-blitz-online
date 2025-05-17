@@ -48,7 +48,7 @@ export const performClaimBroadcast = (
     
     // Use the connection to broadcast the claim
     connection.broadcast(
-      CHANNEL_NAMES.CLAIM_UPDATES,
+      'CLAIM_UPDATES_BASE',
       EVENT_TYPES.CLAIM_SUBMITTED,
       claimPayload
     );

@@ -1,3 +1,4 @@
+
 import { logWithTimestamp } from '@/utils/logUtils';
 import { getSingleSourceConnection } from '@/utils/SingleSourceTrueConnections';
 import { CHANNEL_NAMES, EVENT_TYPES } from '@/constants/websocketConstants';
@@ -36,8 +37,10 @@ export const callNumberForSession = async (
       return false;
     }
     
-    // Update connection last ping time
-    connection.updateLastPing();
+    // Update connection last ping time if method exists
+    if (typeof connection.updateLastPing === 'function') {
+      connection.updateLastPing();
+    }
     
     // First update the database
     try {
@@ -94,7 +97,7 @@ export const callNumberForSession = async (
       calledNumbers
     );
     
-    return result;
+    return result === true || result === 'ok' || false;
   } catch (error) {
     logWithTimestamp(`Error calling number: ${error}`, 'error');
     return false;
@@ -117,8 +120,10 @@ export const resetGameForSession = async (
       return false;
     }
     
-    // Update connection last ping time
-    connection.updateLastPing();
+    // Update connection last ping time if method exists
+    if (typeof connection.updateLastPing === 'function') {
+      connection.updateLastPing();
+    }
     
     // First update the database
     try {
@@ -141,7 +146,7 @@ export const resetGameForSession = async (
     // Broadcast the reset event
     logWithTimestamp(`Resetting game for session ${sessionId}`, 'info');
     const result = await connection.broadcast(
-      CHANNEL_NAMES.GAME_UPDATES,
+      'GAME_UPDATES_BASE',
       EVENT_TYPES.GAME_RESET,
       { 
         sessionId,
@@ -149,7 +154,7 @@ export const resetGameForSession = async (
       }
     );
     
-    return result;
+    return result === true || result === 'ok' || false;
   } catch (error) {
     logWithTimestamp(`Error resetting game: ${error}`, 'error');
     return false;
@@ -158,7 +163,7 @@ export const resetGameForSession = async (
 
 // Function to broadcast any generic event
 export const broadcastEvent = async (
-  channelName: string,
+  channelName: "GAME_UPDATES_BASE" | "CLAIM_UPDATES_BASE",
   eventType: string,
   data: any
 ): Promise<boolean> => {
@@ -169,14 +174,16 @@ export const broadcastEvent = async (
       return false;
     }
     
-    // Update connection last ping time
-    connection.updateLastPing();
+    // Update connection last ping time if method exists
+    if (typeof connection.updateLastPing === 'function') {
+      connection.updateLastPing();
+    }
     
     // Broadcast the event
     logWithTimestamp(`Broadcasting event ${eventType} on channel ${channelName}`, 'info');
     const result = await connection.broadcast(channelName, eventType, data);
     
-    return result;
+    return result === true || result === 'ok' || false;
   } catch (error) {
     logWithTimestamp(`Error broadcasting event: ${error}`, 'error');
     return false;
