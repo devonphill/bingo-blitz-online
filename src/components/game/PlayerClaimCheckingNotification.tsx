@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -27,23 +26,23 @@ export default function PlayerClaimCheckingNotification({
   const instanceId = useRef(`claimNotify-${Math.random().toString(36).substring(2, 7)}`).current;
   
   // Use the WebSocket hook
-  const { listenForEvent, EVENTS, isWsReady } = useWebSocket(sessionId);
+  const { listenForEvent, EVENTS, isWsReady, connectionState } = useWebSocket(sessionId);
 
   // Listen for claim checking broadcasts
   useEffect(() => {
-    // Validate we have the required session ID
+    // STRICT PREREQUISITE CHECK: Validate we have the required session ID
     if (!sessionId) {
       logWithTimestamp(`[${instanceId}] Cannot setup claim notification listener: No session ID`, 'warn');
       return () => {};
     }
 
-    // Check if WebSocket service is ready before setting up listeners
+    // STRICT PREREQUISITE CHECK: Check if WebSocket service is ready before setting up listeners
     if (!isWsReady) {
-      logWithTimestamp(`[${instanceId}] WebSocket service not ready, deferring claim listener setup`, 'warn');
+      logWithTimestamp(`[${instanceId}] WebSocket service not ready (state: ${connectionState}), deferring claim listener setup`, 'warn');
       return () => {};
     }
     
-    // Verify that we have valid event types
+    // STRICT PREREQUISITE CHECK: Verify that we have valid event types
     if (!EVENTS || !EVENTS.CLAIM_VALIDATING_TKT || !EVENTS.CLAIM_RESOLUTION) {
       logWithTimestamp(`[${instanceId}] Missing event types for claim notifications`, 'error');
       return () => {};
@@ -201,7 +200,7 @@ export default function PlayerClaimCheckingNotification({
       cleanupResolution();
       logWithTimestamp(`[${instanceId}] Cleaned up claim notification listeners`, 'info');
     };
-  }, [sessionId, playerCode, instanceId, listenForEvent, EVENTS, isWsReady, claimBeingChecked, isOpen]);
+  }, [sessionId, playerCode, instanceId, listenForEvent, EVENTS, isWsReady, connectionState, claimBeingChecked, isOpen]);
 
   // Also listen to custom browser events that might be dispatched by other components
   useEffect(() => {
@@ -238,7 +237,6 @@ export default function PlayerClaimCheckingNotification({
         setClaimResult(null);
         setIsOpen(true);
         playNotificationSound();
-        
       } else if (event.detail?.claim && (event.detail?.type === 'result' || event.detail?.type === 'resolution')) {
         // Set claim result
         const payload = event.detail.claim;

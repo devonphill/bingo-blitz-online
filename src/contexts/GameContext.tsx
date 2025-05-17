@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { usePlayerTickets, PlayerTicket } from '@/hooks/playerTickets/usePlayerTickets'; 
 import { usePlayerContext } from './PlayerContext';
@@ -71,21 +70,21 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsBingo(false);
   }, []);
   
-  // Listen for number called updates
+  // Listen for number called updates - WITH STRICT PREREQUISITE CHECKS
   useEffect(() => {
-    // ENFORCE PREREQUISITE CHECKS: Only set up listeners if we have a valid session ID and WebSocket is ready
+    // STRICT PREREQUISITE CHECK: Only set up listeners if we have a valid session ID
     if (!sessionId) {
       log(`No session ID available, skipping number listener setup`, 'warn');
       return () => {};
     }
     
-    // Check WebSocket readiness before setting up listeners
+    // STRICT PREREQUISITE CHECK: WebSocket must be ready
     if (!isWsReady) {
       log(`WebSocket not ready (state: ${connectionState}), deferring number listener setup`, 'warn');
       return () => {};
     }
     
-    // Verify that we have a valid event type
+    // STRICT PREREQUISITE CHECK: Verify that we have valid event types
     if (!EVENTS || !EVENTS.NUMBER_CALLED) {
       log(`No valid event type for NUMBER_CALLED, skipping listener setup`, 'error');
       return () => {};
@@ -125,21 +124,21 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [sessionId, currentWinPattern, listenForEvent, EVENTS, updateWinningStatus, isWsReady, connectionState, instanceId]);
   
-  // Listen for game state updates
+  // Listen for game state updates - WITH STRICT PREREQUISITE CHECKS
   useEffect(() => {
-    // ENFORCE PREREQUISITE CHECKS: Only set up listeners if we have a valid session ID and WebSocket is ready
+    // STRICT PREREQUISITE CHECK: Only set up listeners if we have a valid session ID
     if (!sessionId) {
       log(`No session ID available, skipping game state listener setup`, 'warn');
       return () => {};
     }
     
-    // Check WebSocket readiness before setting up listeners
+    // STRICT PREREQUISITE CHECK: WebSocket must be ready
     if (!isWsReady) {
       log(`WebSocket not ready (state: ${connectionState}), deferring game state listener setup`, 'warn');
       return () => {};
     }
     
-    // Verify that we have a valid event type
+    // STRICT PREREQUISITE CHECK: Verify that we have valid event types
     if (!EVENTS || !EVENTS.GAME_STATE_UPDATE) {
       log(`No valid event type for GAME_STATE_UPDATE, skipping listener setup`, 'error');
       return () => {};

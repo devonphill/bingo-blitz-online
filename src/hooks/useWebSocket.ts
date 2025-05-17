@@ -52,10 +52,9 @@ export function useWebSocket(sessionId: string | null | undefined) {
       connection.connect(sessionId);
       
       // Setup connection status listener
-      const cleanup = connection.addConnectionListener((connected) => {
+      const cleanup = connection.addConnectionListener((connected, connectionStatus) => {
         setIsConnected(connected);
-        // Update the connection state based on the connection status
-        setConnectionState(connected ? 'connected' : 'disconnected');
+        setConnectionState(connectionStatus);
         setIsWsReady(connected);
         
         if (connected) {
@@ -63,24 +62,16 @@ export function useWebSocket(sessionId: string | null | undefined) {
         }
       });
       
-      // Also set up status listener to get real-time service initialization updates
-      const statusCleanup = connection.addStatusListener((status, isServiceInitialized) => {
-        setIsWsReady(isServiceInitialized);
-        setConnectionState(status);
-      });
-      
       setIsConnected(connection.isConnected());
-      // Set initial connection state
-      setConnectionState(connection.isConnected() ? 'connected' : 'disconnected');
-      setIsWsReady(connection.isServiceInitialized());
+      setConnectionState(connection.getCurrentConnectionState());
+      setIsWsReady(connection.isServiceInitialized() && connection.isConnected());
       setLastError(null);
       
       logWithTimestamp(`[${instanceId}] Connected to WebSocket for session ${sessionId}. Service ready: ${isInitialized}`, 'info');
       
-      return () => {
-        cleanup();
-        statusCleanup();
-      };
+      // Return cleanup function that only removes the status listener
+      // This will NOT disconnect, since multiple components may use this session
+      return cleanup;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logWithTimestamp(`[${instanceId}] WebSocket connection error: ${errorMsg}`, 'error');
@@ -97,7 +88,7 @@ export function useWebSocket(sessionId: string | null | undefined) {
     eventType: string, 
     handler: (data: T) => void
   ) => {
-    // Validate event type - CRITICAL FIX
+    // CRITICAL FIX: Validate event type
     if (!eventType) {
       logWithTimestamp(`[${instanceId}] Cannot listen for undefined event type`, 'error');
       return () => {};
@@ -109,9 +100,9 @@ export function useWebSocket(sessionId: string | null | undefined) {
       return () => {};
     }
     
-    // Check if connection service is initialized
-    if (!connection.isServiceInitialized()) {
-      logWithTimestamp(`[${instanceId}] Cannot add listener: WebSocket service not initialized yet`, 'warn');
+    // Check if connection service is initialized AND connected
+    if (!connection.isServiceInitialized() || !connection.isConnected()) {
+      logWithTimestamp(`[${instanceId}] Cannot add listener: WebSocket service not initialized/connected yet`, 'warn');
       return () => {};
     }
     
@@ -121,7 +112,7 @@ export function useWebSocket(sessionId: string | null | undefined) {
       // Determine the appropriate channel name based on event type
       const channelName = eventType.includes('claim') ? 'claim-updates' : 'game-updates';
       
-      // Use the singleton connection to listen for events - store the cleanup function
+      // Use the singleton connection to listen for events
       const cleanup = connection.listenForEvent<T>(channelName, eventType, (payload) => {
         logWithTimestamp(`[${instanceId}] Received event: ${eventType}`, 'info');
         console.log(`Full payload for ${eventType}:`, payload);
@@ -130,7 +121,7 @@ export function useWebSocket(sessionId: string | null | undefined) {
       
       logWithTimestamp(`[${instanceId}] Listening for event ${eventType} on session ${sessionId}`, 'info');
       
-      // Return cleanup function - CRITICAL FIX: ensure we return the actual cleanup function
+      // Return cleanup function
       return cleanup;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -153,15 +144,17 @@ export function useWebSocket(sessionId: string | null | undefined) {
     // Set up a separate effect to monitor service initialization status
     const checkServiceInitialized = () => {
       const isInitialized = connection.isServiceInitialized();
-      setIsWsReady(isInitialized);
-      if (!isInitialized) {
+      const isConnectedState = connection.isConnected();
+      setIsWsReady(isInitialized && isConnectedState);
+      
+      if (!isInitialized || !isConnectedState) {
         // Check again in 1 second
         setTimeout(checkServiceInitialized, 1000);
       }
     };
     
     // Start checking if not ready
-    if (!connection.isServiceInitialized()) {
+    if (!connection.isServiceInitialized() || !connection.isConnected()) {
       checkServiceInitialized();
     }
     
