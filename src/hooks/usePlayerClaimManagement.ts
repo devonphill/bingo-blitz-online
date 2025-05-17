@@ -1,216 +1,100 @@
 
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { useToast } from '@/components/ui/use-toast';
-import { logWithTimestamp } from '@/utils/logUtils';
-import { v4 as uuidv4 } from 'uuid';
-import { toast as sonnerToast } from 'sonner';
-import { useWebSocket } from '@/hooks/useWebSocket';
-import { EVENT_TYPES, CHANNEL_NAMES } from '@/constants/websocketConstants';
+import { useState, useCallback, useEffect } from 'react';
+import { toast } from "sonner";
+import usePlayerWebSocketNumbers from './playerWebSocket/usePlayerWebSocketNumbers';
+import { getNCMInstance } from '@/utils/NEWConnectionManager_SinglePointOfTruth';
+import { EVENT_TYPES } from '@/constants/websocketConstants';
 
-/**
- * Hook for managing player claim submissions without client-side validation
- */
-export function usePlayerClaimManagement(
-  playerCode: string | null | undefined,
-  playerId: string | null | undefined,
-  sessionId: string | null,
-  playerName: string,
-  gameType: string,
-  winPattern: string | null
-) {
-  const [claimStatus, setClaimStatus] = useState<'none' | 'pending' | 'validating' | 'validated' | 'rejected'>('none');
-  const [isSubmittingClaim, setIsSubmittingClaim] = useState(false);
-  const [hasActiveClaims, setHasActiveClaims] = useState(false);
-  const [lastClaimResult, setLastClaimResult] = useState<{id: string, status: string} | null>(null);
-  const { toast } = useToast();
-  const instanceId = useRef(`claim-${Math.random().toString(36).substring(2, 7)}`);
-  const activeClaimIds = useRef<Set<string>>(new Set());
+interface PlayerClaimOptions {
+  sessionId: string;
+  playerName?: string;
+  playerCode?: string;
+}
 
-  // Use the WebSocket hook
-  const { listenForEvent, EVENTS, isConnected, isWsReady } = useWebSocket(sessionId);
+export const usePlayerClaimManagement = ({ sessionId, playerName, playerCode }: PlayerClaimOptions) => {
+  const [isClaiming, setIsClaiming] = useState(false);
+  const [claimResult, setClaimResult] = useState<'VALID' | 'INVALID' | null>(null);
+  const [isCheckingClaim, setIsCheckingClaim] = useState(false);
 
-  // Reset claim status
-  const resetClaimStatus = useCallback(() => {
-    setClaimStatus('none');
-    setLastClaimResult(null);
-  }, []);
+  // Using our websocket hook to handle connection status
+  const websocket = usePlayerWebSocketNumbers(sessionId);
+  
+  // We need to modify this line to check isConnected instead of isWsReady
+  const isConnectionReady = websocket.isConnected;
 
-  // Listen for claim validation events
+  // Listen for claim validation results
   useEffect(() => {
-    if (!playerCode || !sessionId || !isWsReady) return;
+    if (!sessionId || !isConnectionReady) return;
 
-    // Need valid event types
-    if (!EVENTS || !EVENTS.CLAIM_RESOLUTION) {
-      logWithTimestamp(`[${instanceId.current}] Missing CLAIM_RESOLUTION event type, skipping listener setup`, 'error');
-      return;
-    }
+    const connectionManager = getNCMInstance();
+    const claimValidationChannelName = `claims_validation-${sessionId}`;
 
-    logWithTimestamp(`PlayerClaimManagement[${instanceId.current}]: Setting up claim validation listener for ${playerCode}`, 'info');
-
-    const handleClaimValidation = (data: any) => {
-      if (!data) {
-        console.warn('Received claim validation event with no data');
-        return;
-      }
-
-      logWithTimestamp(`PlayerClaimManagement: Received claim ${data.validationStatus} for claim ${data.claimId}`, 'info');
-      console.log('Claim validation data:', data);
-
-      // Check if this claim is for this player
-      if (data.playerId === playerCode || data.playerId === playerId) {
-        logWithTimestamp(`PlayerClaimManagement: Processing claim result for player ${playerCode}`, 'info');
-
-        // Update UI based on validation status
-        const isValid = data.validationStatus === 'VALID';
-
-        setClaimStatus(isValid ? 'validated' : 'rejected');
-        setLastClaimResult({
-          id: data.claimId,
-          status: data.validationStatus
-        });
-
-        // Remove from active claims
-        if (activeClaimIds.current.has(data.claimId)) {
-          activeClaimIds.current.delete(data.claimId);
+    // Listen for claim validation events
+    const cleanup = connectionManager.listenForEvent(
+      claimValidationChannelName,
+      EVENT_TYPES.CLAIM_RESOLUTION,
+      (data: { result: 'VALID' | 'INVALID', claim_id?: string }) => {
+        console.log('Claim validation result received:', data);
+        
+        if (data.result === 'VALID') {
+          toast.success('Your claim is valid! 🎉');
+          setClaimResult('VALID');
+        } else {
+          toast.error('Your claim was rejected');
+          setClaimResult('INVALID');
         }
-
-        // Update active claims status
-        setHasActiveClaims(activeClaimIds.current.size > 0);
-
-        // Show toast notification
-        sonnerToast[isValid ? 'success' : 'error'](
-          isValid ? 'Claim Validated!' : 'Claim Rejected',
-          {
-            description: isValid 
-              ? 'Your claim has been validated by the caller.' 
-              : 'Your claim has been rejected by the caller.'
-          }
-        );
-
-        // Auto-reset status after a delay
-        setTimeout(() => {
-          setClaimStatus('none');
-        }, 8000);
+        
+        setIsCheckingClaim(false);
       }
-    };
-
-    // Subscribe to claim validation events using the useWebSocket hook
-    const cleanup = listenForEvent(
-      EVENTS.CLAIM_RESOLUTION,
-      handleClaimValidation
     );
 
-    return () => {
-      cleanup();
-    };
-  }, [playerCode, playerId, sessionId, listenForEvent, EVENTS, isWsReady]);
+    return cleanup;
+  }, [sessionId, isConnectionReady]);
 
-  // Submit a claim without local validation
-  const submitClaim = useCallback(async (ticket: any) => {
-    if (!sessionId || !playerId || !playerCode) {
-      toast({
-        title: "Cannot Submit Claim",
-        description: "Missing session or player information",
-        variant: "destructive"
-      });
-      return false;
+  // Function to submit a claim
+  const submitClaim = useCallback((ticketData: any) => {
+    if (!sessionId || !isConnectionReady) {
+      toast.error('Cannot submit claim: connection not ready');
+      return;
     }
-
-    if (!winPattern) {
-      toast({
-        title: "Cannot Submit Claim",
-        description: "No active win pattern",
-        variant: "destructive"
-      });
-      return false;
-    }
-
-    if (!isConnected || !isWsReady) {
-      toast({
-        title: "Connection Error",
-        description: "No active WebSocket connection. Try refreshing the page.",
-        variant: "destructive"
-      });
-      return false;
-    }
-
-    logWithTimestamp(`PlayerClaimManagement[${instanceId.current}]: Submitting claim for ${playerCode} in ${sessionId}`, 'info');
-
-    setIsSubmittingClaim(true);
-    setClaimStatus('pending');
-
+    
+    setIsClaiming(true);
+    setClaimResult(null);
+    
     try {
-      // Generate a unique ID for this claim
-      const claimId = uuidv4();
-
-      // Prepare claim data
+      const connectionManager = getNCMInstance();
+      const claimSenderChannelName = `claim_sender-${sessionId}`;
+      
       const claimData = {
-        id: claimId,
-        playerCode,
-        playerId,
+        ticketDetails: ticketData,
+        playerName: playerName || 'Unknown Player',
+        playerCode: playerCode || 'UNKNOWN',
         sessionId,
-        playerName,
-        gameType,
-        winPattern,
-        gameNumber: ticket.gameNumber || 1,
-        timestamp: new Date().toISOString(),
-        ticket: ticket
+        timestamp: new Date().toISOString()
       };
-
-      logWithTimestamp(`PlayerClaimManagement[${instanceId.current}]: Submitting claim with payload: ${JSON.stringify(claimData)}`, 'info');
-
-      // Track this claim as active
-      activeClaimIds.current.add(claimId);
-      setHasActiveClaims(true);
-
-      // Import the claim service directly
-      const { claimService } = await import('@/services/ClaimManagementService');
-
-      // Submit the claim using the service
-      const success = claimService.submitClaim(claimData);
-
-      if (!success) {
-        throw new Error('Failed to submit claim through service');
-      }
-
-      logWithTimestamp(`PlayerClaimManagement[${instanceId.current}]: Claim submitted successfully through service`, 'info');
-
-      toast({
-        title: "Claim Submitted",
-        description: "Your claim has been submitted for verification",
-      });
-      return true;
+      
+      connectionManager.listenForEvent(
+        claimSenderChannelName, 
+        EVENT_TYPES.CLAIM_SUBMITTED, 
+        claimData
+      );
+      
+      setIsCheckingClaim(true);
+      toast.info('Your claim has been sent for validation');
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logWithTimestamp(`PlayerClaimManagement[${instanceId.current}]: Error submitting claim: ${errorMessage}`, 'error');
-
-      setClaimStatus('none');
-
-      // Remove from active claims if there was an error
-      if (activeClaimIds.current.size > 0) {
-        // Just clear all active claims to be safe
-        activeClaimIds.current.clear();
-        setHasActiveClaims(false);
-      }
-
-      toast({
-        title: "Claim Failed",
-        description: "Failed to submit your claim. Please try again.",
-        variant: "destructive"
-      });
-
-      return false;
-    } finally {
-      setIsSubmittingClaim(false);
+      console.error('Error submitting claim:', error);
+      toast.error('Failed to submit claim');
+      setIsClaiming(false);
     }
-  }, [playerCode, playerId, sessionId, playerName, gameType, winPattern, toast, isConnected, isWsReady]);
+  }, [sessionId, isConnectionReady, playerName, playerCode]);
 
   return {
-    claimStatus,
-    isSubmittingClaim,
     submitClaim,
-    resetClaimStatus,
-    hasActiveClaims,
-    lastClaimResult
+    isClaiming,
+    isCheckingClaim,
+    claimResult,
+    clearClaimResult: () => setClaimResult(null)
   };
-}
+};
+
+export default usePlayerClaimManagement;

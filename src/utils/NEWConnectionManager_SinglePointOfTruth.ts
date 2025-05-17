@@ -1079,5 +1079,6 @@ export class NEWConnectionManager_SinglePointOfTruth {
  * This is the recommended way to access the connection manager
  */
 export const getNCMInstance = (): NEWConnectionManager_SinglePointOfTruth => {
-  return NEWConnectionManager_SinglePointOfTruth.getInstance();
+  return NEWConnectionManager_SinglePointOfTruth.instance;
 };
+
